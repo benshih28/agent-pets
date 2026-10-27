@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-pets.dev/plugins/plugin.schema.json",
+  "title": "Agent Pets plugin manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "version", "apiVersion", "author", "permissions", "contributes"],
+  "properties": {
+    "id": { "type": "string", "minLength": 3, "maxLength": 48, "pattern": "^(?!_host$|_shared$)[a-z0-9-]+$" },
+    "name": { "$ref": "#/$defs/localizedText" },
+    "version": { "type": "string", "maxLength": 50, "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+    "apiVersion": { "const": "1" },
+    "author": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "entry": { "$ref": "#/$defs/javascriptPath" },
+    "icon": { "$ref": "#/$defs/iconPath" },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hosts"],
+          "properties": {
+            "hosts": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/networkHost" } },
+            "userGranted": { "type": "boolean" }
+          }
+        },
+        "secrets": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$" } },
+        "schedule": { "type": "object", "additionalProperties": false, "required": ["minIntervalSec"], "properties": { "minIntervalSec": { "type": "integer", "minimum": 30, "maximum": 3600 } } },
+        "storage": { "type": "boolean" },
+        "agentStatus": { "type": "boolean" }
+      }
+    },
+    "contributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "feed": { "type": "boolean" },
+        "reaction": { "type": "boolean" },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "properties"],
+          "properties": {
+            "type": { "const": "object" },
+            "properties": { "type": "object", "maxProperties": 20, "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" }, "additionalProperties": { "$ref": "#/$defs/setting" } }
+          }
+        },
+        "panelView": {
+          "description": "Optional HTML page rendered in a separate sandboxed host view. The page can load files from this plugin package and the read-only shared tokens stylesheet.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["entry", "title"],
+          "properties": {
+            "entry": { "$ref": "#/$defs/htmlPath" },
+            "title": { "$ref": "#/$defs/localizedText" },
+            "preferredSize": {
+              "description": "Optional initial window size. Runtime clamps width to 320–960 px and height to 240–800 px, then limits it to the display work area.",
+              "type": "object", "additionalProperties": false, "required": ["width", "height"],
+              "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } }
+            }
+          }
+        },
+        "commands": { "type": "array", "maxItems": 10, "items": { "type": "object", "additionalProperties": false, "required": ["id", "title"], "properties": { "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" }, "title": { "$ref": "#/$defs/commandTitle" } } } },
+        "tray": { "type": "object", "additionalProperties": false, "required": ["commands"], "properties": { "commands": { "type": "array", "maxItems": 5, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" } } } },
+        "badge": { "type": "boolean" },
+        "skins": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "type": "object", "additionalProperties": false, "required": ["id", "displayName", "spritesheet", "kind"], "properties": { "id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" }, "displayName": { "$ref": "#/$defs/localizedText" }, "spritesheet": { "$ref": "#/$defs/iconPath" }, "kind": { "enum": ["person", "animal"] }, "behaviorManifest": { "type": "object" } } } },
+        "eventSource": {
+          "description": "Observe-only plugin status shown in a separate list. It is never converted into built-in Agent events.",
+          "type": "object", "additionalProperties": false, "required": ["family", "displayName"],
+          "properties": {
+            "family": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9]+(?:[._\\s-]+[A-Za-z0-9]+)*$" },
+            "displayName": { "$ref": "#/$defs/eventSourceDisplayName" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commandTitle": { "type": "object", "additionalProperties": false, "required": ["zh-TW", "en-US"], "properties": { "zh-TW": { "type": "string", "minLength": 1, "maxLength": 32 }, "en-US": { "type": "string", "minLength": 1, "maxLength": 32 } } },
+    "localizedText": {
+      "type": "object", "additionalProperties": false, "required": ["zh-TW", "en-US"],
+      "properties": { "zh-TW": { "type": "string", "minLength": 1, "maxLength": 48 }, "en-US": { "type": "string", "minLength": 1, "maxLength": 48 } }
+    },
+    "eventSourceDisplayName": {
+      "type": "object", "additionalProperties": false, "required": ["zh-TW", "en-US"],
+      "properties": { "zh-TW": { "type": "string", "minLength": 1, "maxLength": 80 }, "en-US": { "type": "string", "minLength": 1, "maxLength": 80 } }
+    },
+    "relativePath": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\)(?!.*[:<>\"|?*])(?!.*(?:^|/)[^/]*[. ](?:/|$)).+$" },
+    "javascriptPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.[jJ][sS]$" }] },
+    "htmlPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.[hH][tT][mM][lL]$" }] },
+    "iconPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.(?:[pP][nN][gG]|[wW][eE][bB][pP])$" }] },
+    "networkHost": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", "not": { "pattern": "\\.[0-9]+$" } },
+    "setting": {
+      "type": "object", "additionalProperties": false, "required": ["type"],
+      "properties": {
+        "type": { "enum": ["string", "number", "boolean"] },
+        "title": { "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 48 }, { "$ref": "#/$defs/localizedText" }] },
+        "enum": { "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": { "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": "number" }, { "type": "boolean" }] } },
+        "maxLength": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "format": { "const": "secret" },
+        "default": { "oneOf": [{ "type": "string", "maxLength": 4096 }, { "type": "number" }, { "type": "boolean" }] }
+      }
+    }
+  }
+}

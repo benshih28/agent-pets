@@ -1,0 +1,10 @@
+:root {
+  color: var(--text-primary, CanvasText);
+  background: var(--surface-base, Canvas);
+  font: 14px system-ui, sans-serif;
+}
+
+body { margin: 0; padding: 20px; }
+main { display: grid; gap: 12px; }
+h1, p { margin: 0; }
+button { min-height: 36px; color: inherit; background: var(--surface-raised, ButtonFace); }

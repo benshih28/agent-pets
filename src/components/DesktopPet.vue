@@ -4,6 +4,7 @@ import { useAgentStore } from '@/stores/agentStore'
 import { STATE_LABELS_SHORT, STATE_COLORS } from '@/types/agent'
 import { locale, t, type TranslationKey } from '@/i18n'
 import type { AchievementUnlock } from '@/types/achievement'
+import type { PluginBadgeView } from '@/types/plugin'
 import {
   canRunAutonomousBehavior,
   ShimejiScheduler,
@@ -12,6 +13,8 @@ import {
   type ShimejiContext,
 } from '@/types/pet'
 import { quotaWindowLabel, roundQuotaPercent } from '@/utils/format'
+import { selectBubble } from '@/utils/feed-arbiter'
+import { summarizePluginBadgesForPet } from '@/utils/plugin-badges'
 import PetAnimation from '@/components/PetAnimation.vue'
 
 const store = useAgentStore()
@@ -20,6 +23,11 @@ const hasMoved = ref(false)
 let mouseDownTime = 0
 const petAnimRef = ref<InstanceType<typeof PetAnimation> | null>(null)
 const multiPetRefs = ref<InstanceType<typeof PetAnimation>[]>([])
+const multiPetItemElements = ref<HTMLElement[]>([])
+const pluginBadges = ref<PluginBadgeView[]>([])
+const petDocumentVisible = ref(true)
+let cleanupPluginBadgeListener: (() => void) | null = null
+let pluginBadgeRevision = 0
 
 // --- Shimeji 行為排程 -------------------------------------------------------
 
@@ -191,6 +199,73 @@ const displayLines = computed(() => {
 // toggle on — showing a single pet forces picking a "winner", so instead
 // show one small pet per family, side by side.
 const isMultiPet = computed(() => store.isMultiPet)
+const petAnimationFrozen = computed(() => shimejiReducedMotion.value || store.petWindowMode.mode === 'mini')
+
+const bubbleSelection = computed(() => {
+  const permissionRequest = Boolean(store.permissionBubbleActive && store.permissionRequest)
+  const permissionNotice = Boolean(store.permissionBubbleActive && store.permissionNotice)
+  const agentBubbleEnabled = !store.permissionRequest && !store.permissionNotice && store.bubbleActive
+  const pluginFeed = store.pluginFeedItem
+
+  return selectBubble({
+    permissionRequest,
+    permissionNotice,
+    agentToast: Boolean(agentBubbleEnabled && store.toast),
+    presentationSay: Boolean(store.presentationSay),
+    activity: Boolean(agentBubbleEnabled && !store.toast && !isMultiPet.value && store.activityText),
+    pluginFeed: pluginFeed ? {
+      priority: pluginFeed.priority,
+      controls: {
+        pluginsEnabled: true,
+        enabled: true,
+        muted: false,
+        dnd: store.dndEnabled,
+        visible: store.petWindowMode.mode === 'normal' && document.visibilityState === 'visible',
+      },
+    } : null,
+  })
+})
+
+function openPluginFeedLink(itemId: string): void {
+  store.openPluginFeedLink(itemId)
+}
+
+function openPluginPanelFromFeed(pluginId: string): void {
+  void window.electronAPI?.openPluginPanelFromPet(pluginId)
+}
+
+const pluginFeedTargetPetId = computed(() => {
+  const targetPetId = store.pluginFeedItem?.targetPetId
+  if (targetPetId) return targetPetId
+  return isMultiPet.value ? store.familyLines[0]?.petId ?? store.activePetId : store.activePetId
+})
+
+const pluginBadgesVisible = computed(() => petDocumentVisible.value && store.petWindowMode.mode === 'normal')
+
+function pluginBadgeSummary(petId: string) {
+  if (!pluginBadgesVisible.value) return { badges: [], hiddenCount: 0 }
+  return summarizePluginBadgesForPet(pluginBadges.value, petId, pluginFeedTargetPetId.value)
+}
+
+function pluginBadgeTooltip(badge: PluginBadgeView): string {
+  return t('pluginBadgeTooltip', { plugin: badge.pluginName[locale.value], text: badge.text })
+}
+
+function onPetDocumentVisibilityChange(): void {
+  petDocumentVisible.value = document.visibilityState === 'visible'
+}
+
+const pluginFeedTargetStyle = computed<Record<string, string>>(() => {
+  if (!isMultiPet.value || !store.pluginFeedItem) return {} as Record<string, string>
+  const clickArea = clickAreaRef.value
+  if (!clickArea) return {} as Record<string, string>
+  const targetIndex = store.familyLines.findIndex(line => line.petId === pluginFeedTargetPetId.value)
+  const target = targetIndex >= 0 ? multiPetItemElements.value[targetIndex] : undefined
+  if (!target) return {} as Record<string, string>
+  const targetBounds = target.getBoundingClientRect()
+  const areaBounds = clickArea.getBoundingClientRect()
+  return { left: `${targetBounds.left - areaBounds.left + targetBounds.width / 2}px` }
+})
 
 function quotaColor(familyKey: string): string {
   const quota = store.quotaByFamily[familyKey]
@@ -325,6 +400,19 @@ let contentObserver: ResizeObserver | null = null
 onMounted(() => {
   store.loadPets()
   void initializeShimejiEnvironment()
+  petDocumentVisible.value = document.visibilityState === 'visible'
+  document.addEventListener('visibilitychange', onPetDocumentVisibilityChange)
+  cleanupPluginBadgeListener = window.electronAPI?.onPluginBadgesChanged?.((badges) => {
+    pluginBadgeRevision += 1
+    pluginBadges.value = badges
+  }) ?? null
+  const getPluginBadges = window.electronAPI?.getPluginBadges
+  if (getPluginBadges) {
+    const revision = pluginBadgeRevision
+    void getPluginBadges().then((badges) => {
+      if (pluginBadgeRevision === revision) pluginBadges.value = badges
+    }).catch(() => {})
+  }
 
   if (!clickAreaRef.value || !window.electronAPI?.reportContentHeight) return
   contentObserver = new ResizeObserver(([entry]) => {
@@ -336,6 +424,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   contentObserver?.disconnect()
   contentObserver = null
+  cleanupPluginBadgeListener?.()
+  cleanupPluginBadgeListener = null
+  document.removeEventListener('visibilitychange', onPetDocumentVisibilityChange)
   disposeShimejiEnvironment()
 })
 
@@ -517,14 +608,21 @@ watch(() => store.achievementUnlock, (unlock) => {
             :pet-id="store.activePetId"
             :since="store.highestPrioritySession?.lastSeenAt"
             autonomous-behavior="idle"
-            :freeze="shimejiReducedMotion"
+            :freeze="petAnimationFrozen"
           />
         </span>
         <span class="edge-peek-grip" aria-hidden="true" />
+        <span
+          v-if="store.pluginFeedUnreadCount > 0"
+          class="edge-peek-unread-badge"
+          :aria-label="t('pluginFeedUnreadNotifications', { count: store.pluginFeedUnreadCount })"
+        >
+          {{ store.pluginFeedUnreadCount > 99 ? '99+' : store.pluginFeedUnreadCount }}
+        </span>
       </div>
 
       <template v-else>
-      <Transition v-if="store.permissionBubbleActive && store.permissionRequest" name="toast" mode="out-in">
+      <Transition v-if="bubbleSelection === 'permission-request' && store.permissionBubbleActive && store.permissionRequest" name="toast" mode="out-in">
         <section
           :key="`permission-${store.permissionRequest.requestId}`"
           class="permission-request"
@@ -577,7 +675,7 @@ watch(() => store.achievementUnlock, (unlock) => {
         </section>
       </Transition>
 
-      <Transition v-else-if="store.permissionBubbleActive && store.permissionNotice" name="toast" mode="out-in">
+      <Transition v-else-if="bubbleSelection === 'permission-notice' && store.permissionBubbleActive && store.permissionNotice" name="toast" mode="out-in">
         <div
           key="permission"
           class="pet-toast permission-notice"
@@ -593,7 +691,7 @@ watch(() => store.achievementUnlock, (unlock) => {
         </div>
       </Transition>
 
-      <Transition v-else-if="store.presentationSay" name="toast" mode="out-in">
+      <Transition v-else-if="bubbleSelection === 'presentation-say' && store.presentationSay" name="toast" mode="out-in">
         <div
           key="presentation-say"
           class="pet-toast presentation-say"
@@ -606,7 +704,7 @@ watch(() => store.achievementUnlock, (unlock) => {
         </div>
       </Transition>
 
-      <Transition v-else-if="!store.permissionRequest && !store.permissionNotice && store.bubbleActive" name="toast" mode="out-in">
+      <Transition v-else-if="bubbleSelection === 'agent-toast' || bubbleSelection === 'activity'" name="toast" mode="out-in">
         <div
           v-if="store.toast"
           :key="`toast-${store.toast.id}`"
@@ -633,9 +731,61 @@ watch(() => store.achievementUnlock, (unlock) => {
         </div>
       </Transition>
 
+      <Transition v-else-if="bubbleSelection === 'plugin-feed-normal' || bubbleSelection === 'plugin-feed-low'" name="toast" mode="out-in">
+        <article
+          v-if="store.pluginFeedItem"
+          :key="`plugin-feed-${store.pluginFeedItem.id}`"
+          class="pet-toast plugin-feed-toast"
+          :style="pluginFeedTargetStyle"
+          :data-target-pet-id="pluginFeedTargetPetId"
+          role="status"
+          aria-live="polite"
+          data-pet-hit-target="solid"
+          @mousedown.stop
+          @click.stop
+        >
+          <img v-if="store.pluginFeedItem.iconUrl" class="plugin-feed-icon" :src="store.pluginFeedItem.iconUrl" alt="" />
+          <div class="plugin-feed-copy">
+            <span class="plugin-feed-source">{{ store.pluginFeedItem.pluginName[locale] }}</span>
+            <button
+              v-if="store.pluginFeedItem.link"
+              type="button"
+              class="plugin-feed-message plugin-feed-link"
+              :aria-label="t('pluginFeedOpenLink')"
+              @click.stop="openPluginFeedLink(store.pluginFeedItem.id)"
+            >
+              <strong>{{ store.pluginFeedItem.title }}</strong>
+              <span>{{ store.pluginFeedItem.body }}</span>
+            </button>
+            <div v-else class="plugin-feed-message">
+              <strong>{{ store.pluginFeedItem.title }}</strong>
+              <span>{{ store.pluginFeedItem.body }}</span>
+            </div>
+            <button
+              v-if="store.pluginFeedItem.panelViewAvailable"
+              type="button"
+              class="plugin-feed-open-panel"
+              @mousedown.stop
+              @click.stop="openPluginPanelFromFeed(store.pluginFeedItem.pluginId)"
+            >
+              {{ t('pluginOpenPanel') }}
+            </button>
+          </div>
+          <button
+            type="button"
+            class="plugin-feed-close"
+            :aria-label="t('close')"
+            @mousedown.stop
+            @click.stop="store.completePluginFeed(store.pluginFeedItem.id)"
+          >
+            ×
+          </button>
+        </article>
+      </Transition>
+
       <template v-if="isMultiPet">
         <div class="multi-pet-row">
-          <div v-for="line in store.familyLines" :key="line.key" class="multi-pet-item">
+          <div v-for="line in store.familyLines" :key="line.key" ref="multiPetItemElements" class="multi-pet-item">
             <PetAnimation
               ref="multiPetRefs"
               :state="line.state"
@@ -643,6 +793,7 @@ watch(() => store.achievementUnlock, (unlock) => {
               :since="line.since"
               :mood="store.moodVisualsEnabled ? store.mood : undefined"
               :autonomous-behavior="shimejiBehavior"
+              :freeze="petAnimationFrozen"
             />
             <div
               class="status-line multi-pet-status-line"
@@ -661,6 +812,19 @@ watch(() => store.achievementUnlock, (unlock) => {
               <span class="line-text">
                 <span class="line-label">{{ line.label }}<span v-if="line.variants.length" class="line-variants">&nbsp;({{ line.variants.join('+') }})</span></span>
                 <span class="line-sep">·</span>{{ STATE_LABELS_SHORT[line.state] }}
+              </span>
+              <span v-if="pluginBadgesVisible" class="plugin-status-badges">
+                <template v-for="badge in pluginBadgeSummary(line.petId).badges" :key="badge.pluginId">
+                  <span class="plugin-badge-anchor" tabindex="0" :aria-label="pluginBadgeTooltip(badge)">
+                    <span class="plugin-badge-pill" :class="`tone-${badge.tone}`">{{ badge.text }}</span>
+                    <span class="plugin-badge-tooltip" role="tooltip">{{ pluginBadgeTooltip(badge) }}</span>
+                  </span>
+                </template>
+                <span
+                  v-if="pluginBadgeSummary(line.petId).hiddenCount > 0"
+                  class="plugin-badge-pill plugin-badge-overflow"
+                  :aria-label="t('pluginBadgeOverflow', { count: pluginBadgeSummary(line.petId).hiddenCount })"
+                >+{{ pluginBadgeSummary(line.petId).hiddenCount }}</span>
               </span>
               <span v-if="store.quotaByFamily[line.key]" class="quota-readout">
                 {{ quotaPercent(line.key) }}%
@@ -702,6 +866,7 @@ watch(() => store.achievementUnlock, (unlock) => {
           :since="store.highestPrioritySession?.lastSeenAt"
           :mood="store.moodVisualsEnabled ? store.mood : undefined"
           :autonomous-behavior="shimejiBehavior"
+          :freeze="petAnimationFrozen"
         />
         <TransitionGroup tag="div" name="status-line" class="status-lines">
           <div
@@ -725,6 +890,19 @@ watch(() => store.achievementUnlock, (unlock) => {
                 <span class="line-label">{{ line.label }}<span v-if="line.variants.length" class="line-variants">&nbsp;({{ line.variants.join('+') }})</span></span>
                 <span class="line-sep">·</span>
               </template>{{ STATE_LABELS_SHORT[line.state] }}
+            </span>
+            <span v-if="pluginBadgesVisible" class="plugin-status-badges">
+              <template v-for="badge in pluginBadgeSummary(line.petId).badges" :key="badge.pluginId">
+                <span class="plugin-badge-anchor" tabindex="0" :aria-label="pluginBadgeTooltip(badge)">
+                  <span class="plugin-badge-pill" :class="`tone-${badge.tone}`">{{ badge.text }}</span>
+                  <span class="plugin-badge-tooltip" role="tooltip">{{ pluginBadgeTooltip(badge) }}</span>
+                </span>
+              </template>
+              <span
+                v-if="pluginBadgeSummary(line.petId).hiddenCount > 0"
+                class="plugin-badge-pill plugin-badge-overflow"
+                :aria-label="t('pluginBadgeOverflow', { count: pluginBadgeSummary(line.petId).hiddenCount })"
+              >+{{ pluginBadgeSummary(line.petId).hiddenCount }}</span>
             </span>
             <span v-if="store.quotaByFamily[line.key]" class="quota-readout">
               {{ quotaPercent(line.key) }}%

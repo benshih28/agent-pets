@@ -1,6 +1,6 @@
 {
   "name": "agent-pets",
-  "version": "1.2.2",
+  "version": "1.3.1",
   "description": "Desktop pet that shows the status of AI coding agents",
   "author": "Upfloor5",
   "license": "MIT",
@@ -17,6 +17,8 @@
     "prebuild:fast": "node scripts/stop-agent-pets.mjs",
     "build:fast": "vue-tsc --noEmit && vite build && electron-builder --config.compression=store",
     "test:unit": "node --test --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/*.test.mts",
+    "check:bundle": "node scripts/check-plugin-panel-tokens-bundle.mjs",
+    "bench": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bench/phase-18.mjs",
     "preview": "vite preview",
     "electron:dev": "vite --config vite.config.mts",
     "preelectron:build": "node scripts/stop-agent-pets.mjs",
@@ -26,7 +28,7 @@
     "fflate": "^0.8.3",
     "koffi": "3.2.1",
     "pinia": "^2.1.7",
-    "vue": "^3.4.21"
+    "vue": "^3.5.44"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
@@ -84,7 +86,7 @@
       "artifactName": "AgentPets-${version}.exe"
     },
     "dmg": {
-      "artifactName": "AgentPets-${version}.dmg"
+      "artifactName": "AgentPets-${version}-${arch}.dmg"
     }
   }
 }

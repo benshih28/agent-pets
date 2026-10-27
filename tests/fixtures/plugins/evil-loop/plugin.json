@@ -1,0 +1,11 @@
+{
+  "id": "evil-loop",
+  "name": { "zh-TW": "無限迴圈測試插件", "en-US": "Evil Loop Fixture" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixtures",
+  "entry": "dist/main.js",
+  "icon": "assets/icon.png",
+  "permissions": {},
+  "contributes": {}
+}

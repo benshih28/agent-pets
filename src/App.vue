@@ -24,12 +24,53 @@ let cleanupAchievementUnlock: (() => void) | null = null
 let cleanupQuotaUpdated: (() => void) | null = null
 let cleanupPermissionRequests: (() => void) | null = null
 let cleanupPresentationIntent: (() => void) | null = null
+let cleanupPluginFeedItem: (() => void) | null = null
+let cleanupPluginFeedUnreadCount: (() => void) | null = null
+let cleanupPluginSkinsChanged: (() => void) | null = null
 let staleTimer: ReturnType<typeof setInterval> | null = null
 let successTimer: ReturnType<typeof setInterval> | null = null
 let quotaTimer: ReturnType<typeof setInterval> | null = null
 let quotaSettleTimer: ReturnType<typeof setTimeout> | null = null
 let lastSettleRefreshAt = 0
 let petMousePassthrough = false
+
+function stopRecurringTimers(): void {
+  if (staleTimer) clearInterval(staleTimer)
+  if (successTimer) clearInterval(successTimer)
+  if (quotaTimer) clearInterval(quotaTimer)
+  if (quotaSettleTimer) clearTimeout(quotaSettleTimer)
+  staleTimer = null
+  successTimer = null
+  quotaTimer = null
+  quotaSettleTimer = null
+}
+
+function syncRecurringTimers(): void {
+  if (document.hidden) {
+    stopRecurringTimers()
+    return
+  }
+  if (!staleTimer) {
+    staleTimer = setInterval(() => store.cleanupStale(), 60_000)
+  }
+  if (!isPanelWindow && store.hasQuotaCapableSessions && !quotaTimer) {
+    quotaTimer = setInterval(() => { void store.refreshQuota() }, store.quotaRefreshMs)
+  }
+  if (store.hasSuccessSessions && !successTimer) {
+    successTimer = setInterval(() => store.handleSuccessTimeout(), 1_000)
+  }
+}
+
+function onDocumentVisibilityChange(): void {
+  if (document.hidden) {
+    stopRecurringTimers()
+    return
+  }
+  store.cleanupStale()
+  store.handleSuccessTimeout()
+  if (!isPanelWindow && store.hasQuotaCapableSessions) void store.refreshQuota()
+  syncRecurringTimers()
+}
 
 function isOpaqueCanvasPoint(canvas: HTMLCanvasElement, clientX: number, clientY: number): boolean {
   const rect = canvas.getBoundingClientRect()
@@ -136,6 +177,26 @@ onMounted(() => {
       store.handlePresentationIntent(intent)
     })
   }
+  if (electronAPI?.onPluginFeedItem) {
+    cleanupPluginFeedItem = electronAPI.onPluginFeedItem((item: unknown) => {
+      store.handlePluginFeedItem(item)
+    })
+  }
+  if (electronAPI?.onPluginFeedUnreadCount) {
+    cleanupPluginFeedUnreadCount = electronAPI.onPluginFeedUnreadCount((count: unknown) => {
+      store.setPluginFeedUnreadCount(count)
+    })
+  }
+  if (electronAPI?.onPluginSkinsChanged) {
+    cleanupPluginSkinsChanged = electronAPI.onPluginSkinsChanged((removedPetIds: unknown) => {
+      void store.handlePluginSkinsChanged(removedPetIds)
+    })
+  }
+  if (electronAPI?.getPluginFeedUnreadCount) {
+    void electronAPI.getPluginFeedUnreadCount()
+      .then((count: unknown) => store.setPluginFeedUnreadCount(count))
+      .catch(() => {})
+  }
   if (isPanelWindow && electronAPI?.onPanelOpened) {
     cleanupPanelOpened = electronAPI.onPanelOpened(() => {
       store.handlePanelOpened()
@@ -192,9 +253,8 @@ onMounted(() => {
 
   window.addEventListener('storage', handleStorage)
 
-  staleTimer = setInterval(() => {
-    store.cleanupStale()
-  }, 60_000)
+  document.addEventListener('visibilitychange', onDocumentVisibilityChange)
+  syncRecurringTimers()
 })
 
 watch(() => store.petScale, (v) => {
@@ -222,9 +282,7 @@ watch(() => store.hasQuotaCapableSessions, (active) => {
   }
   if (!active || isPanelWindow) return
   void store.refreshQuota()
-  quotaTimer = setInterval(() => {
-    void store.refreshQuota()
-  }, store.quotaRefreshMs)
+  syncRecurringTimers()
 }, { immediate: true })
 
 // A finished session is the moment quota actually moved, so refresh off that
@@ -232,7 +290,7 @@ watch(() => store.hasQuotaCapableSessions, (active) => {
 // is to bypass the renderer throttle — the main process' own force cooldown
 // still collapses a burst of sessions finishing together into one request.
 watch(() => store.quotaStaleSignal, () => {
-  if (isPanelWindow || quotaSettleTimer) return
+  if (isPanelWindow || document.hidden || quotaSettleTimer) return
   const sinceLast = Date.now() - lastSettleRefreshAt
   const delay = Math.max(
     store.quotaSettleDelayMs,
@@ -253,14 +311,11 @@ watch(() => store.scaledW, (w) => {
 // Only tick the success->idle timeout while something is actually counting
 // down, instead of waking up every second for the app's whole lifetime.
 watch(() => store.hasSuccessSessions, (active) => {
-  if (active && !successTimer) {
-    successTimer = setInterval(() => {
-      store.handleSuccessTimeout()
-    }, 1_000)
-  } else if (!active && successTimer) {
+  if (!active && successTimer) {
     clearInterval(successTimer)
     successTimer = null
   }
+  syncRecurringTimers()
 }, { immediate: true })
 
 onUnmounted(() => {
@@ -275,12 +330,13 @@ onUnmounted(() => {
   cleanupQuotaUpdated?.()
   cleanupPermissionRequests?.()
   cleanupPresentationIntent?.()
+  cleanupPluginFeedItem?.()
+  cleanupPluginFeedUnreadCount?.()
+  cleanupPluginSkinsChanged?.()
   window.removeEventListener('mousemove', handlePetMouseMove, true)
   window.removeEventListener('storage', handleStorage)
-  if (staleTimer) clearInterval(staleTimer)
-  if (successTimer) clearInterval(successTimer)
-  if (quotaTimer) clearInterval(quotaTimer)
-  if (quotaSettleTimer) clearTimeout(quotaSettleTimer)
+  document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
+  stopRecurringTimers()
 })
 </script>
 

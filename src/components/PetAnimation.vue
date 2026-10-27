@@ -53,6 +53,8 @@ const moodAuraStyle = computed<Record<string, string>>(() => {
 })
 
 const store = useAgentStore()
+const documentVisible = ref(true)
+const isPaused = computed(() => props.freeze === true || !documentVisible.value)
 
 const CELL_W = 192
 const CELL_H = 208
@@ -118,7 +120,9 @@ const imgRef = ref<HTMLImageElement | null>(null)
 const imageCache = new Map<string, HTMLImageElement>()
 const auraTintCache = new Map<string, string>()
 let auraTint = 'rgb(235, 242, 255)'
-let animTimer: ReturnType<typeof setTimeout> | null = null
+let animationFrameId: number | null = null
+let frameStartedAt = 0
+let animationFinished = false
 let currentFrame = 0
 let currentStep = 0
 let completedLoops = 0
@@ -172,6 +176,7 @@ let fidgetTimer: ReturnType<typeof setTimeout> | null = null
 let fidgetResetTimer: ReturnType<typeof setTimeout> | null = null
 
 function scheduleFidget() {
+  if (isPaused.value) return
   if (fidgetTimer) clearTimeout(fidgetTimer)
   const delay = 6000 + Math.random() * 9000
   fidgetTimer = setTimeout(() => {
@@ -192,6 +197,10 @@ function stopFidgetTimer() {
     clearTimeout(fidgetTimer)
     fidgetTimer = null
   }
+  if (fidgetResetTimer) {
+    clearTimeout(fidgetResetTimer)
+    fidgetResetTimer = null
+  }
   isFidgeting.value = false
 }
 
@@ -202,7 +211,7 @@ const urgencyTick = ref(Date.now())
 let urgencyTimer: ReturnType<typeof setInterval> | null = null
 
 function startUrgencyTimer() {
-  if (urgencyTimer) return
+  if (urgencyTimer || isPaused.value) return
   urgencyTick.value = Date.now()
   urgencyTimer = setInterval(() => { urgencyTick.value = Date.now() }, 500)
 }
@@ -396,11 +405,12 @@ async function loadImage() {
 
   const targetId = pet ? id : 'qitian-dasheng'
 
-  const cached = imageCache.get(targetId)
+  const imageCacheKey = pet?.pluginSkin?.cacheKey ?? targetId
+  const cached = imageCache.get(imageCacheKey)
   if (cached) {
     imgRef.value = cached
-    auraTint = auraTintCache.get(targetId) || deriveAuraTint(cached)
-    auraTintCache.set(targetId, auraTint)
+    auraTint = auraTintCache.get(imageCacheKey) || deriveAuraTint(cached)
+    auraTintCache.set(imageCacheKey, auraTint)
     currentFrame = 0
     draw()
     return
@@ -408,7 +418,9 @@ async function loadImage() {
 
   const img = new Image()
 
-  if (pet && !pet.builtIn) {
+  if (pet?.pluginSkin) {
+    img.src = pet.pluginSkin.spriteUrl
+  } else if (pet && !pet.builtIn) {
     const fileUrl = await window.electronAPI?.getCustomPetSprite(targetId)
     if (!fileUrl) return
     img.src = fileUrl
@@ -417,10 +429,10 @@ async function loadImage() {
   }
 
   img.onload = () => {
-    imageCache.set(targetId, img)
+    imageCache.set(imageCacheKey, img)
     imgRef.value = img
     auraTint = deriveAuraTint(img)
-    auraTintCache.set(targetId, auraTint)
+    auraTintCache.set(imageCacheKey, auraTint)
     currentFrame = 0
     draw()
     if (props.autonomousBehavior === 'walk' || props.autonomousBehavior === 'sleep') {
@@ -474,56 +486,82 @@ function draw() {
 }
 
 function startAnimation() {
-  if (animTimer !== null) {
-    clearTimeout(animTimer)
-    animTimer = null
-  }
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
+  animationFrameId = null
+  frameStartedAt = performance.now()
+  animationFinished = false
 
   motionPlan = motionPlanForState()
   selectStep(0)
   draw()
-  if (props.freeze) return
+  if (isPaused.value) return
+  animationFrameId = requestAnimationFrame(animationTick)
+}
 
-  function tick() {
-    if (currentFrame < activeMotion.frameDurations.length - 1) {
-      currentFrame++
-      draw()
-      animTimer = setTimeout(tick, frameDelay())
-      return
-    }
+function pauseAnimation(): void {
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
+  animationFrameId = null
+  frameStartedAt = 0
+}
 
-    completedLoops++
-    const step = motionPlan.steps[currentStep]
-    if (completedLoops < step.loops) {
-      currentFrame = 0
-      draw()
-      animTimer = setTimeout(tick, frameDelay())
-      return
-    }
+function resumeAnimation(): void {
+  if (isPaused.value || animationFrameId !== null || animationFinished) return
+  frameStartedAt = performance.now()
+  animationFrameId = requestAnimationFrame(animationTick)
+}
 
-    if (currentStep < motionPlan.steps.length - 1) {
-      selectStep(currentStep + 1)
-      draw()
-      animTimer = setTimeout(tick, frameDelay())
-      return
-    }
-
-    if (motionPlan.repeat) {
-      selectStep(0)
-      draw()
-      animTimer = setTimeout(tick, frameDelay())
-      return
-    }
-
-    // Non-repeating plans (notably failure) deliberately hold their final
-    // frame until the store reports the next state.
-    animTimer = null
+function animationTick(timestamp: number): void {
+  if (isPaused.value || animationFinished) {
+    animationFrameId = null
+    return
   }
+  if (timestamp - frameStartedAt < frameDelay()) {
+    animationFrameId = requestAnimationFrame(animationTick)
+    return
+  }
+  frameStartedAt = timestamp
+  if (advanceAnimationFrame()) animationFrameId = requestAnimationFrame(animationTick)
+  else {
+    animationFinished = true
+    animationFrameId = null
+  }
+}
 
-  animTimer = setTimeout(tick, frameDelay())
+function advanceAnimationFrame(): boolean {
+  if (currentFrame < activeMotion.frameDurations.length - 1) {
+    currentFrame++
+    draw()
+    return true
+  }
+  completedLoops++
+  const step = motionPlan.steps[currentStep]
+  if (completedLoops < step.loops) {
+    currentFrame = 0
+    draw()
+    return true
+  }
+  if (currentStep < motionPlan.steps.length - 1) {
+    selectStep(currentStep + 1)
+    draw()
+    return true
+  }
+  if (motionPlan.repeat) {
+    selectStep(0)
+    draw()
+    return true
+  }
+  // Non-repeating plans (notably failure) deliberately hold their final
+  // frame until the store reports the next state.
+  return false
 }
 
 watch(() => props.petId, () => {
+  currentFrame = 0
+  loadImage()
+  startAnimation()
+})
+
+watch(() => store.pets.find(pet => pet.id === props.petId)?.pluginSkin?.cacheKey, () => {
   currentFrame = 0
   loadImage()
   startAnimation()
@@ -537,10 +575,10 @@ watch(() => store.petsLoaded, () => {
 
 watch(() => props.state, (newState, oldState) => {
   startAnimation()
-  if (!props.freeze && oldState !== undefined && newState !== oldState) {
+  if (!isPaused.value && oldState !== undefined && newState !== oldState) {
     playReaction()
   }
-  if (newState === 'idle' && !props.freeze) {
+  if (newState === 'idle' && !isPaused.value) {
     scheduleFidget()
   } else {
     stopFidgetTimer()
@@ -559,31 +597,47 @@ watch(urgencyLevel, (newLevel, oldLevel) => {
 })
 
 watch(() => props.autonomousBehavior, (newBehavior, oldBehavior) => {
-  if (!props.freeze && newBehavior === 'poke' && newBehavior !== oldBehavior) playReaction()
+  if (!isPaused.value && newBehavior === 'poke' && newBehavior !== oldBehavior) playReaction()
   if (newBehavior !== 'cursor-look') startAnimation()
 })
 
 watch(() => props.freeze, (freeze) => {
   startAnimation()
   if (freeze) stopFidgetTimer()
-  else if (props.state === 'idle') scheduleFidget()
+  else if (!document.hidden && props.state === 'idle') scheduleFidget()
+  if (freeze) stopUrgencyTimer()
+  else if (isWaiting.value) startUrgencyTimer()
 })
 
+function handleDocumentVisibilityChange(): void {
+  documentVisible.value = document.visibilityState === 'visible'
+  if (documentVisible.value) resumeAnimation()
+  else pauseAnimation()
+  if (!documentVisible.value) {
+    stopFidgetTimer()
+    stopUrgencyTimer()
+  } else {
+    if (props.state === 'idle' && !props.freeze) scheduleFidget()
+    if (isWaiting.value && !props.freeze) startUrgencyTimer()
+  }
+}
+
 onMounted(() => {
+  documentVisible.value = document.visibilityState === 'visible'
+  document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
   loadImage()
   startAnimation()
-  if (props.state === 'idle' && !props.freeze) {
+  if (props.state === 'idle' && !isPaused.value) {
     scheduleFidget()
   }
-  if (isWaiting.value) {
+  if (isWaiting.value && !isPaused.value) {
     startUrgencyTimer()
   }
 })
 
 onUnmounted(() => {
-  if (animTimer !== null) {
-    clearTimeout(animTimer)
-  }
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
+  document.removeEventListener('visibilitychange', handleDocumentVisibilityChange)
   if (reactionTimer !== null) {
     clearTimeout(reactionTimer)
   }

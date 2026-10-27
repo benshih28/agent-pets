@@ -1,6 +1,14 @@
 export type PetBehaviorName = 'walk' | 'sleep'
 export type PetAutonomousBehavior = 'idle' | 'walk' | 'sleep' | 'cursor-look' | 'poke'
 
+export interface PluginSkinPetSource {
+  pluginId: string
+  pluginName: string
+  spriteUrl: string
+  cacheKey: string
+  kind: 'person' | 'animal'
+}
+
 export interface PetBehaviorDefinition {
   row: number
   frames?: number

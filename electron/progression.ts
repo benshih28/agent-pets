@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { AgentStatusEvent, AgentState } from '../src/types/agent'
+import { isValidPetId } from '../src/utils/pet-id.ts'
 import {
   ACTIVE_CODING_INTERVAL_MS,
   ACTIVE_CODING_MAX_POINTS_PER_SESSION,
@@ -57,7 +58,6 @@ const MAX_PET_ID_LENGTH = 128
 const MAX_SESSION_KEY_LENGTH = 600
 const MAX_ACTIVE_GAP_MS = 5 * 60 * 1000
 const ACTIVE_STATES = new Set<AgentState>(['thinking', 'tool-running'])
-const SAFE_PET_ID = /^[A-Za-z0-9._-]{1,128}$/
 
 function databaseConstructor(): DatabaseSyncConstructor {
   const moduleRequire = createRequire(import.meta.url)
@@ -83,7 +83,7 @@ function isAgentState(value: unknown): value is AgentState {
 }
 
 function normalizePetId(value: string | undefined, fallback: string): string {
-  if (typeof value === 'string' && value.length <= MAX_PET_ID_LENGTH && SAFE_PET_ID.test(value)) return value
+  if (isValidPetId(value, MAX_PET_ID_LENGTH)) return value
   return fallback
 }
 

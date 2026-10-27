@@ -1,0 +1,10 @@
+{
+  "id": "hello-feed",
+  "name": { "zh-TW": "Hello Feed", "en-US": "Hello Feed" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets example",
+  "entry": "dist/main.js",
+  "permissions": {},
+  "contributes": { "feed": true }
+}

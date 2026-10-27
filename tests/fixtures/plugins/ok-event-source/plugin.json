@@ -1,0 +1,15 @@
+{
+  "id": "ok-event-source",
+  "name": { "zh-TW": "狀態展示驗證插件", "en-US": "Event Source Fixture" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixture",
+  "entry": "dist/main.js",
+  "permissions": {},
+  "contributes": {
+    "eventSource": {
+      "family": "build-watch",
+      "displayName": { "zh-TW": "建置工作", "en-US": "Build job" }
+    }
+  }
+}

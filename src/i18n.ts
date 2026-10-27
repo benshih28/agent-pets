@@ -38,7 +38,11 @@ export function setLocale(value: unknown): AppLocale {
 }
 
 export function t(key: TranslationKey, params: TranslationParams = {}): string {
-  const template = locale.value === 'en-US' ? englishMessages[key] : messages[key]
+  return tForLocale(locale.value, key, params)
+}
+
+export function tForLocale(targetLocale: AppLocale, key: TranslationKey, params: TranslationParams = {}): string {
+  const template = targetLocale === 'en-US' ? englishMessages[key] : messages[key]
   return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`))
 }
 

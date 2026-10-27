@@ -49,6 +49,22 @@ test('project identity is anonymous, stable across path variants, and persists b
   }
 })
 
+test('project pet bindings accept the dedicated plugin skin id format', () => {
+  const database = databasePath()
+  const pluginSkinId = 'plugin:skin-pack:winter-fox'
+  const available = new Set(['aang-airbender', pluginSkinId])
+  const store = new ProjectRoutingStore(database.filePath)
+  try {
+    const project = store.registerPath(database.project, Date.now(), available)
+    assert.ok(project)
+    assert.equal(store.setBinding(project.projectId, pluginSkinId, available)?.boundPetId, pluginSkinId)
+    assert.deepEqual(store.route(project.projectId, available), { petId: pluginSkinId, fallback: false })
+  } finally {
+    store.close()
+    fs.rmSync(database.directory, { recursive: true, force: true })
+  }
+})
+
 test('trackSeen resolves without hitting the filesystem twice and throttles the write', () => {
   const database = databasePath()
   let now = 1_700_000_000_000

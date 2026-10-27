@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef, computed, watch } from 'vue'
+import { ref, shallowRef, computed, watch, reactive } from 'vue'
 import { t, translateBackendError, setLocale as applyLocale } from '@/i18n'
 import type {
   AgentSession,
@@ -17,7 +17,8 @@ import type { AchievementSnapshot, AchievementUnlock } from '@/types/achievement
 import { ACHIEVEMENT_DEFINITIONS } from '@/types/achievement'
 import type { PetWindowMode, PetWindowModeState } from '@/types/pet-window'
 import { normalizePetWindowModeState } from '@/types/pet-window'
-import type { PetBehaviorManifest } from '@/types/pet'
+import type { PetBehaviorManifest, PluginSkinPetSource } from '@/types/pet'
+import type { PluginFeedItem } from '@/types/plugin'
 import type { ProjectPetView } from '@/types/project-pet'
 import type {
   PresentationIntent,
@@ -27,7 +28,9 @@ import type {
 } from '@/types/presentation'
 import { PRESENTATION_REACTIONS } from '@/types/presentation'
 import { formatProject } from '@/utils/format'
+import { AgentSessionIndex } from '@/utils/agent-session-index'
 import { isDesktopEffectActive } from '@/utils/desktop-effects'
+import { isPluginSkinPetId, isValidPetId } from '@/utils/pet-id'
 import {
   createToastCountdown,
   getToastRemainingMs,
@@ -40,6 +43,7 @@ export interface PetEntry {
   folder: string
   builtIn: boolean
   behaviorManifest?: PetBehaviorManifest
+  pluginSkin?: PluginSkinPetSource
 }
 
 const SUCCESS_DISPLAY_MS = 4_000
@@ -186,7 +190,18 @@ interface MoodTaskProgress {
 
 export const useAgentStore = defineStore('agent', () => {
   // --- 核心狀態 ----------------------------------------------------------
-  const sessions = ref<Record<string, AgentSession>>({})
+  const sessionsByKey = reactive(new Map<string, AgentSession>())
+  const sessionIndex = new AgentSessionIndex(sessionsByKey)
+  const sessionList = computed(() => [...sessionsByKey.values()].sort((a, b) => {
+    const priorityDelta = (STATE_PRIORITY[b.state] ?? 0) - (STATE_PRIORITY[a.state] ?? 0)
+    if (priorityDelta !== 0) return priorityDelta
+    const recencyDelta = b.lastSeenAt - a.lastSeenAt
+    if (recencyDelta !== 0) return recencyDelta
+    return SOURCE_LABELS[a.source].localeCompare(SOURCE_LABELS[b.source])
+  }))
+  // Preserve the store's existing object-shaped view for any internal caller
+  // that still needs keyed access; the Map remains the source of truth.
+  const sessions = computed(() => Object.fromEntries(sessionsByKey))
   const isDragging = ref(false)
   const petWindowMode = ref<PetWindowModeState>({ mode: 'normal' })
   const panelView = ref<'sessions' | 'settings'>('sessions')
@@ -279,6 +294,9 @@ export const useAgentStore = defineStore('agent', () => {
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   let toastProgressTimer: ReturnType<typeof setTimeout> | null = null
   let toastSequence = 0
+  const pluginFeedItem = shallowRef<PluginFeedItem | null>(null)
+  const pluginFeedUnreadCount = ref(0)
+  let pluginFeedTimer: ReturnType<typeof setTimeout> | null = null
   const moodTaskProgress = new Map<string, MoodTaskProgress>()
 
   // Light meta-progression rewards completed tools, sustained work, and
@@ -451,6 +469,91 @@ export const useAgentStore = defineStore('agent', () => {
 
   // --- Presentation MCP（本機 MCP client 的簡短反應/語音佇列） -----------------
 
+  function normalizePluginFeedItem(value: unknown): PluginFeedItem | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const raw = value as Record<string, unknown>
+    if (typeof raw.id !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(raw.id)
+      || typeof raw.pluginId !== 'string' || !/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(raw.pluginId)
+      || !raw.pluginName || typeof raw.pluginName !== 'object' || Array.isArray(raw.pluginName)
+      || typeof raw.title !== 'string' || raw.title.length === 0 || raw.title.length > 60
+      || typeof raw.body !== 'string' || raw.body.length === 0 || raw.body.length > 240
+      || (raw.priority !== 'low' && raw.priority !== 'normal')
+      || typeof raw.createdAt !== 'number' || !Number.isSafeInteger(raw.createdAt)
+      || typeof raw.expiresAt !== 'number' || !Number.isSafeInteger(raw.expiresAt)
+      || raw.expiresAt <= Date.now() || raw.expiresAt > Date.now() + 15_000) return null
+    const name = raw.pluginName as Record<string, unknown>
+    if (typeof name['zh-TW'] !== 'string' || name['zh-TW'].length === 0 || name['zh-TW'].length > 48
+      || typeof name['en-US'] !== 'string' || name['en-US'].length === 0 || name['en-US'].length > 48) return null
+
+    let targetPetId: string | undefined
+    if (raw.targetPetId !== undefined) {
+      if (!isValidPetId(raw.targetPetId, 64)) return null
+      targetPetId = raw.targetPetId
+    }
+
+    let iconUrl: string | undefined
+    if (raw.iconUrl !== undefined) {
+      if (typeof raw.iconUrl !== 'string') return null
+      try {
+        const icon = new URL(raw.iconUrl)
+        if (icon.protocol !== 'agent-pets:' || icon.hostname !== 'plugin' || icon.username || icon.password
+          || icon.port || icon.search || icon.hash || !icon.pathname.startsWith(`/${raw.pluginId}/`)) return null
+        iconUrl = icon.href
+      } catch { return null }
+    }
+
+    let link: string | undefined
+    if (raw.link !== undefined) {
+      if (typeof raw.link !== 'string') return null
+      try {
+        const url = new URL(raw.link)
+        if (url.protocol !== 'https:' || url.username || url.password || url.port) return null
+        link = url.href
+      } catch { return null }
+    }
+    return {
+      id: raw.id,
+      pluginId: raw.pluginId,
+      ...(targetPetId ? { targetPetId } : {}),
+      pluginName: { 'zh-TW': name['zh-TW'], 'en-US': name['en-US'] },
+      ...(iconUrl ? { iconUrl } : {}),
+      title: raw.title,
+      body: raw.body,
+      ...(link ? { link } : {}),
+      priority: raw.priority,
+      createdAt: raw.createdAt,
+      expiresAt: raw.expiresAt,
+      ...(raw.panelViewAvailable === true ? { panelViewAvailable: true } : {}),
+    }
+  }
+
+  function handlePluginFeedItem(value: unknown): void {
+    const item = normalizePluginFeedItem(value)
+    if (!item) return
+    if (pluginFeedTimer) clearTimeout(pluginFeedTimer)
+    pluginFeedItem.value = item
+    pluginFeedTimer = setTimeout(() => completePluginFeed(item.id), Math.max(1, item.expiresAt - Date.now()))
+  }
+
+  function completePluginFeed(itemId: unknown): void {
+    const item = pluginFeedItem.value
+    if (!item || item.id !== itemId) return
+    if (pluginFeedTimer) clearTimeout(pluginFeedTimer)
+    pluginFeedTimer = null
+    pluginFeedItem.value = null
+    void window.electronAPI?.completePluginFeed(item.id).catch(() => {})
+  }
+
+  function setPluginFeedUnreadCount(value: unknown): void {
+    pluginFeedUnreadCount.value = typeof value === 'number' && Number.isSafeInteger(value)
+      ? Math.max(0, Math.min(1_000_000, value))
+      : 0
+  }
+
+  function openPluginFeedLink(itemId: string): void {
+    void window.electronAPI?.openPluginFeedLink(itemId)
+  }
+
   function clearPresentation(): void {
     if (presentationTimer) clearTimeout(presentationTimer)
     presentationTimer = null
@@ -459,9 +562,20 @@ export const useAgentStore = defineStore('agent', () => {
     presentationReaction.value = null
   }
 
-  function presentationBlocked(): boolean {
+  function clearMcpPresentation(): void {
+    if (presentationTimer) clearTimeout(presentationTimer)
+    presentationTimer = null
+    presentationQueue.value = presentationQueue.value.filter(intent => intent.source === 'plugin')
+    if (presentationActive.value?.source !== 'plugin') {
+      presentationActive.value = null
+      presentationReaction.value = null
+    }
+    pumpPresentation()
+  }
+
+  function presentationBlocked(source?: PresentationIntent['source']): boolean {
     return !desktopPreferencesReady.value
-      || !presentationMcpEnabled.value
+      || (source !== 'plugin' && !presentationMcpEnabled.value)
       || dndEnabled.value
       || (STATE_PRIORITY[currentState.value] ?? 0) >= PRESENTATION_HIGH_PRIORITY
   }
@@ -476,12 +590,13 @@ export const useAgentStore = defineStore('agent', () => {
       || !Number.isFinite(raw.createdAt)
       || !Number.isFinite(raw.expiresAt)
       || raw.expiresAt <= Date.now()) return null
+    const source = raw.source === undefined ? undefined : raw.source === 'plugin' ? 'plugin' : null
+    if (source === null || (source === 'plugin' && raw.kind !== 'react')) return null
 
     const petId = raw.petId === undefined
       ? undefined
       : typeof raw.petId === 'string'
-        && /^[A-Za-z0-9._-]{1,64}$/.test(raw.petId)
-        && !raw.petId.includes('..')
+        && isValidPetId(raw.petId, 64)
         ? raw.petId
         : null
     if (petId === null) return null
@@ -491,6 +606,7 @@ export const useAgentStore = defineStore('agent', () => {
       return {
         id: raw.id.slice(0, 80),
         kind: 'react',
+        ...(source ? { source } : {}),
         ...(petId ? { petId } : {}),
         reaction: raw.reaction as PresentationReaction,
         createdAt: raw.createdAt,
@@ -520,12 +636,15 @@ export const useAgentStore = defineStore('agent', () => {
     if (presentationTimer) clearTimeout(presentationTimer)
     presentationTimer = null
     const now = Date.now()
-    presentationQueue.value = presentationQueue.value.filter(intent => intent.expiresAt > now)
-    if (presentationBlocked()) {
+    presentationQueue.value = presentationQueue.value.filter(intent => intent.expiresAt > now
+      && (intent.source === 'plugin' || presentationMcpEnabled.value))
+    if (!desktopPreferencesReady.value || dndEnabled.value
+      || (STATE_PRIORITY[currentState.value] ?? 0) >= PRESENTATION_HIGH_PRIORITY) {
       clearPresentation()
       return
     }
-    if (presentationActive.value && presentationActive.value.expiresAt > now) {
+    if (presentationActive.value && presentationActive.value.expiresAt > now
+      && (presentationActive.value.source === 'plugin' || presentationMcpEnabled.value)) {
       presentationTimer = setTimeout(pumpPresentation, presentationActive.value.expiresAt - now)
       return
     }
@@ -544,9 +663,8 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function handlePresentationIntent(value: unknown): void {
-    if (presentationBlocked()) return
     const intent = normalizePresentationIntent(value)
-    if (!intent) return
+    if (!intent || presentationBlocked(intent.source)) return
     if (intent.petId) {
       const knownPetIds = new Set([
         activePetId.value,
@@ -587,7 +705,8 @@ export const useAgentStore = defineStore('agent', () => {
     launchAtStartupSupported.value = preferences.launchAtStartupSupported
     desktopPreferencesReady.value = true
     localStorage.setItem('agent-pet-sound', preferences.soundEnabled ? '1' : '0')
-    if (!preferences.presentationMcpEnabled || preferences.dndEnabled) clearPresentation()
+    if (preferences.dndEnabled) clearPresentation()
+    else if (!preferences.presentationMcpEnabled) clearMcpPresentation()
   }
 
   async function initializeDesktopPreferences() {
@@ -631,7 +750,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   function setPresentationMcpEnabled(enabled: boolean) {
     presentationMcpEnabled.value = enabled
-    if (!enabled) clearPresentation()
+    if (!enabled) clearMcpPresentation()
     updateDesktopPreferences({ presentationMcpEnabled: enabled })
   }
 
@@ -745,7 +864,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (
       raw.schemaVersion !== 1
       || typeof petId !== 'string'
-      || !/^[A-Za-z0-9._-]{1,128}$/.test(petId)
+      || !isValidPetId(petId, 128)
       || !Number.isSafeInteger(generatedAt)
       || !Array.isArray(raw.achievements)
       || raw.achievements.length !== ACHIEVEMENT_DEFINITIONS.length
@@ -800,7 +919,7 @@ export const useAgentStore = defineStore('agent', () => {
     const tokenQuality = raw.tokenQuality
     if (
       typeof petId !== 'string'
-      || !/^[A-Za-z0-9._-]{1,128}$/.test(petId)
+      || !isValidPetId(petId, 128)
       || !definition
       || raw.version !== definition.version
       || raw.titleKey !== definition.titleKey
@@ -843,13 +962,37 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function setProgressionPet(petId: string): Promise<void> {
-    if (!/^[A-Za-z0-9._-]{1,128}$/.test(petId)) return
+    if (!isValidPetId(petId, 128)) return
     try {
       const snapshot = await window.electronAPI?.setProgressionPet(petId)
       if (snapshot) setProgressionSnapshot(snapshot)
       await initializeAchievements()
     } catch {
       // Main remains authoritative; a later broadcast restores the snapshot.
+    }
+  }
+
+  async function handlePluginSkinsChanged(removedPetIds: unknown): Promise<void> {
+    const removed = new Set(Array.isArray(removedPetIds)
+      ? removedPetIds.filter((petId): petId is string => isPluginSkinPetId(petId)).slice(0, 250)
+      : [])
+    const selectedPetId = selectedPet.value
+    const selectedWasRemoved = removed.has(selectedPetId)
+    const removedFamilyEntries = Object.entries(familyPetIds.value)
+      .filter(([, petId]) => removed.has(petId))
+    const routedPetId = highestPrioritySession.value?.routedPetId
+    const routedWasRemoved = Boolean(routedPetId && removed.has(routedPetId))
+    const activeRemovedIds = new Set<string>()
+    if (selectedWasRemoved) activeRemovedIds.add(selectedPetId)
+    for (const [, petId] of removedFamilyEntries) activeRemovedIds.add(petId)
+    if (routedPetId && routedWasRemoved) activeRemovedIds.add(routedPetId)
+
+    await loadPets()
+    if (selectedWasRemoved || routedWasRemoved) setPet(DEFAULT_PET_ID)
+    for (const [familyKey] of removedFamilyEntries) setFamilyPet(familyKey, DEFAULT_PET_ID)
+
+    if (activeRemovedIds.size > 0) {
+      void window.electronAPI?.notifyPluginSkinFallback([...activeRemovedIds])
     }
   }
 
@@ -921,7 +1064,7 @@ export const useAgentStore = defineStore('agent', () => {
   // must only come from one of them or it plays twice.
   function handleEvent(event: AgentStatusEvent): 'success' | 'error' | 'waiting-permission' | null {
     const key = getSessionKey(event.source, event.sessionId)
-    const existing = sessions.value[key]
+    const existing = sessionIndex.get(key)
     const prevState = existing?.state
 
     if (event.originalEvent === 'AgentPetsIntegrationTest' && event.state === 'offline') {
@@ -937,21 +1080,9 @@ export const useAgentStore = defineStore('agent', () => {
       existing.routedPetId = event.routedPetId
       existing.toolName = event.toolName
       existing.permissionNotice = event.permissionNotice
+      sessionIndex.updatePriority(key, event.state, event.timestamp)
     } else {
-      const allSessions = Object.values(sessions.value)
-      if (allSessions.length >= MAX_SESSION_COUNT) {
-        // 只需要最小值：單次線性掃描 O(n) 取代整體排序 O(n log n)。
-        // 優先淘汰 offline，其次是最久未更新的 session。
-        let evictionCandidate = allSessions[0]
-        for (const candidate of allSessions) {
-          const offlineDelta = Number(candidate.state !== 'offline') - Number(evictionCandidate.state !== 'offline')
-          if (offlineDelta < 0 || (offlineDelta === 0 && candidate.lastSeenAt < evictionCandidate.lastSeenAt)) {
-            evictionCandidate = candidate
-          }
-        }
-        if (evictionCandidate) removeSession(evictionCandidate.key)
-      }
-      sessions.value[key] = {
+      const evicted = sessionIndex.upsert({
         key,
         source: event.source,
         sessionId: event.sessionId,
@@ -962,7 +1093,8 @@ export const useAgentStore = defineStore('agent', () => {
         lastSeenAt: event.timestamp,
         toolName: event.toolName,
         permissionNotice: event.permissionNotice,
-      }
+      }, MAX_SESSION_COUNT)
+      if (evicted) moodTaskProgress.delete(evicted.key)
     }
 
     if ((STATE_PRIORITY[event.state] ?? 0) >= PRESENTATION_HIGH_PRIORITY) {
@@ -987,51 +1119,47 @@ export const useAgentStore = defineStore('agent', () => {
 
   function cleanupStale() {
     const now = Date.now()
-    for (const key of Object.keys(sessions.value)) {
-      const session = sessions.value[key]
+    for (const session of sessionIndex.values()) {
       if (now - session.lastSeenAt > SESSION_STALE_MS && session.state !== 'offline') {
         // No update in a long time means the process died without sending a
         // terminal event (Stop/SessionEnd) — treat it as gone rather than
         // letting a stuck thinking/tool-running state mask real sessions.
         session.state = 'offline'
-        moodTaskProgress.delete(key)
+        sessionIndex.updatePriority(session.key, session.state, session.lastSeenAt)
+        moodTaskProgress.delete(session.key)
       }
     }
   }
 
   function handleSuccessTimeout() {
     const now = Date.now()
-    for (const key of Object.keys(sessions.value)) {
-      const session = sessions.value[key]
+    for (const session of sessionIndex.values()) {
       if (session.state === 'success') {
         if (now - session.lastSeenAt > SUCCESS_DISPLAY_MS) {
           session.state = 'idle'
+          sessionIndex.updatePriority(session.key, session.state, session.lastSeenAt)
         }
       }
     }
   }
 
   function removeSession(key: string) {
-    delete sessions.value[key]
+    sessionIndex.delete(key)
     moodTaskProgress.delete(key)
   }
 
   function clearOfflineSessions() {
-    for (const key of Object.keys(sessions.value)) {
-      if (sessions.value[key].state === 'offline') {
-        delete sessions.value[key]
-        moodTaskProgress.delete(key)
+    for (const session of [...sessionIndex.values()]) {
+      if (session.state === 'offline') {
+        sessionIndex.delete(session.key)
+        moodTaskProgress.delete(session.key)
       }
     }
   }
 
   // --- Quota 與工作階段衍生狀態（computed） -----------------------------------
 
-  const activeSessions = computed(() => {
-    return Object.values(sessions.value).filter(
-      (s) => s.state !== 'offline'
-    )
-  })
+  const activeSessions = computed(() => sessionList.value.filter(session => session.state !== 'offline'))
 
   const hasQuotaCapableSessions = computed(
     () => activeSessions.value.some((session) => isQuotaCapableSource(session.source)),
@@ -1221,10 +1349,13 @@ export const useAgentStore = defineStore('agent', () => {
   function getPresentationStatus(): PresentationStatusUpdate {
     const lines = familyLines.value.length > 0
       ? familyLines.value
-      : [{ petId: activePetId.value, state: currentState.value }]
+      : [{ key: '', petId: activePetId.value, state: currentState.value }]
     const activePets = lines.slice(0, 16).map(line => ({
       petId: line.petId,
       name: pets.value.find(pet => pet.id === line.petId)?.displayName ?? line.petId,
+      agentFamily: line.key === 'codex' ? 'codex' as const
+        : line.key === 'claude' ? 'claude-code' as const
+          : line.key === 'opencode' ? 'opencode' as const : null,
       mood: moodLabel(mood.value),
       level: progression.value?.level ?? 1,
       visibleState: line.state,
@@ -1247,7 +1378,7 @@ export const useAgentStore = defineStore('agent', () => {
   // and the session it blocks share the exact same getSessionKey().
   function settleWaitingPermission(agentId: string, sessionId: string): void {
     const key = getSessionKey(agentId as AgentSource, sessionId)
-    const session = sessions.value[key]
+    const session = sessionIndex.get(key)
     if (!session || session.state !== 'waiting-permission') return
     // The user (or the broker's own TTL) has resolved this request, but a
     // Codex/Claude session may never send a follow-up hook event — without
@@ -1256,6 +1387,7 @@ export const useAgentStore = defineStore('agent', () => {
     // a local, visual-only fallback: any real event still overwrites it.
     session.state = 'idle'
     session.permissionNotice = undefined
+    sessionIndex.updatePriority(key, session.state, session.lastSeenAt)
   }
 
   function setPermissionRequests(value: unknown): void {
@@ -1390,10 +1522,11 @@ export const useAgentStore = defineStore('agent', () => {
       }
     } finally {
       petsLoaded.value = true
-      void refreshProjectPets()
     }
   }
 
+  // Project-pet IPC is panel-only (main.ts rejects other senders), and the pet
+  // window also calls loadPets(), so panel callers refresh this explicitly.
   async function refreshProjectPets(): Promise<ProjectPetView[]> {
     if (window.electronAPI?.getProjectPetsEnabled) {
       try {
@@ -1520,6 +1653,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   return {
     sessions,
+    sessionList,
     isDragging,
     petWindowMode,
     panelView,
@@ -1549,6 +1683,8 @@ export const useAgentStore = defineStore('agent', () => {
     showProjectMcpPanel,
     toast,
     toastRemainingMs,
+    pluginFeedItem,
+    pluginFeedUnreadCount,
     mood,
     moodVisualsEnabled,
     soundEnabled,
@@ -1587,6 +1723,10 @@ export const useAgentStore = defineStore('agent', () => {
     presentationReaction,
     handlePresentationIntent,
     clearPresentation,
+    handlePluginFeedItem,
+    completePluginFeed,
+    setPluginFeedUnreadCount,
+    openPluginFeedLink,
     getPresentationStatus,
     permissionRequests,
     permissionRequest,
@@ -1599,6 +1739,7 @@ export const useAgentStore = defineStore('agent', () => {
     initializeProgression,
     initializeAchievements,
     setProgressionPet,
+    handlePluginSkinsChanged,
     setPermissionRequests,
     initializePermissionRequests,
     decidePermission,

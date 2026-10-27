@@ -1,0 +1,127 @@
+name: Release
+
+# 當 main 上的 package.json 版本號變更（且該版本尚未有 tag）時，
+# 自動建置 macOS 與 Windows 版本，並建立 v<version> tag 與 GitHub Release。
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        name: Check whether this version is already released
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "v$version already exists; skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.version.outputs.release == 'true'
+        uses: pnpm/action-setup@v6
+
+      - if: steps.version.outputs.release == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - if: steps.version.outputs.release == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.version.outputs.release == 'true'
+        run: pnpm exec vue-tsc --noEmit
+
+      - if: steps.version.outputs.release == 'true'
+        run: pnpm test:unit
+
+  build:
+    name: build (${{ matrix.name }})
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+            # 同時產出 Apple Silicon 與 Intel 版 dmg
+            builder-args: --mac --arm64 --x64
+            artifact-glob: release/*.dmg
+          - name: windows
+            os: windows-latest
+            builder-args: --win --x64
+            artifact-glob: release/*.exe
+    runs-on: ${{ matrix.os }}
+    env:
+      # 目前沒有簽章憑證：關閉 macOS 自動尋找簽章身分，產出未簽章版本
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 不走 pnpm build：其 prebuild 會清理本機 Agent Pets 程序，CI 不需要
+      - run: pnpm exec vite build
+
+      - name: Check plugin panel tokens bundle
+        run: pnpm check:bundle
+
+      - run: pnpm exec electron-builder ${{ matrix.builder-args }} --publish never
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.artifact-glob }}
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist-release
+          merge-multiple: true
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          ls -l dist-release
+          gh release create "v$VERSION" dist-release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Agent Pets $VERSION" \
+            --generate-notes

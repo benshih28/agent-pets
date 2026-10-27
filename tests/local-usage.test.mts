@@ -4,7 +4,21 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { HistoryStore } from '../electron/history.ts'
-import { LocalUsageReader } from '../electron/local-usage.ts'
+import {
+  createIncrementalLocalUsageParserState,
+  LocalUsageReader,
+  parseIncrementalLocalUsageChunk,
+  parseUsageFile,
+  type UsageProvider,
+} from '../electron/local-usage.ts'
+
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+    return state / 0x1_0000_0000
+  }
+}
 
 function setup(): { home: string; database: string; cleanup: () => void } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-local-usage-'))
@@ -275,4 +289,135 @@ test('clear history establishes a local usage cutoff and later log entries can b
   assert.equal((await reader.scan()).recordsImported, 1)
   assert.equal(store.getSummary().totals.tokenInput, 8)
   assert.equal(store.getSummary().totals.tokenOutput, 2)
+})
+
+test('incremental local usage parsing matches full parsing across 1,000 seeded files and byte boundaries', () => {
+  const random = seededRandom(18_301)
+  for (let caseIndex = 0; caseIndex < 1_000; caseIndex += 1) {
+    const provider: UsageProvider = caseIndex % 2 === 0 ? 'codex' : 'claude-code'
+    const lines: string[] = []
+    const lineCount = 1 + Math.floor(random() * 6)
+    let totalInput = 0
+    let totalOutput = 0
+    for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
+      if (provider === 'codex') {
+        if (lineIndex === 0 && caseIndex % 3 === 0) {
+          lines.push(JSON.stringify({ type: 'session_meta', payload: { cwd: '/workspace/project' } }))
+        }
+        totalInput += 1 + Math.floor(random() * 40)
+        totalOutput += Math.floor(random() * 20)
+        lines.push(JSON.stringify({
+          type: 'event_msg',
+          timestamp: new Date(1_800_000_000_000 + lineIndex).toISOString(),
+          payload: {
+            type: 'token_count',
+            info: {
+              last_token_usage: { input_tokens: totalInput, output_tokens: totalOutput },
+              total_token_usage: { input_tokens: totalInput, output_tokens: totalOutput },
+            },
+          },
+        }))
+      } else {
+        const messageIndex = lineIndex % 2 === 0 ? lineIndex : lineIndex - 1
+        lines.push(JSON.stringify({
+          type: 'assistant',
+          timestamp: new Date(1_800_000_000_000 + lineIndex).toISOString(),
+          session_id: `session-${caseIndex}`,
+          message: {
+            id: `message-${messageIndex}`,
+            usage: { input_tokens: 1 + Math.floor(random() * 70), output_tokens: Math.floor(random() * 30) },
+            content: '測試文字 boundary',
+          },
+        }))
+      }
+    }
+    const bytes = Buffer.from(`${lines.join('\n')}\n`, 'utf8')
+    const fileKey = `fixture-${caseIndex}`
+    const expected = parseUsageFile(provider, fileKey, bytes.toString('utf8'), 1_800_000_000_000, 4_096)
+    const state = createIncrementalLocalUsageParserState()
+    const actualByKey = new Map<string, ReturnType<typeof parseUsageFile>[number]>()
+    let availableEnd = 0
+    while (availableEnd < bytes.length) {
+      availableEnd = Math.min(bytes.length, availableEnd + 1 + Math.floor(random() * 31))
+      const readStart = state.readOffset
+      const chunk = bytes.subarray(readStart, availableEnd)
+      for (const record of parseIncrementalLocalUsageChunk(
+        provider,
+        fileKey,
+        chunk,
+        readStart,
+        1_800_000_000_000,
+        4_096,
+        state,
+      )) actualByKey.set(record.dedupeKey, record)
+    }
+    assert.deepEqual([...actualByKey.values()], expected, `seeded corpus ${caseIndex}`)
+    assert.equal(state.readOffset, bytes.length, `resume offset ${caseIndex}`)
+  }
+})
+
+test('incremental usage scan waits for an incomplete line and resumes after append or file replacement', async t => {
+  const fixture = setup()
+  let now = Date.UTC(2026, 7, 13, 1, 0, 0)
+  const store = new HistoryStore(fixture.database, { now: () => now, localDate: () => '2026-08-13' })
+  t.after(() => { store.close(); fixture.cleanup() })
+  const filePath = path.join(fixture.home, '.codex', 'sessions', 'session.jsonl')
+  const codexRecord = (input: number) => JSON.stringify({
+    type: 'event_msg',
+    timestamp: new Date(now).toISOString(),
+    payload: { type: 'token_count', info: {
+      last_token_usage: { input_tokens: input, output_tokens: 1 },
+      total_token_usage: { input_tokens: input, output_tokens: 1 },
+    } },
+  })
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.writeFileSync(filePath, `${codexRecord(10)}\n`, 'utf8')
+  const reader = new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now })
+  assert.equal((await reader.scan()).recordsImported, 1)
+  fs.appendFileSync(filePath, codexRecord(25).slice(0, 24), 'utf8')
+  assert.equal((await reader.scan()).recordsImported, 0)
+  assert.equal(store.getSummary().totals.tokenInput, 10)
+  fs.appendFileSync(filePath, `${codexRecord(25).slice(24)}\n`, 'utf8')
+  assert.equal((await reader.scan()).recordsImported, 1)
+  assert.equal(store.getSummary().totals.tokenInput, 25)
+
+  store.clear()
+  now += 2_000
+  const replacementPath = `${filePath}.replacement`
+  fs.writeFileSync(replacementPath, `${codexRecord(7)}\n`, 'utf8')
+  fs.renameSync(replacementPath, filePath)
+  assert.equal((await reader.scan()).recordsImported, 1)
+  assert.equal(store.getSummary().totals.tokenInput, 7)
+})
+
+test('incremental byte budgets charge only bytes read after the cached offset', async t => {
+  const fixture = setup()
+  const now = Date.UTC(2026, 7, 13, 1, 0, 0)
+  const store = new HistoryStore(fixture.database, { now: () => now, localDate: () => '2026-08-13' })
+  t.after(() => { store.close(); fixture.cleanup() })
+
+  const directory = path.join(fixture.home, '.codex', 'sessions')
+  const first = path.join(directory, 'first.jsonl')
+  const second = path.join(directory, 'second.jsonl')
+  const filler = (index: number) => ({ type: 'user', message: { content: `fixture-${index}-` + 'x'.repeat(150) } })
+  writeJsonl(first, Array.from({ length: 300 }, (_, index) => filler(index)))
+  writeJsonl(second, Array.from({ length: 250 }, (_, index) => filler(index + 300)))
+  assert.ok(fs.statSync(first).size > 50 * 1024)
+  assert.ok(fs.statSync(second).size > 40 * 1024)
+
+  const reader = new LocalUsageReader({
+    homeDir: fixture.home,
+    history: store,
+    now: () => now,
+    maxFileBytes: 64 * 1024,
+    maxTotalBytes: 64 * 1024,
+  })
+  const initial = await reader.scan()
+  assert.equal(initial.filesScanned, 1)
+  assert.equal(initial.filesSkipped, 1)
+
+  fs.appendFileSync(first, `${JSON.stringify(filler(900))}\n`)
+  const resumed = await reader.scan()
+  assert.equal(resumed.filesScanned, 2)
+  assert.equal(resumed.filesSkipped, 0)
 })

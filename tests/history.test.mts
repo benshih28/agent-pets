@@ -192,6 +192,79 @@ test('history counts each terminal session once across distinct completion event
   assert.equal(store.getAchievementCompletedSessions().length, 2)
 })
 
+test('daily summary covering index preserves 1,000 seeded query results', (t) => {
+  const now = Date.UTC(2026, 9, 26, 12)
+  const database = databasePath()
+  const store = new HistoryStore(database.filePath, {
+    now: () => now,
+    localDate: timestamp => new Date(timestamp).toISOString().slice(0, 10),
+  })
+  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+
+  const dates = Array.from({ length: 7 }, (_, index) => `2026-10-${String(20 + index).padStart(2, '0')}`)
+  const pets = ['aang-airbender', 'local-usage', 'wolf']
+  const adapters = ['claude-code', 'codex', 'generic-http']
+  const insert = store.database.prepare(`
+    INSERT INTO daily_stats(
+      local_date, pet_id, project_id, adapter_id, sessions_completed, sessions_failed,
+      active_ms, token_input, token_output, token_quality
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  store.batch(() => {
+    for (let index = 0; index < 1_000; index += 1) {
+      const projectId = index.toString(16).padStart(32, '0')
+      insert.run(
+        dates[index % dates.length],
+        pets[index % pets.length],
+        projectId,
+        adapters[index % adapters.length],
+        index % 7,
+        index % 5,
+        index * 1_000,
+        index * 10,
+        index * 3,
+        index % 2 === 0 ? 'exact' : 'estimated',
+      )
+    }
+  })
+
+  const querySql = `
+    SELECT local_date, pet_id, project_id, adapter_id, sessions_completed, sessions_failed,
+           active_ms, token_input, token_output, token_quality
+    FROM daily_stats
+    WHERE (pet_id = ? OR pet_id = ?) AND local_date IN (${dates.map(() => '?').join(', ')})
+  `
+  const runCases = () => {
+    let seed = 0x18_03_2026
+    const next = () => {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0
+      return seed
+    }
+    return Array.from({ length: 1_000 }, () => {
+      const petId = pets[next() % pets.length]!
+      const rows = store.database.prepare(querySql).all(petId, 'local-usage', ...dates)
+      return rows.map(row => [
+        row.local_date, row.pet_id, row.project_id, row.adapter_id, row.sessions_completed,
+        row.sessions_failed, row.active_ms, row.token_input, row.token_output, row.token_quality,
+      ]).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+    })
+  }
+
+  store.database.exec('DROP INDEX idx_daily_stats_summary_cover')
+  const withoutIndex = runCases()
+  store.database.exec(`
+    CREATE INDEX idx_daily_stats_summary_cover
+      ON daily_stats(
+        pet_id, local_date, project_id, adapter_id,
+        sessions_completed, sessions_failed, active_ms, token_input, token_output, token_quality
+      )
+  `)
+  const withIndex = runCases()
+  assert.deepEqual(withIndex, withoutIndex)
+  const plan = store.database.prepare(`EXPLAIN QUERY PLAN ${querySql}`).all('aang-airbender', 'local-usage', ...dates)
+  assert.ok(plan.some(row => String(row.detail).includes('idx_daily_stats_summary_cover')))
+})
+
 test('history v4 migration repairs inflated completion aggregates from unique sessions', (t) => {
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()

@@ -1,0 +1,17 @@
+{
+  "id": "panel-demo",
+  "name": { "zh-TW": "面板訊息範例", "en-US": "Panel message demo" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Example Author",
+  "entry": "dist/main.js",
+  "icon": "assets/icon.png",
+  "permissions": { "storage": true },
+  "contributes": {
+    "panelView": {
+      "entry": "ui/index.html",
+      "title": { "zh-TW": "範例面板", "en-US": "Demo panel" },
+      "preferredSize": { "width": 520, "height": 440 }
+    }
+  }
+}

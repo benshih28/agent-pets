@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "id": "sample-plugin",
+      "name": {
+        "zh-TW": "範例插件",
+        "en-US": "Sample Plugin"
+      },
+      "description": {
+        "zh-TW": "用來說明線上插件目錄格式的範例資料。",
+        "en-US": "Example entry showing the online plugin catalog format."
+      },
+      "author": "Example Author",
+      "homepage": "https://github.com/example/sample-plugin",
+      "publicKeyFingerprint": "0123456789abcdef",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "apiVersion": "1",
+          "url": "https://github.com/example/sample-plugin/releases/download/v1.0.0/sample.agentpet-plugin",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 1234,
+          "publishedAt": "2026-10-26T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}

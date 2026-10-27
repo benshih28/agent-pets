@@ -1,0 +1,15 @@
+{
+  "id": "evil-event-source",
+  "name": { "zh-TW": "不安全狀態探測插件", "en-US": "Unsafe Status Probe" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixture",
+  "entry": "dist/main.js",
+  "permissions": {},
+  "contributes": {
+    "eventSource": {
+      "family": "probe-status",
+      "displayName": { "zh-TW": "探測狀態", "en-US": "Probe status" }
+    }
+  }
+}

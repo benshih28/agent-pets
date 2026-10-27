@@ -6,6 +6,7 @@ import type {
   ProjectPetBindingStatus,
   ProjectPetView,
 } from '../src/types/project-pet.ts'
+import { isValidPetId } from '../src/utils/pet-id.ts'
 import { StatementCache } from './sqlite-statements.ts'
 
 type SqliteRow = Record<string, unknown>
@@ -43,7 +44,6 @@ const MAX_PROJECT_PATH_LENGTH = 4_096
 const MAX_PROJECTS = 256
 const MAX_DISPLAY_NAME_LENGTH = 96
 const PROJECT_ID = /^[a-f0-9]{32}$/
-const PET_ID = /^[A-Za-z0-9._-]{1,128}$/
 const DEFAULT_PET_ID = 'aang-airbender'
 // Every tool-call/state event on a session re-resolves the same raw path.
 // Without this cache, each one would pay a synchronous lstat/realpath round
@@ -83,7 +83,7 @@ function safeProjectId(value: unknown): string | null {
 }
 
 function safePetId(value: unknown): string | null {
-  return typeof value === 'string' && PET_ID.test(value) ? value : null
+  return isValidPetId(value, 128) ? value : null
 }
 
 interface CanonicalizedPath {

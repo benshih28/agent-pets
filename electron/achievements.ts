@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createRequire } from 'node:module'
 import type { AgentStatusEvent } from '../src/types/agent.ts'
+import { isValidPetId } from '../src/utils/pet-id.ts'
 import type { ProgressionSnapshot } from '../src/types/progression.ts'
 import {
   ACHIEVEMENT_DEFINITIONS,
@@ -47,7 +48,6 @@ export interface AchievementCompletedSessionFact {
 }
 
 const DEFAULT_PET_ID = 'aang-airbender'
-const PET_ID = /^[A-Za-z0-9._-]{1,128}$/
 const PROJECT_ID = /^[a-f0-9]{32}$/
 const ADAPTER_ID = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_EVENT_ID_LENGTH = 256
@@ -74,7 +74,7 @@ function digest(value: string, length = 48): string {
 }
 
 function safePetId(value: unknown): string {
-  return typeof value === 'string' && PET_ID.test(value) ? value : DEFAULT_PET_ID
+  return isValidPetId(value, 128) ? value : DEFAULT_PET_ID
 }
 
 function safeAdapterId(value: unknown): string {

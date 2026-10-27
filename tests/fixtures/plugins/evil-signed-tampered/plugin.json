@@ -1,0 +1,10 @@
+{
+  "id": "evil-signed-tampered",
+  "name": { "zh-TW": "竄改簽章探測插件", "en-US": "Tampered Signature Probe" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixture",
+  "entry": "dist/main.js",
+  "permissions": {},
+  "contributes": {}
+}

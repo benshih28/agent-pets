@@ -7,6 +7,8 @@
 - Current baseline when this reference was written: `0.5.7`. Always re-read `package.json` because this value will change.
 - Renderer entry: `src/main.ts` and `src/App.vue`.
 - Electron composition root: `electron/main.ts`.
+- Main-process runtime: `electron/main/runtime.ts` owns window, plugin-host, desktop, event, and store lifecycle helpers; `electron/main/state.ts` owns the shared main-process service/window state. Keep `main.ts` as the composition root that creates services/windows, wires events, and invokes IPC registrars.
+- IPC composition: `electron/ipc/channels.ts` is the channel source of truth; `electron/ipc/trusted.ts` provides the shared sender guard wrapper. Focused registrars currently live in `electron/ipc/{adapters,desktop,history,integrations,permission,pet-assets,pet-motion,pets,plugin-catalog,plugin-feed,plugin-install,plugin-panel-ui,plugin-preferences,plugin-settings,progression,project-mcp,project-pets,quota,window-controls}.ts`; each receives its stores, windows, dialogs, and side effects through a dependency object.
 - Preload boundary: `electron/preload.ts`; matching global types: `src/env.d.ts`.
 - Event ingress: `electron/event-server.ts`, loopback port `17373`, token header `x-agent-pets-token`.
 - Generic event allowlist projection: `electron/event-normalizer.ts`; capability contract: `src/types/capabilities.ts`.
@@ -25,10 +27,15 @@
 - Window mode geometry: `electron/pet-window-mode.ts`; shared mode snapshot types: `src/types/pet-window.ts`.
 - Agent Adapter SDK: `electron/agent-adapter.ts` owns the runtime registry and canonical ingress selection; `electron/agent-adapter-operations.ts` wraps existing platform installers/detection; shared capability/status contracts live in `src/types/agent-adapter.ts`.
 - Canonical current event types: `src/types/agent.ts`.
+- Plugin Host: `electron/plugin-manifest.ts` validates the public contract; `electron/plugin-registry.ts` safely plans and installs bounded archives; `electron/plugin-broker.ts` validates Worker RPC; focused controllers in `electron/plugin-{feed,command,badge,tray,skin,preferences,net,secrets,settings,schedule,panel-view}.ts` own individual capabilities. `electron/plugin-protocol.ts` and plugin preloads constrain resource access and renderer APIs; public contracts and examples live in `docs/plugins/`.
 
 ## Existing security controls to preserve
 
 - Chromium sandbox and context isolation enabled; Node integration disabled.
+- Plugins are untrusted. Worker Web APIs are reduced, RPC identity is host-owned, manifests and archive paths are validated, plugin storage is scoped, and permission/contribution changes require user review.
+- Plugin network requests require declared or user-approved HTTPS hosts; DNS/IP and each redirect are rechecked. Plugin requests do not send or retain cookies.
+- Custom panel pages use a separate sandboxed WebContentsView and non-persistent partition, with same-plugin resources only and no secrets or host-request capability in the page bridge.
+- Plugin secrets use Electron safeStorage; secret settings are never echoed in snapshots, and no secret value is written to logs or diagnostics.
 - Custom secure `agent-pets://` protocol used instead of privileged renderer file access.
 - External navigation, popups, permission requests, and untrusted IPC senders are rejected.
 - Event server limits body size, text length, rate, sources, and states, and requires a local token.
@@ -48,12 +55,34 @@
 - History/HUD is main-owned in `electron/history.ts` with a separate SQLite schema for sanitized events, sessions, daily aggregates, and bounded quota snapshots. The renderer reads only a seven-day aggregate projection; export and clear are panel-only IPC operations and never reset progression.
 - Local token history is main-owned in `electron/local-usage.ts`: it read-only scans bounded Codex/Claude JSONL session-log roots, parses allowlisted usage records, deduplicates streaming entries, and writes only hashed identities plus token totals into History. `HistoryStore` keeps a persisted cutoff so Clear History does not immediately repopulate older external logs.
 - Main process persists window position/size through helpers in `electron/setup.ts`.
-- Mini／Edge window mode is main-owned in `electron/main.ts` with pure geometry rules in `electron/pet-window-mode.ts`; the renderer receives a sanitized mode snapshot and never chooses native bounds directly. Edge Peek is a persisted, off-by-default desktop preference; when enabled it uses a 650ms dwell and a 42px-thick × 96px-long opaque handle only after the full-size window is attached to a work-area edge, restores the exact pre-edge native bounds on hover/click, and pending permission requests force Normal mode.
+- Mini／Edge window mode is main-owned in `electron/main/runtime.ts` with pure geometry rules in `electron/pet-window-mode.ts`; the renderer receives a sanitized mode snapshot and never chooses native bounds directly. Edge Peek is a persisted, off-by-default desktop preference; when enabled it uses a 650ms dwell and a 42px-thick × 96px-long opaque handle only after the full-size window is attached to a work-area edge, restores the exact pre-edge native bounds on hover/click, and pending permission requests force Normal mode.
 - Status events feed the Pinia store through the typed preload listener.
 - Click-through combines renderer hit testing and Electron mouse passthrough.
 - Three Agent families are supported through hooks: Codex, Claude Code, and OpenCode.
 - OpenCode is currently the only respond-capable permission Adapter. Generic `/v1/events` remains observe-only; Codex and Claude show external-only waiting state until a verified response channel exists.
 - All `/v1/events` payloads pass through the Agent Adapter registry before Event Core normalization. Built-in source families receive `adapterId` metadata; an explicit `adapterId: generic-http` remains observe-only and cannot elevate permission capabilities. Setup Wizard health/capability cards are runtime-driven rather than a hardcoded agent list.
+
+## Extension guides
+
+### Add an IPC channel
+
+1. Add the unique key and channel string in `electron/ipc/channels.ts`.
+2. Add the handler to its domain registrar in `electron/ipc/<domain>.ts`, inject its dependencies, and use `handleTrusted` for a panel or pet window sender guard.
+3. Expose the operation in `electron/preload.ts` and mirror its signature in `src/env.d.ts`.
+4. Add a direct registrar test under `tests/`; the generated `docs/security/ipc-inventory.md` check verifies registrations, preload APIs, sender guards, and type parity.
+
+### Add a plugin contribution
+
+1. Add the manifest field and validation in `electron/plugin-manifest.ts`.
+2. Implement bounded behavior in the corresponding `electron/plugin-*.ts` controller, then wire the controller into the plugin host runtime.
+3. Add a focused controller test and update the matching bilingual plugin API page if the public contract changes.
+4. Keep renderer access behind the existing preload API and add the IPC contract test if a new channel is required.
+
+### Add an Agent adapter
+
+1. Implement the adapter contract in `electron/agent-adapter.ts` and provide any platform install or diagnostic operation through `electron/agent-adapter-operations.ts`.
+2. Register the adapter in the central adapter registry; the Setup Wizard and ingress resolver consume that registry.
+3. Add adapter contract and capability tests in `tests/agent-adapter.test.mts` and `tests/agent-adapter-operations.test.mts`.
 
 ## Working rules
 

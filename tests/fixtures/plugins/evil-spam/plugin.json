@@ -1,0 +1,11 @@
+{
+  "id": "evil-spam",
+  "name": { "zh-TW": "通知洪水測試插件", "en-US": "Evil Spam Fixture" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixtures",
+  "entry": "dist/main.js",
+  "icon": "assets/icon.png",
+  "permissions": {},
+  "contributes": { "feed": true }
+}

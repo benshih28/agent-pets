@@ -123,6 +123,22 @@
   background: var(--border-strong);
 }
 
+.edge-peek-unread-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border: 1px solid var(--surface-panel);
+  border-radius: var(--radius-pill);
+  background: var(--status-error);
+  color: white;
+  font: 700 9px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 .desktop-pet.mode-edge.edge-left .edge-peek-handle {
   border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
 }
@@ -274,6 +290,96 @@
     var(--organic-status-shadow),
     var(--organic-status-highlight),
     inset 0 -3px 7px color-mix(in srgb, var(--quota-color) 9%, transparent);
+}
+
+.plugin-status-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 132px;
+}
+
+.plugin-badge-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 42px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  border-radius: 999px;
+}
+
+.plugin-badge-anchor:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.plugin-badge-pill {
+  display: inline-block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid var(--organic-status-border);
+  border-radius: 999px;
+  background: var(--organic-status-surface-fallback);
+  color: var(--organic-status-text);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-badge-pill.tone-info {
+  color: var(--state-info);
+}
+
+.plugin-badge-pill.tone-warning {
+  border-color: color-mix(in srgb, var(--organic-quota-warning) 45%, var(--organic-status-border));
+  color: var(--organic-quota-warning);
+}
+
+.plugin-badge-overflow {
+  flex: 0 0 auto;
+  max-width: 36px;
+  color: var(--organic-status-tooltip-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.plugin-badge-tooltip {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  z-index: 40;
+  width: max-content;
+  max-width: 200px;
+  padding: 5px 7px;
+  border: 1px solid var(--organic-status-tooltip-border);
+  border-radius: var(--organic-status-tooltip-radius);
+  background: var(--organic-status-surface-fallback);
+  box-shadow: var(--organic-status-tooltip-shadow);
+  color: var(--organic-status-tooltip-text);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.plugin-badge-anchor:hover .plugin-badge-tooltip,
+.plugin-badge-anchor:focus-visible .plugin-badge-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 .quota-readout {
@@ -848,6 +954,121 @@
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.pet-toast.plugin-feed-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: max-content;
+  max-width: min(300px, calc(var(--pet-w, 250px) - 10px));
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.1), transparent 54%),
+    rgba(30, 36, 39, 0.95);
+  border-color: rgba(112, 189, 158, 0.56);
+  color: #e4fff3;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.plugin-feed-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.plugin-feed-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-feed-source {
+  overflow: hidden;
+  color: rgba(228, 255, 243, 0.64);
+  font-size: max(8px, calc(9px * var(--pet-scale, 1)));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-feed-message {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.32;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.plugin-feed-message strong {
+  font-size: max(10px, calc(11px * var(--pet-scale, 1)));
+  font-weight: 700;
+}
+
+.plugin-feed-message span {
+  color: rgba(228, 255, 243, 0.84);
+  font-size: max(9px, calc(10px * var(--pet-scale, 1)));
+  font-weight: 500;
+}
+
+.plugin-feed-link {
+  cursor: pointer;
+}
+
+.plugin-feed-link:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.plugin-feed-open-panel {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border: 1px solid rgba(228, 255, 243, 0.28);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: max(8px, calc(9px * var(--pet-scale, 1)));
+}
+
+.plugin-feed-open-panel:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.plugin-feed-close {
+  display: grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: -2px -4px 0 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(228, 255, 243, 0.72);
+  cursor: pointer;
+  font: 600 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.plugin-feed-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
 }
 
 .presentation-say-icon {

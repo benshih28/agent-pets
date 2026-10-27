@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -11,8 +11,6 @@ const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
 const CODEX_REFRESH_URL = 'https://auth.openai.com/oauth/token'
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
-const CLAUDE_REFRESH_URL = 'https://platform.claude.com/v1/oauth/token'
-const CLAUDE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const REQUEST_TIMEOUT_MS = 15_000
 const MAX_RESPONSE_BYTES = 1024 * 1024
@@ -24,11 +22,33 @@ const CACHE_TTL_MS = 90_000
 const FORCE_REFRESH_COOLDOWN_MS = 10_000
 const MAX_WINDOWS_PER_PROVIDER = 32
 const MAX_DISPLAY_TEXT_LENGTH = 96
+// Claude Code answers /usage itself without asking a model. Running it lets
+// the CLI refresh (and rotate) its own login, which an expired Keychain token
+// otherwise blocks; Agent Pets never refreshes or rewrites that login.
+const CLAUDE_USAGE_ARGS = [
+  '-p', '/usage', '--output-format', 'json',
+  '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--no-session-persistence',
+]
+const CLAUDE_CLI_TIMEOUT_MS = 30_000
+// Variables that would point the CLI at another endpoint or make it believe it
+// runs inside a parent Claude Code session.
+const CLAUDE_CLI_BLOCKED_ENV = new Set([
+  'ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BETAS',
+  'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CODE_EXTRA_BODY',
+])
+const CLAUDE_USAGE_LINE = /^Current (session|week(?: \(([^)]+)\))?):\s*([0-9.]+)% used(?:\s*·\s*resets (.+))?$/
+const CLAUDE_SIGN_IN_LAPSED = /\b(401|403)\b|not (logged|signed) in|signed out|log ?in again|re-?authenticate|sign-in (has )?expired|(oauth|session|token) (has )?expired|could not be refreshed|unauthorized|forbidden|authentication (failed|required)|invalid (access )?token|invalid api key|run \/login/i
+// Without a subscription sign-in, /usage prints only the session's cost summary.
+const CLAUDE_COST_SUMMARY = /^Total cost:/m
+const CLAUDE_NOT_SIGNED_IN = 'Claude Code CLI is not signed in to a subscription. Run `claude` in a terminal and sign in with /login.'
+const CLAUDE_RESET_TIME = /^(?:([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2})(?:,\s*(\d{4}))?(?:,\s*|\s+at\s+))?(\d{1,2})(?::(\d{2}))?\s*([ap]m)$/i
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+const HOUR_MS = 60 * 60_000
+const DAY_MS = 24 * HOUR_MS
 const ALLOWED_ENDPOINTS = new Set([
   CODEX_USAGE_URL,
   CODEX_REFRESH_URL,
   CLAUDE_USAGE_URL,
-  CLAUDE_REFRESH_URL,
 ])
 
 export interface QuotaWindow {
@@ -55,11 +75,8 @@ export interface QuotaUsageResult {
 interface ClaudeCredential {
   root: Record<string, unknown>
   accessToken: string
-  refreshToken?: string
   expiresAt?: number
   source: 'environment' | 'keychain' | 'file'
-  keychainAccount?: string
-  filePath?: string
 }
 
 let cachedResult: QuotaUsageResult | null = null
@@ -69,6 +86,8 @@ let tempSequence = 0
 let lastFetchStartedAt = 0
 
 class QuotaDisplayError extends Error {}
+// The CLI could not answer; the stored-token request is tried instead.
+class ClaudeCliUnavailable extends Error {}
 
 function asObject(value: unknown): Record<string, any> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -377,37 +396,9 @@ async function readClaudeKeychain(account?: string): Promise<string | undefined>
   }
 }
 
-function writeClaudeKeychain(account: string, data: string): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    // `security -w <secret>` exposes the credential through process argv.
-    // Supplying -w last makes security read it from stdin instead.
-    const child = spawn('/usr/bin/security', [
-      'add-generic-password', '-U', '-s', CLAUDE_KEYCHAIN_SERVICE,
-      '-a', account, '-w',
-    ], {
-      stdio: ['pipe', 'ignore', 'ignore'],
-    })
-    const timeout = setTimeout(() => {
-      child.kill()
-      reject(new QuotaDisplayError('Claude Keychain update timed out.'))
-    }, 10_000)
-    child.on('error', () => {
-      clearTimeout(timeout)
-      reject(new QuotaDisplayError('Claude Keychain could not be updated.'))
-    })
-    child.on('close', (code) => {
-      clearTimeout(timeout)
-      if (code === 0) resolvePromise()
-      else reject(new QuotaDisplayError('Claude Keychain could not be updated.'))
-    })
-    child.stdin.end(`${data}\n`)
-  })
-}
-
 function parseClaudeCredential(
   raw: string,
   source: ClaudeCredential['source'],
-  extras: Pick<ClaudeCredential, 'keychainAccount' | 'filePath'> = {},
 ): ClaudeCredential {
   const root = asObject(JSON.parse(raw))
   const oauth = asObject(root?.claudeAiOauth)
@@ -417,10 +408,8 @@ function parseClaudeCredential(
   return {
     root,
     accessToken,
-    refreshToken: nonEmptyString(oauth.refreshToken),
     expiresAt: Number.isFinite(expiresAt) ? expiresAt : undefined,
     source,
-    ...extras,
   }
 }
 
@@ -431,96 +420,16 @@ async function loadClaudeCredential(): Promise<ClaudeCredential> {
   }
 
   if (process.platform === 'darwin') {
-    const account = await findClaudeKeychainAccount()
-    const raw = await readClaudeKeychain(account)
-    if (raw) return parseClaudeCredential(raw, 'keychain', { keychainAccount: account })
+    const raw = await readClaudeKeychain(await findClaudeKeychainAccount())
+    if (raw) return parseClaudeCredential(raw, 'keychain')
   }
 
   const filePath = path.join(os.homedir(), '.claude', '.credentials.json')
   try {
-    return parseClaudeCredential(fs.readFileSync(filePath, 'utf8'), 'file', { filePath })
+    return parseClaudeCredential(fs.readFileSync(filePath, 'utf8'), 'file')
   } catch {
     throw new QuotaDisplayError('No existing Claude Code subscription session was found. Agent Pets never asks for credentials.')
   }
-}
-
-function mergeClaudeRefresh(
-  credential: ClaudeCredential,
-  currentRoot: Record<string, any>,
-  accessToken: string,
-  refreshToken: string | undefined,
-  expiresAt: number,
-): Record<string, any> {
-  const expectedOauth = asObject(credential.root.claudeAiOauth)
-  const currentOauth = asObject(currentRoot.claudeAiOauth)
-  if (!expectedOauth || !currentOauth || JSON.stringify(expectedOauth) !== JSON.stringify(currentOauth)) {
-    throw new QuotaDisplayError('Claude login changed during refresh; retrying will use the new login.')
-  }
-  return {
-    ...currentRoot,
-    claudeAiOauth: {
-      ...currentOauth,
-      accessToken,
-      refreshToken: refreshToken || credential.refreshToken,
-      expiresAt,
-    },
-  }
-}
-
-async function persistClaudeCredential(
-  credential: ClaudeCredential,
-  accessToken: string,
-  refreshToken: string | undefined,
-  expiresAt: number,
-): Promise<void> {
-  if (credential.source === 'file' && credential.filePath) {
-    const currentRoot = asObject(JSON.parse(fs.readFileSync(credential.filePath, 'utf8'))) ?? {}
-    atomicWriteJson(
-      credential.filePath,
-      mergeClaudeRefresh(credential, currentRoot, accessToken, refreshToken, expiresAt),
-    )
-    return
-  }
-  if (credential.source === 'keychain' && credential.keychainAccount) {
-    const currentAccount = await findClaudeKeychainAccount()
-    if (currentAccount !== credential.keychainAccount) {
-      throw new QuotaDisplayError('Claude Keychain account changed during refresh.')
-    }
-    const currentRaw = await readClaudeKeychain(currentAccount)
-    if (!currentRaw) throw new QuotaDisplayError('Claude Keychain credentials disappeared during refresh.')
-    const currentRoot = asObject(JSON.parse(currentRaw)) ?? {}
-    const merged = mergeClaudeRefresh(credential, currentRoot, accessToken, refreshToken, expiresAt)
-    await writeClaudeKeychain(currentAccount, JSON.stringify(merged))
-  }
-}
-
-async function refreshClaudeCredential(credential: ClaudeCredential): Promise<ClaudeCredential> {
-  if (!credential.refreshToken || credential.source === 'environment') {
-    throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
-  }
-  const { status, body } = await requestJson(CLAUDE_REFRESH_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: credential.refreshToken,
-      client_id: CLAUDE_CLIENT_ID,
-    }).toString(),
-  })
-  if (status < 200 || status >= 300) {
-    throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
-  }
-  const accessToken = nonEmptyString(body.access_token)
-  if (!accessToken) throw new QuotaDisplayError('Claude refresh response did not contain an access token.')
-  const expiresIn = Number(body.expires_in)
-  const expiresAt = Date.now() + (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1000
-  await persistClaudeCredential(
-    credential,
-    accessToken,
-    nonEmptyString(body.refresh_token),
-    expiresAt,
-  )
-  return loadClaudeCredential()
 }
 
 function mapClaudeWindow(id: string, label: string, raw: unknown): QuotaWindow | null {
@@ -583,43 +492,261 @@ export function parseClaudeUsage(body: Record<string, any>): QuotaWindow[] {
   return windows.slice(0, MAX_WINDOWS_PER_PROVIDER)
 }
 
-async function claudeUserAgent(): Promise<string> {
+function claudeBinaryCandidates(): string[] {
+  const home = os.homedir()
+  const name = process.platform === 'win32' ? 'claude.exe' : 'claude'
+  const directories = [
+    ...(process.env.PATH ?? '').split(path.delimiter),
+    // A GUI launch does not inherit the login shell's PATH, so also look
+    // where the Claude Code installers put the command.
+    path.join(home, '.local', 'bin'),
+    path.join(home, '.claude', 'local'),
+    ...(process.platform === 'win32'
+      ? []
+      : ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.npm-global', 'bin'), path.join(home, '.bun', 'bin')]),
+  ]
+  // Relative PATH entries would resolve against the working directory.
+  return [...new Set(directories.filter((directory) => path.isAbsolute(directory)))]
+    .map((directory) => path.join(directory, name))
+}
+
+function findClaudeBinary(): string | undefined {
+  for (const candidate of claudeBinaryCandidates()) {
+    try {
+      if (!fs.statSync(candidate).isFile()) continue
+      if (process.platform !== 'win32') fs.accessSync(candidate, fs.constants.X_OK)
+      return candidate
+    } catch {}
+  }
+  return undefined
+}
+
+function claudeCliEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!CLAUDE_CLI_BLOCKED_ENV.has(key)) env[key] = value
+  }
+  return { ...env, DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1', DISABLE_AUTOUPDATER: '1' }
+}
+
+function runClaudeCliUsage(binary: string): Promise<string> {
+  // An empty working directory keeps project settings and memory out of the run.
+  const workDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-claude-'))
+  return new Promise<string>((resolvePromise, reject) => {
+    const child = execFile(binary, CLAUDE_USAGE_ARGS, {
+      cwd: workDirectory,
+      env: claudeCliEnv(),
+      timeout: CLAUDE_CLI_TIMEOUT_MS,
+      maxBuffer: MAX_RESPONSE_BYTES,
+      windowsHide: true,
+    }, (error, stdout) => {
+      // A failed run can still print its JSON result with is_error set.
+      if (error && !stdout) reject(new ClaudeCliUnavailable())
+      else resolvePromise(String(stdout))
+    })
+    child.stdin?.end()
+  }).finally(() => {
+    try { fs.rmSync(workDirectory, { recursive: true, force: true }) } catch {}
+  })
+}
+
+function zoneOffsetMillis(utcMillis: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  }).formatToParts(new Date(utcMillis))
+  const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value)
+  const wall = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour') % 24, part('minute'), part('second'))
+  return wall - Math.floor(utcMillis / 1000) * 1000
+}
+
+// The instant a wall-clock time in timeZone names (local time without one).
+function zonedMillis(year: number, month: number, day: number, hour: number, minute: number, timeZone?: string): number {
+  if (!timeZone) return new Date(year, month, day, hour, minute).getTime()
+  const wall = Date.UTC(year, month, day, hour, minute)
+  return wall - zoneOffsetMillis(wall - zoneOffsetMillis(wall, timeZone), timeZone)
+}
+
+function validTimeZone(value: string | undefined): string | undefined {
+  if (!value) return undefined
   try {
-    const { stdout } = await execFileAsync('claude', ['--version'], { timeout: 3_000 })
-    const version = stdout.trim().split(/\s+/)[0]
-    if (version) return `claude-code/${version}`
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
+    return value
+  } catch {
+    return undefined
+  }
+}
+
+// Reads "Oct 23 at 1:39pm (Asia/Taipei)", "Oct 9, 2:59pm (UTC)" or
+// "3pm (Asia/Taipei)". A date without a year, or a time without a date, is
+// the next one that ends a window of spanMs from now.
+export function parseClaudeResetTime(raw: string, now: number, spanMs: number): string | undefined {
+  const zoneMatch = raw.trim().match(/^(.*?)\s*\(([^)]+)\)$/)
+  const timeZone = validTimeZone(zoneMatch?.[2]?.trim())
+  const match = (zoneMatch ? zoneMatch[1] : raw.trim()).match(CLAUDE_RESET_TIME)
+  if (!match) return undefined
+  const [, monthName, dayText, yearText, hourText, minuteText, meridiem] = match
+  const hour = (Number(hourText) % 12) + (meridiem.toLowerCase() === 'pm' ? 12 : 0)
+  const minute = Number(minuteText ?? 0)
+  if (hour > 23 || minute > 59) return undefined
+  const latest = now + spanMs + HOUR_MS
+  const today = new Date(now + (timeZone ? zoneOffsetMillis(now, timeZone) : -new Date(now).getTimezoneOffset() * 60_000))
+  const pick = (candidates: number[], earliest: number) =>
+    candidates.find((value) => value > earliest && value <= latest)
+
+  let resetMillis: number | undefined
+  if (monthName) {
+    const month = MONTHS.indexOf(monthName.toLowerCase())
+    const day = Number(dayText)
+    if (month < 0 || day < 1 || day > 31) return undefined
+    const years = yearText
+      ? [Number(yearText)]
+      : [today.getUTCFullYear() - 1, today.getUTCFullYear(), today.getUTCFullYear() + 1]
+    const candidates = years.map((year) => zonedMillis(year, month, day, hour, minute, timeZone))
+    resetMillis = yearText ? candidates[0] : pick(candidates, now - DAY_MS)
+  } else {
+    resetMillis = pick([0, 1, 2].map((offset) => zonedMillis(
+      today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + offset, hour, minute, timeZone,
+    )), now)
+  }
+  return resetMillis !== undefined && Number.isFinite(resetMillis)
+    ? new Date(resetMillis).toISOString()
+    : undefined
+}
+
+function claudeScopeWindow(scope: string): Pick<QuotaWindow, 'id' | 'label'> {
+  const displayName = scope.slice(0, MAX_DISPLAY_TEXT_LENGTH)
+  const known = ['sonnet', 'opus', 'designs', 'daily routines'].includes(displayName.toLowerCase())
+  return {
+    id: known
+      ? displayName.toLowerCase().replace(/\s+/g, '-')
+      : `week-scope-${displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
+    label: known ? displayName : `${displayName} only`,
+  }
+}
+
+// Reads the windows Claude Code's /usage prints. An empty list means the CLI
+// gave no reading; a lapsed sign-in is reported instead of falling back.
+export function parseClaudeCliUsage(text: string, now = Date.now()): QuotaWindow[] {
+  const lines = text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').split(/\r?\n/).map((line) => line.trim())
+  const windows: QuotaWindow[] = []
+  for (const line of lines) {
+    if (windows.length >= MAX_WINDOWS_PER_PROVIDER) break
+    const match = line.match(CLAUDE_USAGE_LINE)
+    const used = finitePercent(match?.[3])
+    if (!match || used === null) continue
+    const scope = nonEmptyString(match[2])
+    const isSession = match[1] === 'session'
+    const identity = isSession
+      ? { id: 'session', label: 'Session' }
+      : !scope || /^all models$/i.test(scope)
+        ? { id: 'weekly', label: 'Weekly' }
+        : claudeScopeWindow(scope)
+    if (windows.some((window) => window.label === identity.label)) continue
+    const resetsAt = match[4]
+      ? parseClaudeResetTime(match[4], now, isSession ? 5 * HOUR_MS : 7 * DAY_MS)
+      : undefined
+    windows.push({
+      ...identity,
+      usedPercent: used,
+      remainingPercent: 100 - used,
+      ...(resetsAt ? { resetsAt } : {}),
+    })
+  }
+  if (windows.length === 0 && lines.some((line) => CLAUDE_SIGN_IN_LAPSED.test(line))) {
+    throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
+  }
+  if (windows.length === 0 && CLAUDE_COST_SUMMARY.test(lines.join('\n'))) {
+    throw new QuotaDisplayError(CLAUDE_NOT_SIGNED_IN)
+  }
+  return windows
+}
+
+async function readClaudeCliUsage(binary: string): Promise<QuotaWindow[]> {
+  const stdout = await runClaudeCliUsage(binary)
+  let result: Record<string, any> | null = null
+  try {
+    result = asObject(JSON.parse(stdout))
   } catch {}
+  const text = nonEmptyString(result?.result) ?? stdout
+  if (result?.is_error === true) {
+    if (CLAUDE_SIGN_IN_LAPSED.test(text)) {
+      throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
+    }
+    throw new ClaudeCliUnavailable()
+  }
+  return parseClaudeCliUsage(text)
+}
+
+async function claudePlan(): Promise<string | undefined> {
+  try {
+    const oauth = asObject((await loadClaudeCredential()).root.claudeAiOauth)
+    return cleanPlan(oauth?.subscriptionType ?? oauth?.rateLimitTier)
+  } catch {
+    return undefined
+  }
+}
+
+async function claudeUserAgent(binary: string | undefined): Promise<string> {
+  if (binary) {
+    try {
+      const { stdout } = await execFileAsync(binary, ['--version'], { timeout: 3_000, windowsHide: true })
+      const version = stdout.trim().split(/\s+/)[0]
+      if (version) return `claude-code/${version}`
+    } catch {}
+  }
   return 'claude-code/2.1.0'
+}
+
+async function fetchClaudeApiQuota(binary: string | undefined): Promise<QuotaProvider> {
+  const credential = await loadClaudeCredential()
+  // Only Claude Code refreshes its own login: a refresh here would rotate the
+  // refresh token out from under the CLI.
+  if (credential.expiresAt && credential.expiresAt <= Date.now()) {
+    throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
+  }
+  const { status, body } = await requestJson(CLAUDE_USAGE_URL, {
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      authorization: `Bearer ${credential.accessToken}`,
+      'anthropic-beta': 'oauth-2025-04-20',
+      'user-agent': await claudeUserAgent(binary),
+    },
+  })
+  if (status === 401) throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
+  if (status === 403) throw new QuotaDisplayError('The existing Claude Code session cannot access quota. Re-authenticate in Claude Code.')
+  if (status === 429) throw new QuotaDisplayError('Claude quota is rate limited. Wait a minute and retry.')
+  if (status < 200 || status >= 300) throw new QuotaDisplayError(`Claude usage request failed (${status}).`)
+  const windows = parseClaudeUsage(body)
+  if (windows.length === 0) throw new QuotaDisplayError('Claude returned no quota windows.')
+  const oauth = asObject(credential.root.claudeAiOauth)
+  return {
+    id: 'claude',
+    name: 'Claude Code',
+    plan: cleanPlan(oauth?.subscriptionType ?? oauth?.rateLimitTier),
+    windows,
+  }
 }
 
 async function fetchClaudeQuota(): Promise<QuotaProvider> {
   try {
-    let credential = await loadClaudeCredential()
-    if (credential.expiresAt && credential.expiresAt <= Date.now()) {
-      credential = await refreshClaudeCredential(credential)
+    const binary = findClaudeBinary()
+    if (binary) {
+      try {
+        const windows = await readClaudeCliUsage(binary)
+        if (windows.length > 0) return { id: 'claude', name: 'Claude Code', plan: await claudePlan(), windows }
+      } catch (error) {
+        if (!(error instanceof ClaudeCliUnavailable)) throw error
+      }
     }
-    const { status, body } = await requestJson(CLAUDE_USAGE_URL, {
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        authorization: `Bearer ${credential.accessToken}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-        'user-agent': await claudeUserAgent(),
-      },
-    })
-    if (status === 401) throw new QuotaDisplayError('The existing Claude Code session expired. Re-authenticate in Claude Code.')
-    if (status === 403) throw new QuotaDisplayError('The existing Claude Code session cannot access quota. Re-authenticate in Claude Code.')
-    if (status === 429) throw new QuotaDisplayError('Claude quota is rate limited. Wait a minute and retry.')
-    if (status < 200 || status >= 300) throw new QuotaDisplayError(`Claude usage request failed (${status}).`)
-    const windows = parseClaudeUsage(body)
-    if (windows.length === 0) throw new QuotaDisplayError('Claude returned no quota windows.')
-    const oauth = asObject(credential.root.claudeAiOauth)
-    return {
-      id: 'claude',
-      name: 'Claude Code',
-      plan: cleanPlan(oauth?.subscriptionType ?? oauth?.rateLimitTier),
-      windows,
-    }
+    return await fetchClaudeApiQuota(binary)
   } catch (error) {
     return { id: 'claude', name: 'Claude Code', windows: [], error: safeError(error, 'Could not load Claude usage.') }
   }

@@ -43,7 +43,7 @@ Download and run `Agent Pets.exe` from the [Releases](https://github.com/Ponpon5
 
 ### Install (macOS)
 
-Download `Agent Pets.dmg`, open it, and drag the app to your Applications folder.
+Download `AgentPets-<version>-arm64.dmg` (Apple Silicon) or `AgentPets-<version>-x64.dmg` (Intel) from the [Releases](https://github.com/Ponpon55837/agent-pets/releases) page, open it, and drag the app to your Applications folder.
 
 ### First Run
 
@@ -64,7 +64,7 @@ Download `Agent Pets.dmg`, open it, and drag the app to your Applications folder
 | **Drag** the pet | Move it to a new position (remembered across restarts) |
 | **Right-click** | Hide the pet when enabled in Settings (permission controls remain interactive) |
 
-The system Tray menu can show or hide the pets, open the panel or Settings, toggle Mini / Edge Peek mode, Do Not Disturb, sound and notifications, configure launch at startup in packaged builds, mark pending attention on the Tray icon, and quit the app. Closing or hiding the pet window keeps hooks and background status running until **Quit** is selected.
+The system Tray menu can show or hide the pets, open the panel or Settings, toggle Mini / Edge Peek mode, Do Not Disturb, sound and notifications, configure launch at startup in packaged builds, run commands from enabled plugins under **Plugins**, mark pending attention on the Tray icon, and quit the app. Closing or hiding the pet window keeps hooks and background status running until **Quit** is selected.
 
 Below the pet, a floating status bar shows up to **3 lines**, one per active tool family (Codex / Claude / OpenCode). CLI and Desktop variants of the same tool are grouped onto a single line (e.g. `Claude (CLI+Desktop) · Thinking`). When nothing is active, a single line shows the pet's overall idle/offline state.
 
@@ -239,6 +239,12 @@ For a configured adapter, click **Test** to send a short-lived event through the
 
 > Note: there is no separate "Codex Desktop" hook install — only Codex CLI hooks are wired up today.
 
+## Plugins
+
+Plugins can add pet feed notifications, reactions, panel and Tray commands, status badges, optional sandboxed panel pages, selectable pet skins, and clearly labeled observe-only status rows. Install a `.agentpet-plugin` package from **Settings → Plugins**, or open the opt-in online catalog to review signed packages and check for updates; issue reports open a prefilled link containing only the plugin ID and version. Developers can enable Developer mode to load a local folder. Review the requested permissions and contributions before installing. Plugin pages and background code are treated as untrusted: they have no Node.js, filesystem, or shell access, and network requests are limited to approved HTTPS hosts. Plugin network requests do not send or store cookies. Secrets are encrypted by the app's protected storage and never returned in settings snapshots.
+
+See the [plugin development index](docs/plugins/README.md) for the [10-minute guide](docs/plugins/getting-started.md), [security model](docs/plugins/security.md), [API reference](docs/plugins/api-reference.md), and [examples](docs/plugins/examples.md).
+
 ---
 
 ## Custom Pets
@@ -392,6 +398,10 @@ pnpm build
 ```
 
 The output will be in `release/`.
+
+### Release
+
+Releases are automated by `.github/workflows/release.yml`. When a commit that changes the `version` in `package.json` lands on `main` and no `v<version>` tag exists yet, GitHub Actions runs type-check and unit tests, builds the macOS (arm64 + x64 `.dmg`) and Windows (portable `.exe`) packages, then creates the `v<version>` tag and a GitHub Release with generated notes and both packages attached. No manual tagging or local packaging is needed. The workflow can also be re-run from the Actions tab (**Run workflow**); it skips versions that are already tagged. Builds are currently unsigned.
 
 ### Unit Tests
 

@@ -1,0 +1,23 @@
+{
+  "id": "github-pr-watch",
+  "name": { "zh-TW": "GitHub PR Watch", "en-US": "GitHub PR Watch" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets example",
+  "entry": "dist/main.js",
+  "permissions": {
+    "network": { "hosts": ["api.github.com"], "userGranted": true },
+    "secrets": ["githubToken"],
+    "schedule": { "minIntervalSec": 300 }
+  },
+  "contributes": {
+    "feed": true,
+    "settings": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string", "title": { "zh-TW": "儲存庫", "en-US": "Repository" }, "default": "openai/openai" },
+        "githubToken": { "type": "string", "title": { "zh-TW": "GitHub Token", "en-US": "GitHub token" }, "format": "secret" }
+      }
+    }
+  }
+}

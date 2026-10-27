@@ -1,0 +1,15 @@
+{
+  "id": "event-source-status",
+  "name": { "zh-TW": "工作狀態範例", "en-US": "Work Status Example" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Example",
+  "entry": "dist/main.js",
+  "permissions": {},
+  "contributes": {
+    "eventSource": {
+      "family": "example-work",
+      "displayName": { "zh-TW": "範例工作", "en-US": "Example work" }
+    }
+  }
+}

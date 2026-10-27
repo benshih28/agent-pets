@@ -1,0 +1,18 @@
+# Contribution points
+
+Plugins can contribute notifications and reactions, expose settings and sanitized Agent status, or add an isolated custom panel page.
+
+| Contribution | What users see | Priority and user actions |
+|---|---|---|
+| `feed` | A pet bubble with plugin source, title, body, optional icon and link; the item is also retained in the plugin notification center. | Bubble order: permission request/notice → presentation say → Agent toast → normal plugin feed → activity → low plugin feed. `normal` is the default; `low` appears after activity. Users can close, open an allowed link, mark read, or clear items. |
+| `reaction` | The pet reacts with `happy`, `curious`, `thinking`, `surprised`, or `encouraging`. | Uses the normal Agent/plugin interaction queue and is rejected during DND. Users can disable the plugin or global switch. |
+| `settings` | A manifest-schema form in the plugin panel. Secret fields are password inputs and their values are never echoed back. | The user saves the form. Background code can read settings and subscribe to changes, but cannot write them through the Host API. |
+| `agentStatus` | No new bubble; it lets the plugin read current pet state and subscribe to changes. | Rapid changes are coalesced for one second per pet. The only fields are `petId`, `name`, `agentFamily`, `previousState`, `visibleState`, `dnd`, and `at`. |
+| `panelView` | An HTML page in the settings panel, with a host-drawn plugin name, icon, “Plugin content” marker, and close button outside the page. | The page uses its own sandboxed `WebContentsView`. It can exchange bounded JSON messages with the same plugin's Worker; it cannot cover the host chrome or access the app renderer. See [Panel views](panel-view.md). |
+| `commands` | User-operated buttons in the plugin panel's command list. | The user can invoke only commands declared by that plugin. The plugin receives the command id through `commands.onInvoke`; it cannot invoke commands itself or target another plugin. |
+| `tray` | A plugin submenu after the built-in Tray entries and before Quit, with one submenu per eligible plugin. | Only enabled plugins and declared commands appear. The Tray contains at most 30 plugin command items; labels are plain text and truncated at 32 characters. Selecting an item invokes the same command callback as the panel. |
+| `badge` | A small status capsule beside the plugin's target pet status line; hover/focus reveals the plugin name and text. | A visible pet shows at most two plugin badges; additional badges combine into `+N`. Badges are hidden for Mini, Edge, or hidden pets, and are cleared when their plugin is disabled, removed, or crashes. |
+| `skins` | A selectable pet skin labeled “From plugin: <plugin name>”. | The user can select it, but cannot rename or delete it individually. Disabling/removing its plugin returns the pet to the default skin and keeps progression data. A skins-only plugin has no Worker entry. |
+| `eventSource` | An observe-only status row marked `From plugin: <plugin name>` in a separate plugin-status list. | The plugin submits only a session id and one allowlisted state. It cannot replace or join built-in Agent rows, trigger Permission, or create XP, achievements, History, quota, or notifications. Status is held in memory and cleared on disable, remove, crash, reload, or timeout. |
+
+Users can disable one plugin or all plugins, mute a plugin, adjust its notification rate, and choose a target pet. DND, hidden pets, and rate/queue limits route feed items to the notification center instead of a bubble. Install-time consent lists the requested command, Tray, badge, and skin contributions in plain language; adding contributions on update requires renewed consent.

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="agent-pets://plugin/_shared/tokens.css">
+    <link rel="stylesheet" href="./panel.css">
+    <title>Evil Panel Fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>Evil panel test</h1>
+      <p id="probe-status">Attack probes have not run.</p>
+      <section id="fake-permission-dialog" role="dialog" aria-modal="true" aria-labelledby="fake-title">
+        <h2 id="fake-title">Agent Pets permission check</h2>
+        <p>This plugin wants to connect to a private service.</p>
+        <button type="button">Allow</button>
+        <button type="button">Cancel</button>
+      </section>
+      <iframe id="external-frame" title="blocked external frame" src="https://example.com/" referrerpolicy="no-referrer"></iframe>
+    </main>
+    <script type="module" src="./panel.js"></script>
+  </body>
+</html>

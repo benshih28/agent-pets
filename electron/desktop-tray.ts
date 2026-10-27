@@ -2,7 +2,8 @@ import { Menu, nativeImage, Tray, type NativeImage } from 'electron'
 import type { DesktopPreferences, DesktopPreferencesPatch } from '../src/types/desktop'
 import type { PetWindowMode } from '../src/types/pet-window'
 import { createAttentionBitmap } from './tray-icon'
-import { t } from '../src/i18n'
+import { buildPluginTrayMenu, type PluginTrayCommandItem } from './plugin-tray'
+import { locale, t } from '../src/i18n'
 
 interface DesktopTrayActions {
   getPreferences: () => DesktopPreferences
@@ -13,6 +14,9 @@ interface DesktopTrayActions {
   openPanel: () => void
   openSettings: () => void
   getPetMode: () => PetWindowMode
+  getPluginCommands: () => PluginTrayCommandItem[]
+  invokePluginCommand: (pluginId: string, commandId: string) => void
+  onPluginCommandsOmitted?: (pluginIds: string[]) => void
   toggleMiniMode: () => void
   quit: () => void
 }
@@ -69,7 +73,7 @@ export class DesktopTrayController {
     if (this.attentionCount > 0) tooltipParts.push(t('pendingCount', { count: this.attentionCount }))
     this.tray.setToolTip(tooltipParts.join(' · '))
 
-    this.tray.setContextMenu(Menu.buildFromTemplate([
+    const template: Electron.MenuItemConstructorOptions[] = [
       {
         label: visible ? t('hidePets') : t('showPets'),
         click: () => visible ? this.actions.hidePet() : this.actions.showPet(),
@@ -131,7 +135,24 @@ export class DesktopTrayController {
       { label: t('checkUpdates'), enabled: false },
       { type: 'separator' },
       { label: t('quit'), click: () => this.actions.quit() },
-    ]))
+    ]
+    const pluginMenu = buildPluginTrayMenu(
+      this.actions.getPluginCommands(),
+      locale.value,
+      t('pluginTray'),
+      (pluginId, commandId) => this.actions.invokePluginCommand(pluginId, commandId),
+    )
+    this.actions.onPluginCommandsOmitted?.(pluginMenu.omittedPluginIds)
+    if (pluginMenu.menu) {
+      const quitSeparatorIndex = template.findIndex((item, index) =>
+        item.type === 'separator' && template[index + 1]?.label === t('quit'))
+      if (quitSeparatorIndex >= 0) template.splice(quitSeparatorIndex, 0, pluginMenu.menu)
+    }
+    const e2e = (globalThis as typeof globalThis & {
+      __agentPetsE2E?: { trayMenuTemplate?: Electron.MenuItemConstructorOptions[] }
+    }).__agentPetsE2E
+    if (e2e) e2e.trayMenuTemplate = template
+    this.tray.setContextMenu(Menu.buildFromTemplate(template))
   }
 
   setAttentionCount(count: number): void {

@@ -1,0 +1,18 @@
+{
+  "id": "ok-commands",
+  "name": { "zh-TW": "命令驗證插件", "en-US": "Command Fixture" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixture",
+  "entry": "dist/main.js",
+  "permissions": {},
+  "contributes": {
+    "feed": true,
+    "commands": [
+      { "id": "start", "title": { "zh-TW": "開始測試", "en-US": "Start test" } },
+      { "id": "stop", "title": { "zh-TW": "停止測試", "en-US": "Stop test" } }
+    ],
+    "badge": true,
+    "tray": { "commands": ["start", "stop"] }
+  }
+}

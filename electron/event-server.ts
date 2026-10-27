@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
 import { timingSafeEqual } from 'node:crypto'
 import type { AgentStatusEvent } from '../src/types/agent'
+import { createOrderedBatchCoalescer } from './ipc/broadcast-coalescer.ts'
 import { normalizeAgentStatusEvent, type EventNormalizationResult } from './event-normalizer'
 export type { AgentStatusEvent } from '../src/types/agent'
 
@@ -26,6 +27,18 @@ export function createEventServer(
 ) {
   let rateWindowStartedAt = Date.now()
   let eventsInWindow = 0
+  const enqueueAgentEvent = createOrderedBatchCoalescer<{ window: BrowserWindow; event: AgentStatusEvent }>(batch => {
+    const eventsByWindow = new Map<BrowserWindow, AgentStatusEvent[]>()
+    for (const { window, event } of batch) {
+      const events = eventsByWindow.get(window) ?? []
+      events.push(event)
+      eventsByWindow.set(window, events)
+    }
+    for (const [window, events] of eventsByWindow) {
+      if (window.isDestroyed()) continue
+      try { window.webContents.send('agent-status-event', events) } catch {}
+    }
+  })
 
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     if (request.method !== 'POST' || request.url !== '/v1/events') {
@@ -103,9 +116,7 @@ export function createEventServer(
         }
         const { event } = normalized
 
-        for (const win of getWindows()) {
-          win.webContents.send('agent-status-event', event)
-        }
+        for (const win of getWindows()) enqueueAgentEvent({ window: win, event })
         onEvent?.(event)
 
         response.writeHead(204)

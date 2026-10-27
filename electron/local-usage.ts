@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
   lstatSync,
-  readFileSync,
+  openSync,
+  readSync,
   readdirSync,
   realpathSync,
   type Dirent,
@@ -10,7 +14,7 @@ import { extname, join, relative } from 'node:path'
 import type { HistoryStore } from './history.ts'
 import type { HistoryTokenUsageRecord } from '../src/types/history.ts'
 
-type UsageProvider = 'codex' | 'claude-code'
+export type UsageProvider = 'codex' | 'claude-code'
 
 interface UsageRoot {
   provider: UsageProvider
@@ -19,7 +23,7 @@ interface UsageRoot {
   directory: string
 }
 
-interface ParsedUsage extends HistoryTokenUsageRecord {
+export interface ParsedUsage extends HistoryTokenUsageRecord {
   dedupeKey: string
   cwd?: string
 }
@@ -27,6 +31,21 @@ interface ParsedUsage extends HistoryTokenUsageRecord {
 interface TokenCounters {
   input: number
   output: number
+}
+
+export interface IncrementalLocalUsageParserState {
+  readOffset: number
+  nextLineNumber: number
+  previousCodexTotal: TokenCounters | null
+  codexCwd: string | undefined
+  discardingLongLine: boolean
+}
+
+interface LocalUsageFileCacheEntry extends IncrementalLocalUsageParserState {
+  dev: number
+  ino: number
+  size: number
+  mtimeMs: number
 }
 
 export interface ProjectPathResolver {
@@ -257,6 +276,8 @@ export function parseLocalUsageLine(
 
 interface UsageFile {
   path: string
+  dev: number
+  ino: number
   size: number
   mtimeMs: number
 }
@@ -297,7 +318,7 @@ function filesUnder(root: string, maxFiles: number): UsageFile[] {
       if (stat.isDirectory()) {
         visit(candidate, depth + 1)
       } else if (stat.isFile() && extname(entry.name).toLowerCase() === '.jsonl') {
-        files.push({ path: realCandidate, size: stat.size, mtimeMs: stat.mtimeMs })
+        files.push({ path: realCandidate, dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs })
       }
     }
   }
@@ -306,7 +327,7 @@ function filesUnder(root: string, maxFiles: number): UsageFile[] {
   return files
 }
 
-function parseUsageFile(
+export function parseUsageFile(
   provider: UsageProvider,
   fileKey: string,
   content: string,
@@ -354,6 +375,137 @@ function parseUsageFile(
   return [...records.values()]
 }
 
+export function createIncrementalLocalUsageParserState(): IncrementalLocalUsageParserState {
+  return {
+    readOffset: 0,
+    nextLineNumber: 1,
+    previousCodexTotal: null,
+    codexCwd: undefined,
+    discardingLongLine: false,
+  }
+}
+
+function parseUsageLine(
+  provider: UsageProvider,
+  line: string,
+  fileKey: string,
+  lineNumber: number,
+  fallbackAt: number,
+  maxLineBytes: number,
+  state: IncrementalLocalUsageParserState,
+): ParsedUsage | null {
+  if (!line || lineTooLong(line, maxLineBytes)) return null
+  if (provider === 'claude-code') {
+    return parseLocalUsageLine(provider, line, fileKey, lineNumber, fallbackAt)
+  }
+  const wantsCwd = state.codexCwd === undefined && line.includes('"session_meta"')
+  if (!wantsCwd && !line.includes('"token_count"')) return null
+  const record = parseObject(line)
+  if (!record) return null
+  if (wantsCwd) state.codexCwd = codexSessionCwd(record) ?? state.codexCwd
+  const result = parseCodexUsageRecord(
+    record,
+    fileKey,
+    lineNumber,
+    fallbackAt,
+    state.previousCodexTotal,
+    state.codexCwd,
+  )
+  if (!result) return null
+  state.previousCodexTotal = result.cumulative
+  return result.record
+}
+
+/** Parses only complete JSONL lines and returns the byte offset to resume from. */
+export function parseIncrementalLocalUsageChunk(
+  provider: UsageProvider,
+  fileKey: string,
+  bytes: Buffer,
+  chunkStartOffset: number,
+  fallbackAt: number,
+  maxLineBytes: number,
+  state: IncrementalLocalUsageParserState,
+): ParsedUsage[] {
+  const records = new Map<string, ParsedUsage>()
+  let cursor = 0
+  let absoluteOffset = chunkStartOffset
+
+  if (state.discardingLongLine) {
+    const newline = bytes.indexOf(0x0a)
+    if (newline < 0) {
+      state.readOffset = chunkStartOffset + bytes.length
+      return []
+    }
+    cursor = newline + 1
+    absoluteOffset += cursor
+    state.nextLineNumber += 1
+    state.discardingLongLine = false
+  }
+
+  while (cursor < bytes.length) {
+    const newline = bytes.indexOf(0x0a, cursor)
+    if (newline < 0) break
+    let end = newline
+    if (end > cursor && bytes[end - 1] === 0x0d) end -= 1
+    const lineBytes = bytes.subarray(cursor, end)
+    if (lineBytes.length <= maxLineBytes) {
+      const line = lineBytes.toString('utf8')
+      const parsed = parseUsageLine(
+        provider,
+        line,
+        fileKey,
+        state.nextLineNumber,
+        fallbackAt,
+        maxLineBytes,
+        state,
+      )
+      if (parsed) records.set(parsed.dedupeKey, parsed)
+    }
+    state.nextLineNumber += 1
+    cursor = newline + 1
+    absoluteOffset = chunkStartOffset + cursor
+  }
+
+  const remainingBytes = bytes.length - cursor
+  if (remainingBytes > maxLineBytes) {
+    state.discardingLongLine = true
+    state.readOffset = chunkStartOffset + bytes.length
+  } else {
+    state.readOffset = absoluteOffset
+  }
+  return [...records.values()]
+}
+
+function readUsageFileRange(
+  filePath: string,
+  start: number,
+  end: number,
+  expected: Pick<UsageFile, 'dev' | 'ino'>,
+): Buffer | null {
+  let descriptor: number | null = null
+  try {
+    const noFollow = (fsConstants as typeof fsConstants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0
+    descriptor = openSync(filePath, fsConstants.O_RDONLY | noFollow)
+    const opened = fstatSync(descriptor)
+    if (!opened.isFile() || opened.dev !== expected.dev || opened.ino !== expected.ino) return null
+    const length = Math.max(0, Math.min(end, opened.size) - start)
+    const output = Buffer.allocUnsafe(length)
+    let offset = 0
+    while (offset < length) {
+      const count = readSync(descriptor, output, offset, length - offset, start + offset)
+      if (count <= 0) break
+      offset += count
+    }
+    return offset === length ? output : output.subarray(0, offset)
+  } catch {
+    return null
+  } finally {
+    if (descriptor !== null) {
+      try { closeSync(descriptor) } catch {}
+    }
+  }
+}
+
 function codexSessionCwd(record: Record<string, unknown>): string | undefined {
   if (record.type !== 'session_meta') return undefined
   const payload = asObject(record.payload)
@@ -386,7 +538,7 @@ export class LocalUsageReader {
   private readonly maxTotalBytes: number
   private readonly maxLineBytes: number
   private readonly projectRouting: ProjectPathResolver | null
-  private readonly fileCache = new Map<string, { mtimeMs: number; size: number }>()
+  private readonly fileCache = new Map<string, LocalUsageFileCacheEntry>()
   private activeScan: Promise<LocalUsageScanResult> | null = null
 
   constructor(options: LocalUsageReaderOptions) {
@@ -427,23 +579,50 @@ export class LocalUsageReader {
       const files = filesUnder(root.directory, remainingFiles)
       remainingFiles -= files.length
       for (const { path: filePath, ...stat } of files) {
-        if (stat.size > this.maxFileBytes || stat.size > remainingBytes) {
+        if (stat.size > this.maxFileBytes) {
           result.filesSkipped += 1
           continue
         }
         const cacheKey = `${root.provider}:${filePath}`
         const previous = this.fileCache.get(cacheKey)
-        if (previous && previous.mtimeMs === stat.mtimeMs && previous.size === stat.size) continue
-        let content: string
-        try { content = readFileSync(filePath, 'utf8') } catch { result.filesSkipped += 1; continue }
-        remainingBytes -= stat.size
-        this.fileCache.set(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size })
+        const sameFile = previous && previous.dev === stat.dev && previous.ino === stat.ino
+        if (sameFile && previous.mtimeMs === stat.mtimeMs && previous.size === stat.size) {
+          this.rememberFile(cacheKey, previous)
+          continue
+        }
+        const appendedOnly = Boolean(sameFile && previous && stat.size > previous.size)
+        const parserState = appendedOnly && previous
+          ? {
+              readOffset: previous.readOffset,
+              nextLineNumber: previous.nextLineNumber,
+              previousCodexTotal: previous.previousCodexTotal,
+              codexCwd: previous.codexCwd,
+              discardingLongLine: previous.discardingLongLine,
+            }
+          : createIncrementalLocalUsageParserState()
+        const readStart = appendedOnly ? parserState.readOffset : 0
+        if (stat.size - readStart > remainingBytes) {
+          result.filesSkipped += 1
+          continue
+        }
+        const content = readUsageFileRange(filePath, readStart, stat.size, stat)
+        if (!content) { result.filesSkipped += 1; continue }
+        remainingBytes -= content.length
         result.filesScanned += 1
         const fileKey = digest(`${root.provider}:${filePath}`)
-        const records = parseUsageFile(root.provider, fileKey, content, stat.mtimeMs, this.maxLineBytes)
+        const records = parseIncrementalLocalUsageChunk(
+          root.provider,
+          fileKey,
+          content,
+          readStart,
+          stat.mtimeMs,
+          this.maxLineBytes,
+          parserState,
+        )
         result.recordsParsed += records.length
         // 同一檔案的所有紀錄合併成單一 SQLite 交易寫入。
         result.recordsImported += this.history.batch(() => this.importRecords(records, cutoff))
+        this.rememberFile(cacheKey, { ...stat, ...parserState })
       }
     }
     return result
@@ -463,5 +642,15 @@ export class LocalUsageReader {
       if (this.history.recordTokenUsage({ ...record, projectId })) imported += 1
     }
     return imported
+  }
+
+  private rememberFile(key: string, entry: LocalUsageFileCacheEntry): void {
+    this.fileCache.delete(key)
+    this.fileCache.set(key, entry)
+    while (this.fileCache.size > this.maxFiles) {
+      const oldest = this.fileCache.keys().next().value
+      if (oldest === undefined) return
+      this.fileCache.delete(oldest)
+    }
   }
 }

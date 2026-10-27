@@ -46,12 +46,24 @@ export default defineConfig(({ mode }) => {
           entry: 'electron/main.ts',
           onstart: startElectron,
         },
-        preload: {
-          input: 'electron/preload.ts',
-          // The simple plugin may perform the initial launch from the preload
-          // build, so both entries must override the default startup argv.
-          onstart: startElectron,
-        },
+        preload: [
+          {
+            input: 'electron/preload.ts',
+            // This is the sole preload allowed to perform the initial launch.
+            onstart: startElectron,
+          },
+          {
+            input: 'electron/plugin-host-preload.ts',
+            // The simple plugin disables code splitting for preload outputs,
+            // so a multi-entry object cannot be built. Build this preload as
+            // its own entry without starting another Electron process.
+            onstart: () => {},
+          },
+          {
+            input: 'electron/plugin-ui-preload.ts',
+            onstart: () => {},
+          },
+        ],
       }),
     ],
     resolve: {

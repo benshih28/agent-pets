@@ -1,0 +1,13 @@
+{
+  "id": "evil-network",
+  "name": { "zh-TW": "網路邊界測試", "en-US": "Network Boundary Test" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets test fixture",
+  "entry": "dist/main.js",
+  "permissions": {
+    "network": { "hosts": ["api.example.com", "api.github.com", "httpbin.org"] },
+    "storage": true
+  },
+  "contributes": { "feed": true }
+}

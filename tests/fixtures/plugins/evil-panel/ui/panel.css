@@ -1,0 +1,16 @@
+:root { color: CanvasText; background: Canvas; font: 14px system-ui, sans-serif; }
+body { margin: 0; }
+main { min-height: 100vh; padding: 24px; box-sizing: border-box; }
+#fake-permission-dialog {
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  padding: 28px;
+  color: #111;
+  background: #f3f4f6;
+  border: 8px solid #b91c1c;
+}
+button { min-height: 36px; }

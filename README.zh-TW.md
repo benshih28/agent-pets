@@ -43,7 +43,7 @@
 
 ### 安裝（macOS）
 
-下載 `Agent Pets.dmg`，打開後把 app 拖到「應用程式」資料夾。
+從 [Releases](https://github.com/Ponpon55837/agent-pets/releases) 頁面下載 `AgentPets-<版本>-arm64.dmg`（Apple Silicon）或 `AgentPets-<版本>-x64.dmg`（Intel），打開後把 app 拖到「應用程式」資料夾。
 
 ### 第一次執行
 
@@ -64,7 +64,7 @@
 | **拖曳**寵物     | 移動到新位置（重開 app 後會保留）                                |
 | **右鍵點擊**     | 在 Settings 開啟後可隱藏寵物（Permission 控制項仍可互動）        |
 
-系統匣選單可以顯示／隱藏寵物、開啟面板或 Settings、切換 Mini／Edge Peek 模式／勿擾模式／音效／通知、在打包版本設定登入時啟動、以系統匣圖示標示待處理狀態，以及結束 app。關閉或隱藏寵物視窗後，hooks 與背景狀態仍會運作，直到選擇 **Quit**。
+系統匣選單可以顯示／隱藏寵物、開啟面板或 Settings、切換 Mini／Edge Peek 模式／勿擾模式／音效／通知、在打包版本設定登入時啟動、從 **插件** 子選單執行已啟用插件的指令、以系統匣圖示標示待處理狀態，以及結束 app。關閉或隱藏寵物視窗後，hooks 與背景狀態仍會運作，直到選擇 **Quit**。
 
 寵物下方有一個浮動狀態列，最多顯示 **3 行**，每行對應一個目前活躍的工具家族（Codex / Claude / OpenCode）。同一工具的 CLI 跟 Desktop 版本會合併成一行顯示（例如 `Claude (CLI+Desktop) · Thinking`）。當沒有任何工具在跑時，會顯示一行寵物整體的 idle/offline 狀態。
 
@@ -240,6 +240,12 @@ Setup Wizard 會讀取 runtime Agent Adapter registry，並在你點擊按鈕時
 
 > 註：目前沒有獨立的「Codex Desktop」hook 安裝項目——只有 Codex CLI 的 hooks 有接上。
 
+## 插件
+
+插件可提供寵物通知、反應、面板與 Tray 指令、狀態徽章、沙箱面板頁、寵物外觀，以及清楚標示來源的唯讀狀態列。在 **Settings → Plugins** 安裝 `.agentpet-plugin` 套件，或開啟選擇加入的線上目錄檢視已簽章插件並檢查更新；問題回報會開啟只包含插件 ID 與版本的預填連結。開發者可開啟 **開發者模式** 載入本機資料夾。安裝前請檢查插件要求的權限與貢獻。插件頁面與背景程式都視為不受信任：沒有 Node.js、檔案系統或 shell 存取，網路請求只能送到核准的 HTTPS 網域。插件網路請求不會送出或儲存 Cookie。密鑰由 App 的受保護儲存加密，設定快照不會回傳密鑰值。
+
+請參閱[插件開發索引](docs/plugins/README.zh-TW.md)、[10 分鐘入門](docs/plugins/getting-started.zh-TW.md)、[安全模型](docs/plugins/security.zh-TW.md)、[API 參考](docs/plugins/api-reference.zh-TW.md)與[範例](docs/plugins/examples.zh-TW.md)。
+
 ---
 
 ## 自訂寵物
@@ -394,6 +400,10 @@ pnpm build
 ```
 
 輸出會在 `release/` 目錄下。
+
+### 發版
+
+發版由 `.github/workflows/release.yml` 自動處理。當修改 `package.json` 中 `version` 的 commit 進到 `main`，且尚未存在 `v<版本>` tag 時，GitHub Actions 會先跑型別檢查與單元測試，再打包 macOS（arm64 + x64 `.dmg`）與 Windows（可攜式 `.exe`），最後建立 `v<版本>` tag 與附上兩個平台安裝檔、自動產生說明的 GitHub Release。不需要手動打 tag 或在本機打包。也可以在 Actions 頁面按 **Run workflow** 重新執行；已有 tag 的版本會自動略過。目前產出的安裝檔尚未簽章。
 
 ### 單元測試
 

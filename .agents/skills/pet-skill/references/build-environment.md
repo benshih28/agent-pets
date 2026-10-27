@@ -45,6 +45,14 @@
 
 Phase report 必須記錄每個 gate 的實際結果、未測平台與殘餘風險。不得把「HTTP 204」、「靜態設定」或單純 type-check 當成實際桌面流程證據。
 
+## 自動發版
+
+- `.github/workflows/release.yml` 在 `main` 的 `package.json` 版本號變更、且 `v<version>` tag 尚不存在時觸發：Ubuntu 跑 `vue-tsc` 與單元測試，`macos-latest` 打包 arm64 + x64 dmg（`AgentPets-${version}-${arch}.dmg`），`windows-latest` 打包 portable exe，最後以 `gh release create` 建立 `v<version>` tag 與 Release。
+- 所以升版 commit 合併進 `main` 就等於發版；版本號仍須依 phase gate 在使用者確認後才改。
+- CI 直接呼叫 `vite build` 與 `electron-builder --publish never`，不經過 `pnpm build` 的程序清理 preflight。
+- 目前沒有簽章憑證，`CSC_IDENTITY_AUTO_DISCOVERY=false`，產出未簽章版本。
+- 舊版 release 使用 `Windows_x.y.z`／`MacOS_x.y.z` 分開的 tag；自動化之後統一為 `v<version>` 單一 release。
+
 ## UI 語言要求
 
 繁體中文是後續使用者介面的必要語言，不是只寫在文件裡的偏好。新增或修改設定、Tray、通知、HUD、錯誤與 onboarding 文案時，必須同步提供繁體中文；跨平台 fallback、字串 key 與未來 i18n 抽離要維持同一語意。若當前 Phase 不包含完整 i18n，至少要在 phase report 標註尚未涵蓋的畫面，不得新增只存在英文的使用者可見功能。

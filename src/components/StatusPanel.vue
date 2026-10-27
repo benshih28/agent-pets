@@ -1,62 +1,96 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
-import { STATE_LABELS, STATE_LABELS_SHORT, SOURCE_LABELS, STATE_COLORS, STATE_PRIORITY, SOURCE_FAMILIES } from '@/types/agent'
-import { formatProject, quotaWindowLabel, roundQuotaPercent } from '@/utils/format'
-import { locale, t, translateBackendError, type TranslationKey } from '@/i18n'
-import type { HistoryAgentStat, HistoryDailyStat, HistorySummary } from '@/types/history'
-import type { AchievementTokenQuality, AchievementTranslationKey } from '@/types/achievement'
+import { SOURCE_LABELS } from '@/types/agent'
+import { t } from '@/i18n'
+import type { PluginEventSourceStatusView } from '@/types/plugin'
 import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Icon from '@/components/ui/Icon.vue'
 import InlinePermissionCard from '@/components/ui/InlinePermissionCard.vue'
 import PetAnimation from '@/components/PetAnimation.vue'
-import ProgressTrack from '@/components/ui/ProgressTrack.vue'
-import Select from '@/components/ui/Select.vue'
-import ToggleRow from '@/components/ui/ToggleRow.vue'
+import StatusPanelHistory from '@/components/status-panel/StatusPanelHistory.vue'
+import StatusPanelSessions from '@/components/status-panel/StatusPanelSessions.vue'
+import StatusPanelUsage from '@/components/status-panel/StatusPanelUsage.vue'
 
 const store = useAgentStore()
-const importing = ref(false)
-const editingPetId = ref<string | null>(null)
-const editName = ref('')
 
-// --- 設定分頁 ----------------------------------------------------------------
+type SettingsSection = 'language' | 'appearance' | 'desktop' | 'plugins' | 'pets' | 'growth' | 'advanced'
+type DashboardTab = 'sessions' | 'usage' | 'history'
 
-type SettingsSection = 'language' | 'appearance' | 'desktop' | 'pets' | 'growth' | 'advanced'
 const settingsTab = ref<SettingsSection>('appearance')
+const dashboardTab = ref<DashboardTab>('sessions')
+const requestedPluginViewId = ref('')
+const pluginEventSourceStatuses = ref<PluginEventSourceStatusView[]>([])
+const nowTick = ref(Date.now())
+let tickTimer: ReturnType<typeof setInterval> | null = null
+let removePluginViewRequestListener: (() => void) | null = null
+let removePanelSettingsListener: (() => void) | null = null
+let cleanupPluginEventSourceChanged: (() => void) | null = null
+
+const SettingsLanguage = defineAsyncComponent(() => import('@/components/status-panel/SettingsLanguage.vue'))
+const SettingsAppearance = defineAsyncComponent(() => import('@/components/status-panel/SettingsAppearance.vue'))
+const SettingsDesktop = defineAsyncComponent(() => import('@/components/status-panel/SettingsDesktop.vue'))
+const SettingsPlugins = defineAsyncComponent(() => import('@/components/status-panel/SettingsPlugins.vue'))
+const SettingsPets = defineAsyncComponent(() => import('@/components/status-panel/SettingsPets.vue'))
+const SettingsGrowth = defineAsyncComponent(() => import('@/components/status-panel/SettingsGrowth.vue'))
+const SettingsAdvanced = defineAsyncComponent(() => import('@/components/status-panel/SettingsAdvanced.vue'))
+
 const settingsSections = computed<Array<{ id: SettingsSection; icon: string; label: string; hint: string }>>(() => [
   { id: 'language', icon: 'language', label: t('language'), hint: t('languageHint') },
   { id: 'appearance', icon: 'appearance', label: t('appearance'), hint: t('appearanceHint') },
   { id: 'desktop', icon: 'desktop', label: t('desktop'), hint: t('desktopHint') },
+  { id: 'plugins', icon: 'advanced', label: t('plugins'), hint: t('pluginSettingsHint') },
   { id: 'pets', icon: 'pets', label: t('pets'), hint: t('petsHint') },
   { id: 'growth', icon: 'growth', label: t('growth'), hint: t('growthHint') },
   { id: 'advanced', icon: 'advanced', label: t('advanced'), hint: t('advancedHint') },
 ])
 const activeSettingsSection = computed(() => settingsSections.value.find(section => section.id === settingsTab.value))
-
-// --- 控制面板分頁（工作階段 / 用量 / 歷史）------------------------------------
-
-type DashboardTab = 'sessions' | 'usage' | 'history'
-const dashboardTab = ref<DashboardTab>('sessions')
 const dashboardTabs = computed<Array<{ id: DashboardTab; label: string }>>(() => [
   { id: 'sessions', label: t('sessions') },
   { id: 'usage', label: t('tokenRemaining') },
   { id: 'history', label: t('history') },
 ])
+const settingsTabComponent = computed(() => ({
+  language: SettingsLanguage,
+  appearance: SettingsAppearance,
+  desktop: SettingsDesktop,
+  plugins: SettingsPlugins,
+  pets: SettingsPets,
+  growth: SettingsGrowth,
+  advanced: SettingsAdvanced,
+})[settingsTab.value])
+const settingsTabProps = computed(() => settingsTab.value === 'plugins'
+  ? { requestedPluginId: requestedPluginViewId.value }
+  : {})
+const activePetName = computed(() => store.pets.find(pet => pet.id === store.activePetId)?.displayName ?? t('appName'))
+const evolutionLabels: Record<string, Parameters<typeof t>[0]> = {
+  egg: 'evolutionEgg', baby: 'evolutionBaby', teen: 'evolutionTeen', adult: 'evolutionAdult', master: 'evolutionMaster',
+}
+const panelPetSubtitle = computed(() => {
+  if (!store.progression) return t('petProgressLoading')
+  return `${t('historyLevel', { level: store.progression.level })} · ${t(evolutionLabels[store.progression.evolutionStage])} · ${t('dayStreak', { days: store.progression.currentStreak })}`
+})
 
-// Arrow-key navigation is expected of role="tablist" and was missing.
-function onTabKeydown(event: KeyboardEvent) {
+function syncTickTimer(): void {
+  if (document.hidden) {
+    if (tickTimer) clearInterval(tickTimer)
+    tickTimer = null
+    return
+  }
+  if (!tickTimer) tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
+}
+
+function onTabKeydown(event: KeyboardEvent): void {
   const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
   if (!step) return
   event.preventDefault()
   const ids = dashboardTabs.value.map(tab => tab.id)
   const next = ids[(ids.indexOf(dashboardTab.value) + step + ids.length) % ids.length]
   selectDashboardTab(next)
-  ;(document.getElementById(`tab-${next}`) as HTMLElement | null)?.focus()
+  document.getElementById(`tab-${next}`)?.focus()
 }
 
-function onSettingsKeydown(event: KeyboardEvent) {
+function onSettingsKeydown(event: KeyboardEvent): void {
   const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
   if (!step) return
   event.preventDefault()
@@ -66,511 +100,64 @@ function onSettingsKeydown(event: KeyboardEvent) {
   document.getElementById(`settings-tab-${next}`)?.focus()
 }
 
-// --- 歷史／用量／成長 摘要狀態（各分頁共用）------------------------------------
-
-const historySummary = ref<HistorySummary | null>(null)
-const historyLoading = ref(false)
-const historyError = ref('')
-const historyAction = ref('')
-const historyProjectFilter = ref('')
-let cleanupHistoryUpdated: (() => void) | null = null
-const quotaUsage = computed(() => store.quotaUsage)
-const quotaLoading = computed(() => store.quotaLoading)
-const quotaError = computed(() => store.quotaError)
-const progression = computed(() => store.progression)
-const evolutionLabels = computed<Record<string, string>>(() => ({
-  egg: t('evolutionEgg'),
-  baby: t('evolutionBaby'),
-  teen: t('evolutionTeen'),
-  adult: t('evolutionAdult'),
-  master: t('evolutionMaster'),
-}))
-const evolutionLabel = computed(() => (
-  progression.value ? evolutionLabels.value[progression.value.evolutionStage] : ''
-))
-const progressionPercent = computed(() => {
-  if (!progression.value) return 0
-  return Math.min(100, Math.round((progression.value.xpIntoLevel / progression.value.xpToNext) * 100))
-})
-const moodStage = computed(() => {
-  if (store.mood >= 90) return t('moodOverdrive')
-  if (store.mood >= 70) return t('moodRadiant')
-  if (store.mood >= 40) return t('moodCharged')
-  return t('moodResting')
-})
-
-const activePetName = computed(() => (
-  store.pets.find(pet => pet.id === store.activePetId)?.displayName ?? t('appName')
-))
-
-const panelPetSubtitle = computed(() => {
-  if (!progression.value) return t('petProgressLoading')
-  const level = t('historyLevel', { level: progression.value.level })
-  const streak = t('dayStreak', { days: progression.value.currentStreak })
-  return `${level} · ${evolutionLabel.value} · ${streak}`
-})
-
-const quotaStripFamilies = computed(() => (
-  (['codex', 'claude'] as const).flatMap((id) => {
-    const quota = store.quotaByFamily[id]
-    if (!quota) return []
-    return [{ id, ...quota, label: id === 'codex' ? 'Codex' : 'Claude' }]
-  })
-))
-
-watch(() => store.panelView, (view) => {
-  if (view === 'settings') settingsTab.value = 'appearance'
-})
-
-watch(() => store.projectPets, (projects) => {
-  if (historyProjectFilter.value && !projects.some(project => project.projectId === historyProjectFilter.value)) {
-    historyProjectFilter.value = ''
-    if (dashboardTab.value === 'history') void refreshHistory()
-  }
-})
-
-// Drives the "Xs" elapsed-time readout on in-flight sessions (thinking /
-// tool-running / waiting-*), matching the "Churning 7.2s" style loader.
-const nowTick = ref(Date.now())
-let tickTimer: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
-  tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
-})
-onUnmounted(() => {
-  if (tickTimer) clearInterval(tickTimer)
-})
-
-async function refreshQuota(force = false) {
-  await store.refreshQuota(force)
-}
-
-function selectDashboardTab(tab: 'sessions' | 'usage' | 'history') {
+function selectDashboardTab(tab: DashboardTab): void {
   dashboardTab.value = tab
-  if ((tab === 'sessions' || tab === 'usage') && !quotaUsage.value) void refreshQuota()
-  if (tab === 'history' && !historySummary.value) void refreshHistory()
-}
-
-function onHistoryProjectFilterChange(value: string): void {
-  historyProjectFilter.value = value
-  void refreshHistory()
-}
-
-async function refreshHistory(): Promise<void> {
-  if (historyLoading.value) return
-  historyLoading.value = true
-  historyError.value = ''
-  try {
-    const summary = await window.electronAPI?.getHistorySummary(historyProjectFilter.value || undefined)
-    historySummary.value = summary ?? null
-    if (!summary) historyError.value = t('historyDataUnavailable')
-  } catch {
-    historySummary.value = null
-    historyError.value = t('historyDataUnavailable')
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-// --- History 格式化輔助函式 ---------------------------------------------------
-
-function historyDateLabel(value: string): string {
-  const date = new Date(`${value}T12:00:00`)
-  if (!Number.isFinite(date.getTime())) return value
-  // Weekday + date used to be requested here ("週三 8/13"), but that string
-  // is wider than the 7-day chart's label column in both locales and wraps
-  // to two lines, which staggers every row under it — see history-day-row.
-  return date.toLocaleDateString(locale.value, { month: 'numeric', day: 'numeric' })
-}
-
-function historyDayLabel(day: HistoryDailyStat): string {
-  if (historySummary.value?.days.at(-1)?.localDate === day.localDate) return t('historyToday')
-  return historyDateLabel(day.localDate)
-}
-
-function historyDuration(value: number): string {
-  const minutes = Math.max(0, Math.round(value / 60_000))
-  if (minutes < 60) return `${minutes}m`
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
-}
-
-const HISTORY_TOKEN_LABEL_KEYS: Partial<Record<HistorySummary['tokenQuality'], TranslationKey>> = {
-  exact: 'historyTokenExact',
-  estimated: 'historyTokenEstimated',
-}
-
-function historyTokenLabel(quality: HistorySummary['tokenQuality']): string {
-  return t(HISTORY_TOKEN_LABEL_KEYS[quality] ?? 'historyTokenUnavailable')
-}
-
-function historyAgentLabel(adapterId: string): string {
-  const id = adapterId.toLowerCase()
-  if (id.includes('codex')) return t('clientCodex')
-  if (id.includes('claude')) return t('clientClaudeCode')
-  if (id.includes('opencode')) return t('clientOpenCode')
-  return adapterId
-}
-
-const PROJECT_PET_STATUS_LABEL_KEYS: Record<'unbound' | 'bound' | 'missing-pet', TranslationKey> = {
-  unbound: 'projectPetUnbound',
-  bound: 'projectPetBound',
-  'missing-pet': 'projectPetMissing',
-}
-
-function projectPetStatusLabel(status: 'unbound' | 'bound' | 'missing-pet'): string {
-  return t(PROJECT_PET_STATUS_LABEL_KEYS[status])
-}
-
-const historyMaxTokens = computed(() => Math.max(
-  1,
-  ...(historySummary.value?.days.map(day => day.tokenInput + day.tokenOutput) ?? [1]),
-))
-
-// ProgressTrack takes a 0-100 number and does its own clamping, so this
-// returns a percentage rather than the CSS width string it used to build.
-function historyDayTokenPercent(day: HistoryDailyStat): number {
-  const total = day.tokenInput + day.tokenOutput
-  return Math.round((total / historyMaxTokens.value) * 100)
-}
-
-function historyDayBarHeight(day: HistoryDailyStat): number {
-  const total = historyDayTokenTotal(day)
-  return total > 0 ? Math.max(4, historyDayTokenPercent(day)) : 0
-}
-
-function historyDayTokenTotal(day: HistoryDailyStat): number {
-  return day.tokenInput + day.tokenOutput
-}
-
-// The day column is too narrow for a raw token count once it hits five or
-// six digits, so this renders "12.3k" the way the pet's own quota readouts
-// already do elsewhere in the panel.
-const compactNumberFormatter = computed(() => new Intl.NumberFormat(locale.value, {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-}))
-
-function formatCompactNumber(value: number): string {
-  return compactNumberFormatter.value.format(value)
-}
-
-function historyTrackingDateLabel(): string {
-  const since = historySummary.value?.tokenTrackingSince
-  if (!since) return ''
-  const date = new Date(since)
-  if (!Number.isFinite(date.getTime())) return ''
-  return date.toLocaleDateString(locale.value, { year: 'numeric', month: '2-digit', day: '2-digit' })
-}
-
-function historyAgentTokenTotal(agent: HistoryAgentStat): number {
-  return agent.tokenInput + agent.tokenOutput
-}
-
-function historyAgentBarPercent(agent: HistoryAgentStat): number {
-  const summary = historySummary.value
-  if (!summary) return 0
-  const totalTokens = summary.totals.tokenInput + summary.totals.tokenOutput
-  if (totalTokens > 0) {
-    return Math.round((historyAgentTokenTotal(agent) / totalTokens) * 100)
-  }
-  const totalActiveMs = Math.max(1, summary.totals.activeMs)
-  return Math.round((agent.activeMs / totalActiveMs) * 100)
-}
-
-// --- 成就 -------------------------------------------------------------------
-
-function achievementText(key: AchievementTranslationKey): string {
-  return t(key)
-}
-
-const ACHIEVEMENT_TOKEN_QUALITY_LABEL_KEYS: Partial<Record<AchievementTokenQuality, TranslationKey>> = {
-  exact: 'achievementTokenExact',
-  estimated: 'achievementTokenEstimated',
-}
-
-function achievementQualityLabel(quality: AchievementTokenQuality): string {
-  const key = ACHIEVEMENT_TOKEN_QUALITY_LABEL_KEYS[quality]
-  return key ? t(key) : ''
-}
-
-// --- History 匯出／清除 -------------------------------------------------------
-
-async function exportHistory(): Promise<void> {
-  historyAction.value = ''
-  try {
-    const result = await window.electronAPI?.exportHistory()
-    if (result?.ok) historyAction.value = t('historyExported')
-    else if (result?.error === 'cancelled') historyAction.value = t('historyExportCancelled')
-    else historyAction.value = t('historyActionFailed')
-  } catch {
-    historyAction.value = t('historyActionFailed')
-  }
-}
-
-// --- 共用確認對話框 -----------------------------------------------------------
-
-// One in-panel confirmation flow for every destructive action. A native
-// window.confirm() would steal focus, which the main process reads as a blur
-// and hides the panel mid-confirmation.
-const confirmDialog = ref<{
-  title: string
-  message?: string
-  tone: 'default' | 'danger'
-  onConfirm: () => void | Promise<void>
-} | null>(null)
-
-function askConfirm(request: NonNullable<typeof confirmDialog.value>) {
-  confirmDialog.value = request
-}
-
-async function acceptConfirm() {
-  const pending = confirmDialog.value
-  confirmDialog.value = null
-  await pending?.onConfirm()
-}
-
-function clearHistory(): void {
-  askConfirm({
-    title: t('historyClear'),
-    message: t('historyClearConfirm'),
-    tone: 'danger',
-    onConfirm: performClearHistory,
-  })
-}
-
-async function performClearHistory(): Promise<void> {
-  historyAction.value = ''
-  try {
-    const result = await window.electronAPI?.clearHistory()
-    if (result?.ok) {
-      historyAction.value = t('historyCleared')
-      await refreshHistory()
-    } else {
-      historyAction.value = t('historyActionFailed')
-    }
-  } catch {
-    historyAction.value = t('historyActionFailed')
-  }
-}
-
-// --- Quota 格式化輔助函式 -----------------------------------------------------
-
-function quotaPercent(value: number): string {
-  return `${roundQuotaPercent(value)}%`
-}
-
-function formatReset(timestamp?: string): string {
-  if (!timestamp) return t('resetTimeUnavailable')
-  const reset = new Date(timestamp).getTime()
-  if (!Number.isFinite(reset)) return t('resetTimeUnavailable')
-  const deltaMinutes = Math.max(0, Math.round((reset - nowTick.value) / 60_000))
-  if (deltaMinutes < 1) return t('resetsNow')
-  if (deltaMinutes < 60) return t('resetsInMinutes', { minutes: deltaMinutes })
-  const hours = Math.floor(deltaMinutes / 60)
-  const minutes = deltaMinutes % 60
-  if (hours < 24) return t('resetsInHours', { hours, minutes })
-  const days = Math.floor(hours / 24)
-  return t('resetsInDays', { days, hours: hours % 24 })
-}
-
-function formatResetAt(timestamp?: string): string {
-  if (!timestamp) return ''
-  const reset = new Date(timestamp)
-  if (!Number.isFinite(reset.getTime())) return ''
-  return reset.toLocaleString(locale.value, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatUpdated(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
-}
-
-// --- 工作階段即時經過時間 -------------------------------------------------------
-
-const LIVE_STATES = new Set(['thinking', 'tool-running', 'waiting-permission', 'waiting-input'])
-
-function elapsedLabel(session: { state: string; lastSeenAt: number }): string | null {
-  if (!LIVE_STATES.has(session.state)) return null
-  const secs = Math.max(0, (nowTick.value - session.lastSeenAt) / 1000)
-  return `${secs.toFixed(1)}s`
-}
-
-// --- 生命週期 ------------------------------------------------------------------
-
-// Pet + panel are separate windows with separate store instances now — this
-// window must load its own copy of the pets list rather than relying on the
-// pet window having already populated it.
-onMounted(() => {
-  store.loadPets()
-  void store.refreshProjectPets()
-  void refreshQuota()
-  if (window.electronAPI?.onHistoryUpdated) {
-    cleanupHistoryUpdated = window.electronAPI.onHistoryUpdated(() => {
-      if (dashboardTab.value === 'history') void refreshHistory()
-    })
-  }
-})
-
-onUnmounted(() => {
-  cleanupHistoryUpdated?.()
-})
-
-// --- 寵物重新命名 --------------------------------------------------------------
-
-function startRename(pet: { id: string; displayName: string }) {
-  editingPetId.value = pet.id
-  editName.value = pet.displayName
-}
-
-async function confirmRename() {
-  if (!editingPetId.value || !editName.value.trim()) {
-    editingPetId.value = null
-    return
-  }
-  await store.renamePet(editingPetId.value, editName.value.trim())
-  editingPetId.value = null
-}
-
-function cancelRename() {
-  editingPetId.value = null
-  editName.value = ''
-}
-
-// --- 工作階段清單與尺寸選項 -----------------------------------------------------
-
-const sessions = computed(() => {
-  return Object.values(store.sessions).sort((a, b) => {
-    const priorityDelta = (STATE_PRIORITY[b.state] ?? 0) - (STATE_PRIORITY[a.state] ?? 0)
-    if (priorityDelta !== 0) return priorityDelta
-
-    const recencyDelta = b.lastSeenAt - a.lastSeenAt
-    if (recencyDelta !== 0) return recencyDelta
-
-    return SOURCE_LABELS[a.source].localeCompare(SOURCE_LABELS[b.source])
-  })
-})
-
-const activeSessionList = computed(() => sessions.value.filter(session => session.state !== 'offline'))
-const offlineSessionList = computed(() => sessions.value.filter(session => session.state === 'offline'))
-const hasOffline = computed(() => offlineSessionList.value.length > 0)
-const activeToolFamilyCount = computed(() => new Set(
-  activeSessionList.value.map(session => SOURCE_FAMILIES.find(family => family.sources.includes(session.source))?.key ?? session.source),
-).size)
-
-function sessionDetail(session: (typeof sessions.value)[number]): string {
-  if (session.state === 'waiting-permission') {
-    if (store.permissionRequest?.sessionId === session.sessionId) return t('permissionInlineHint')
-    return t('returnToTerminal')
-  }
-  if (session.toolName) return `${STATE_LABELS[session.state]} · ${session.toolName}`
-  if (session.state === 'success') return `${STATE_LABELS[session.state]} · ${formatTime(session.lastSeenAt)}`
-  return STATE_LABELS[session.state]
+  if ((tab === 'sessions' || tab === 'usage') && !store.quotaUsage) void store.refreshQuota()
 }
 
 function permissionSourceLabel(agentId: string): string {
   return SOURCE_LABELS[agentId as keyof typeof SOURCE_LABELS] ?? agentId
 }
 
-const scaleOptions = [
-  { value: 0.6, label: 'S' },
-  { value: 0.8, label: 'M' },
-  { value: 1.0, label: 'L' },
-  { value: 1.2, label: 'XL' },
-  { value: 1.5, label: 'XXL' },
-]
+watch(() => store.panelView, view => {
+  if (view === 'settings') settingsTab.value = 'appearance'
+})
 
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(locale.value)
-}
-
-// --- 寵物匯入 ------------------------------------------------------------------
-
-async function importPet() {
-  importing.value = true
-  const id = `custom-${Date.now()}`
-  const fileUrl = await window.electronAPI?.importPetSprite(id, t('customPet'))
-  if (fileUrl) {
-    await store.loadPets()
-    store.setPet(id)
+onMounted(() => {
+  // Keep the settings panels code-split while warming the default tab off the
+  // render path, so the first settings click does not wait for its chunk.
+  void import('@/components/status-panel/SettingsAppearance.vue').catch(() => {})
+  document.addEventListener('visibilitychange', syncTickTimer)
+  syncTickTimer()
+  removePanelSettingsListener = window.electronAPI?.onPanelOpenSettings(() => {
+    requestedPluginViewId.value = ''
+  }) ?? null
+  removePluginViewRequestListener = window.electronAPI?.onPanelOpenPluginView(pluginId => {
+    settingsTab.value = 'plugins'
+    requestedPluginViewId.value = ''
+    void nextTick(() => { requestedPluginViewId.value = pluginId })
+  }) ?? null
+  store.loadPets()
+  void store.refreshProjectPets()
+  void store.refreshQuota()
+  if (window.electronAPI?.onPluginEventSourceChanged) {
+    cleanupPluginEventSourceChanged = window.electronAPI.onPluginEventSourceChanged(statuses => {
+      pluginEventSourceStatuses.value = statuses
+    })
   }
-  importing.value = false
-}
+  void window.electronAPI?.getPluginEventSourceStatuses().then(statuses => {
+    pluginEventSourceStatuses.value = statuses
+  }).catch(() => {})
+})
 
-const importingZip = ref(false)
-const importZipError = ref('')
-
-async function importPetZip() {
-  importingZip.value = true
-  importZipError.value = ''
-  const result = await window.electronAPI?.importPetZip()
-  if (result?.ok && result.id) {
-    await store.loadPets()
-    store.setPet(result.id)
-  } else if (result && !result.ok && result.error !== 'cancelled') {
-    importZipError.value = translateBackendError(result.error || t('failed'))
-  }
-  importingZip.value = false
-}
-
-// --- 應用程式生命週期操作 -------------------------------------------------------
-
-function quitApp() {
-  window.electronAPI?.quitApp()
-}
-
-function restartApp() {
-  window.electronAPI?.restartApp()
-}
-
-// --- 移除確認 ------------------------------------------------------------------
-
-function confirmRemovePet(pet: { id: string; displayName: string; builtIn: boolean }) {
-  askConfirm({
-    title: pet.builtIn ? t('hide') : t('remove'),
-    message: pet.builtIn
-      ? t('hidePetConfirm', { name: pet.displayName })
-      : t('removePetConfirm', { name: pet.displayName }),
-    tone: 'danger',
-    onConfirm: () => store.removePet(pet.id),
-  })
-}
-
-function confirmRemoveProjectPet(project: { projectId: string; displayName: string }) {
-  askConfirm({
-    title: t('remove'),
-    message: t('removeProjectPetConfirm', { name: project.displayName }),
-    tone: 'danger',
-    onConfirm: () => { void store.removeProjectPet(project.projectId) },
-  })
-}
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', syncTickTimer)
+  if (tickTimer) clearInterval(tickTimer)
+  removePluginViewRequestListener?.()
+  removePanelSettingsListener?.()
+  cleanupPluginEventSourceChanged?.()
+})
 </script>
 
 <template>
   <div class="status-panel" @click.stop>
     <div class="panel-header">
-      <Button
-        v-if="store.panelView === 'settings'"
-        variant="ghost"
-        icon-only
-        :title="t('back')"
-        :aria-label="t('back')"
-        @click="store.backToSessions()"
-      >
+      <Button v-if="store.panelView === 'settings'" variant="ghost" icon-only :title="t('back')" :aria-label="t('back')" @click="store.backToSessions()">
         <Icon name="back" />
       </Button>
       <template v-if="store.panelView === 'sessions'">
         <div class="panel-pet-avatar" aria-hidden="true">
-          <PetAnimation
-            class="panel-pet-animation"
-            :state="store.currentState"
-            :pet-id="store.activePetId"
-            :since="store.highestPrioritySession?.lastSeenAt"
-            :mood="store.mood"
-          />
+          <PetAnimation class="panel-pet-animation" :state="store.currentState" :pet-id="store.activePetId" :since="store.highestPrioritySession?.lastSeenAt" :mood="store.mood" />
         </div>
         <div class="panel-title-group">
           <span class="panel-title">{{ activePetName }}</span>
@@ -579,23 +166,10 @@ function confirmRemoveProjectPet(project: { projectId: string; displayName: stri
       </template>
       <span v-else class="panel-title settings-panel-title">{{ t('settings') }}</span>
       <div class="header-right">
-        <Button
-          v-if="store.panelView === 'sessions'"
-          variant="ghost"
-          icon-only
-          :title="t('settings')"
-          :aria-label="t('settings')"
-          @click="store.openSettings()"
-        >
+        <Button v-if="store.panelView === 'sessions'" variant="ghost" icon-only :title="t('settings')" :aria-label="t('settings')" @click="store.openSettings()">
           <Icon name="settings" />
         </Button>
-        <Button
-          variant="ghost"
-          icon-only
-          :title="t('close')"
-          :aria-label="t('close')"
-          @click="store.closePanel()"
-        >
+        <Button variant="ghost" icon-only :title="t('close')" :aria-label="t('close')" @click="store.closePanel()">
           <Icon name="close" />
         </Button>
       </div>
@@ -608,7 +182,7 @@ function confirmRemoveProjectPet(project: { projectId: string; displayName: stri
         :request="store.permissionRequest"
         :title="`${permissionSourceLabel(store.permissionRequest.agentId)} · ${t('permissionInlineTitle')}`"
         :project-label="store.permissionRequest.projectId || t('projectUnknown')"
-        :elapsed-label="elapsedLabel({ state: 'waiting-permission', lastSeenAt: store.permissionRequest.receivedAt }) || '0.0s'"
+        :elapsed-label="`${Math.max(0, (nowTick - store.permissionRequest.receivedAt) / 1000).toFixed(1)}s`"
         :allow-label="t('permissionAllowOnce')"
         :deny-label="t('permissionDeny')"
         :warning-label="t('permissionWarning')"
@@ -616,10 +190,7 @@ function confirmRemoveProjectPet(project: { projectId: string; displayName: stri
       />
       <div v-else-if="store.permissionNotice" class="inline-permission-notice" role="status">
         <Icon name="warning" :size="18" />
-        <span>
-          <strong>{{ store.permissionNotice.title }}</strong>
-          <small>{{ store.permissionNotice.detail }}</small>
-        </span>
+        <span><strong>{{ store.permissionNotice.title }}</strong><small>{{ store.permissionNotice.detail }}</small></span>
       </div>
       <div class="dashboard-tabs" role="tablist" :aria-label="t('dashboardSections')">
         <Button
@@ -640,236 +211,13 @@ function confirmRemoveProjectPet(project: { projectId: string; displayName: stri
           {{ tab.label }}
         </Button>
       </div>
-
-      <template v-if="dashboardTab === 'sessions'">
-        <div id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions" class="tab-panel">
-          <div class="session-scroll">
-            <div v-if="activeSessionList.length === 0 && offlineSessionList.length === 0" class="panel-empty">
-              {{ t('noActiveSessions') }}
-            </div>
-
-            <template v-else>
-              <section v-if="activeSessionList.length > 0" class="session-group">
-                <div class="session-group-heading">
-                  <span>{{ t('activeSessions') }}</span>
-                  <small>{{ t('activeToolFamilies', { count: activeToolFamilyCount }) }}</small>
-                </div>
-                <Card class="session-card">
-                  <div
-                    v-for="(session, index) in activeSessionList"
-                    :key="session.key"
-                    class="session-item"
-                    :class="{ 'is-last': index === activeSessionList.length - 1 }"
-                  >
-                    <span
-                      class="session-status-dot"
-                      :class="{ live: LIVE_STATES.has(session.state) }"
-                      :style="{ '--status-color': STATE_COLORS[session.state] }"
-                      aria-hidden="true"
-                    />
-                    <div class="session-info">
-                      <span class="session-title-line">
-                        {{ SOURCE_LABELS[session.source] }}<template v-if="session.project"> · {{ formatProject(session.project) }}</template>
-                      </span>
-                      <span class="session-detail">{{ sessionDetail(session) }}</span>
-                    </div>
-                    <div class="session-state-column">
-                      <span
-                        class="state-chip"
-                        :class="[`state-${session.state}`, { live: LIVE_STATES.has(session.state) }]"
-                        :style="{ '--status-color': STATE_COLORS[session.state] }"
-                      >
-                        {{ STATE_LABELS_SHORT[session.state] }}
-                      </span>
-                      <span class="session-time">{{ elapsedLabel(session) || formatTime(session.lastSeenAt) }}</span>
-                    </div>
-                  </div>
-                </Card>
-              </section>
-
-              <section v-if="hasOffline" class="offline-group">
-                <div class="session-group-heading offline-heading">
-                  <span>{{ t('offlineSessions') }}</span>
-                  <Button variant="danger" size="sm" @click="store.clearOfflineSessions()">
-                    {{ t('clearShort') }}
-                  </Button>
-                </div>
-                <div
-                  v-for="session in offlineSessionList"
-                  :key="session.key"
-                  class="offline-session-item"
-                >
-                  <span class="session-status-dot" aria-hidden="true" />
-                  <span class="session-title-line">{{ SOURCE_LABELS[session.source] }}<template v-if="session.project"> · {{ formatProject(session.project) }}</template></span>
-                  <span class="session-time">{{ formatTime(session.lastSeenAt) }}</span>
-                </div>
-              </section>
-            </template>
-          </div>
-
-          <div v-if="quotaStripFamilies.length > 0" class="quota-strip" :aria-label="t('quotaStripLabel')">
-            <div v-for="family in quotaStripFamilies" :key="family.id" class="quota-strip-column">
-              <div class="quota-strip-heading">
-                <span>{{ family.label }}</span>
-                <strong>{{ quotaPercent(family.remainingPercent) }}</strong>
-              </div>
-              <ProgressTrack :value="family.remainingPercent" tone="success" size="sm" decorative />
-              <span class="quota-strip-reset">{{ formatReset(family.resetsAt) }}</span>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <template v-else-if="dashboardTab === 'usage'">
-        <div id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" class="usage-view">
-          <div v-if="quotaLoading && !quotaUsage" class="panel-empty usage-loading">
-            {{ t('loadingQuota') }}
-          </div>
-          <div v-else-if="quotaError && !quotaUsage" class="panel-empty usage-error">
-            {{ translateBackendError(quotaError) }}
-          </div>
-          <template v-else-if="quotaUsage">
-            <Card
-              v-for="provider in quotaUsage.providers"
-              :key="provider.id"
-              class="usage-provider-card"
-              :tone="provider.id === 'claude' ? 'claude' : 'accent'"
-            >
-              <template #heading>
-                <span class="usage-provider-name">{{ provider.name }}</span>
-                <span v-if="provider.plan" class="usage-plan" :class="`plan-${provider.id}`">{{ provider.plan }}</span>
-                <span class="usage-updated">{{ t('updated', { time: formatUpdated(quotaUsage.updatedAt) }) }}</span>
-              </template>
-              <div v-if="provider.error" class="usage-provider-error">
-                {{ translateBackendError(provider.error) }}
-              </div>
-              <div v-else class="quota-window-list">
-                <div v-for="quota in provider.windows" :key="quota.id" class="quota-window">
-                  <div class="quota-copy">
-                    <span class="quota-label">{{ quotaWindowLabel(quota.id, quota.label) }}</span>
-                    <span class="quota-value">{{ quotaPercent(quota.remainingPercent) }}</span>
-                  </div>
-                  <ProgressTrack
-                    class="quota-progress"
-                    :value="quota.remainingPercent"
-                    :tone="provider.id === 'claude' ? 'claude' : 'accent'"
-                    :aria-label="t('quotaRemainingAria', { provider: provider.name, quota: quotaWindowLabel(quota.id, quota.label) })"
-                  />
-                  <div class="quota-reset">
-                    <span>{{ formatReset(quota.resetsAt) }}</span>
-                    <span v-if="formatResetAt(quota.resetsAt)" class="quota-reset-at">
-                      {{ formatResetAt(quota.resetsAt) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </Card>
-            <div class="usage-footer">
-              <span>{{ t('quotaLocalLoginNote') }}</span>
-              <Button variant="secondary" size="sm" :disabled="quotaLoading" @click="refreshQuota(true)">
-                {{ quotaLoading ? t('refreshing') : t('refresh') }}
-              </Button>
-            </div>
-          </template>
-        </div>
-      </template>
-
-      <template v-else>
-        <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" class="history-view">
-          <div class="history-hero">
-            <div>
-              <div class="history-kicker">{{ t('historyTitle') }}</div>
-              <p>{{ t('historyHelp') }}</p>
-            </div>
-            <Select
-              :model-value="historyProjectFilter"
-              size="sm"
-              class="history-project-filter"
-              :aria-label="t('historyProjectFilter')"
-              @update:model-value="onHistoryProjectFilterChange"
-            >
-              <option value="">{{ t('historyAllProjects') }}</option>
-              <option v-for="project in store.projectPets" :key="project.projectId" :value="project.projectId">
-                {{ project.displayName }}
-              </option>
-            </Select>
-          </div>
-
-          <div v-if="historyLoading && !historySummary" class="panel-empty">{{ t('checking') }}</div>
-          <div v-else-if="historyError && !historySummary" class="panel-empty history-error">{{ historyError }}</div>
-          <template v-else-if="historySummary">
-            <div class="history-stat-grid">
-              <Card class="history-stat-tile history-stat-token" tone="accent">
-                <span class="history-stat-label">{{ t('historyTokens') }}</span>
-                <strong class="history-stat-number">{{ formatCompactNumber(historySummary.totals.tokenInput + historySummary.totals.tokenOutput) }}</strong>
-                <span class="history-stat-meta">{{ historyTokenLabel(historySummary.tokenQuality) }}</span>
-              </Card>
-              <Card class="history-stat-tile history-stat-sessions" tone="success">
-                <span class="history-stat-label">{{ t('historyCompleted') }}</span>
-                <strong class="history-stat-number">{{ historySummary.totals.sessionsCompleted }}</strong>
-                <span class="history-stat-meta">{{ t('historySessions') }}</span>
-              </Card>
-              <Card class="history-stat-tile history-stat-time">
-                <span class="history-stat-label">{{ t('historyActiveTime') }}</span>
-                <strong class="history-stat-number">{{ historyDuration(historySummary.totals.activeMs) }}</strong>
-                <span class="history-stat-meta">{{ t('historyRetention', { days: historySummary.retentionDays }) }}</span>
-              </Card>
-            </div>
-
-            <div v-if="progression" class="history-growth-line">
-              <span>{{ t('historyLevel', { level: progression.level }) }} · {{ evolutionLabel }} · {{ moodStage }}</span>
-              <span>{{ t('historyStreak', { days: progression.currentStreak }) }}</span>
-            </div>
-
-            <Card class="history-chart-card" :title="t('historyTokenTrend')" tone="accent">
-              <template #heading>
-                <span class="history-muted">{{ t('historyUpdated', { time: formatUpdated(new Date(historySummary.generatedAt).toISOString()) }) }}</span>
-              </template>
-              <div class="history-bar-chart">
-                <div
-                  v-for="day in historySummary.days"
-                  :key="day.localDate"
-                  class="history-bar-column"
-                  :title="`${day.sessionsCompleted}${t('historyCompleted')} · ${day.sessionsFailed}${t('historyFailed')}`"
-                >
-                  <span class="history-bar-value">{{ formatCompactNumber(historyDayTokenTotal(day)) }}</span>
-                  <div class="history-bar-track" role="img" :aria-label="`${historyDayLabel(day)} ${historyDayTokenTotal(day)} tokens`">
-                    <div class="history-bar-fill" :style="{ height: `${historyDayBarHeight(day)}%` }" />
-                  </div>
-                  <span class="history-bar-label">{{ historyDayLabel(day) }}</span>
-                </div>
-              </div>
-            </Card>
-
-            <Card class="history-agent-card" :title="t('historyAgentDistribution')">
-              <div v-if="historySummary.agents.length === 0" class="history-muted">{{ t('historyNoData') }}</div>
-              <div v-else class="history-agent-list">
-                <div v-for="agent in historySummary.agents" :key="agent.adapterId" class="history-agent-row">
-                  <div class="history-agent-heading"><span>{{ historyAgentLabel(agent.adapterId) }}</span><strong>{{ historyAgentTokenTotal(agent).toLocaleString(locale) }}</strong></div>
-                  <ProgressTrack :value="historyAgentBarPercent(agent)" tone="success" decorative />
-                  <div class="history-muted">{{ agent.tokenInput.toLocaleString(locale) }} {{ t('historyTokenIn') }} · {{ agent.tokenOutput.toLocaleString(locale) }} {{ t('historyTokenOut') }} · {{ historyTokenLabel(agent.tokenQuality) }}</div>
-                  <div class="history-muted">{{ historyDuration(agent.activeMs) }} · {{ agent.sessionsCompleted }}✓ {{ agent.sessionsFailed }}!</div>
-                </div>
-              </div>
-            </Card>
-
-            <div class="history-footer">
-              <span>{{ t('historyCompactDisclosure', { date: historyTrackingDateLabel() }) }}</span>
-              <div class="history-actions">
-                <Button variant="secondary" size="sm" @click="exportHistory">{{ t('historyExportShort') }}</Button>
-                <Button variant="danger" size="sm" @click="clearHistory">{{ t('historyClearShort') }}</Button>
-              </div>
-            </div>
-
-          </template>
-          <div v-if="historyAction" class="history-action-status" role="status" aria-live="polite">{{ historyAction }}</div>
-        </div>
-      </template>
+      <StatusPanelSessions v-show="dashboardTab === 'sessions'" :active="dashboardTab === 'sessions'" :now-tick="nowTick" :plugin-event-source-statuses="pluginEventSourceStatuses" />
+      <StatusPanelUsage v-show="dashboardTab === 'usage'" :now-tick="nowTick" />
+      <StatusPanelHistory v-show="dashboardTab === 'history'" :active="dashboardTab === 'history'" />
     </template>
 
-    <template v-else>
-      <div class="settings-layout">
-        <div class="settings-content">
+    <div v-else class="settings-layout">
+      <div class="settings-content">
         <nav class="settings-nav" role="tablist" :aria-label="t('settingsSections')">
           <Button
             v-for="section in settingsSections"
@@ -895,434 +243,20 @@ function confirmRemoveProjectPet(project: { projectId: string; displayName: stri
         </div>
 
         <div class="settings-quick-toggles" role="group" :aria-label="t('quickSettings')">
-          <Button
-            variant="ghost"
-            class="quick-toggle"
-            :class="{ active: store.notificationsEnabled }"
-            :aria-label="`${t('notifications')} ${store.notificationsEnabled ? t('enabledShort') : t('disabledShort')}`"
-            @click="store.setNotificationsEnabled(!store.notificationsEnabled)"
-          >
-            <Icon name="bell" :size="20" />
-            <span>{{ t('notifications') }} {{ store.notificationsEnabled ? t('enabledShort') : t('disabledShort') }}</span>
+          <Button variant="ghost" class="quick-toggle" :class="{ active: store.notificationsEnabled }" :aria-label="`${t('notifications')} ${store.notificationsEnabled ? t('enabledShort') : t('disabledShort')}`" @click="store.setNotificationsEnabled(!store.notificationsEnabled)">
+            <Icon name="bell" :size="20" /><span>{{ t('notifications') }} {{ store.notificationsEnabled ? t('enabledShort') : t('disabledShort') }}</span>
           </Button>
-          <Button
-            variant="ghost"
-            class="quick-toggle"
-            :class="{ active: store.dndEnabled }"
-            :aria-label="`${t('dnd')} ${store.dndEnabled ? t('enabledShort') : t('disabledShort')}`"
-            @click="store.setDndEnabled(!store.dndEnabled)"
-          >
-            <Icon name="moon" :size="20" />
-            <span>{{ t('dnd') }} {{ store.dndEnabled ? t('enabledShort') : t('disabledShort') }}</span>
+          <Button variant="ghost" class="quick-toggle" :class="{ active: store.dndEnabled }" :aria-label="`${t('dnd')} ${store.dndEnabled ? t('enabledShort') : t('disabledShort')}`" @click="store.setDndEnabled(!store.dndEnabled)">
+            <Icon name="moon" :size="20" /><span>{{ t('dnd') }} {{ store.dndEnabled ? t('enabledShort') : t('disabledShort') }}</span>
           </Button>
-          <Button
-            variant="ghost"
-            class="quick-toggle"
-            :class="{ active: store.soundEnabled }"
-            :aria-label="`${t('sound')} ${store.soundEnabled ? t('enabledShort') : t('disabledShort')}`"
-            @click="store.setSoundEnabled(!store.soundEnabled)"
-          >
-            <Icon name="volume-off" :size="20" />
-            <span>{{ t('sound') }} {{ store.soundEnabled ? t('enabledShort') : t('disabledShort') }}</span>
+          <Button variant="ghost" class="quick-toggle" :class="{ active: store.soundEnabled }" :aria-label="`${t('sound')} ${store.soundEnabled ? t('enabledShort') : t('disabledShort')}`" @click="store.setSoundEnabled(!store.soundEnabled)">
+            <Icon name="volume-off" :size="20" /><span>{{ t('sound') }} {{ store.soundEnabled ? t('enabledShort') : t('disabledShort') }}</span>
           </Button>
         </div>
 
-        <template v-if="settingsTab === 'language'">
-          <Card :title="t('languageSection')">
-            <p class="section-copy">{{ t('languageHelp') }}</p>
-            <div class="field-row">
-              <span class="field-copy">
-                <span class="field-label">{{ t('language') }}</span>
-                <span class="field-help">{{ t('languageHint') }}</span>
-              </span>
-              <Select
-                :model-value="locale"
-                :aria-label="t('language')"
-                class="field-control"
-                @update:model-value="store.setLocalePreference($event as 'zh-TW' | 'en-US')"
-              >
-                <option value="zh-TW">{{ t('localeTraditionalChinese') }}</option>
-                <option value="en-US">{{ t('localeEnglish') }}</option>
-              </Select>
-            </div>
-          </Card>
-        </template>
-
-        <template v-else-if="settingsTab === 'appearance'">
-          <Card :title="t('petSize')">
-            <div class="scale-options" role="group" :aria-label="t('petSize')">
-              <Button
-                v-for="opt in scaleOptions"
-                :key="opt.value"
-                size="sm"
-                variant="secondary"
-                :active="store.petScale === opt.value"
-                @click="store.setScale(opt.value)"
-              >
-                {{ opt.label }}
-              </Button>
-            </div>
-          </Card>
-
-          <Card :title="t('petReactions')">
-            <ToggleRow
-              :model-value="store.reactionsEnabled"
-              :label="t('bounceShake')"
-              :help="t('animateStatus')"
-              @update:model-value="store.setReactionsEnabled($event)"
-            />
-            <ToggleRow
-              :model-value="store.bubbleEnabled"
-              :label="t('statusBubble')"
-              :help="t('showCompletionError')"
-              @update:model-value="store.setBubbleEnabled($event)"
-            />
-          </Card>
-        </template>
-
-        <template v-else-if="settingsTab === 'desktop'">
-          <Card :title="t('windowModes')">
-            <ToggleRow
-              :model-value="store.petWindowMode.mode === 'mini'"
-              :label="t('miniMode')"
-              :help="t('miniModeHelp')"
-              @update:model-value="store.setPetMode($event ? 'mini' : 'normal')"
-            />
-            <ToggleRow
-              :model-value="store.edgeModeEnabled"
-              :label="t('edgePeek')"
-              :help="t('edgePeekHelp')"
-              @update:model-value="store.setEdgeModeEnabled($event)"
-            />
-          </Card>
-
-          <Card :title="t('desktopBehavior')">
-            <ToggleRow
-              :model-value="store.shimejiEnabled"
-              :label="t('shimejiBehavior')"
-              :help="t('shimejiBehaviorHelp')"
-              @update:model-value="store.setShimejiEnabled($event)"
-            />
-            <ToggleRow
-              :model-value="store.captureExclusionEnabled"
-              :label="t('captureExclusion')"
-              :help="store.desktopVisibilityCapabilities.captureExclusion.supported
-                ? t('captureExclusionHelp')
-                : t('captureExclusionUnavailable')"
-              :disabled="!store.desktopVisibilityCapabilities.captureExclusion.supported"
-              @update:model-value="store.setCaptureExclusionEnabled($event)"
-            />
-            <ToggleRow
-              :model-value="store.fullscreenAutoHideEnabled"
-              :label="t('fullscreenAutoHide')"
-              :help="store.desktopVisibilityCapabilities.fullscreenAutoHide.supported
-                ? t('fullscreenAutoHideHelp')
-                : t('fullscreenAutoHideUnavailable')"
-              :disabled="!store.desktopVisibilityCapabilities.fullscreenAutoHide.supported"
-              @update:model-value="store.setFullscreenAutoHideEnabled($event)"
-            />
-            <ToggleRow
-              :model-value="store.rightClickHideEnabled"
-              :label="t('rightClickHide')"
-              :help="t('rightClickHideHelp')"
-              @update:model-value="store.setRightClickHideEnabled($event)"
-            />
-            <ToggleRow
-              :model-value="store.permissionBubbleEnabled"
-              :label="t('permissionBubble')"
-              :help="t('permissionBubbleHelp')"
-              @update:model-value="store.setPermissionBubbleEnabled($event)"
-            />
-          </Card>
-
-          <Card :title="t('system')">
-            <ToggleRow
-              :model-value="store.presentationMcpEnabled"
-              :label="t('presentationMcp')"
-              :help="t('presentationMcpHelp')"
-              @update:model-value="store.setPresentationMcpEnabled($event)"
-            />
-            <ToggleRow
-              :model-value="store.launchAtStartup"
-              :label="t('launchAtStartup')"
-              :help="store.launchAtStartupSupported ? t('launchAtStartupHelp') : t('availablePackaged')"
-              :disabled="!store.launchAtStartupSupported"
-              @update:model-value="store.setLaunchAtStartup($event)"
-            />
-          </Card>
-        </template>
-
-        <template v-else-if="settingsTab === 'growth'">
-          <Card :title="t('petMood')">
-            <template #heading>
-              <Button size="sm" variant="secondary" :title="t('resetBaseline')" @click="store.resetMood()">
-                {{ t('reset') }}
-              </Button>
-            </template>
-            <div class="stat-row">
-              <span class="stat-readout">{{ store.mood }} · {{ moodStage }}</span>
-            </div>
-            <ProgressTrack :value="store.mood" tone="success" :aria-label="t('petMood')" />
-          </Card>
-
-          <template v-if="progression">
-            <Card :title="t('growth')" tone="accent">
-              <template #heading>
-                <span class="stat-readout">{{ progression.totalXp }} XP</span>
-              </template>
-              <div class="stat-row">
-                <span class="stat-readout">Lv {{ progression.level }} · {{ evolutionLabel }}</span>
-              </div>
-              <ProgressTrack :value="progressionPercent" :aria-label="t('growth')" />
-              <div class="stat-row muted">
-                <span>{{ t('toNextLevel', { value: `${progression.xpIntoLevel} / ${progression.xpToNext}` }) }}</span>
-                <span v-if="progression.currentStreak > 0">{{ t('dayStreak', { days: progression.currentStreak }) }}</span>
-                <span v-else>{{ t('startStreak') }}</span>
-              </div>
-            </Card>
-            <Card :title="t('moodVisuals')">
-              <ToggleRow
-                :model-value="store.moodVisualsEnabled"
-                :label="t('moodVisuals')"
-                :help="t('moodVisualsHelp')"
-                @update:model-value="store.setMoodVisualsEnabled($event)"
-              />
-            </Card>
-          </template>
-          <div v-else class="growth-unavailable" role="status">
-            {{ t('growthDataUnavailable') }}
-          </div>
-
-          <Card :title="t('achievements')" tone="accent">
-            <template #heading>
-              <span class="stat-readout">
-                {{ store.achievements?.totalUnlocked ?? 0 }} / {{ store.achievements?.achievements.length ?? 0 }}
-              </span>
-            </template>
-            <ToggleRow
-              :model-value="store.achievementsEnabled"
-              :label="t('achievementsEnable')"
-              :help="t('achievementsEnableHelp')"
-              @update:model-value="store.setAchievementsEnabled($event)"
-            />
-            <div v-if="store.achievements" class="achievement-grid">
-              <article
-                v-for="achievement in store.achievements.achievements"
-                :key="`${achievement.id}:${achievement.version}`"
-                class="achievement-tile"
-                :class="{ unlocked: achievement.unlocked }"
-                :aria-label="`${achievementText(achievement.titleKey)} · ${achievement.unlocked ? t('achievementUnlocked') : t('achievementLocked')}`"
-              >
-                <span class="achievement-icon" :class="{ unlocked: achievement.unlocked }">
-                  <Icon :name="achievement.unlocked ? 'trophy' : 'lock'" :size="15" />
-                </span>
-                <span class="achievement-copy">
-                  <strong>{{ achievementText(achievement.titleKey) }}</strong>
-                  <span>{{ achievementText(achievement.descriptionKey) }}</span>
-                  <small v-if="achievement.tokenQuality !== 'none'">
-                    {{ t('achievementTokenQuality', { quality: achievementQualityLabel(achievement.tokenQuality) }) }}
-                  </small>
-                </span>
-                <span class="achievement-state">
-                  {{ achievement.unlocked ? t('achievementUnlocked') : t('achievementLocked') }}
-                </span>
-              </article>
-            </div>
-            <div v-else class="growth-unavailable" role="status">
-              {{ t('achievementGalleryEmpty') }}
-            </div>
-          </Card>
-        </template>
-
-        <template v-else-if="settingsTab === 'pets'">
-          <Card :title="t('pets')">
-            <div class="pet-list">
-              <template v-for="pet in store.visiblePets" :key="pet.id">
-                <input
-                  v-if="editingPetId === pet.id"
-                  v-model="editName"
-                  class="pet-rename-input"
-                  maxlength="64"
-                  @keyup.enter="confirmRename"
-                  @keyup.escape="cancelRename"
-                  @blur="confirmRename"
-                />
-                <!-- Was a <div> with @click, unreachable by keyboard even
-                     though picking a pet is the main action here. It can't
-                     be a <button> either — the rename/remove actions inside
-                     it are themselves buttons, and a button can't nest
-                     inside a button (the browser would silently close the
-                     outer tag early and break both the click target and the
-                     nested actions). role="button" + explicit key handling
-                     gets the same keyboard reachability without that trap. -->
-                <div
-                  v-else
-                  class="pet-option"
-                  :class="{ active: store.selectedPet === pet.id }"
-                  role="button"
-                  tabindex="0"
-                  :aria-pressed="store.selectedPet === pet.id"
-                  @click="store.setPet(pet.id)"
-                  @keydown.enter="store.setPet(pet.id)"
-                  @keydown.space.prevent="store.setPet(pet.id)"
-                >
-                  <span class="pet-name">{{ pet.displayName }}</span>
-                  <span class="pet-actions">
-                    <Button
-                      v-if="!pet.builtIn"
-                      variant="ghost"
-                      size="sm"
-                      :title="t('rename')"
-                      :aria-label="t('rename')"
-                      @click.stop="startRename(pet)"
-                    >
-                      <Icon name="edit" :size="13" />
-                    </Button>
-                    <Button
-                      v-if="pet.id !== store.defaultPetId"
-                      variant="ghost"
-                      size="sm"
-                      :title="pet.builtIn ? t('hide') : t('remove')"
-                      :aria-label="pet.builtIn ? t('hide') : t('remove')"
-                      @click.stop="confirmRemovePet(pet)"
-                    >
-                      <Icon name="close" :size="13" />
-                    </Button>
-                  </span>
-                </div>
-              </template>
-            </div>
-            <div class="import-row">
-              <Button variant="primary" size="sm" :disabled="importing" @click="importPet">
-                {{ importing ? t('importing') : t('importSprite') }}
-              </Button>
-              <Button variant="primary" size="sm" :disabled="importingZip" @click="importPetZip">
-                {{ importingZip ? t('importing') : t('importZip') }}
-              </Button>
-            </div>
-            <div v-if="importZipError" class="import-error">{{ importZipError }}</div>
-          </Card>
-
-          <Card :title="t('multiPet')">
-            <ToggleRow
-              :model-value="store.multiPetEnabled"
-              :label="t('multiPet')"
-              @update:model-value="store.setMultiPetEnabled($event)"
-            />
-          </Card>
-
-          <Card v-if="store.multiPetEnabled" :title="t('perAgentPet')">
-            <div class="field-row" v-for="family in SOURCE_FAMILIES" :key="family.key">
-              <span class="family-pet-name">
-                <span class="family-pet-dot" :class="`family-${family.key}`" />
-                {{ family.label }}
-              </span>
-              <Select
-                size="sm"
-                class="field-control"
-                :aria-label="family.label"
-                :model-value="store.familyPetIds[family.key] || ''"
-                @update:model-value="store.setFamilyPet(family.key, $event || null)"
-              >
-                <option value="">{{ t('defaultPet') }}</option>
-                <option v-for="pet in store.visiblePets" :key="pet.id" :value="pet.id">
-                  {{ pet.displayName }}
-                </option>
-              </Select>
-            </div>
-          </Card>
-
-          <Card :title="t('projectPets')">
-            <ToggleRow
-              :model-value="store.projectPetsEnabled"
-              :label="t('projectPetsEnable')"
-              :help="t('projectPetsEnableHelp')"
-              @update:model-value="store.setProjectPetsEnabled($event)"
-            />
-            <template v-if="store.projectPetsEnabled">
-              <p class="section-copy">{{ t('projectPetsHelp') }}</p>
-              <div class="project-pet-actions">
-                <Button variant="secondary" size="sm" :disabled="store.projectPetsLoading" @click="store.addProjectPet()">
-                  {{ store.projectPetsLoading ? t('checking') : t('addProjectPet') }}
-                </Button>
-              </div>
-              <div v-if="store.projectPetsError" class="import-error" role="status">
-                {{ store.projectPetsError }}
-              </div>
-              <div v-if="store.projectPetsLoading && store.projectPets.length === 0" class="project-pet-empty">
-                {{ t('checking') }}
-              </div>
-              <div v-else-if="store.projectPets.length > 0" class="project-pet-list">
-                <div v-for="project in store.projectPets" :key="project.projectId" class="project-pet-row">
-                  <span class="field-copy">
-                    <span class="field-label" :title="project.displayName">{{ project.displayName }}</span>
-                    <span class="field-help" :class="{ 'project-pet-missing': project.bindingStatus === 'missing-pet' }">
-                      {{ projectPetStatusLabel(project.bindingStatus) }}
-                    </span>
-                  </span>
-                  <span class="project-pet-controls">
-                    <Select
-                      size="sm"
-                      class="field-control"
-                      :aria-label="`${project.displayName} ${t('projectPets')}`"
-                      :model-value="project.boundPetId ?? ''"
-                      @update:model-value="store.setProjectPetBinding(project.projectId, $event || null)"
-                    >
-                      <option value="">{{ t('useSelectedPet') }}</option>
-                      <option v-if="project.bindingStatus === 'missing-pet' && project.boundPetId" :value="project.boundPetId">
-                        {{ t('missingPet') }}
-                      </option>
-                      <option v-for="pet in store.visiblePets" :key="pet.id" :value="pet.id">
-                        {{ pet.displayName }}
-                      </option>
-                    </Select>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      :title="t('remove')"
-                      :aria-label="`${t('remove')} ${project.displayName}`"
-                      @click="confirmRemoveProjectPet(project)"
-                    >
-                      <Icon name="close" :size="13" />
-                    </Button>
-                  </span>
-                </div>
-              </div>
-              <div v-else class="project-pet-empty">
-                {{ t('projectPetsNoProjects') }}
-              </div>
-            </template>
-          </Card>
-        </template>
-
-        <template v-else>
-          <Card :title="t('presentationMcpSection')">
-            <p class="section-copy">{{ t('presentationMcpSetupHelp') }}</p>
-            <Button variant="primary" size="sm" block @click="store.openProjectMcpPanel">
-              {{ t('projectMcpPanelTitle') }}
-            </Button>
-          </Card>
-          <Card :title="t('keepControl')">
-            <p class="section-copy">{{ t('keepControlHelp') }}</p>
-            <div class="advanced-actions">
-              <Button variant="primary" size="sm" block @click="store.openSetupWizard()">{{ t('setupWizard') }}</Button>
-              <Button variant="secondary" size="sm" block @click="restartApp">{{ t('restartPet') }}</Button>
-              <Button variant="danger" size="sm" block @click="quitApp">{{ t('quit') }}</Button>
-            </div>
-          </Card>
-        </template>
+        <component :is="settingsTabComponent" v-bind="settingsTabProps" />
       </div>
-      </div>
-    </template>
-
-    <ConfirmDialog
-      :open="confirmDialog !== null"
-      :title="confirmDialog?.title ?? ''"
-      :message="confirmDialog?.message"
-      :tone="confirmDialog?.tone"
-      @confirm="acceptConfirm"
-      @cancel="confirmDialog = null"
-    />
+    </div>
   </div>
 </template>
 

@@ -14,8 +14,10 @@ const props = withDefaults(defineProps<{
   message?: string
   confirmLabel?: string
   cancelLabel?: string
+  focusCancel?: boolean
   tone?: 'default' | 'danger'
 }>(), {
+  focusCancel: false,
   tone: 'default',
 })
 
@@ -48,13 +50,13 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-// Focus the confirm button on open so Enter works immediately and the dialog
-// is reachable without a mouse.
+// Focus the designated action on open so keyboard confirmation stays explicit.
 watch(() => props.open, async (open) => {
   if (open) {
     window.addEventListener('keydown', onKeydown, true)
     await nextTick()
-    ;(dialogRef.value?.querySelector('[data-confirm]') as HTMLElement | null)?.focus()
+    const selector = props.focusCancel ? '[data-cancel]' : '[data-confirm]'
+    ;(dialogRef.value?.querySelector(selector) as HTMLElement | null)?.focus()
   } else {
     window.removeEventListener('keydown', onKeydown, true)
   }
@@ -77,8 +79,9 @@ onUnmounted(() => {
       >
         <h2 class="title">{{ title }}</h2>
         <p v-if="message" class="message">{{ message }}</p>
+        <slot />
         <div class="actions">
-          <Button variant="secondary" size="sm" @click="emit('cancel')">
+          <Button variant="secondary" size="sm" data-cancel @click="emit('cancel')">
             {{ cancelLabel || t('cancel') }}
           </Button>
           <Button
