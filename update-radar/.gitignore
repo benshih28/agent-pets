@@ -1,0 +1,6 @@
+data/feed.json
+data/feed.json.tmp
+pnpm-lock.yaml
+.env
+.env.*
+!.env.example

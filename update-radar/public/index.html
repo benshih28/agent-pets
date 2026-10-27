@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>AI Update Radar</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">OFFICIAL CHANGELOG TRACKER</p>
+          <h1>AI Update Radar</h1>
+          <p class="hero-copy">集中查看 OpenAI、Anthropic、Codex、Claude Code 與 Tibo 的公開更新。</p>
+        </div>
+        <div class="summary" aria-live="polite">
+          <strong id="update-count">—</strong>
+            <span>筆公開更新</span>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="更新篩選">
+        <label>
+          <span>搜尋</span>
+          <input id="search" type="search" placeholder="模型、API、Codex…" autocomplete="off">
+        </label>
+        <label>
+          <span>供應商</span>
+          <select id="provider">
+            <option value="">全部</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="x">Tibo / X</option>
+          </select>
+        </label>
+        <label>
+          <span>分類</span>
+          <select id="category">
+            <option value="">全部</option>
+            <option value="new-model">新模型</option>
+            <option value="feature">新功能</option>
+            <option value="developer-tool">開發工具</option>
+            <option value="api-change">API 變更</option>
+          </select>
+        </label>
+        <label>
+          <span>變更</span>
+          <select id="change-type">
+            <option value="">全部</option>
+            <option value="added">新增</option>
+            <option value="improved">改善</option>
+            <option value="fixed">修正</option>
+            <option value="deprecated">棄用</option>
+            <option value="removed">移除</option>
+          </select>
+        </label>
+        <button id="notifications" type="button">開啟 Tibo 通知</button>
+        <button id="reload" type="button">重新載入</button>
+      </section>
+
+      <div id="status" class="status" role="status" aria-live="polite">正在讀取官方更新…</div>
+      <section id="updates" class="update-list" aria-label="官方更新"></section>
+      <section id="source-health" class="source-health" aria-label="來源狀態"></section>
+    </main>
+  </body>
+</html>
