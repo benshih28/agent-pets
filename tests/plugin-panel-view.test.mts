@@ -19,6 +19,7 @@ function fakeController(options: {
   loadURL?: (url: string, viewIndex: number) => Promise<void>
   onBlockedRequest?: (url: string) => void
   ackTimeoutMs?: number
+  loadTimeoutMs?: number
   parentVisible?: boolean
 } = {}) {
   let parentVisible = options.parentVisible ?? true
@@ -113,6 +114,7 @@ function fakeController(options: {
     },
     onClosed: event => closedEvents.push(event),
     ackTimeoutMs: options.ackTimeoutMs,
+    loadTimeoutMs: options.loadTimeoutMs,
     onBlockedRequest: url => {
       blockedRequestUrls.push(url)
       options.onBlockedRequest?.(url)
@@ -305,10 +307,37 @@ test('plugin panel closes after the renderer bounds acknowledgement times out', 
   assert.deepEqual(fake.closedEvents, [{ pluginId: 'sample-plugin', openToken: 1, reason: 'renderer_unavailable' }])
 })
 
-test('plugin panel acknowledgement timeout starts before the renderer finishes loading', async () => {
+test('plugin panel acknowledgement timeout starts after the renderer finishes loading', async () => {
   let finishLoading: (() => void) | undefined
   const fake = fakeController({
     ackTimeoutMs: 5,
+    loadTimeoutMs: 1_000,
+    loadURL: () => new Promise(resolve => { finishLoading = resolve }),
+  })
+  const opening = fake.controller.open({
+    pluginId: 'sample-plugin', entry: 'ui/index.html', openToken: 1, bounds: initialBounds,
+  })
+  await new Promise(resolve => setTimeout(resolve, 25))
+
+  assert.equal(fake.controller.activePluginId(), 'sample-plugin')
+  assert.deepEqual(fake.closedEvents, [])
+
+  finishLoading?.()
+  assert.deepEqual(await opening, { ok: true, value: { opened: true, openToken: 1 } })
+  assert.equal(fake.controller.setBounds(1, initialBounds), true)
+  await new Promise(resolve => setTimeout(resolve, 25))
+
+  assert.equal(fake.controller.activePluginId(), 'sample-plugin')
+  assert.equal(fake.views[0]?.visibility.at(-1), true)
+  assert.deepEqual(fake.closedEvents, [])
+  fake.controller.close()
+})
+
+test('plugin panel closes when the renderer never finishes loading', async () => {
+  let finishLoading: (() => void) | undefined
+  const fake = fakeController({
+    ackTimeoutMs: 1_000,
+    loadTimeoutMs: 5,
     loadURL: () => new Promise(resolve => { finishLoading = resolve }),
   })
   const opening = fake.controller.open({

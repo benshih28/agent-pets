@@ -90,6 +90,7 @@ export interface PluginPanelViewControllerOptions {
   onClosed?: (event: PluginPanelViewClosedEvent) => void
   onBlockedRequest?: (url: string) => void
   ackTimeoutMs?: number
+  loadTimeoutMs?: number
 }
 
 interface ActivePanelView {
@@ -215,12 +216,13 @@ export class PluginPanelViewController {
       parent.addChildView(view)
       active.attached = true
       this.configureWebContents(active)
-      active.ackTimeout = setTimeout(() => {
-        if (this.active === active && !active.acknowledged) this.close('renderer_unavailable', openToken)
-      }, this.options.ackTimeoutMs ?? 2_000)
+      // 宿主要等 open() 回傳後才會送 bounds，所以載入期間另外計時；
+      // 載入完成才開始等握手，避免主程序忙碌時把正常載入的面板誤關。
+      this.armAckTimeout(active, this.options.loadTimeoutMs ?? 15_000)
       const entry = descriptor.entry.split('/').map(segment => encodeURIComponent(segment)).join('/')
       await view.webContents.loadURL(`agent-pets://plugin/${token}/${entry}`)
       if (this.active !== active) return errorResult('disabled')
+      if (!active.acknowledged) this.armAckTimeout(active, this.options.ackTimeoutMs ?? 2_000)
       return { ok: true, value: { opened: true, openToken } }
     } catch {
       const active = this.active
@@ -356,6 +358,13 @@ export class PluginPanelViewController {
     } catch {
       return errorResult('disabled')
     }
+  }
+
+  private armAckTimeout(active: ActivePanelView, timeoutMs: number): void {
+    if (active.ackTimeout) clearTimeout(active.ackTimeout)
+    active.ackTimeout = setTimeout(() => {
+      if (this.active === active && !active.acknowledged) this.close('renderer_unavailable', active.openToken)
+    }, timeoutMs)
   }
 
   private configureSession(pluginId: string, pluginSession: PluginPanelViewSession): void {
