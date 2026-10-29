@@ -96,7 +96,7 @@ export interface ElectronAPI {
       togglePanel: () => void
       resizePanel: (height: number, width?: number) => void
       hidePanel: () => void
-      onPanelOpened: (callback: () => void) => () => void
+      onPanelOpened: (callback: (options: { restore: boolean }) => void) => () => void
       onPanelOpenSettings: (callback: () => void) => () => void
       onPanelOpenPluginView: (callback: (pluginId: string) => void) => () => void
       initializeDesktopPreferences: (legacySoundEnabled: boolean) => Promise<DesktopPreferences>

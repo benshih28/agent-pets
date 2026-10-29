@@ -1777,6 +1777,11 @@ export function createPanelWindow() {
   })
 
   mainState.panelWindow.on('hide', () => mainState.pluginPanelViewController?.onPanelWindowHidden())
+  mainState.panelWindow.on('show', () => {
+    if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
+    const contentBounds = mainState.panelWindow.getContentBounds()
+    mainState.pluginPanelViewController?.relayout({ width: contentBounds.width, height: contentBounds.height })
+  })
   mainState.panelWindow.webContents.on('did-start-loading', () => mainState.pluginPanelViewController?.onPanelRendererReload())
   mainState.panelWindow.on('resize', () => {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
@@ -1981,15 +1986,23 @@ export function hidePetWindow(): void {
   mainState.desktopTray?.rebuild()
 }
 
-export function showPanelWindow(view: 'sessions' | 'settings' = 'sessions', pluginViewPluginId?: string): void {
+// `restore` 沿用面板上次關閉時的畫面（含暫停中的插件畫面與視窗尺寸），只依寵物位置重新定位；
+// 其他 view 是明確導向，會先關閉暫停中的插件畫面再切換。
+export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'sessions', pluginViewPluginId?: string): void {
   if (!ensureDesktopWindows() || !mainState.panelWindow) return
-  mainState.pluginPanelViewController?.close()
+  const restore = view === 'restore'
+  if (!restore) mainState.pluginPanelViewController?.close(mainState.panelWindow.isVisible() ? 'closed' : 'hidden')
   if (mainState.panelBlurHideHandle) clearTimeout(mainState.panelBlurHideHandle)
   mainState.panelBlurHideHandle = null
   mainState.windowsFullscreenAutoHiddenPanel = false
   if (mainState.petWindowMode === 'edge') applyNormalPetBounds()
   showPetWindow()
-  mainState.panelWindow.setBounds(computePanelBounds(view === 'settings' ? 720 : 560))
+  if (restore) {
+    const [width, height] = mainState.panelWindow.getSize()
+    setPluginPanelWindowBounds(computePanelBounds(height, width))
+  } else {
+    mainState.panelWindow.setBounds(computePanelBounds(view === 'settings' ? 720 : 560))
+  }
   // Opening a panel is an explicit user action (Tray item, notification, or
   // pet click), so it must remain keyboard-usable even when fullscreen
   // exclusion is enabled. The macOS Space collection policy still decides
@@ -2000,7 +2013,7 @@ export function showPanelWindow(view: 'sessions' | 'settings' = 'sessions', plug
 
   const notifyRenderer = () => {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
-    mainState.panelWindow.webContents.send(IPC_CHANNELS.panelOpened)
+    mainState.panelWindow.webContents.send(IPC_CHANNELS.panelOpened, { restore })
     if (view === 'settings') mainState.panelWindow.webContents.send(IPC_CHANNELS.panelOpenSettings)
     if (view === 'settings' && pluginViewPluginId) mainState.panelWindow.webContents.send(IPC_CHANNELS.panelOpenPluginView, pluginViewPluginId)
   }
@@ -2572,7 +2585,7 @@ export function createDesktopServices(): void {
       isPetVisible: () => Boolean(mainState.petWindow?.isVisible()),
       showPet: showPetWindow,
       hidePet: hidePetWindow,
-      openPanel: () => showPanelWindow('sessions'),
+      openPanel: () => showPanelWindow('restore'),
       openSettings: () => showPanelWindow('settings'),
       getPetMode: () => mainState.petWindowMode,
       getPluginCommands: pluginTrayCommands,

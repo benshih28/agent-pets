@@ -260,8 +260,12 @@ export class PluginPanelViewController {
   setBounds(openToken: number, bounds: { x: number; y: number; width: number; height: number }): boolean {
     const active = this.active
     if (!active || active.openToken !== openToken || !isValidBounds(bounds)) return false
-    if (active.parent.isDestroyed() || !active.parent.isVisible()) {
+    if (active.parent.isDestroyed() || (!active.parent.isVisible() && !active.acknowledged)) {
       this.close('renderer_unavailable', openToken)
+      return false
+    }
+    if (!active.parent.isVisible()) {
+      try { active.view.setVisible(false) } catch {}
       return false
     }
     active.view.setBounds({
@@ -302,8 +306,16 @@ export class PluginPanelViewController {
     return this.setBounds(active.openToken, bounds)
   }
 
+  // 面板視窗隱藏時只暫停已顯示的插件畫面、保留頁面狀態，視窗再次顯示時由 relayout 還原；
+  // 尚未完成握手的面板沒有可還原的畫面，照舊關閉。
   onPanelWindowHidden(): void {
-    this.close('hidden')
+    const active = this.active
+    if (!active) return
+    if (!active.acknowledged) {
+      this.close('hidden')
+      return
+    }
+    try { active.view.setVisible(false) } catch {}
   }
 
   onPanelRendererReload(): void {

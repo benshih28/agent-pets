@@ -1494,8 +1494,10 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   // Called by electron/main.ts whenever the panel window transitions from
-  // hidden to visible, so it always opens back on the Sessions view.
-  function handlePanelOpened() {
+  // hidden to visible. A restore keeps the previous screen (including a
+  // suspended plugin panel); any other open goes back to the Sessions view.
+  function handlePanelOpened(options?: { restore?: boolean }) {
+    if (options?.restore) return
     panelView.value = 'sessions'
     showWizard.value = false
     showProjectMcpPanel.value = false

@@ -198,8 +198,8 @@ onMounted(() => {
       .catch(() => {})
   }
   if (isPanelWindow && electronAPI?.onPanelOpened) {
-    cleanupPanelOpened = electronAPI.onPanelOpened(() => {
-      store.handlePanelOpened()
+    cleanupPanelOpened = electronAPI.onPanelOpened((options: { restore: boolean }) => {
+      store.handlePanelOpened(options)
     })
   }
   if (isPanelWindow && electronAPI?.onPanelOpenSettings) {

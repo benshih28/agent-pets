@@ -354,7 +354,7 @@ test('plugin panel closes when the renderer never finishes loading', async () =>
   assert.deepEqual(await opening, { ok: false, error: 'disabled' })
 })
 
-test('plugin panel closes when the host window is hidden', async () => {
+test('plugin panel closes when the host window is hidden before acknowledging bounds', async () => {
   const fake = fakeController()
   await fake.controller.open({
     pluginId: 'sample-plugin', entry: 'ui/index.html', openToken: 1, bounds: initialBounds,
@@ -481,10 +481,36 @@ test('plugin panel preload bridge exposes only the approved API subset and unwra
 })
 
 
-test('hiding the settings panel closes the view with a silent hidden reason', async () => {
+test('hiding the settings panel before acknowledgement closes the view with a silent hidden reason', async () => {
   const fake = fakeController()
   const result = await fake.controller.open({ pluginId: 'sample-plugin', entry: 'panel/index.html', openToken: 1, bounds: initialBounds })
   assert.equal(result.ok, true)
   fake.controller.onPanelWindowHidden()
   assert.deepEqual(fake.closedEvents, [{ pluginId: 'sample-plugin', openToken: 1, reason: 'hidden' }])
+})
+
+test('hiding the settings panel suspends an acknowledged view and restores it on relayout', async () => {
+  const fake = fakeController()
+  await fake.controller.open({ pluginId: 'sample-plugin', entry: 'panel/index.html', openToken: 1, bounds: initialBounds })
+  const insets = { left: 8, top: 64, right: 8, bottom: 8 }
+  assert.equal(fake.controller.setLayout(1, insets, { width: 496, height: 432 }), true)
+
+  fake.setParentVisible(false)
+  fake.controller.onPanelWindowHidden()
+  assert.equal(fake.controller.activePluginId(), 'sample-plugin')
+  assert.equal(fake.views[0]?.destroyed, false)
+  assert.deepEqual(fake.revoked, [])
+  assert.deepEqual(fake.closedEvents, [])
+  assert.equal(fake.views[0]?.visibility.at(-1), false)
+
+  // 隱藏期間的 resize／bounds 回報不可把暫停中的畫面關閉或重新顯示。
+  fake.controller.relayout({ width: 496, height: 432 })
+  assert.equal(fake.controller.activePluginId(), 'sample-plugin')
+  assert.equal(fake.views[0]?.visibility.at(-1), false)
+
+  fake.setParentVisible(true)
+  fake.controller.relayout({ width: 520, height: 440 })
+  assert.equal(fake.views[0]?.visibility.at(-1), true)
+  assert.deepEqual(fake.views[0]?.bounds.at(-1), { x: 8, y: 64, width: 504, height: 368 })
+  fake.controller.close()
 })

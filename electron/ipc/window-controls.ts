@@ -35,7 +35,7 @@ export interface WindowControlsIpcDependencies {
   persistCurrentPetWindowState(): void
   repositionVisiblePanel(): void
   hidePetWindow(): void
-  showPanelWindow(view: 'sessions' | 'settings'): void
+  showPanelWindow(view: 'sessions' | 'settings' | 'restore'): void
   quit(): void
   relaunch(): void
   exit(code: number): void
@@ -69,7 +69,7 @@ export function registerWindowControlsIpc(deps: WindowControlsIpcDependencies): 
       panelWindow.hide()
       return
     }
-    deps.showPanelWindow('sessions')
+    deps.showPanelWindow('restore')
   })
 
   deps.ipcMain.on(IPC_CHANNELS.panelResize, (event, payload: unknown) => {

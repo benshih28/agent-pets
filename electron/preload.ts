@@ -191,8 +191,10 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.send(IPC_CHANNELS.panelHide)
   },
 
-  onPanelOpened: (callback: () => void) => {
-    const handler = () => callback()
+  onPanelOpened: (callback: (options: { restore: boolean }) => void) => {
+    const handler = (_event: unknown, payload: unknown) => callback({
+      restore: Boolean(payload && typeof payload === 'object' && (payload as { restore?: unknown }).restore === true),
+    })
     ipcRenderer.on(IPC_CHANNELS.panelOpened, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.panelOpened, handler)
