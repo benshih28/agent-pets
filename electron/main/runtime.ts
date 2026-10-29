@@ -1986,6 +1986,42 @@ export function hidePetWindow(): void {
   mainState.desktopTray?.rebuild()
 }
 
+const PANEL_REVEAL_FRAME_TIMEOUT_MS = 400
+let panelRevealSequence = 0
+
+// 隱藏後重新顯示時，宿主與插件子視圖的新 frame 不一定同時送達；插件晚到的那段時間只看得到內容區底色，
+// 看起來就是閃一下。呼叫端先以透明度 0 顯示，這裡等目前可見的畫面都送出第一個 frame（或逾時）才顯示。
+function revealPanelWindowAfterFirstFrame(panelWindow: BrowserWindow): void {
+  const sequence = ++panelRevealSequence
+  const contents = [panelWindow.webContents, ...panelWindow.contentView.children
+    .filter((view): view is WebContentsView => view instanceof WebContentsView && view.getVisible())
+    .map(view => view.webContents)]
+  let pending = contents.length
+  let done = false
+  const finish = () => {
+    if (done) return
+    done = true
+    clearTimeout(timer)
+    for (const item of contents) {
+      try { if (!item.isDestroyed()) item.endFrameSubscription() } catch {}
+    }
+    if (sequence === panelRevealSequence && !panelWindow.isDestroyed()) panelWindow.setOpacity(1)
+  }
+  const timer = setTimeout(finish, PANEL_REVEAL_FRAME_TIMEOUT_MS)
+  for (const item of contents) {
+    let painted = false
+    try {
+      item.beginFrameSubscription(false, () => {
+        if (painted) return
+        painted = true
+        if (--pending === 0) finish()
+      })
+    } catch {
+      if (--pending === 0) finish()
+    }
+  }
+}
+
 // `restore` 沿用面板上次關閉時的畫面（含暫停中的插件畫面與視窗尺寸），只依寵物位置重新定位；
 // 其他 view 是明確導向，會先關閉暫停中的插件畫面再切換。
 export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'sessions', pluginViewPluginId?: string): void {
@@ -2003,12 +2039,20 @@ export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'ses
   } else {
     mainState.panelWindow.setBounds(computePanelBounds(view === 'settings' ? 720 : 560))
   }
+  const wasHidden = !mainState.panelWindow.isVisible()
+  if (wasHidden) {
+    mainState.panelWindow.setOpacity(0)
+  } else {
+    panelRevealSequence += 1
+    mainState.panelWindow.setOpacity(1)
+  }
   // Opening a panel is an explicit user action (Tray item, notification, or
   // pet click), so it must remain keyboard-usable even when fullscreen
   // exclusion is enabled. The macOS Space collection policy still decides
   // which Space the window may occupy.
   mainState.panelWindow.show()
   mainState.panelWindow.focus()
+  if (wasHidden) revealPanelWindowAfterFirstFrame(mainState.panelWindow)
   mainState.desktopNotifications?.clearAttention()
 
   const notifyRenderer = () => {
