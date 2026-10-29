@@ -1,0 +1,33 @@
+{
+  "id": "update-radar",
+  "name": {
+    "zh-TW": "AI 更新雷達",
+    "en-US": "AI Update Radar"
+  },
+  "version": "0.2.0",
+  "apiVersion": "1",
+  "author": "benshih28",
+  "entry": "dist/main.js",
+  "permissions": {
+    "network": {
+      "hosts": ["api.github.com", "codex-resets.com", "developers.openai.com", "platform.claude.com", "x.com"]
+    },
+    "links": {
+      "hosts": ["codex-resets.com", "developers.openai.com", "github.com", "platform.claude.com", "x.com"]
+    },
+    "schedule": {
+      "minIntervalSec": 300
+    },
+    "storage": true
+  },
+  "contributes": {
+    "feed": true,
+    "panelView": {
+      "entry": "ui/index.html",
+      "title": {
+        "zh-TW": "AI 更新雷達",
+        "en-US": "AI Update Radar"
+      }
+    }
+  }
+}

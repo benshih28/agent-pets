@@ -3,6 +3,8 @@ dist
 # Plugin fixtures and examples ship a prebuilt dist/main.js entry.
 !tests/fixtures/plugins/*/dist/
 !docs/plugins/examples/*/dist/
+!update-radar/plugin/dist/
+!update-radar/plugin/dist/main.js
 dist-electron
 release
 *.log
