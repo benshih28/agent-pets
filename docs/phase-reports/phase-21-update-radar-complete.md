@@ -125,3 +125,9 @@ Update Radar 插件版本：`0.1.0`（未變更）
 - 使用 `permissions.links` 的 Update Radar 需要 Agent Pets `1.4.0` 以上；送進插件目錄時應註明。
 - 插件版本升為 `0.2.0`，以 `update-radar/scripts/pack-plugin.mts` 打包並簽章（指紋 `ffb643e57400dee3`，34,928 bytes，SHA-256 `e28124421d2effd7c674e3ab8788d14e00ad23aa904fa9537094f8bd151ca544`）。腳本以 Agent Pets 的簽章驗證與安裝規劃檢查成品，並固定 zip 時間戳，任何時區都能重現相同位元組。
 - 已上架 `Ponpon55837/agent-pets-plugins`（PR #1，`19f779c`）；從正式 raw 網址下載的套件大小與 SHA-256 均與 `index.json` 相符。0.1.0 從未發布，目錄只列 0.2.0。
+
+## 後續：Update Radar `0.2.1`（2026-10-29，Agent Pets `1.4.3`）
+
+- 展開改為原地撐開被截斷的預覽，不再另外印一份全文；官方摘要以標題開頭時，預覽只顯示標題之後的內容。真實資料 160 則中，109 張官方預覽沒有任何一張以標題開頭，Tibo 貼文展開後同一段文字只出現一次。
+- 26 週格子圖中有官方更新的日期改為按鈕：點選後列表只顯示當天官方更新並捲動至列表，再點同一格、「顯示全部」或「清除篩選」即解除；與 Tibo 按鈕互斥。按鈕有 `aria-pressed` 與完整日期說明，重新繪製後保留鍵盤焦點。真實滑鼠點擊 11px 格子（9/22，5 則）後列表為 5 張當日官方卡片、0 張 Tibo。
+- 驗證：Update Radar 測試 25/25；全部單元測試 499/499；`vue-tsc --noEmit` 通過。面板程式未使用 `innerHTML`、`eval`、`localStorage`，未新增寫死色碼或 `backdrop-filter`。權限與 manifest 除版本外未變更。

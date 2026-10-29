@@ -1,5 +1,5 @@
 const api = window.agentPetsPlugin
-const state = { radar: null, absoluteTime: false }
+const state = { radar: null, absoluteTime: false, day: null }
 let codexResetCountdownTimer = null
 let previewResizeObserver = null
 const previewMeasurements = new Map()
@@ -32,6 +32,9 @@ const elements = {
   filterPanel: document.querySelector('#filter-panel'),
   filterCountStatus: document.querySelector('#filter-count-status'),
   clearFilters: document.querySelector('#clear-filters'),
+  dayFilter: document.querySelector('#day-filter'),
+  dayFilterText: document.querySelector('#day-filter-text'),
+  dayFilterClear: document.querySelector('#day-filter-clear'),
   timeMode: document.querySelector('#time-mode'),
   timeModeLabel: document.querySelector('#time-mode-label'),
 }
@@ -266,24 +269,6 @@ function renderUpdateListSkeleton() {
   setBusy(elements.updates, true)
 }
 
-function comparisonText(value) {
-  return String(value ?? '').normalize('NFC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase('zh-Hant')
-}
-
-function normalizedComparisonText(value) {
-  return comparisonText(value).replace(/[\p{P}…]+$/gu, '').trim()
-}
-
-function textMatches(left, right) {
-  const normalizedLeft = normalizedComparisonText(left)
-  const normalizedRight = normalizedComparisonText(right)
-  if (normalizedLeft && normalizedLeft === normalizedRight) return true
-
-  const rawLeft = comparisonText(left)
-  const rawRight = comparisonText(right)
-  return Boolean(rawLeft && rawRight.startsWith(rawLeft) && /^[\s\p{P}…]*$/u.test(rawRight.slice(rawLeft.length)))
-}
-
 function formatDate(value) {
   if (!value) return '日期未提供'
   const date = new Date(`${value}T12:00:00Z`)
@@ -472,22 +457,45 @@ function appendSourceAction(parent, update) {
   return row
 }
 
-function appendDetails(parent, update, { tibo = false, initiallyHidden = false } = {}) {
+function appendDetails(parent, update) {
   const details = document.createElement('details')
   details.className = 'update-details'
-  const summary = appendText(details, 'summary', '', tibo ? '展開原文' : '展開完整原文與快速判讀')
+  appendText(details, 'summary', '', '展開快速判讀')
   const content = document.createElement('div')
   content.className = 'details-content'
-  const fullCopy = appendText(content, 'p', 'full-copy', update.summary || update.title || '原文內容未提供。')
-  if (!tibo) {
-    appendQuickRead(content, update)
-    appendVersion(content, update)
-  }
-  const sourceAction = appendSourceAction(content, update)
+  appendQuickRead(content, update)
+  appendVersion(content, update)
+  appendSourceAction(content, update)
   details.append(content)
-  details.hidden = initiallyHidden
   parent.append(details)
-  return { details, summary, content, fullCopy, sourceAction }
+  return details
+}
+
+// 官方摘要常以標題開頭；預覽只留標題之後的內容，同一句才不會在標題與預覽各出現一次。
+function textAfterTitle(title, text) {
+  const words = String(title ?? '').normalize('NFC').trim().split(/\s+/u).filter(Boolean)
+  const source = String(text ?? '').normalize('NFC').trim()
+  if (!words.length) return source
+  const escaped = words.map(word => word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('\\s+')
+  const match = source.match(new RegExp(`^${escaped}`, 'iu'))
+  return match ? source.slice(match[0].length).replace(/^[\s\p{P}…]+/u, '') : source
+}
+
+// 原地展開被截斷的預覽，不另外再印一份全文，避免展開後前半段重複。
+function appendExpandToggle(parent, preview) {
+  const button = appendText(parent, 'button', 'expand-toggle', '展開全文')
+  button.type = 'button'
+  button.hidden = true
+  button.setAttribute('aria-expanded', 'false')
+  button.addEventListener('click', () => {
+    const expanded = preview.classList.toggle('is-expanded')
+    button.textContent = expanded ? '收合' : '展開全文'
+    button.setAttribute('aria-expanded', String(expanded))
+  })
+  return () => {
+    const expanded = preview.classList.contains('is-expanded')
+    button.hidden = !(expanded || preview.scrollHeight > preview.clientHeight + 1)
+  }
 }
 
 function clearPreviewMeasurements() {
@@ -531,18 +539,9 @@ function renderTiboBubble(update, role = '') {
   if (role === 'self-reply') appendText(meta, 'span', 'post-kind post-kind-self-reply', '自我回文')
   bubble.append(meta)
 
-  const originalText = update.summary || update.title || '原文內容未提供。'
-  const preview = appendText(bubble, 'p', 'message-preview', originalText)
-  const detailParts = appendDetails(bubble, update, { tibo: true, initiallyHidden: true })
-  const updateExpansion = () => {
-    const originalVisible = textMatches(originalText, preview.textContent)
-    const previewClamped = preview.scrollHeight > preview.clientHeight + 1
-    const needsFullText = !originalVisible || previewClamped
-    detailParts.details.hidden = !needsFullText
-    if (needsFullText) detailParts.content.append(detailParts.sourceAction)
-    else bubble.append(detailParts.sourceAction)
-  }
-  observePreview(preview, updateExpansion)
+  const preview = appendText(bubble, 'p', 'message-preview', update.summary || update.title || '原文內容未提供。')
+  observePreview(preview, appendExpandToggle(bubble, preview))
+  appendSourceAction(bubble, update)
   row.append(bubble)
   return row
 }
@@ -578,23 +577,12 @@ function renderOfficialUpdate(update) {
   article.append(meta)
   const title = update.title || '未命名更新'
   appendText(article, 'h3', 'official-title', title)
-  const summaryText = update.summary || ''
-  const previewIsTitle = Boolean(summaryText && textMatches(title, summaryText))
-  const preview = summaryText && !previewIsTitle ? appendText(article, 'p', 'official-preview', summaryText) : null
-  const originalText = update.summary || update.title || '原文內容未提供。'
-  const matchesTitle = textMatches(originalText, title)
-  const matchesPreview = Boolean(preview && textMatches(originalText, summaryText))
-  const detailParts = appendDetails(article, update, { initiallyHidden: matchesTitle || matchesPreview })
-  const updateExpansion = () => {
-    const sameAsTitle = textMatches(originalText, title)
-    const sameAsPreview = Boolean(preview && textMatches(originalText, summaryText))
-    const previewClamped = Boolean(preview && preview.scrollHeight > preview.clientHeight + 1)
-    const omitFullText = sameAsTitle || (sameAsPreview && !previewClamped)
-    detailParts.fullCopy.hidden = omitFullText
-    detailParts.summary.textContent = omitFullText ? '展開快速判讀' : '展開完整原文與快速判讀'
-    detailParts.details.hidden = false
+  const previewText = textAfterTitle(title, update.summary)
+  if (previewText) {
+    const preview = appendText(article, 'p', 'official-preview', previewText)
+    observePreview(preview, appendExpandToggle(article, preview))
   }
-  observePreview(preview, updateExpansion)
+  appendDetails(article, update)
   return article
 }
 
@@ -782,6 +770,7 @@ function renderThread(group) {
 }
 
 function matchesFilters(update) {
+  if (state.day && (isTiboUpdate(update) || heatDateKey(update) !== state.day)) return false
   if (elements.provider.value && update.provider !== elements.provider.value) return false
   if (elements.category.value && update.category !== elements.category.value) return false
   if (elements.changeType.value && update.changeType !== elements.changeType.value) return false
@@ -812,10 +801,42 @@ function renderUpdates() {
   elements.resultStatus.textContent = groups.length > 0
     ? `顯示 ${groups.length} 個區塊、${visibleCount} 則內容。Tibo 對話會保留整串上下文。`
     : '目前的篩選條件沒有結果。'
+  renderDayFilter(visibleCount)
+}
+
+function dayLabel(key) {
+  const [year, month, day] = key.split('-').map(Number)
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date(year, month - 1, day).getDay()]
+  return `${month}/${day}（${weekday}）`
+}
+
+function renderDayFilter(visibleCount) {
+  elements.dayFilter.hidden = !state.day
+  // 日期列已說明筆數；保留一般結果說明只會重複，且日期篩選不含 Tibo。
+  elements.resultStatus.hidden = Boolean(state.day)
+  if (state.day) elements.dayFilterText.textContent = `只顯示 ${dayLabel(state.day)} 的官方更新 ${visibleCount} 則`
+}
+
+function scrollToUpdates() {
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  document.querySelector('.updates-region')?.scrollIntoView?.({
+    behavior: reducedMotion ? 'auto' : 'smooth',
+    block: 'start',
+  })
+}
+
+function selectDay(key) {
+  state.day = state.day === key ? null : key
+  // 日期只篩官方更新；若停在 Tibo 篩選會永遠沒有結果，所以一併解除。
+  if (state.day && elements.provider.value === 'x') elements.provider.value = ''
+  renderFilterControls()
+  renderHeatmap()
+  renderUpdates()
+  if (state.day) scrollToUpdates()
 }
 
 function appliedFilterCount() {
-  return [elements.search.value.trim(), elements.provider.value, elements.category.value, elements.changeType.value]
+  return [elements.search.value.trim(), elements.provider.value, elements.category.value, elements.changeType.value, state.day]
     .filter(Boolean).length
 }
 
@@ -895,6 +916,8 @@ function renderHeatmap() {
   }
   setBusy(elements.heatmap, officialLoading)
   elements.heatLoader.hidden = !officialLoading
+  // 重新繪製會替換所有格子；保留鍵盤焦點，避免每次選取或同步後焦點跳回頁首。
+  const focusedDay = elements.heatmap.contains(document.activeElement) ? document.activeElement.dataset.day : null
   for (const update of officialUpdates) {
     const key = heatDateKey(update)
     if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
@@ -937,24 +960,38 @@ function renderHeatmap() {
         days.push(cell)
         continue
       }
-      const count = counts.get(localDateKey(date)) ?? 0
+      const key = localDateKey(date)
+      const count = counts.get(key) ?? 0
       const weekdayLabel = ['日', '一', '二', '三', '四', '五', '六'][weekday]
       const description = count
         ? `${shortDate(date)}（${weekdayLabel}）：官方更新 ${count} 則`
         : `${shortDate(date)}（${weekdayLabel}）：沒有官方更新`
       cell.dataset.level = String(Math.min(4, count))
       cell.title = description
-      cell.setAttribute('aria-label', description)
+      if (state.day === key) cell.classList.add('is-selected')
       const dot = document.createElement('span')
       dot.className = 'heat-cell-dot'
       dot.setAttribute('aria-hidden', 'true')
-      cell.append(dot)
-      appendText(cell, 'span', 'visually-hidden', description)
+      if (count) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'heat-cell-button'
+        button.dataset.day = key
+        button.setAttribute('aria-pressed', String(state.day === key))
+        button.setAttribute('aria-label', `${description}，顯示當天卡片`)
+        button.append(dot)
+        cell.append(button)
+      } else {
+        cell.setAttribute('aria-label', description)
+        cell.append(dot)
+        appendText(cell, 'span', 'visually-hidden', description)
+      }
       days.push(cell)
     }
   }
   elements.heatmap.replaceChildren(...days)
   elements.heatMonths.replaceChildren(...monthLabels)
+  if (focusedDay) elements.heatmap.querySelector(`[data-day="${focusedDay}"]`)?.focus({ preventScroll: true })
   elements.heatmap.setAttribute('aria-label', '近 26 週每日官方 AI 更新數，週日至週六排列')
 }
 
@@ -1053,19 +1090,28 @@ elements.clearFilters.addEventListener('click', () => {
   elements.provider.value = ''
   elements.category.value = ''
   elements.changeType.value = ''
+  state.day = null
   renderFilterControls()
+  renderHeatmap()
   renderUpdates()
+})
+
+elements.heatmap.addEventListener('click', (event) => {
+  const button = event.target.closest?.('.heat-cell-button')
+  if (button?.dataset.day) selectDay(button.dataset.day)
+})
+
+elements.dayFilterClear.addEventListener('click', () => {
+  if (state.day) selectDay(state.day)
 })
 
 elements.tiboSummary.addEventListener('click', () => {
   elements.provider.value = 'x'
+  state.day = null
   renderFilterControls()
+  renderHeatmap()
   renderUpdates()
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  document.querySelector('.updates-region')?.scrollIntoView?.({
-    behavior: reducedMotion ? 'auto' : 'smooth',
-    block: 'start',
-  })
+  scrollToUpdates()
 })
 
 document.addEventListener('keydown', (event) => {

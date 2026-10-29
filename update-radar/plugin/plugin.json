@@ -4,7 +4,7 @@
     "zh-TW": "AI 更新雷達",
     "en-US": "AI Update Radar"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "apiVersion": "1",
   "author": "benshih28",
   "entry": "dist/main.js",

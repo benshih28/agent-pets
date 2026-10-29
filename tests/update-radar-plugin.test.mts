@@ -300,6 +300,31 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   assert.match(styles, /\.tibo-summary:focus-visible/)
 })
 
+test('Update Radar official previews drop a leading copy of the title', () => {
+  const textAfterTitle = runInNewContext(`(${panelFunctionSource('textAfterTitle')})`) as (title: unknown, text: unknown) => string
+  assert.equal(textAfterTitle('Claude Code v2.1.312', 'Claude Code v2.1.312 — Fixed the resume picker.'), 'Fixed the resume picker.')
+  assert.equal(textAfterTitle('New  Responses API', 'new responses\napi: streaming tool calls'), 'streaming tool calls')
+  assert.equal(textAfterTitle('GPT-5.1 (preview)', 'GPT-5.1 (preview).'), '')
+  assert.equal(textAfterTitle('Model deprecations', 'Older snapshots retire on 2026-12-01.'), 'Older snapshots retire on 2026-12-01.')
+  assert.equal(textAfterTitle('Release', undefined), '')
+})
+
+test('Update Radar heatmap days filter the list to that day of official updates', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const dayLabel = runInNewContext(`(${panelFunctionSource('dayLabel')})`) as (key: string) => string
+  assert.equal(dayLabel('2026-10-28'), '10/28（三）')
+  assert.equal(dayLabel('2026-11-01'), '11/1（日）')
+  // 日期篩選只留下官方更新，且只對有更新的格子提供按鈕。
+  assert.match(panelFunctionSource('matchesFilters'), /state\.day && \(isTiboUpdate\(update\) \|\| heatDateKey\(update\) !== state\.day\)/)
+  assert.match(panelFunctionSource('renderHeatmap'), /if \(count\) \{[^}]*heat-cell-button[^}]*aria-pressed/s)
+  assert.match(panelFunctionSource('selectDay'), /state\.day = state\.day === key \? null : key/)
+  assert.match(panelFunctionSource('appliedFilterCount'), /state\.day/)
+  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{[^}]*state\.day = null/s)
+  assert.match(markup, /id="day-filter" class="day-filter" hidden/)
+  assert.match(markup, /id="day-filter-clear"[^>]*type="button"/)
+})
+
 test('Update Radar renders Tibo as a bubble and official updates as source-accent records', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
@@ -311,17 +336,19 @@ test('Update Radar renders Tibo as a bubble and official updates as source-accen
   assert.match(tiboRender, /原始貼文/)
   assert.match(tiboRender, /自我回文/)
   assert.doesNotMatch(tiboRender, /change-label|category-label|attention-chip|appendQuickRead/)
-  assert.match(panelSource, /if \(!tibo\) \{\s*appendQuickRead\(content, update\)/)
+  assert.match(panelFunctionSource('appendDetails'), /appendQuickRead\(content, update\)/)
   assert.match(officialRender, /official-record/)
   assert.match(officialRender, /official-meta-tag/)
   assert.doesNotMatch(officialRender, /source-avatar|message-bubble|renderTiboBubble/)
-  assert.match(panelSource, /function normalizedComparisonText/)
-  assert.match(panelSource, /function textMatches/)
   assert.match(panelSource, /preview\.scrollHeight > preview\.clientHeight \+ 1/)
   assert.match(panelSource, /new ResizeObserver/)
   assert.match(panelSource, /window\.addEventListener\('resize'/)
   assert.match(panelSource, /展開快速判讀/)
-  assert.match(panelSource, /展開完整原文與快速判讀/)
+  // 展開是撐開原本的預覽，不再另外印一份全文。
+  assert.doesNotMatch(panelSource, /full-copy|展開完整原文|展開原文/)
+  assert.match(tiboRender, /appendExpandToggle\(bubble, preview\)/)
+  assert.match(officialRender, /textAfterTitle\(title, update\.summary\)/)
+  assert.match(styles, /\.message-preview\.is-expanded,\s*\.official-preview\.is-expanded \{[^}]*-webkit-line-clamp: unset/)
   assert.match(panelSource, /const attention = updates\.filter\(update => !isTiboUpdate\(update\)/)
   assert.match(styles, /\.official-record\.record-openai/)
   assert.match(styles, /\.official-record\.record-anthropic/)
