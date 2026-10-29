@@ -286,6 +286,13 @@ export interface AgentPetsPluginPanelApi {
     error(...values: unknown[]): Promise<{ logged: true }>
   }
   net: { fetch(url: string, options?: NetRequestOptions): Promise<NetResponse> }
+  links: {
+    /**
+     * Open a declared HTTPS host in the system browser. Requires permissions.links and a current trusted click or keyboard activation.
+     * Rejects: invalid_request, host_not_allowed, denied, rate_limited, host_unavailable, disabled, not_permitted.
+     */
+    openExternal(url: string): Promise<{ opened: true }>
+  }
   ui: {
     postMessage(data: PluginJsonValue): Promise<{ delivered: boolean }>
     onMessage(callback: (data: PluginJsonValue) => void): () => void

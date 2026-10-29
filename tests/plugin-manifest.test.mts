@@ -13,6 +13,7 @@ function validManifest() {
     icon: 'assets/icon.png',
     permissions: {
       network: { hosts: ['api.x.com', '*.example.com'], userGranted: true },
+      links: { hosts: ['x.com'] },
       secrets: ['xBearerToken'],
       schedule: { minIntervalSec: 300 },
       storage: true,
@@ -152,6 +153,16 @@ test('network declarations accept DNS names and leftmost wildcards only', () => 
   }).ok, false)
   assert.equal(withManifest(manifest => {
     manifest.permissions.network!.hosts = ['api.example.com', 'api.example.com']
+  }).ok, false)
+})
+
+test('external link declarations accept exact public DNS names and reject wildcards', () => {
+  assert.equal(withManifest(manifest => { manifest.permissions.links.hosts = ['docs.example.com'] }).ok, true)
+  for (const host of ['*.example.com', '127.0.0.1', 'localhost', 'example.local', 'docs.example.com:443', 'https://docs.example.com']) {
+    assert.equal(withManifest(manifest => { manifest.permissions.links.hosts = [host] }).ok, false, host)
+  }
+  assert.equal(withManifest(manifest => {
+    manifest.permissions.links.hosts = Array.from({ length: 21 }, (_, index) => `docs${index}.example.com`)
   }).ok, false)
 })
 

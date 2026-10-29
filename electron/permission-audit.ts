@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import type { PermissionAuditRecord } from './permission-broker'
 
 const MAX_AUDIT_RECORDS = 500
@@ -18,7 +19,7 @@ export function appendPermissionAudit(filePath: string, record: Readonly<Permiss
   } finally {
     fs.closeSync(descriptor)
   }
-  fs.renameSync(tempPath, filePath)
+  renameSyncWithRetry(tempPath, filePath)
   if (process.platform !== 'win32') {
     try { fs.chmodSync(filePath, 0o600) } catch {}
   }

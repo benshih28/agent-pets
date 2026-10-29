@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import { promisify } from 'node:util'
 import { translateBackendError } from '../src/i18n.ts'
 
@@ -200,7 +201,7 @@ function atomicWriteJson(filePath: string, value: Record<string, unknown>): void
     } finally {
       fs.closeSync(descriptor)
     }
-    fs.renameSync(tempPath, filePath)
+    renameSyncWithRetry(tempPath, filePath)
   } finally {
     if (wroteTemp && fs.existsSync(tempPath)) {
       try { fs.unlinkSync(tempPath) } catch {}

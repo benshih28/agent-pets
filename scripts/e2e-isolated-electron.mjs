@@ -6,6 +6,8 @@
 //   node scripts/e2e-isolated-electron.mjs [--inspect-port 9349] [--debug-port 9348] [--app-root <dir>]
 // --app-root runs another copy of the app (e.g. an extracted packaged app.asar) instead of this repo.
 // Prints one JSON line with the temp root, ports and pid, then keeps running.
+// The test app binds the same local hook ports (17373–17375) as an installed Agent Pets;
+// whichever starts second keeps retrying and takes the ports once the other exits.
 import { spawn } from 'node:child_process'
 import { createHash, generateKeyPairSync, sign as cryptoSign } from 'node:crypto'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -212,6 +214,8 @@ const child = spawn(electronBinary, [
       .filter(key => process.env[key] !== undefined)
       .map(key => [key, process.env[key]])),
     HOME: join(root, 'home'),
+    // Windows 的 os.homedir() 讀 USERPROFILE 而非 HOME；少了它隔離檢查會失敗並中止。
+    USERPROFILE: join(root, 'home'),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 })

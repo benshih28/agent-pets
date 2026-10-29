@@ -59,7 +59,7 @@ export interface ElectronAPI {
       invokePluginCommand: (pluginId: string, commandId: string) => Promise<PluginPanelResult<{ accepted: true }>>
       openPluginPanelView: (pluginId: string, frame: unknown, content: unknown) => Promise<PluginPanelResult<{ opened: true; openToken: number }>>
       closePluginPanelView: (openToken: number) => void
-      setPluginPanelViewBounds: (openToken: number, frame: unknown, content: unknown) => void
+      setPluginPanelViewBounds: (openToken: number, frame: unknown, content: unknown, viewport: unknown) => void
       onPluginPanelViewClosed: (callback: (event: PluginPanelViewClosedEvent) => void) => () => void
       openPluginPanelFromPet: (pluginId: string) => Promise<boolean>
       getPluginSettings: (pluginId: string) => Promise<PluginPanelResult<PluginPanelSettingsSnapshot>>

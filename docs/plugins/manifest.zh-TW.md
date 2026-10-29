@@ -11,10 +11,10 @@ Manifest 根物件只接受下列欄位；未知欄位會拒絕安裝。JSON Sch
 | `author` | 是 | 1–64 字元。 |
 | `entry` | 條件式 | 一般插件必填，為安全相對 `.js` 路徑；只提供 `contributes.skins` 時可省略，且不能要求權限或其他貢獻。 |
 | `icon` | 否 | 相對 `.png`／`.webp` 路徑；PNG／WebP 簽章必須有效。 |
-| `permissions` | 是 | 物件；可含 `network`、`secrets`、`schedule`、`storage`、`agentStatus`。 |
+| `permissions` | 是 | 物件；可含 `network`、`links`、`secrets`、`schedule`、`storage`、`agentStatus`。 |
 | `contributes` | 是 | 物件；可含 `feed`、`reaction`、`settings`、`panelView`、`commands`、`tray`、`badge`、`skins`、`eventSource`。 |
 
-`network.hosts` 需 1–20 個唯一 DNS 名稱，可用 `*.example.com` 子網域萬用字元；不可填 IP、localhost 或內部網域。`userGranted` 是可選布林值。`secrets` 最多 10 個唯一 key，格式為英文字母開頭，後接英數或底線，最多 32 字元。`schedule.minIntervalSec` 為整數 30–3600。
+`network.hosts` 需 1–20 個唯一 DNS 名稱，可用 `*.example.com` 子網域萬用字元；`links.hosts` 需 1–20 個精確 DNS 名稱，不接受萬用字元。兩者都不可填 IP、localhost 或內部網域。`network.userGranted` 是可選布林值。`secrets` 最多 10 個唯一 key，格式為英文字母開頭，後接英數或底線，最多 32 字元。`schedule.minIntervalSec` 為整數 30–3600。
 
 `settings` 每個 key 符合 `[A-Za-z][A-Za-z0-9_-]{0,63}`，最多 20 欄位；型別為 `string`、`number` 或 `boolean`。字串上限 4096，`enum` 1–50 個唯一值、字串 enum 項目最多 256 字元。`format: "secret"` 只可用於同名且已宣告的 secret，且不可有 default。`panelView` 的 `entry` 是 `.html` 相對路徑，標題雙語；`preferredSize` 超出寬 320–960、高 240–800 時會被夾到範圍內。`commands` 最多 10 個，id 符合 `[a-z][a-z0-9-]{0,31}`、每個標題雙語且各不超過 32 字；`tray.commands` 最多 5 個且必須引用已宣告 id。`badge` 為布林值。`skins` 最多 5 個，id 符合 `[a-z0-9-]{1,32}`，圖檔為套件內 PNG／WebP，行為 manifest 會經既有安全清理。skin 套件總上限 25 MiB、單圖 20 MiB；無 skins 時仍為 5 MiB。省略 `entry` 時只能提供 skins，且 permissions 必須為空物件。
 

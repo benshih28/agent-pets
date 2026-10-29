@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import type { PluginInstancePreferences, PluginPreferences, PluginResourceLimits } from '../src/types/plugin.ts'
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { isValidPluginNetworkHost } from './plugin-manifest.ts'
@@ -29,6 +30,12 @@ export const PLUGIN_RESOURCE_BOUNDS = Object.freeze({
   globalFeedPer10Min: Object.freeze({ default: 60, min: 10, max: 300 }),
   scheduleMinIntervalSeconds: Object.freeze({ default: 60, min: 30, max: 3_600 }),
 } as const satisfies Record<keyof PluginResourceLimits, { default: number; min: number; max: number }>)
+
+// 預算是相對於 host 自身基準的「增長」上限，Chromium 本身的開銷由 PluginHostMemoryMonitor 扣除。
+export function pluginHostMemoryBudgetMb(memoryMbPerPlugin: number, activePluginCount: number): number {
+  if (!Number.isFinite(memoryMbPerPlugin) || memoryMbPerPlugin <= 0 || activePluginCount <= 0) return 0
+  return memoryMbPerPlugin * activePluginCount
+}
 
 export const DEFAULT_PLUGIN_RESOURCES = Object.freeze({
   maxEnabledPlugins: PLUGIN_RESOURCE_BOUNDS.maxEnabledPlugins.default,
@@ -440,7 +447,7 @@ export class PluginPreferencesStore {
       timestamp += 1
       backupPath = `${this.filePath}.corrupt-${timestamp}`
     }
-    fs.renameSync(this.filePath, backupPath)
+    renameSyncWithRetry(this.filePath, backupPath)
     this.corruptBackupRequired = false
   }
 

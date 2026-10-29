@@ -152,12 +152,12 @@ test('plugin documentation has bilingual page pairs and all local Markdown links
 test('public manifest schema required keys and enums match the runtime validator', () => {
   const schema = JSON.parse(fs.readFileSync(path.join(docsDirectory, 'plugin.schema.json'), 'utf8')) as {
     required: string[]
-    properties: Record<string, { const?: string; enum?: string[]; description?: string; properties?: Record<string, { description?: string; properties?: Record<string, { type?: string; enum?: string[]; const?: string }> }> }>
+    properties: Record<string, { const?: string; enum?: string[]; description?: string; properties?: Record<string, { description?: string; type?: string; properties?: Record<string, { type?: string; enum?: string[]; const?: string }> }> }>
     $defs: Record<string, { properties?: Record<string, { enum?: string[]; const?: string }> }>
   }
   assert.deepEqual(schema.required, ['id', 'name', 'version', 'apiVersion', 'author', 'permissions', 'contributes'])
   assert.equal(schema.properties.apiVersion?.const, '1')
-  assert.deepEqual(Object.keys(schema.properties.permissions?.properties ?? {}).sort(), ['agentStatus', 'network', 'schedule', 'secrets', 'storage'])
+  assert.deepEqual(Object.keys(schema.properties.permissions?.properties ?? {}).sort(), ['agentStatus', 'links', 'network', 'schedule', 'secrets', 'storage'])
   assert.deepEqual(Object.keys(schema.properties.contributes?.properties ?? {}).sort(), ['badge', 'commands', 'eventSource', 'feed', 'panelView', 'reaction', 'settings', 'skins', 'tray'])
   const panelView = schema.properties.contributes?.properties?.panelView
   assert.match(panelView?.description ?? '', /sandboxed host view/)
@@ -209,14 +209,17 @@ test('panel-view guide, API declarations, and panel-demo document the restricted
 
   assert.match(panel, /secrets\.get|`secrets\.get`/)
   assert.match(panel, /net\.requestHost/)
+  assert.match(panel, /links\.openExternal/)
   assert.match(panel, /256 KB/)
   assert.match(panel, /20 messages per second/)
   assert.match(panel, /agent-pets:\/\/plugin\/_shared\/tokens\.css/)
   assert.match(panelZh, /256 KB/)
   assert.match(panelZh, /每秒最多 20 則/)
   assert.match(panelZh, /agent-pets:\/\/plugin\/_shared\/tokens\.css/)
+  assert.match(panelZh, /links\.openExternal/)
   assert.match(api, /interface PluginPanelViewContribution[\s\S]*?preferredSize\?: \{[\s\S]*?width: number[\s\S]*?height: number/)
   assert.match(api, /interface AgentPetsPluginPanelApi/)
+  assert.match(api, /openExternal\(url: string\): Promise<\{ opened: true \}>/)
   assert.match(api, /ui: \{[\s\S]*?postMessage\(data: PluginJsonValue\): Promise<\{ delivered: boolean \}>/)
   const panelApi = api.split('export interface AgentPetsPluginPanelApi {')[1]?.split('\ndeclare global')[0]
   assert.ok(panelApi, 'panel API declaration must be present')

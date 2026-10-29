@@ -15,6 +15,13 @@ export interface PluginPanelRect {
   height: number
 }
 
+export interface PluginPanelInsets {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
 const MIN_WIDTH = 320
 const MAX_WIDTH = 960
 const MIN_HEIGHT = 240
@@ -94,4 +101,25 @@ export function validatePluginPanelViewBounds(
     width: Math.round(content.width),
     height: Math.round(content.height),
   }
+}
+
+/** Converts content bounds into edge insets measured against the renderer's own viewport. */
+export function pluginPanelViewInsets(content: PluginPanelRect, viewport: PluginPanelSize): PluginPanelInsets {
+  return {
+    left: content.x,
+    top: content.y,
+    right: Math.max(0, Math.round(viewport.width - content.x - content.width)),
+    bottom: Math.max(0, Math.round(viewport.height - content.y - content.height)),
+  }
+}
+
+/**
+ * 以主行程當下的視窗尺寸套用邊距，而非沿用 renderer 回報的絕對座標：
+ * 縮小視窗時 renderer 的量測會落後一個 frame，直接比對絕對座標會誤判越界。
+ */
+export function layoutPluginPanelView(insets: PluginPanelInsets, windowSize: PluginPanelSize): PluginPanelRect | null {
+  const width = Math.round(windowSize.width - insets.left - insets.right)
+  const height = Math.round(windowSize.height - insets.top - insets.bottom)
+  if (!finite(width) || !finite(height) || width < 1 || height < 1) return null
+  return { x: insets.left, y: insets.top, width, height }
 }

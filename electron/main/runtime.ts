@@ -24,12 +24,13 @@ import { AchievementStore } from '../achievements'
 import { HistoryStore } from '../history'
 import { LocalUsageReader } from '../local-usage'
 import { createPresentationMcpServer, PRESENTATION_MCP_PORT } from '../presentation-mcp'
+import { listenOnLocalPort } from '../local-server-listen'
 import { normalizePresentationStatus, PresentationController } from '../presentation-controller'
 
 
 import { ProjectRoutingStore } from '../project-routing'
 import { PluginRegistry, PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES, PLUGIN_ARCHIVE_SKIN_MAX_BYTES } from '../plugin-registry'
-import { PluginPreferencesStore } from '../plugin-preferences'
+import { PluginPreferencesStore, pluginHostMemoryBudgetMb } from '../plugin-preferences'
 import { PluginHostWindowController, type PluginHostDescriptor } from '../plugin-host-window'
 import { selectEnabledPluginDescriptors } from '../plugin-host-selection'
 import { PluginBroker, type PluginBrokerContext, type PluginReactionRequest } from '../plugin-broker.ts'
@@ -44,6 +45,7 @@ import { PluginSecretConsentStore } from '../plugin-secret-consent.ts'
 import { PluginSettingsStore } from '../plugin-settings.ts'
 import { PluginAgentStatusController } from '../plugin-agent-status.ts'
 import { PluginEventSourceController } from '../plugin-event-source.ts'
+import { PluginExternalLinkController } from '../plugin-external-links.ts'
 import { DEFAULT_PLUGIN_ISSUE_REPORT_URL } from '../plugin-report.ts'
 import { effectivePluginScheduleMinimum } from '../plugin-schedule.ts'
 
@@ -1131,7 +1133,7 @@ export async function createPluginServices(): Promise<void> {
     onPluginReset: pluginId => mainState.pluginEventSourceController?.clearPlugin(pluginId),
     getMemoryBudgetMb: activePluginCount => {
       const perPlugin = mainState.pluginPreferencesSnapshot?.resources.memoryMbPerPlugin ?? 0
-      return perPlugin * activePluginCount
+      return pluginHostMemoryBudgetMb(perPlugin, activePluginCount)
     },
   })
   mainState.pluginCommandController = new PluginCommandController({
@@ -1183,6 +1185,11 @@ export async function createPluginServices(): Promise<void> {
           ?? { ok: false as const, error: 'disabled' }
         return { id: request.id, ...response }
       }
+      if (request.method === 'links.openExternal') {
+        if (request.args.length !== 2) return { ok: false, error: 'invalid_request' }
+        return mainState.pluginExternalLinkController?.open(pluginId, request.args[0], request.args[1])
+          ?? { ok: false, error: 'disabled' }
+      }
       return mainState.pluginBroker?.handle(pluginId, request) ?? { ok: false, error: 'disabled' }
     },
     onClosed: event => {
@@ -1197,6 +1204,18 @@ export async function createPluginServices(): Promise<void> {
       }).__agentPetsE2E
       if (e2e) e2e.panelViewBlockedRequests = (e2e.panelViewBlockedRequests ?? 0) + 1
     },
+  })
+
+  mainState.pluginExternalLinkController = new PluginExternalLinkController({
+    getContext: pluginId => {
+      const context = mainState.pluginRuntimeContexts.get(pluginId)
+      return context ? {
+        enabled: context.enabled,
+        pluginsEnabled: context.pluginsEnabled,
+        hosts: context.manifest.permissions.links?.hosts ?? [],
+      } : null
+    },
+    openExternal: url => shell.openExternal(url),
   })
 
   registerPluginFeedIpc({
@@ -1761,6 +1780,8 @@ export function createPanelWindow() {
   mainState.panelWindow.webContents.on('did-start-loading', () => mainState.pluginPanelViewController?.onPanelRendererReload())
   mainState.panelWindow.on('resize', () => {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
+    const contentBounds = mainState.panelWindow.getContentBounds()
+    mainState.pluginPanelViewController?.relayout({ width: contentBounds.width, height: contentBounds.height })
     const pluginId = mainState.pluginPanelWindowSizer.activePluginId()
     if (!pluginId) return
     const [width, height] = mainState.panelWindow.getSize()
@@ -2335,17 +2356,11 @@ export function createPresentationServices(presentationToken: string): void {
     token: presentationToken,
     controller: mainState.presentationController,
   })
-  server.on('error', (error: NodeJS.ErrnoException) => {
-    if (error.code === 'EADDRINUSE') {
-      console.error(`Presentation MCP port ${PRESENTATION_MCP_PORT} is already in use.`)
-      return
-    }
-    console.error('Presentation MCP server error:', error)
-  })
-  server.listen(PRESENTATION_MCP_PORT, '127.0.0.1', () => {
-    if (!app.isPackaged) {
-      console.log(`Presentation MCP control listening on http://127.0.0.1:${PRESENTATION_MCP_PORT}`)
-    }
+  listenOnLocalPort(server, PRESENTATION_MCP_PORT, {
+    label: 'Presentation MCP',
+    onListening: () => {
+      if (!app.isPackaged) console.log(`Presentation MCP control listening on http://127.0.0.1:${PRESENTATION_MCP_PORT}`)
+    },
   })
   mainState.presentationMcpServer = server
 }
@@ -2493,17 +2508,11 @@ export function createPermissionServices(permissionToken: string): void {
   broker.registerAdapter(relay.createPort('opencode-cli'))
   broker.registerAdapter(relay.createPort('opencode-desktop'))
   const server = createPermissionAdapterServer({ token: permissionToken, broker, relay })
-  server.on('error', (error: NodeJS.ErrnoException) => {
-    if (error.code === 'EADDRINUSE') {
-      console.error(`Permission adapter port ${PERMISSION_ADAPTER_PORT} is already in use.`)
-      return
-    }
-    console.error('Permission adapter server error:', error)
-  })
-  server.listen(PERMISSION_ADAPTER_PORT, '127.0.0.1', () => {
-    if (!app.isPackaged) {
-      console.log(`Permission adapter listening on http://127.0.0.1:${PERMISSION_ADAPTER_PORT}`)
-    }
+  listenOnLocalPort(server, PERMISSION_ADAPTER_PORT, {
+    label: 'Permission adapter',
+    onListening: () => {
+      if (!app.isPackaged) console.log(`Permission adapter listening on http://127.0.0.1:${PERMISSION_ADAPTER_PORT}`)
+    },
   })
 
   mainState.permissionRelay = relay

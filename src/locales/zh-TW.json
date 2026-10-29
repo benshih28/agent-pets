@@ -466,6 +466,7 @@
   "pluginInstallDowngrade": "降版",
   "pluginInstallReinstall": "重新安裝",
   "pluginPermissionNetwork": "連線至 {host}",
+  "pluginPermissionLinks": "在瀏覽器開啟 {host}",
   "pluginPermissionStorage": "在本機儲存插件資料",
   "pluginPermissionAgentStatus": "得知 Agent 忙碌、閒置或等待的狀態",
   "pluginPermissionSchedule": "依排程執行",

@@ -466,6 +466,7 @@
   "pluginInstallDowngrade": "Downgrade",
   "pluginInstallReinstall": "Reinstall",
   "pluginPermissionNetwork": "Connect to {host}",
+  "pluginPermissionLinks": "Open {host} in your browser",
   "pluginPermissionStorage": "Store plugin data on this device",
   "pluginPermissionAgentStatus": "Know when Agents are busy, idle, or waiting",
   "pluginPermissionSchedule": "Run on a schedule",

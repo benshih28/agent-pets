@@ -36,7 +36,7 @@
 
 ## 面板 API
 
-面板頁透過 `window.agentPetsPlugin` 取得 API。可用方法為 `feed.notify`、`pet.status`、`storage.get/set/remove`、`settings.get`、`log.info/warn/error`、`net.fetch`、`ui.postMessage/onMessage`。面板頁沒有 `secrets.get` 或 `net.requestHost`。直接網路 API（例如 `fetch`、`XMLHttpRequest`、`WebSocket`）會被封鎖；`net.fetch` 仍受插件宣告或使用者核准的 HTTPS 網域限制。
+面板頁透過 `window.agentPetsPlugin` 取得 API。可用方法為 `feed.notify`、`pet.status`、`storage.get/set/remove`、`settings.get`、`log.info/warn/error`、`net.fetch`、`links.openExternal`、`ui.postMessage/onMessage`。面板頁沒有 `secrets.get` 或 `net.requestHost`。`links.openExternal` 需要宣告精確 HTTPS 網域，且必須有目前這次可信任的點擊或 Enter／Space 操作；它只把網址交給系統瀏覽器，不會給面板導覽權。直接網路 API（例如 `fetch`、`XMLHttpRequest`、`WebSocket`）會被封鎖；`net.fetch` 仍受插件宣告或使用者核准的 HTTPS 網域限制。
 
 呼叫成功時直接回傳值。失敗時會 reject 一個帶有 `code` 的 `Error`，例如 `not_permitted`、`host_not_allowed`、`rate_limited`、`too_large` 或 `disabled`。
 
@@ -61,6 +61,6 @@ Worker 可用對應的 `api.ui.onMessage` 與 `api.ui.postMessage` 方法。面�
 
 ## 瀏覽器限制
 
-面板不能直接連網、開啟新視窗、導覽到其他網址、下載檔案、請求權限或接收檔案拖放。宿主會在 session 與面板 renderer 阻擋這些行為。面板也不能存取 App 的父 renderer：`window.parent` 與 `window.top` 都指向面板頁本身。
+面板不能直接連網、自行開啟新視窗、導覽到其他網址、下載檔案、請求權限或接收檔案拖放。唯一外部開啟路徑是上述受限的 `links.openExternal` Host API。宿主會在 session 與面板 renderer 阻擋其他行為。面板也不能存取 App 的父 renderer：`window.parent` 與 `window.top` 都指向面板頁本身。
 
 完整的 manifest、Worker 與面板頁範例請看 [panel-demo](examples/panel-demo/)。[TypeScript 宣告](agent-pets-plugin.d.ts)包含 Worker 與面板 API 型別。

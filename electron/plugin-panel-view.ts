@@ -3,6 +3,7 @@ import type { PluginPanelApiMethod } from './plugin-panel-view-bridge.ts'
 import type { PluginPanelViewClosedEvent, PluginPanelViewCloseReason } from '../src/types/plugin.ts'
 import { isIpcErrorCode, PLUGIN_PANEL_IPC_ERROR_CODES } from '../src/types/ipc.ts'
 import { dispatchPluginUiMessage, PLUGIN_UI_MESSAGE_MAX_BYTES, PluginUiMessageGuard } from './plugin-ui-messages.ts'
+import { layoutPluginPanelView, type PluginPanelInsets, type PluginPanelSize } from './plugin-panel-window.ts'
 
 export const PLUGIN_PANEL_PARTITION_PREFIX = 'plugin-ui-'
 export const PLUGIN_PANEL_MESSAGE_MAX_BYTES = PLUGIN_UI_MESSAGE_MAX_BYTES
@@ -12,6 +13,7 @@ const UUID_TOKEN = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f
 const PANEL_ENTRY_METHODS = new Set<PluginPanelApiMethod>([
   'feed.notify', 'pet.status', 'storage.get', 'storage.set', 'storage.remove',
   'settings.get', 'log.info', 'log.warn', 'log.error', 'net.fetch', 'ui.postMessage',
+  'links.openExternal',
 ])
 const PANEL_ERROR_CODES: ReadonlySet<string> = new Set(PLUGIN_PANEL_IPC_ERROR_CODES)
 
@@ -99,6 +101,7 @@ interface ActivePanelView {
   attached: boolean
   acknowledged: boolean
   ackTimeout: ReturnType<typeof setTimeout> | null
+  insets: PluginPanelInsets | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -204,7 +207,7 @@ export class PluginPanelViewController {
         },
       })
       const active: ActivePanelView = {
-        pluginId, token, parent, view, openToken, attached: false, acknowledged: false, ackTimeout: null,
+        pluginId, token, parent, view, openToken, attached: false, acknowledged: false, ackTimeout: null, insets: null,
       }
       this.active = active
       view.setBounds(descriptor.bounds)
@@ -274,6 +277,29 @@ export class PluginPanelViewController {
     return true
   }
 
+  setLayout(openToken: number, insets: PluginPanelInsets, windowSize: PluginPanelSize): boolean {
+    const active = this.active
+    if (!active || active.openToken !== openToken) return false
+    active.insets = insets
+    return this.applyLayout(active, windowSize)
+  }
+
+  relayout(windowSize: PluginPanelSize): void {
+    const active = this.active
+    if (active?.insets) this.applyLayout(active, windowSize)
+  }
+
+  // 尺寸暫時不合法（例如視窗縮到比邊距還小）只隱藏內容、保留插件狀態；
+  // 真正無法顯示時交給 ack timeout 與視窗隱藏事件關閉。
+  private applyLayout(active: ActivePanelView, windowSize: PluginPanelSize): boolean {
+    const bounds = active.insets ? layoutPluginPanelView(active.insets, windowSize) : null
+    if (!bounds) {
+      try { active.view.setVisible(false) } catch {}
+      return false
+    }
+    return this.setBounds(active.openToken, bounds)
+  }
+
   onPanelWindowHidden(): void {
     this.close('hidden')
   }
@@ -317,6 +343,7 @@ export class PluginPanelViewController {
     if (typeof method !== 'string' || !PANEL_ENTRY_METHODS.has(method as PluginPanelApiMethod)
       || !Array.isArray(args) || args.length > 32 || !isJsonValue(args)) return errorResult('not_permitted')
     if (method === 'ui.postMessage' && args.length !== 1) return errorResult('invalid_request')
+    if (method === 'links.openExternal' && args.length !== 2) return errorResult('invalid_request')
     let serialized: string
     try { serialized = JSON.stringify(method === 'ui.postMessage' ? args[0] : args) } catch { return errorResult('invalid_request') }
     if (Buffer.byteLength(serialized, 'utf8') > PLUGIN_PANEL_MESSAGE_MAX_BYTES) return errorResult('too_large')

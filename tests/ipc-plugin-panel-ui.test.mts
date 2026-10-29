@@ -17,7 +17,10 @@ function createFixture() {
   const controller = {
     onPanelWindowHidden: () => calls.push('hidden'),
     close: (reason: string, token?: number) => calls.push(`close:${reason}:${token}`),
-    setBounds: (token: number, bounds: unknown) => { calls.push(`bounds:${token}`); return Boolean(bounds) },
+    setLayout: (token: number, insets: unknown, size: unknown) => {
+      calls.push(`layout:${token}:${JSON.stringify(insets)}:${JSON.stringify(size)}`)
+      return true
+    },
     handleApiRequest: (_sender: unknown, method: unknown) => ({ ok: true, method }),
   }
   const deps: PluginPanelUiIpcDependencies = {
@@ -40,7 +43,7 @@ function createFixture() {
     getPluginPanelViewController: () => controller as never,
     finiteNumber: value => typeof value === 'number' && Number.isFinite(value) ? value : null,
     readPluginPanelRect: value => value as never,
-    validateBounds: () => ({ x: 1, y: 2, width: 30, height: 40 }),
+    validateBounds: (_frame, content, size) => content.x >= 0 && content.width <= size.width ? content : null,
   }
   registerPluginPanelUiIpc(deps)
   return { deps, handles, listeners, calls, window, controller }
@@ -68,8 +71,17 @@ test('plugin panel UI registrar checks panel senders and increments open tokens 
 test('plugin panel view bounds hide, validate, and close through the injected controller', () => {
   const { listeners, calls, window } = createFixture()
   const bounds = listeners.get('plugin-panel-view-bounds')!
-  bounds('panel' as unknown as IpcMainEvent, { openToken: 4, frame: {}, content: {} })
-  assert.deepEqual(calls, ['bounds:4'])
+  bounds('panel' as unknown as IpcMainEvent, {
+    openToken: 4, frame: {}, content: { x: 1, y: 2, width: 30, height: 40 }, viewport: { width: 50, height: 60 },
+  })
+  assert.deepEqual(calls, ['layout:4:{"left":1,"top":2,"right":19,"bottom":18}:{"width":500,"height":400}'])
+
+  calls.length = 0
+  bounds('panel' as unknown as IpcMainEvent, { openToken: 4, frame: {}, content: { x: 1, y: 2, width: 30, height: 40 } })
+  bounds('panel' as unknown as IpcMainEvent, {
+    openToken: 4, frame: {}, content: { x: 1, y: 2, width: 30, height: 40 }, viewport: { width: 99_999, height: 60 },
+  })
+  assert.deepEqual(calls, [], 'reports without a sane renderer viewport are ignored')
 
   calls.length = 0
   window.visible = false
@@ -79,6 +91,22 @@ test('plugin panel view bounds hide, validate, and close through the injected co
   const close = listeners.get('plugin-panel-view-close')!
   close('panel' as unknown as IpcMainEvent, 6)
   assert.deepEqual(calls, ['hidden', 'close:closed:6'])
+})
+
+test('stale renderer bounds while shrinking are ignored instead of closing the plugin view', () => {
+  const { listeners, calls } = createFixture()
+  const bounds = listeners.get('plugin-panel-view-bounds')!
+  // renderer 回報的仍是縮小前的大尺寸，但驗證只對照它自己量到的 viewport。
+  bounds('panel' as unknown as IpcMainEvent, {
+    openToken: 7, frame: {}, content: { x: 10, y: 60, width: 700, height: 500 }, viewport: { width: 720, height: 580 },
+  })
+  assert.deepEqual(calls, ['layout:7:{"left":10,"top":60,"right":10,"bottom":20}:{"width":500,"height":400}'])
+
+  calls.length = 0
+  bounds('panel' as unknown as IpcMainEvent, {
+    openToken: 7, frame: {}, content: { x: 10, y: 60, width: 700, height: 500 }, viewport: { width: 300, height: 580 },
+  })
+  assert.equal(calls.some(call => call.startsWith('close:')), false)
 })
 
 test('pet view requests require the pet sender and an enabled panel contribution', () => {

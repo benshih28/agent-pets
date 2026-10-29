@@ -26,6 +26,15 @@
             "userGranted": { "type": "boolean" }
           }
         },
+        "links": {
+          "description": "HTTPS hosts a panel page may open in the user's system browser after a trusted user gesture.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hosts"],
+          "properties": {
+            "hosts": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/linkHost" } }
+          }
+        },
         "secrets": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$" } },
         "schedule": { "type": "object", "additionalProperties": false, "required": ["minIntervalSec"], "properties": { "minIntervalSec": { "type": "integer", "minimum": 30, "maximum": 3600 } } },
         "storage": { "type": "boolean" },
@@ -92,6 +101,7 @@
     "htmlPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.[hH][tT][mM][lL]$" }] },
     "iconPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.(?:[pP][nN][gG]|[wW][eE][bB][pP])$" }] },
     "networkHost": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", "not": { "pattern": "\\.[0-9]+$" } },
+    "linkHost": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", "not": { "pattern": "\\.[0-9]+$" } },
     "setting": {
       "type": "object", "additionalProperties": false, "required": ["type"],
       "properties": {

@@ -96,7 +96,7 @@ const electronAPI: ElectronAPI = {
   invokePluginCommand: (pluginId: string, commandId: string): Promise<PluginPanelResult<{ accepted: true }>> => ipcRenderer.invoke(IPC_CHANNELS.pluginCommandInvoke, pluginId, commandId),
   openPluginPanelView: (pluginId: string, frame: unknown, content: unknown): Promise<PluginPanelResult<{ opened: true; openToken: number }>> => ipcRenderer.invoke(IPC_CHANNELS.pluginPanelViewOpen, pluginId, { frame, content }),
   closePluginPanelView: (openToken: number): void => ipcRenderer.send(IPC_CHANNELS.pluginPanelViewClose, openToken),
-  setPluginPanelViewBounds: (openToken: number, frame: unknown, content: unknown): void => ipcRenderer.send(IPC_CHANNELS.pluginPanelViewBounds, { openToken, frame, content }),
+  setPluginPanelViewBounds: (openToken: number, frame: unknown, content: unknown, viewport: unknown): void => ipcRenderer.send(IPC_CHANNELS.pluginPanelViewBounds, { openToken, frame, content, viewport }),
   onPluginPanelViewClosed: (callback: (event: PluginPanelViewClosedEvent) => void) => {
     const handler = (_event: unknown, data: PluginPanelViewClosedEvent) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.pluginPanelViewClosed, handler)

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from '../src/types/desktop'
 import { DEFAULT_LOCALE, isAppLocale } from '../src/types/locale.ts'
 import {
@@ -31,7 +32,7 @@ export function writeJsonAtomic(filePath: string, value: unknown): void {
       mode: 0o600,
       flag: 'wx',
     })
-    fs.renameSync(temporaryPath, filePath)
+    renameSyncWithRetry(temporaryPath, filePath)
     if (process.platform !== 'win32') {
       try { fs.chmodSync(filePath, 0o600) } catch {}
     }

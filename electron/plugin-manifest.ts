@@ -235,7 +235,7 @@ function parseManifest(value: unknown): PluginManifest {
   if (value.icon !== undefined && !icon) reject('invalid_path')
 
   if (!isRecord(value.permissions) || !hasOnlyKeys(value.permissions, [
-    'network', 'secrets', 'schedule', 'storage', 'agentStatus',
+    'network', 'links', 'secrets', 'schedule', 'storage', 'agentStatus',
   ])) reject('invalid_permissions')
   const permissions: PluginManifest['permissions'] = {}
   if (value.permissions.network !== undefined) {
@@ -249,6 +249,15 @@ function parseManifest(value: unknown): PluginManifest {
       hosts: [...network.hosts] as string[],
       ...(network.userGranted === undefined ? {} : { userGranted: network.userGranted }),
     }
+  }
+
+  if (value.permissions.links !== undefined) {
+    const links = value.permissions.links
+    if (!isRecord(links) || !hasOnlyKeys(links, ['hosts'])
+      || !Array.isArray(links.hosts) || links.hosts.length === 0 || links.hosts.length > 20
+      || links.hosts.some(host => !isValidPluginNetworkHost(host, false))
+      || new Set(links.hosts).size !== links.hosts.length) reject('invalid_host')
+    permissions.links = { hosts: [...links.hosts] as string[] }
   }
 
   const secrets = value.permissions.secrets

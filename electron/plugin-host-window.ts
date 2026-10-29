@@ -3,6 +3,7 @@ import type { MessagePortMain } from 'electron'
 import { createPluginHostProtocolHandler } from './plugin-protocol.ts'
 import { pluginHostAssets } from './plugin-host-assets.ts'
 import { PluginHostFailureTracker, pluginHostRetryDelay, shouldRetryPluginHost } from './plugin-host-recovery.ts'
+import { PluginHostMemoryMonitor, pluginHostMemoryMb } from './plugin-host-memory.ts'
 import { dispatchPluginUiMessage, PluginUiMessageGuard, type PluginUiMessageResult } from './plugin-ui-messages.ts'
 import { join } from 'node:path'
 import { isCurrentPluginRuntimeToken, runPluginRpcForCurrentToken } from './plugin-host-token.ts'
@@ -63,6 +64,7 @@ export class PluginHostWindowController {
   private readonly desired = new Map<string, PluginHostDescriptor>()
   private readonly runtime = new Map<string, PluginHostRuntime>()
   private readonly failureTracker: PluginHostFailureTracker
+  private readonly memoryMonitor = new PluginHostMemoryMonitor()
   private hostWindow: BrowserWindow | null = null
   private hostPort: MessagePortMain | null = null
   private portReady = false
@@ -177,6 +179,7 @@ export class PluginHostWindowController {
     })
     this.hostWindow = window
     this.closingIntentionally = false
+    this.memoryMonitor.reset()
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', event => event.preventDefault())
     window.webContents.on('will-redirect', event => event.preventDefault())
@@ -220,6 +223,7 @@ export class PluginHostWindowController {
     this.hostPort.start()
     window.webContents.postMessage('plugin-host-port', null, [channel.port2])
     this.portReady = true
+    this.memoryMonitor.setBaseline(this.readHostMemoryMb(window))
     this.syncWorkers()
   }
 
@@ -333,12 +337,7 @@ export class PluginHostWindowController {
   private checkMemory(): void {
     const window = this.hostWindow
     if (!window || window.isDestroyed() || this.desired.size === 0) return
-    const pid = window.webContents.getOSProcessId()
-    const metric = app.getAppMetrics().find(item => item.pid === pid)
-    const workingSetKb = metric?.memory.workingSetSize
-    const budget = this.getMemoryBudgetMb(this.desired.size)
-    if (!Number.isFinite(workingSetKb) || !Number.isFinite(budget) || budget <= 0) return
-    if ((workingSetKb ?? 0) / 1024 <= budget) return
+    if (!this.memoryMonitor.isOverBudget(this.readHostMemoryMb(window), this.getMemoryBudgetMb(this.desired.size))) return
     const pluginIds = [...this.desired.keys()]
     for (const pluginId of pluginIds) this.recordCrash(pluginId, 'host', false)
     this.closingIntentionally = true
@@ -348,6 +347,15 @@ export class PluginHostWindowController {
     this.closePort()
     this.clearTimers()
     if (this.desired.size > 0) this.scheduleHostRestart(pluginIds)
+  }
+
+  private readHostMemoryMb(window: BrowserWindow): number | null {
+    try {
+      const pid = window.webContents.getOSProcessId()
+      return pluginHostMemoryMb(app.getAppMetrics().find(item => item.pid === pid)?.memory)
+    } catch {
+      return null
+    }
   }
 
   private handleHostCrash(window: BrowserWindow): void {

@@ -10,6 +10,7 @@
 | `pet.onStatusChange(fn)` | `permissions.agentStatus`；解除訂閱函式 | 同步拋 `not_permitted` 或 `invalid_request`。`const off = api.pet.onStatusChange(s => api.log.info(s.visibleState))` |
 | `net.fetch(url, options?)` | `permissions.network`；`{status,headers,body,isBase64Encoded?}` | `invalid_request`, `host_not_allowed`, `too_many_redirects`, `timeout`, `too_large`, `rate_limited`, `disabled`, `not_permitted`。`const r = await api.net.fetch('https://api.example.com/status')` |
 | `net.requestHost(host, reason)` | `network.userGranted`；`{granted:true,host}` | `invalid_request`, `rate_limited`, `denied`, `host_not_allowed`, `disabled`, `not_permitted`。`await api.net.requestHost('api.example.com','Read release notes')` |
+| `links.openExternal(url)`（僅面板頁） | `permissions.links`；`{opened:true}` | `invalid_request`, `host_not_allowed`, `denied`, `rate_limited`, `host_unavailable`, `disabled`, `not_permitted`。需直接在點擊或 Enter／Space handler 呼叫：`await api.links.openExternal('https://docs.example.com/release')` |
 | `secrets.get(key)` | manifest `permissions.secrets`；`string` | `not_permitted`, `secret_unavailable`, `secret_not_found`, `disabled`。`const token = await api.secrets.get('githubToken')` |
 | `settings.get()` | `contributes.settings`；非密鑰設定物件 | `not_permitted`, `settings_invalid`, `disabled`。`const options = await api.settings.get()` |
 | `settings.onChange(fn)` | 回傳解除訂閱函式 | 立即同步拋 `invalid_request`。一般設定變更，以及密鑰新增、更新或清除都會觸發 callback；傳入值只含非密鑰設定。請在 callback 中呼叫 `api.secrets.get(key)` 讀取已授權密鑰。`api.settings.onChange(v => api.log.info(v.repository))` |

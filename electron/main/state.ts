@@ -16,6 +16,7 @@ import type { PluginCatalogAutoCheckSchedule } from '../plugin-catalog-updates'
 import type { PluginCommandController } from '../plugin-commands.ts'
 import type { PluginDeveloperModeWatcher } from '../plugin-developer-mode'
 import type { PluginEventSourceController } from '../plugin-event-source.ts'
+import type { PluginExternalLinkController } from '../plugin-external-links.ts'
 import type { PluginFeedController } from '../plugin-feed.ts'
 import type { PluginHostGrantController } from '../plugin-host-grants.ts'
 import type { PluginHostWindowController } from '../plugin-host-window'
@@ -94,6 +95,7 @@ export const mainState = {
   pluginFeedController: null as PluginFeedController | null,
   pluginAgentStatusController: null as PluginAgentStatusController | null,
   pluginEventSourceController: null as PluginEventSourceController | null,
+  pluginExternalLinkController: null as PluginExternalLinkController | null,
   pendingPluginPlanIds: new Map<string, string>(),
   pendingDeveloperFolders: new Map<string, string>(),
   developerSourceFolders: new Map<string, string>(),

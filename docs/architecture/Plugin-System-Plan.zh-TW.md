@@ -1,6 +1,6 @@
 # Agent Pets 插件系統規劃（Plugin System v1）
 
-> 狀態：已實作（Phase 12–17；交接：`docs/handoff/plugin-host-codex-handoff.zh-TW.md`、`docs/handoff/plugin-distribution-codex-handoff.zh-TW.md`）。Phase 12–16 發布於 `1.3.0`；Phase 17 與 Phase 18 重構發布於 `1.3.1`。
+> 狀態：已實作（Phase 12–17；交接：`docs/handoff/plugin-host-codex-handoff.zh-TW.md`、`docs/handoff/plugin-distribution-codex-handoff.zh-TW.md`）。Phase 12–16 發布於 `1.3.0`；Phase 17 與 Phase 18 重構發布於 `1.3.1`；插件面板縮放與 Plugin Host 記憶體預算修正發布於 `1.3.2`；Phase 20 插件受控外部連結發布於 `1.4.0`；Plugin Host 基準記憶體監控、本機埠重試與 Windows rename 重試發布於 `1.4.1`。
 > 範圍：把寵物做成 **插件宿主（Plugin Host）**，讓第三方以「安裝插件」的方式，把資訊與行為插入寵物的各個介面（狀態泡泡、反應、狀態列、設定頁、Tray…），同時不破壞既有的 Permission／XP／History 安全邊界。
 >
 > **本專案只做宿主端，不開發任何插件。** 我們負責：插入點、Host API、安裝／權限／沙箱、泡泡仲裁，以及公開給第三方的對接規格。插件本身（例如下面的推文提醒）由其他人開發。

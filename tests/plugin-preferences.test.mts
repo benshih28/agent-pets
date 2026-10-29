@@ -11,8 +11,10 @@ import {
   PLUGIN_RESOURCE_BOUNDS,
   PluginPreferencesFileError,
   PluginPreferencesStore,
+  pluginHostMemoryBudgetMb,
 } from '../electron/plugin-preferences.ts'
 import { DEFAULT_PLUGIN_CATALOG_URL } from '../src/types/plugin-catalog.ts'
+import { POSIX_FILE_MODES, SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 
 function withUserData(run: (userData: string) => void): void {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-preferences-'))
@@ -42,7 +44,7 @@ test('plugin preferences use secure defaults and persist under userData atomical
 
     const filePath = path.join(userData, PLUGIN_PREFERENCES_FILENAME)
     assert.equal(fs.existsSync(filePath), true)
-    assert.equal(fs.statSync(filePath).mode & 0o777, 0o600)
+    if (POSIX_FILE_MODES) assert.equal(fs.statSync(filePath).mode & 0o777, 0o600)
     assert.equal(updated.pluginsEnabled, true)
 
     const reopened = new PluginPreferencesStore(userData)
@@ -199,8 +201,7 @@ test('malformed and oversized preference files are backed up before the first wr
   })
 })
 
-test('preference writes reject symlinks and non-regular files with a typed error', (t) => {
-  if (process.platform === 'win32') t.skip('symlink creation requires elevated Windows privileges')
+test('preference writes reject symlinks and non-regular files with a typed error', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {
   withUserData((userData) => {
     const filePath = path.join(userData, PLUGIN_PREFERENCES_FILENAME)
     const targetPath = path.join(userData, 'target.json')
@@ -217,7 +218,7 @@ test('preference writes reject symlinks and non-regular files with a typed error
   })
 })
 
-test('symlink preference files fail closed without being renamed or replaced', () => {
+test('symlink preference files fail closed without being renamed or replaced', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {
   withUserData((userData) => {
     const filePath = path.join(userData, PLUGIN_PREFERENCES_FILENAME)
     const outside = path.join(userData, 'outside.json')
@@ -289,4 +290,13 @@ test('daily catalog check date persists privately and rejects malformed dates', 
     assert.equal(new PluginPreferencesStore(userData).getLastCatalogAutoCheckDay(), '2026-10-26')
     assert.equal(Object.hasOwn(new PluginPreferencesStore(userData).get(), 'lastCatalogAutoCheckDay'), false)
   })
+})
+
+test('plugin host memory budget is the combined per-plugin growth allowance', () => {
+  assert.equal(pluginHostMemoryBudgetMb(DEFAULT_PLUGIN_RESOURCES.memoryMbPerPlugin, 1), 64)
+  assert.equal(pluginHostMemoryBudgetMb(PLUGIN_RESOURCE_BOUNDS.memoryMbPerPlugin.min, 2), 32)
+  assert.equal(pluginHostMemoryBudgetMb(64, 3), 192)
+  assert.equal(pluginHostMemoryBudgetMb(64, 0), 0)
+  assert.equal(pluginHostMemoryBudgetMb(0, 2), 0)
+  assert.equal(pluginHostMemoryBudgetMb(Number.NaN, 2), 0)
 })

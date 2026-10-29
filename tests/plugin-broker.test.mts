@@ -6,6 +6,7 @@ import test from 'node:test'
 import { PluginBroker, PLUGIN_LOG_MAX_ENTRIES, PLUGIN_RPC_MAX_BYTES } from '../electron/plugin-broker.ts'
 import { PluginFeedController } from '../electron/plugin-feed.ts'
 import type { PluginManifest } from '../src/types/plugin.ts'
+import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 
 const PLUGIN_NAME = { 'zh-TW': '測試插件', 'en-US': 'Test Plugin' }
 
@@ -260,7 +261,7 @@ test('pet.status requires agentStatus permission and returns the sanitized proje
   } finally { denied.cleanup() }
 })
 
-test('PluginBroker fails closed for symlinked plugin storage', () => {
+test('PluginBroker fails closed for symlinked plugin storage', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {
   const harness = createHarness()
   const outsidePath = path.join(harness.userDataDirectory, 'outside')
   fs.mkdirSync(outsidePath)

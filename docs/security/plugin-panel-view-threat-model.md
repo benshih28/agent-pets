@@ -8,7 +8,7 @@
 
 - 插件頁不能取得 Node、Electron IPC、父面板 renderer、其他插件資料或宿主權限。
 - 插件頁只能讀取同一插件安裝版本中的一般檔案，以及宿主提供的唯讀 `_shared/tokens.css`；不能藉 URL、路徑或 symlink 讀取其他位置。
-- 插件頁不能直接或間接連網、導覽到外部來源、開新視窗、下載檔案或取得瀏覽器權限。
+- 插件頁不能直接或間接連網、讓自身導覽到外部來源、任意開新視窗、下載檔案或取得瀏覽器權限。唯一外部開啟能力是經 manifest 精確網域、可信任使用者操作與速率限制約束的 `links.openExternal`，且只交給系統瀏覽器。
 - 使用者可在所有頁面尺寸與外觀模式下辨認目前內容屬於插件；插件頁不能覆蓋宿主繪製的外框、關閉控制或原生確認介面。
 - 面板頁不取得 `secrets.get`、`net.requestHost` 或任意 IPC；Host API 成功直接回傳值，失敗以帶 `code` 的 `Error` 拒絕。
 - Worker 與面板頁只能透過 Main 轉送同一插件的有限 JSON 訊息；面板關閉時不緩存或補送訊息。
@@ -33,7 +33,7 @@
 4. 每插件使用不含 `persist:` 的 `plugin-ui-<id>` session partition，與主面板、Plugin Host 及其他插件隔離。Session 的 webRequest 白名單只允許目前權杖路徑及 `_shared/tokens.css`，其他 scheme、origin、redirect 與請求一律拒絕。
 5. `WebContentsView` 必須設定 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`、`webviewTag: false`，並使用專用 preload。CSP 預設拒絕所有資源；只按需求允許插件頁的 script／style／image，`connect-src 'none'`、`frame-src 'none'`，且不允許外部載入。
 6. session 權限請求一律拒絕；`window.open`、導覽／轉址、巢狀 webview 與下載一律拒絕。拖放事件不得把檔案交給插件頁，並阻止拖放造成導覽。
-7. preload 只暴露 `feed.notify`、`pet.status`、`storage.*`、`settings.get`、`log.*`、`net.fetch`（若 Host API 權限允許）及 `ui.postMessage/onMessage`。不得暴露 `secrets.get`、`net.requestHost`、任意 IPC、面板父視窗控制或權杖。
+7. preload 只暴露 `feed.notify`、`pet.status`、`storage.*`、`settings.get`、`log.*`、`net.fetch`（若 Host API 權限允許）、`links.openExternal` 及 `ui.postMessage/onMessage`。外部連結呼叫只能由 preload 附上一次性可信任使用者啟用，再由 Main 驗證 `permissions.links.hosts` 與速率。不得暴露 `secrets.get`、`net.requestHost`、任意 IPC、面板父視窗控制、權杖或 Electron `shell`。
 8. 子 view 的 bounds 由 Main 依宿主面板 DOM 提供的候選矩形計算並夾限在插件內容區；插件宣告的 `preferredSize` 只能影響宿主允許的面板偏好，不能直接變更視窗或子 view 座標。固定外框、插件來源標記、關閉按鈕與宿主確認 UI 必須在子 view bounds 之外或以宿主／原生層顯示，不能被插件繪製覆蓋。
 9. 訊息只在 Main 已綁定的同一插件 Worker ↔ panel view 通道轉送；每則須可 JSON 序列化且不超過 256 KB，每秒每方向最多 20 則。Main 以通道綁定身分，不採信訊息自稱的 pluginId。無面板接收者時直接丟棄，不排隊。
 10. 關閉或失去可見性時銷毀 WebContentsView 並撤銷 token；重新開啟必須重新由 Main 授權。插件不可在背景保留 panel view。
@@ -59,7 +59,7 @@
 ## 5. 假設、限制與安全驗證
 
 - 插件安裝時已由 PluginRegistry 驗證 manifest、包內 HTML 位置與一般檔案；本功能仍須在載入時重新套用 token、路徑與 session 白名單，不把安裝驗證當成 renderer 權限。
-- 所有外部網路能力只可由 Main 的 `net.fetch` 白名單代理提供，且面板 preload 不含 `net.requestHost`；頁面本身不取得網路權限。
+- 所有外部網路存取只可由 Main 的 `net.fetch` 白名單代理提供，且面板 preload 不含 `net.requestHost`；頁面本身不取得網路權限。`links.openExternal` 只請系統瀏覽器開啟已宣告 HTTPS 網址，不把回應或瀏覽器能力交回插件。
 - 面板頁可能嘗試繪製仿冒介面；宿主無法阻止插件在其內容區顯示任意圖像與文字，因此安全訊號必須是內容區外、始終可見的宿主外框與「插件內容」標記。
 - WebContentsView 的程序隔離不等於每插件硬體資源隔離。若沒有可靠的單 view 配額，不能宣稱 memory／CPU DoS 已被完全阻止；關閉 view 只能限制持續影響。
 - 以隔離 Electron、全新 userData 與測試插件驗證網路、導覽、視窗、父頁、權限、下載、拖放、訊息與仿冒 UI 攻擊。任何實機測試若會執行 secrets 路徑，須在 Main 啟動 secrets 前確認已替換為假的可逆 `safeStorage`；本 Phase 測試不觸碰真實 macOS Keychain。

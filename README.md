@@ -241,7 +241,9 @@ For a configured adapter, click **Test** to send a short-lived event through the
 
 ## Plugins
 
-Plugins can add pet feed notifications, reactions, panel and Tray commands, status badges, optional sandboxed panel pages, selectable pet skins, and clearly labeled observe-only status rows. Install a `.agentpet-plugin` package from **Settings → Plugins**, or open the opt-in online catalog to review signed packages and check for updates; issue reports open a prefilled link containing only the plugin ID and version. Developers can enable Developer mode to load a local folder. Review the requested permissions and contributions before installing. Plugin pages and background code are treated as untrusted: they have no Node.js, filesystem, or shell access, and network requests are limited to approved HTTPS hosts. Plugin network requests do not send or store cookies. Secrets are encrypted by the app's protected storage and never returned in settings snapshots.
+Plugins can add pet feed notifications, reactions, panel and Tray commands, status badges, optional sandboxed panel pages, selectable pet skins, and clearly labeled observe-only status rows. Install a `.agentpet-plugin` package from **Settings → Plugins**, or open the opt-in online catalog to review signed packages and check for updates; issue reports open a prefilled link containing only the plugin ID and version. Developers can enable Developer mode to load a local folder. Review the requested permissions and contributions before installing. Plugin pages and background code are treated as untrusted: they have no Node.js, filesystem, or shell access, and network requests are limited to approved HTTPS hosts. Plugin network requests do not send or store cookies. Since 1.4.0 a plugin panel can open a declared HTTPS link in the system browser, but only right after a real click or Enter/Space and at most five times a minute. Secrets are encrypted by the app's protected storage and never returned in settings snapshots.
+
+Background plugins share one hidden Plugin Host process, which starts only while at least one plugin is enabled. Its memory is measured against its own footprint right after loading, before any plugin runs, so Chromium's fixed overhead never counts against a plugin. The host is restarted only when that growth stays above the combined per-plugin budget (64 MB per plugin by default) on two consecutive 30-second checks. On Windows the check uses the process's private memory, because the working set also includes Chromium code pages shared with other Agent Pets processes (about 65 MB measured).
 
 See the [plugin development index](docs/plugins/README.md) for the [10-minute guide](docs/plugins/getting-started.md), [security model](docs/plugins/security.md), [API reference](docs/plugins/api-reference.md), and [examples](docs/plugins/examples.md).
 
@@ -349,7 +351,8 @@ Agent Pets runs a local HTTP server on `http://127.0.0.1:17373/v1/events` that r
 - **Credential refresh** — Expired OAuth tokens are refreshed and merged back into the original Codex auth file or Claude credential store so the CLIs keep working. Writes use account/change guards, restrictive file permissions, and atomic replacement where applicable.
 - **Pet imports** — ZIP entry count, compressed/uncompressed sizes, JSON size, and image size/type are validated before imported files are stored.
 - **Memory bounds** — Agent sessions are capped and stale/offline entries are evicted (single-pass O(n) selection) to prevent unbounded renderer memory growth.
-- **Local servers** — Event ingress skips destroyed windows so a closing panel cannot drop notification/XP/history processing, and uses short header/request timeouts to bound slow loopback connections.
+- **Local servers** — Event ingress skips destroyed windows so a closing panel cannot drop notification/XP/history processing, and uses short header/request timeouts to bound slow loopback connections. If a port (17373–17375) is still held by another process at startup, such as a previous instance that is still quitting, the event, Presentation MCP, and Permission adapter servers keep retrying with backoff (2 s up to 30 s) instead of staying offline until the next restart.
+- **Windows file replacement** — Atomic writes and plugin installs retry a rename for about 1.3 seconds when Windows Defender or the search indexer briefly locks a freshly written file (`EPERM`/`EACCES`/`EBUSY`, measured on about 3% of fresh directory renames). Other platforms and other errors fail immediately as before.
 - **SQLite performance** — History, progression, achievement, and project-routing stores reuse cached prepared statements instead of recompiling SQL on every hook event; the project path cache is a true LRU.
 - **Path sanitization** — Project paths are reduced to their basename, and filesystem destinations are constrained to their expected root.
 - **Desktop notifications** — Notification text is built only from the normalized Agent name and bounded project basename; prompt text, tool arguments, session identifiers, and credentials are never shown or logged. Diagnostic notification history is bounded and stores only event class/outcome metadata.
@@ -407,6 +410,18 @@ Releases are automated by `.github/workflows/release.yml`. When a commit that ch
 
 ```bash
 pnpm test:unit
+```
+
+On Windows without Developer Mode, the tests that create file symlinks are skipped, because creating a symlink needs that privilege, and file-mode (`0600`) assertions run only on macOS/Linux. Everything else runs on every platform.
+
+To check a change in a real Electron app without touching your data, build first and then start the isolated launcher. It uses a temporary home and userData and a fake `safeStorage`. It binds the same local ports as an installed Agent Pets, so quit your everyday instance first or let it reconnect once the test app exits:
+
+```bash
+pnpm exec vite build
+```
+
+```bash
+node scripts/e2e-isolated-electron.mjs
 ```
 
 ### Install Hooks (for development)

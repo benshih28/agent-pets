@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 
 const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 
@@ -76,7 +77,7 @@ export function writePluginDataJson(filePath: string, value: Record<string, unkn
       if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error
     }
     fs.writeFileSync(temporaryPath, JSON.stringify(value), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    fs.renameSync(temporaryPath, filePath)
+    renameSyncWithRetry(temporaryPath, filePath)
     if (process.platform !== 'win32') {
       try { fs.chmodSync(filePath, 0o600) } catch {}
     }

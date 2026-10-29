@@ -7,6 +7,7 @@ import { PluginSecretsStore } from '../electron/plugin-secrets.ts'
 import { PluginSettingsStore, publishPluginSettingsChanged } from '../electron/plugin-settings.ts'
 import { PluginSecretConsentStore, PLUGIN_SECRET_CONSENT_FILENAME } from '../electron/plugin-secret-consent.ts'
 import type { PluginManifest } from '../src/types/plugin.ts'
+import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 
 const NAME = { 'zh-TW': '設定範例', 'en-US': 'Settings Sample' }
 const manifest: PluginManifest = {
@@ -113,7 +114,7 @@ test('secret-only updates publish a fresh non-secret settings snapshot', () => {
   } finally { state.cleanup() }
 })
 
-test('secret storage consent persists once and rejects a symlink marker', () => {
+test('secret storage consent persists once and rejects a symlink marker', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-secret-consent-'))
   const consent = new PluginSecretConsentStore(userData)
   const marker = path.join(userData, PLUGIN_SECRET_CONSENT_FILENAME)
@@ -131,7 +132,7 @@ test('secret storage consent persists once and rejects a symlink marker', () => 
   } finally { fs.rmSync(userData, { recursive: true, force: true }) }
 })
 
-test('secret storage rejects symlinked files without writing through them', () => {
+test('secret storage rejects symlinked files without writing through them', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {
   const state = fixture()
   const outside = path.join(state.userData, 'outside.json')
   fs.writeFileSync(outside, '{}')
@@ -177,7 +178,7 @@ test('settings.get never returns a secret even if an old settings file contains 
   } finally { state.cleanup() }
 })
 
-test('settings reject a symlinked data directory and settings file', () => {
+test('settings reject a symlinked data directory and settings file', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {
   const state = fixture()
   const outside = path.join(state.userData, 'outside')
   fs.mkdirSync(outside)
@@ -185,7 +186,7 @@ test('settings reject a symlinked data directory and settings file', () => {
     fs.rmSync(path.join(state.dataDirectory, 'settings.json'), { force: true })
     fs.symlinkSync(path.join(outside, 'settings.json'), path.join(state.dataDirectory, 'settings.json'))
     assert.throws(() => state.settings.set('sample', manifest, { username: 'Alice' }))
-    fs.rmSync(path.join(state.dataDirectory, 'settings.json'))
+    fs.unlinkSync(path.join(state.dataDirectory, 'settings.json'))
     fs.rmdirSync(state.dataDirectory)
     fs.symlinkSync(outside, state.dataDirectory)
     assert.throws(() => state.settings.set('sample', manifest, { username: 'Alice' }))

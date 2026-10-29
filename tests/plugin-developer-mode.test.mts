@@ -33,7 +33,8 @@ test('developer folder watcher rejects a symlink root and invalid plugin id', ()
   const source = path.join(directory, 'plugin')
   const linked = path.join(directory, 'linked')
   fs.mkdirSync(source)
-  fs.symlinkSync(source, linked)
+  // junction 不需要 Windows 開發者模式，在其他平台會被忽略而建立一般目錄 symlink。
+  fs.symlinkSync(source, linked, 'junction')
   const watcher = new PluginDeveloperModeWatcher(10)
   try {
     assert.equal(watcher.watch('sample-plugin', linked, () => {}), false)

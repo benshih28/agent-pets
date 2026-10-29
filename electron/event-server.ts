@@ -4,6 +4,7 @@ import { app } from 'electron'
 import { timingSafeEqual } from 'node:crypto'
 import type { AgentStatusEvent } from '../src/types/agent'
 import { createOrderedBatchCoalescer } from './ipc/broadcast-coalescer.ts'
+import { listenOnLocalPort } from './local-server-listen.ts'
 import { normalizeAgentStatusEvent, type EventNormalizationResult } from './event-normalizer'
 export type { AgentStatusEvent } from '../src/types/agent'
 
@@ -132,21 +133,11 @@ export function createEventServer(
   server.headersTimeout = 10_000
   server.requestTimeout = 15_000
 
-  server.on('error', (err: NodeJS.ErrnoException) => {
-    // An unhandled 'error' on a net.Server throws and kills the whole process
-    // by default — e.g. a second app instance launched while one is already
-    // running would otherwise crash instead of just failing to bind.
-    if (err.code === 'EADDRINUSE') {
-      console.error('Port 17373 already in use — another Agent Pets instance may be running.')
-    } else {
-      console.error('Event server error:', err)
-    }
-  })
-
-  server.listen(17373, '127.0.0.1', () => {
-    if (!app.isPackaged) {
-      console.log('Event server listening on http://127.0.0.1:17373/v1/events')
-    }
+  listenOnLocalPort(server, 17373, {
+    label: 'Event',
+    onListening: () => {
+      if (!app.isPackaged) console.log('Event server listening on http://127.0.0.1:17373/v1/events')
+    },
   })
 
   return server

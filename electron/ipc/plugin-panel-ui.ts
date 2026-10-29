@@ -1,15 +1,17 @@
 import type { BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
 import type { PluginPanelResult, PluginPanelSnapshot } from '../../src/types/plugin'
-import type { PluginPanelRect } from '../plugin-panel-window.ts'
+import { pluginPanelViewInsets, type PluginPanelInsets, type PluginPanelRect, type PluginPanelSize } from '../plugin-panel-window.ts'
 import { handleWithSenderGuard, onWithSenderGuard } from './trusted.ts'
 import { IPC_CHANNELS } from './channels.ts'
+
+const MAX_VIEWPORT_SIZE = 16_384
 
 type PanelBounds = { x: number; y: number; width: number; height: number }
 type PanelWindowPort = Pick<BrowserWindow, 'isDestroyed' | 'isVisible' | 'getContentBounds'>
 type PanelViewControllerPort = {
   onPanelWindowHidden(): void
   close(reason: 'closed' | 'renderer_unavailable', openToken?: number): void
-  setBounds(openToken: number, bounds: PluginPanelRect): boolean
+  setLayout(openToken: number, insets: PluginPanelInsets, windowSize: PluginPanelSize): boolean
   handleApiRequest(sender: WebContents, method: unknown, args: unknown): unknown
 }
 type PluginPanelContextPort = {
@@ -78,17 +80,25 @@ export function registerPluginPanelUiIpc(deps: PluginPanelUiIpcDependencies): vo
       controller.onPanelWindowHidden()
       return
     }
-    const contentBounds = panelWindow.getContentBounds()
+    // 以 renderer 量測當下的 viewport 驗證，避免縮放途中與主行程視窗尺寸不同步而誤關插件；
+    // 實際邊界一律由主行程依目前視窗尺寸重新計算，插件內容仍不會超出視窗。
+    const viewportData = data.viewport && typeof data.viewport === 'object' ? data.viewport as Record<string, unknown> : {}
+    const viewportWidth = deps.finiteNumber(viewportData.width)
+    const viewportHeight = deps.finiteNumber(viewportData.height)
+    if (viewportWidth === null || viewportHeight === null || viewportWidth < 1 || viewportHeight < 1
+      || viewportWidth > MAX_VIEWPORT_SIZE || viewportHeight > MAX_VIEWPORT_SIZE) return
+    const viewport = { width: viewportWidth, height: viewportHeight }
     const bounds = deps.validateBounds(
       deps.readPluginPanelRect(data.frame) ?? { x: -1, y: -1, width: 0, height: 0 },
       deps.readPluginPanelRect(data.content) ?? { x: -1, y: -1, width: 0, height: 0 },
-      { width: contentBounds.width, height: contentBounds.height },
+      viewport,
     )
-    if (!bounds) {
-      controller.close('renderer_unavailable', openToken)
-      return
-    }
-    controller.setBounds(openToken, bounds)
+    if (!bounds) return
+    const contentBounds = panelWindow.getContentBounds()
+    controller.setLayout(openToken, pluginPanelViewInsets(bounds, viewport), {
+      width: contentBounds.width,
+      height: contentBounds.height,
+    })
   })
   onWithSenderGuard(deps.ipcMain, IPC_CHANNELS.pluginPanelViewClose, deps.assertPluginPanelSender, (_event, openToken: unknown) => {
     if (typeof openToken === 'number' && Number.isSafeInteger(openToken)) {

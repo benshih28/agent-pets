@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import type {
   ProjectMcpClientId,
   ProjectMcpInstallResult,
@@ -85,7 +86,7 @@ function writeTextAtomic(filePath: string, content: string): void {
   )
   try {
     fs.writeFileSync(temporaryPath, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
-    fs.renameSync(temporaryPath, filePath)
+    renameSyncWithRetry(temporaryPath, filePath)
     if (process.platform !== 'win32') {
       try { fs.chmodSync(filePath, 0o600) } catch {}
     }

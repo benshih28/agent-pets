@@ -36,7 +36,7 @@ The shared stylesheet exposes Agent Pets design tokens. Use fallbacks for standa
 
 ## Panel API
 
-The panel page receives `window.agentPetsPlugin`. It exposes `feed.notify`, `pet.status`, `storage.get/set/remove`, `settings.get`, `log.info/warn/error`, `net.fetch`, and `ui.postMessage/onMessage`. It does not expose `secrets.get` or `net.requestHost`. Direct network APIs such as `fetch`, `XMLHttpRequest`, and `WebSocket` are blocked; `net.fetch` still uses the plugin's declared or user-approved HTTPS hosts.
+The panel page receives `window.agentPetsPlugin`. It exposes `feed.notify`, `pet.status`, `storage.get/set/remove`, `settings.get`, `log.info/warn/error`, `net.fetch`, `links.openExternal`, and `ui.postMessage/onMessage`. It does not expose `secrets.get` or `net.requestHost`. `links.openExternal` requires a declared exact HTTPS host and a current trusted click or Enter/Space activation; it opens the system browser without giving the panel navigation rights. Direct network APIs such as `fetch`, `XMLHttpRequest`, and `WebSocket` are blocked; `net.fetch` still uses the plugin's declared or user-approved HTTPS hosts.
 
 Successful calls return their value directly. Failed calls reject an `Error` with a `code` such as `not_permitted`, `host_not_allowed`, `rate_limited`, `too_large`, or `disabled`.
 
@@ -61,6 +61,6 @@ The Worker uses the corresponding `api.ui.onMessage` and `api.ui.postMessage` me
 
 ## Browser restrictions
 
-The panel cannot make direct network requests, open a new window, navigate to another URL, download files, request permissions, or receive file drops. The host blocks these actions in the session and the panel renderer. The page also cannot access the parent app renderer: `window.parent` and `window.top` refer to the panel page itself.
+The panel cannot make direct network requests, open its own window, navigate to another URL, download files, request permissions, or receive file drops. Its only external-opening path is the bounded `links.openExternal` Host API described above. The host blocks the other actions in the session and the panel renderer. The page also cannot access the parent app renderer: `window.parent` and `window.top` refer to the panel page itself.
 
 See the [panel-demo example](examples/panel-demo/) for a complete manifest, Worker, and panel page. The [TypeScript declarations](agent-pets-plugin.d.ts) include the Worker and panel API shapes.

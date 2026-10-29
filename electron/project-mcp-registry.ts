@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import type {
   ProjectMcpProjectRecord,
   ProjectMcpRegistrySnapshot,
@@ -104,7 +105,7 @@ function writeStoredEntries(filePath: string, entries: StoredProjectMcpEntry[]):
       flag: 'wx',
       mode: 0o600,
     })
-    fs.renameSync(temporaryPath, filePath)
+    renameSyncWithRetry(temporaryPath, filePath)
     if (process.platform !== 'win32') {
       try { fs.chmodSync(filePath, 0o600) } catch {}
     }

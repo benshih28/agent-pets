@@ -1,6 +1,7 @@
 export type PluginPanelApiMethod =
   | 'feed.notify' | 'pet.status' | 'storage.get' | 'storage.set' | 'storage.remove'
   | 'settings.get' | 'log.info' | 'log.warn' | 'log.error' | 'net.fetch' | 'ui.postMessage'
+  | 'links.openExternal'
 
 import { isPluginErrorCode, type PluginErrorCode } from '../src/types/plugin.ts'
 
@@ -9,6 +10,7 @@ export type PluginPanelApiErrorCode = PluginErrorCode
 export interface PluginPanelApiTransport {
   invoke: (method: PluginPanelApiMethod, args: unknown[]) => Promise<unknown>
   onMessage: (listener: (data: unknown) => void) => () => void
+  consumeUserActivation?: () => boolean
 }
 
 export interface PluginPanelPublicApi {
@@ -26,6 +28,7 @@ export interface PluginPanelPublicApi {
     error: (...values: unknown[]) => Promise<unknown>
   }
   net: { fetch: (url: string, options?: unknown) => Promise<unknown> }
+  links: { openExternal: (url: string) => Promise<{ opened: true }> }
   ui: {
     postMessage: (data: unknown) => Promise<{ delivered: boolean }>
     onMessage: (callback: (data: unknown) => void) => () => void
@@ -35,6 +38,7 @@ export interface PluginPanelPublicApi {
 const PANEL_METHODS = new Set<PluginPanelApiMethod>([
   'feed.notify', 'pet.status', 'storage.get', 'storage.set', 'storage.remove',
   'settings.get', 'log.info', 'log.warn', 'log.error', 'net.fetch', 'ui.postMessage',
+  'links.openExternal',
 ])
 
 
@@ -77,6 +81,12 @@ export function createPluginPanelPublicApi(transport: PluginPanelApiTransport): 
     }),
     net: Object.freeze({
       fetch: (url: string, options?: unknown) => invoke('net.fetch', options === undefined ? [url] : [url, options]),
+    }),
+    links: Object.freeze({
+      openExternal: async (url: string) => await invoke('links.openExternal', [
+        url,
+        transport.consumeUserActivation?.() === true,
+      ]) as { opened: true },
     }),
     ui: Object.freeze({
       postMessage: async (data: unknown) => await invoke('ui.postMessage', [data]) as { delivered: boolean },

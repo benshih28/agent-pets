@@ -242,7 +242,9 @@ Setup Wizard 會讀取 runtime Agent Adapter registry，並在你點擊按鈕時
 
 ## 插件
 
-插件可提供寵物通知、反應、面板與 Tray 指令、狀態徽章、沙箱面板頁、寵物外觀，以及清楚標示來源的唯讀狀態列。在 **Settings → Plugins** 安裝 `.agentpet-plugin` 套件，或開啟選擇加入的線上目錄檢視已簽章插件並檢查更新；問題回報會開啟只包含插件 ID 與版本的預填連結。開發者可開啟 **開發者模式** 載入本機資料夾。安裝前請檢查插件要求的權限與貢獻。插件頁面與背景程式都視為不受信任：沒有 Node.js、檔案系統或 shell 存取，網路請求只能送到核准的 HTTPS 網域。插件網路請求不會送出或儲存 Cookie。密鑰由 App 的受保護儲存加密，設定快照不會回傳密鑰值。
+插件可提供寵物通知、反應、面板與 Tray 指令、狀態徽章、沙箱面板頁、寵物外觀，以及清楚標示來源的唯讀狀態列。在 **Settings → Plugins** 安裝 `.agentpet-plugin` 套件，或開啟選擇加入的線上目錄檢視已簽章插件並檢查更新；問題回報會開啟只包含插件 ID 與版本的預填連結。開發者可開啟 **開發者模式** 載入本機資料夾。安裝前請檢查插件要求的權限與貢獻。插件頁面與背景程式都視為不受信任：沒有 Node.js、檔案系統或 shell 存取，網路請求只能送到核准的 HTTPS 網域。插件網路請求不會送出或儲存 Cookie。從 1.4.0 起，插件面板可以用系統瀏覽器開啟已宣告的 HTTPS 連結，但只限使用者剛按下滑鼠或 Enter／Space 之後，且每分鐘最多 5 次。密鑰由 App 的受保護儲存加密，設定快照不會回傳密鑰值。
+
+背景插件共用一個隱藏的 Plugin Host 程序，只有在至少啟用一個插件時才會啟動。它的記憶體以「載入完成、任何插件開始執行前」的用量為基準，Chromium 本身的固定開銷不會算到插件頭上。只有增長量連續兩次（每 30 秒檢查一次）超過所有啟用插件的預算合計（預設每個插件 64 MB），才會重新啟動 host。Windows 上量的是程序獨佔的 private 記憶體，因為 working set 還包含與其他 Agent Pets 程序共用的 Chromium 程式碼頁面（實測約 65 MB）。
 
 請參閱[插件開發索引](docs/plugins/README.zh-TW.md)、[10 分鐘入門](docs/plugins/getting-started.zh-TW.md)、[安全模型](docs/plugins/security.zh-TW.md)、[API 參考](docs/plugins/api-reference.zh-TW.md)與[範例](docs/plugins/examples.zh-TW.md)。
 
@@ -350,7 +352,8 @@ Agent Pets 會在本機啟動一個 HTTP 伺服器 `http://127.0.0.1:17373/v1/ev
 - **憑證更新** — OAuth token 過期時會更新，並安全合併回原本的 Codex auth 檔或 Claude 憑證儲存區，避免 CLI 登入失效；檔案寫入會做帳號／變更檢查、限制檔案權限，並盡可能採原子替換。
 - **寵物匯入** — 寫入前會驗證 ZIP 項目數、壓縮／解壓縮大小、JSON 大小，以及圖片大小與實際格式。
 - **記憶體上限** — Agent session 數量有上限，會以單次線性掃描（O(n)）優先淘汰離線／最舊項目，避免 renderer 記憶體無限成長。
-- **本機伺服器** — 事件轉送會略過已銷毀的視窗，避免面板關閉時通知／XP／歷史處理被整個跳過；並設定較短的 header／request 逾時，限制慢速 loopback 連線佔用。
+- **本機伺服器** — 事件轉送會略過已銷毀的視窗，避免面板關閉時通知／XP／歷史處理被整個跳過；並設定較短的 header／request 逾時，限制慢速 loopback 連線佔用。啟動時如果埠（17373–17375）還被其他程序佔用（例如尚未完全結束的舊實例），事件、Presentation MCP 與 Permission adapter 伺服器會以 2 秒到 30 秒的退避持續重試，不會一直離線到下次重新啟動。
+- **Windows 檔案取代** — 原子寫入與插件安裝在 Windows Defender 或搜尋索引短暫鎖住剛寫入的檔案時（`EPERM`／`EACCES`／`EBUSY`，實測剛寫入的目錄約 3% 會遇到），會重試 rename 約 1.3 秒。其他平台與其他錯誤維持原本的立即失敗。
 - **SQLite 效能** — History、Progression、成就與專案路由 store 共用 prepared statement 快取，不再於每個 hook 事件重新編譯 SQL；專案路徑快取改為真正的 LRU。
 - **路徑清理** — 專案路徑只保留 basename，檔案寫入目的地也會限制在預期根目錄內。
 - **專案寵物路由** — main process 只保存每次安裝 salt 產生的 project hash、basename 與 pet binding；symlink／junction 會先 canonicalize，renderer、通知與 MCP status 都不會收到完整路徑。缺少綁定寵物時只回退到預設寵物，不會自動允許或改變權限。
@@ -409,6 +412,18 @@ pnpm build
 
 ```bash
 pnpm test:unit
+```
+
+Windows 沒有開啟開發者模式時，一般使用者無法建立檔案 symlink，所以需要建立 symlink 的測試會自動略過；檔案權限（`0600`）的斷言只在 macOS／Linux 執行。其他測試在所有平台都會跑。
+
+想在真正的 Electron 中驗證修改、又不碰到自己的資料時，先 build，再啟動隔離啟動器。它使用暫存的 home 與 userData，以及假的 `safeStorage`。它會綁定和已安裝的 Agent Pets 相同的本機埠，所以請先結束平常使用的 App，或等測試 App 結束後讓它自動重新連上：
+
+```bash
+pnpm exec vite build
+```
+
+```bash
+node scripts/e2e-isolated-electron.mjs
 ```
 
 ### 安裝 Hooks（開發用）

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   clampPluginPanelSize,
+  layoutPluginPanelView,
+  pluginPanelViewInsets,
   PluginPanelWindowSizer,
   validatePluginPanelViewBounds,
 } from '../electron/plugin-panel-window.ts'
@@ -54,4 +56,12 @@ test('native content bounds are restricted to the host frame below the chrome he
     { x: 32, y: 176, width: 600, height: 332 },
     { width: 600, height: 600 },
   ), null)
+})
+
+test('plugin panel insets come from the renderer viewport and lay out against the live window size', () => {
+  const insets = pluginPanelViewInsets({ x: 10, y: 60, width: 700, height: 500 }, { width: 720, height: 580 })
+  assert.deepEqual(insets, { left: 10, top: 60, right: 10, bottom: 20 })
+  assert.deepEqual(layoutPluginPanelView(insets, { width: 460, height: 720 }), { x: 10, y: 60, width: 440, height: 640 })
+  assert.equal(layoutPluginPanelView(insets, { width: 20, height: 720 }), null)
+  assert.equal(layoutPluginPanelView(insets, { width: 460, height: 80 }), null)
 })

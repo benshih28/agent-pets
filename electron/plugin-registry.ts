@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { renameSyncWithRetry } from './fs-rename.ts'
 import { zipSync } from 'fflate'
 import { guardArchive } from './archive-guard.ts'
 import { parsePluginManifest } from './plugin-manifest.ts'
@@ -89,6 +90,8 @@ function permissionUnits(manifest: PluginManifest): string[] {
       const network = value as { hosts: string[]; userGranted?: boolean }
       for (const host of network.hosts) result.add(`network:${host}`)
       if (network.userGranted) result.add('network:userGranted')
+    } else if (key === 'links' && value && typeof value === 'object' && !Array.isArray(value) && 'hosts' in value) {
+      for (const host of (value as { hosts: string[] }).hosts) result.add(`links:${host}`)
     } else if (key === 'secrets' && Array.isArray(value)) {
       for (const secret of value) result.add(`secrets:${secret}`)
     } else if (key === 'schedule' && value) {
@@ -154,7 +157,7 @@ function atomicWriteJson(filePath: string, value: unknown): void {
   const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`)
   try {
     fs.writeFileSync(temporary, JSON.stringify(value, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    fs.renameSync(temporary, filePath)
+    renameSyncWithRetry(temporary, filePath)
   } catch (error) {
     try { fs.rmSync(temporary, { force: true }) } catch {}
     throw error
@@ -503,10 +506,10 @@ export class PluginRegistry {
         fs.writeFileSync(output, bytes, { flag: 'wx', mode: 0o600 })
       }
       if (existingTarget) {
-        fs.renameSync(versionDirectory, backupDirectory)
+        renameSyncWithRetry(versionDirectory, backupDirectory)
         backedUpExisting = true
       }
-      fs.renameSync(stagingDirectory, versionDirectory)
+      renameSyncWithRetry(stagingDirectory, versionDirectory)
       stagedInstalled = true
       const previousEntry = entries[pluginId]
       const signatureFingerprint = prepared.publicPlan.developerMode
@@ -543,7 +546,7 @@ export class PluginRegistry {
         try { fs.rmSync(versionDirectory, { recursive: true, force: true }) } catch {}
       }
       if (backedUpExisting) {
-        try { fs.renameSync(backupDirectory, versionDirectory) } catch {}
+        try { renameSyncWithRetry(backupDirectory, versionDirectory) } catch {}
       }
       if (isFsError(error, 'ELOOP') || (error instanceof TypeError && error.message.includes('unsafe'))) {
         return { ok: false, error: 'filesystem_unsafe' }
@@ -577,11 +580,11 @@ export class PluginRegistry {
         if (!stat.isDirectory() || stat.isSymbolicLink()) throw new TypeError('unsafe plugin data directory')
       }
       const hadData = keepData && fs.existsSync(dataDirectory)
-      fs.renameSync(pluginDirectory, removalDirectory)
+      renameSyncWithRetry(pluginDirectory, removalDirectory)
       movedPluginDirectory = true
       if (keepData) {
         ensureDirectory(pluginDirectory)
-        if (hadData) fs.renameSync(path.join(removalDirectory, 'data'), dataDirectory)
+        if (hadData) renameSyncWithRetry(path.join(removalDirectory, 'data'), dataDirectory)
       }
       const next = { ...entries }
       delete next[pluginId]
@@ -594,10 +597,10 @@ export class PluginRegistry {
         if (movedPluginDirectory && fs.existsSync(removalDirectory)) {
           if (keepData && fs.existsSync(path.join(pluginDirectory, 'data'))
             && !fs.existsSync(path.join(removalDirectory, 'data'))) {
-            fs.renameSync(path.join(pluginDirectory, 'data'), path.join(removalDirectory, 'data'))
+            renameSyncWithRetry(path.join(pluginDirectory, 'data'), path.join(removalDirectory, 'data'))
           }
           if (fs.existsSync(pluginDirectory)) fs.rmSync(pluginDirectory, { recursive: true, force: true })
-          fs.renameSync(removalDirectory, pluginDirectory)
+          renameSyncWithRetry(removalDirectory, pluginDirectory)
         }
       } catch {}
       return {

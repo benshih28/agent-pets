@@ -136,6 +136,9 @@ export interface PluginManifest {
       hosts: string[]
       userGranted?: boolean
     }
+    links?: {
+      hosts: string[]
+    }
     secrets?: string[]
     schedule?: {
       minIntervalSec: number
