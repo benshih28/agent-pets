@@ -1,9 +1,12 @@
 const api = window.agentPetsPlugin
-const state = { radar: null, absoluteTime: false, day: null }
+const state = { radar: null, absoluteTime: false, day: null, detail: null }
 let codexResetCountdownTimer = null
 let previewResizeObserver = null
 const previewMeasurements = new Map()
 const elements = {
+  shell: document.querySelector('.radar-shell'),
+  detailView: document.querySelector('#change-detail'),
+  detailBack: document.querySelector('#change-detail-back'),
   refresh: document.querySelector('#refresh'),
   refreshLoader: document.querySelector('#refresh-loader'),
   status: document.querySelector('#status'),
@@ -645,6 +648,18 @@ function unitNeedsAttention(unit) {
   return isCriticalChange(unit[0]) || attentionSignal(unit[0]).tone !== 'neutral'
 }
 
+// 卡片內直接列出、原地展開、或切換到詳情頁的門檻；面板高度有限，上百條不在列表中展開。
+const CHANGE_INLINE_ALL_MAX = 5
+const CHANGE_INLINE_EXPAND_MAX = 20
+
+// 預覽盡量涵蓋不同類型：先放移除／棄用，再各取一條新增、改善、修正，不足時依原順序補滿。
+function previewChanges(changes) {
+  const ordered = [...changes].sort(byPosition)
+  const picked = CHANGE_PREVIEW_ORDER.map(type => ordered.find(update => update.changeType === type)).filter(Boolean)
+  const pickedIds = new Set(picked.map(update => update.id))
+  return [...picked, ...ordered.filter(update => !pickedIds.has(update.id))].slice(0, CHANGE_PREVIEW_COUNT)
+}
+
 function appendGroupedChange(list, update, withDetail) {
   const { headline, previewText } = officialHeadline(update)
   const item = document.createElement('li')
@@ -658,13 +673,14 @@ function appendGroupedChange(list, update, withDetail) {
   list.append(item)
 }
 
-function appendChangeSections(parent, changes) {
-  for (const type of CHANGE_SECTION_ORDER) {
-    const items = changes.filter(update => update.changeType === type)
+function appendChangeSections(parent, changes, type = 'all') {
+  for (const sectionType of CHANGE_SECTION_ORDER) {
+    if (type !== 'all' && type !== sectionType) continue
+    const items = changes.filter(update => update.changeType === sectionType)
     if (items.length === 0) continue
     const section = document.createElement('section')
     section.className = 'change-section'
-    appendText(section, 'h4', `change-section-title change-${type}`, `${labels.changeType[type]} ${items.length}`)
+    appendText(section, 'h4', `change-section-title change-${sectionType}`, `${labels.changeType[sectionType]} ${items.length}`)
     const list = document.createElement('ul')
     list.className = 'change-list'
     for (const update of items) appendGroupedChange(list, update, true)
@@ -673,9 +689,58 @@ function appendChangeSections(parent, changes) {
   }
 }
 
+// 類型切換只出現在展開後；按鈕以 aria-pressed 表示目前選擇，選擇後只重繪清單本身。
+function appendChangeBrowser(parent, changes, initialType = 'all', onTypeChange = () => {}) {
+  const chips = document.createElement('div')
+  chips.className = 'type-chips'
+  chips.setAttribute('role', 'group')
+  chips.setAttribute('aria-label', '依變更類型篩選')
+  const sections = document.createElement('div')
+  sections.className = 'change-sections'
+  const options = [['all', `全部 ${changes.length}`], ...CHANGE_SECTION_ORDER
+    .map(type => [type, changes.filter(update => update.changeType === type).length])
+    .filter(([, count]) => count > 0)
+    .map(([type, count]) => [type, `${labels.changeType[type]} ${count}`])]
+  let selected = options.some(([type]) => type === initialType) ? initialType : 'all'
+  const buttons = options.map(([type, text]) => {
+    const button = appendText(chips, 'button', `type-chip${type === 'all' ? '' : ` change-${type}`}`, text)
+    button.type = 'button'
+    button.dataset.type = type
+    button.addEventListener('click', () => {
+      selected = type
+      paint()
+      onTypeChange(type)
+    })
+    return button
+  })
+  const singleType = options.length <= 2
+  function paint() {
+    for (const button of buttons) button.setAttribute('aria-pressed', String(button.dataset.type === selected))
+    sections.replaceChildren()
+    if (!singleType) {
+      appendChangeSections(sections, changes, selected)
+      return
+    }
+    // 只有一種類型時，卡片上方的數量已說明類型，不再重複分區標題。
+    const list = document.createElement('ul')
+    list.className = 'change-list'
+    for (const update of [...changes].sort(byPosition)) appendGroupedChange(list, update, true)
+    sections.append(list)
+  }
+  // 只有一種類型時切換沒有意義，不顯示按鈕列。
+  if (!singleType) parent.append(chips)
+  parent.append(sections)
+  paint()
+}
+
+function changeGroupTitle(first) {
+  return groupKey(first)?.startsWith('release:') ? first.version : formatDate(first.publishedAt)
+}
+
 function renderChangeGroup(changes, matches) {
   const first = changes[0]
-  const isRelease = groupKey(first)?.startsWith('release:')
+  const key = groupKey(first)
+  const isRelease = key?.startsWith('release:')
   const article = document.createElement('article')
   article.className = `update-item official-record change-group ${officialRecordTone(first)} provider-${providerClass(first)}`
   const meta = document.createElement('div')
@@ -689,7 +754,7 @@ function renderChangeGroup(changes, matches) {
 
   const heading = document.createElement('div')
   heading.className = 'change-group-heading'
-  appendText(heading, 'h3', 'official-title change-group-title', isRelease ? first.version : formatDate(first.publishedAt))
+  appendText(heading, 'h3', 'official-title change-group-title', changeGroupTitle(first))
   if (isRelease && first.previousVersion) appendText(heading, 'span', 'change-group-subtitle', `上一版 ${first.previousVersion}`)
   if (!isRelease) appendText(heading, 'span', 'change-group-subtitle', `共 ${changes.length} 項`)
   article.append(heading)
@@ -706,34 +771,117 @@ function renderChangeGroup(changes, matches) {
     appendText(article, 'p', 'change-filter-note', `符合篩選 ${matches.length} 項，共 ${changes.length} 項`)
   }
 
-  const preview = document.createElement('ul')
-  preview.className = 'change-list change-preview'
-  const highlighted = [...matches].sort((left, right) => (
-    CHANGE_PREVIEW_ORDER.indexOf(left.changeType) - CHANGE_PREVIEW_ORDER.indexOf(right.changeType) || byPosition(left, right)
-  )).slice(0, CHANGE_PREVIEW_COUNT)
-  for (const update of highlighted) appendGroupedChange(preview, update, false)
-  article.append(preview)
-
-  // 條目少但有補充說明時（Platform 常見），仍提供展開；兩者都沒有就直接放來源按鈕。
-  const hasDetail = matches.some(update => officialHeadline(update).previewText)
-  if (matches.length <= CHANGE_PREVIEW_COUNT && !hasDetail) {
+  // 少量變更直接完整列出，不需要再展開。
+  if (matches.length <= CHANGE_INLINE_ALL_MAX) {
+    const list = document.createElement('ul')
+    list.className = 'change-list change-preview'
+    for (const update of [...matches].sort(byPosition)) appendGroupedChange(list, update, true)
+    article.append(list)
     appendSourceAction(article, first)
     return article
   }
+
+  const preview = document.createElement('ul')
+  preview.className = 'change-list change-preview'
+  for (const update of previewChanges(matches)) appendGroupedChange(preview, update, false)
+  article.append(preview)
+
+  if (matches.length > CHANGE_INLINE_EXPAND_MAX) {
+    const open = appendText(article, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
+    open.type = 'button'
+    open.dataset.detailKey = key
+    open.addEventListener('click', () => openChangeDetail(key))
+    return article
+  }
+
+  // 原地展開時以完整清單取代預覽，避免同樣幾條在預覽與清單中連續出現兩次。
   const details = document.createElement('details')
   details.className = 'update-details change-details'
-  appendText(details, 'summary', '', matches.length > CHANGE_PREVIEW_COUNT ? `展開全部 ${matches.length} 項變更` : '展開完整內容')
+  const summary = appendText(details, 'summary', '', `展開全部 ${matches.length} 項變更`)
   const content = document.createElement('div')
   content.className = 'details-content'
   details.append(content)
-  // 上百條變更只在第一次展開時建立，避免每次重繪都產生大量節點。
   details.addEventListener('toggle', () => {
+    preview.hidden = details.open
+    summary.textContent = details.open ? '收合' : `展開全部 ${matches.length} 項變更`
     if (!details.open || content.childElementCount > 0) return
-    appendChangeSections(content, matches)
+    appendChangeBrowser(content, matches)
     appendSourceAction(content, first)
+    // 清單較長時不必捲回頂端才能收合。
+    const collapse = appendText(content, 'button', 'change-collapse', '收合')
+    collapse.type = 'button'
+    collapse.addEventListener('click', () => {
+      details.open = false
+      summary.focus({ preventScroll: true })
+      article.scrollIntoView({ block: 'nearest' })
+    })
   })
   article.append(details)
   return article
+}
+
+// --- 變更詳情頁 ---------------------------------------------------------------
+// 上百條變更在同一個面板內切換成詳情頁，不開新視窗也不改變面板大小；返回時還原捲動位置與焦點。
+function findChangeGroup(key) {
+  const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+  return groupUpdates(updates).find(group => group.kind === 'changes' && groupKey(group.updates[0]) === key) ?? null
+}
+
+function openChangeDetail(key) {
+  state.detail = { key, type: 'all', scrollY: window.scrollY }
+  renderChangeDetail()
+  window.scrollTo(0, 0)
+  elements.detailBack.focus({ preventScroll: true })
+}
+
+function closeChangeDetail() {
+  const detail = state.detail
+  state.detail = null
+  elements.detailView.hidden = true
+  elements.detailView.replaceChildren()
+  elements.shell.hidden = false
+  if (!detail) return
+  window.scrollTo(0, detail.scrollY)
+  elements.updates.querySelector(`[data-detail-key="${CSS.escape(detail.key)}"]`)?.focus({ preventScroll: true })
+}
+
+function renderChangeDetail() {
+  if (!state.detail) return
+  const group = findChangeGroup(state.detail.key)
+  if (!group) {
+    closeChangeDetail()
+    return
+  }
+  const changes = group.updates
+  const matches = changes.filter(matchesFilters)
+  const shown = matches.length ? matches : changes
+  const first = changes[0]
+  const isRelease = state.detail.key.startsWith('release:')
+  elements.detailView.replaceChildren()
+
+  const bar = document.createElement('div')
+  bar.className = 'detail-bar'
+  bar.append(elements.detailBack)
+  elements.detailView.append(bar)
+
+  const article = document.createElement('article')
+  article.className = `official-record change-detail-body ${officialRecordTone(first)}`
+  const meta = document.createElement('div')
+  meta.className = 'official-meta'
+  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(first))
+  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatDate(first.publishedAt))
+  time.dateTime = first.publishedAt ?? ''
+  article.append(meta)
+  const title = appendText(article, 'h2', 'change-detail-title', isRelease ? `${sourceLabel(first)} ${first.version}` : `${sourceLabel(first)} · ${formatDate(first.publishedAt)}`)
+  title.id = 'change-detail-title'
+  if (isRelease && first.previousVersion) appendText(article, 'p', 'change-group-subtitle', `上一版 ${first.previousVersion}`)
+  if (shown.length < changes.length) appendText(article, 'p', 'change-filter-note', `符合篩選 ${shown.length} 項，共 ${changes.length} 項`)
+  appendChangeBrowser(article, shown, state.detail.type, (type) => { if (state.detail) state.detail.type = type })
+  appendSourceAction(article, first)
+  elements.detailView.append(article)
+  elements.detailView.setAttribute('aria-labelledby', title.id)
+  elements.shell.hidden = true
+  elements.detailView.hidden = false
 }
 
 // --- 停用警示卡 ---------------------------------------------------------------
@@ -1308,6 +1456,8 @@ function render(radar) {
   renderHeatmap()
   renderUpdates()
   renderTimeMode()
+  // 背景同步會在閱讀詳情時送來新狀態；就地重繪並保留目前的類型選擇，版本消失時才回到列表。
+  renderChangeDetail()
 }
 
 for (const element of [elements.search, elements.provider, elements.category, elements.changeType]) {
@@ -1350,7 +1500,15 @@ elements.tiboSummary.addEventListener('click', () => {
   scrollToUpdates()
 })
 
+elements.detailBack.addEventListener('click', closeChangeDetail)
+
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.detail) {
+    event.preventDefault()
+    event.stopPropagation()
+    closeChangeDetail()
+    return
+  }
   if (event.key !== 'Escape' || elements.filterPanel.hidden) return
   event.preventDefault()
   event.stopPropagation()

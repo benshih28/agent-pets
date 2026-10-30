@@ -141,5 +141,6 @@ Update Radar 插件版本：`0.1.0`（未變更）
 - **停用警示卡**：OpenAI deprecations 與 Claude model deprecations 的表格解析為 `retirements`（型號、停用日、建議替代，最多 12 列），摘要只保留說明文字；`effectiveAt`／`replacement` 以表格補齊。真實資料 32 則 OpenAI 公告中 29 則、10 則 Claude 公告全部解析出表格。卡片顯示「N 天後停用 · 日期」（30 天內紅、90 天內黃，同時以文字表達）、已停用日期與「舊型號 → 建議替代」清單；搜尋也會比對型號與替代型號。
 - **面板訊息上限**：Host 的面板訊息上限為 256 KB，超過時面板會整片空白。標題與內文相同時不再重複存 summary，狀態超過 230 KB 時由最舊項目開始捨棄。真實資料約 181 KB（加 Tibo 約 200 KB）。全域上限改為 330 筆、已知 id 800 筆。
 - **資料相容性**：新增的 `position`、`retirements` 為選填欄位並在載入時驗證，卡片 id 計算不變，schemaVersion 仍為 4；`0.2.1` 讀到新狀態仍可正常顯示。
-- 驗證：Update Radar 測試 35/35、update-radar 套件 32/32、全部單元測試全數通過；隔離 Electron（macOS）以即時資料確認版本卡、日期卡、停用卡、展開、類型篩選、型號搜尋與熱度圖日期篩選，淺色與深色截圖檢查。面板仍只用 `createElement`／`textContent`，未新增權限、網路 host、`innerHTML` 或 `backdrop-filter`。
+- 驗證：Update Radar 測試 36/36、update-radar 套件 32/32、全部單元測試全數通過；隔離 Electron（macOS）以即時資料確認版本卡、日期卡、停用卡、展開、類型篩選、型號搜尋與熱度圖日期篩選，淺色與深色截圖檢查。面板仍只用 `createElement`／`textContent`，未新增權限、網路 host、`innerHTML` 或 `backdrop-filter`。
+- **合併卡的閱讀方式**：五項以內直接完整列出；六到二十項原地展開，展開後以完整清單取代預覽（不再連續看到同樣幾條），並在多種類型時提供「全部／新增／改善／修正…」切換（`aria-pressed`），清單底部另有「收合」；二十項以上（例如 Claude Code v2.1.314 的 119 項）改為在同一面板切換到詳情頁，有返回列、類型切換與官方來源，Esc 或返回會還原原本捲動位置並把焦點放回「查看全部」按鈕，背景同步時就地重繪並保留類型選擇。預覽盡量涵蓋不同類型（移除／棄用優先，其次新增、改善、修正各一條）。以真實滑鼠與鍵盤事件驗證開啟、切換（新增 7 → 7 條）、Esc 返回（捲動 900 → 895）、原地展開／收合。
 - 殘餘限制：Claude Code 150 條上限通常只容得下最新一到兩個版本；Claude Platform 以「We've launched…」這類敘述開頭的項目多數歸類為新增。

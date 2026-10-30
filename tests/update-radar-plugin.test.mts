@@ -663,6 +663,29 @@ return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
   assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit))), '[true,false,false,false,false]')
 })
 
+test('grouped card previews mix change types and expanded views replace the preview', () => {
+  const source = ['byPosition', 'previewChanges'].map(panelFunctionSource).join('\n')
+  const previewChanges = runInNewContext(`(() => { const CHANGE_PREVIEW_ORDER = ['removed', 'deprecated', 'added', 'improved', 'fixed']; const CHANGE_PREVIEW_COUNT = 3
+${source}
+return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
+  const change = (id: string, changeType: string, position: number) => ({ id, changeType, position })
+  const ids = (changes: unknown[]) => previewChanges(changes).map(update => update.id).join('')
+  assert.equal(ids([change('a1', 'added', 0), change('a2', 'added', 1), change('i', 'improved', 2), change('f', 'fixed', 3)]), 'a1if')
+  assert.equal(ids([change('f1', 'fixed', 0), change('f2', 'fixed', 1), change('f3', 'fixed', 2), change('f4', 'fixed', 3)]), 'f1f2f3')
+  assert.equal(ids([change('a', 'added', 0), change('f', 'fixed', 1), change('r', 'removed', 2)]), 'raf')
+
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  assert.match(panelSource, /const CHANGE_INLINE_ALL_MAX = 5/)
+  assert.match(panelSource, /const CHANGE_INLINE_EXPAND_MAX = 20/)
+  assert.match(panelSource, /preview\.hidden = details\.open/)
+  assert.match(panelSource, /button\.setAttribute\('aria-pressed', String\(button\.dataset\.type === selected\)\)/)
+  assert.match(panelSource, /event\.key === 'Escape' && state\.detail/)
+  assert.match(panelSource, /window\.scrollTo\(0, detail\.scrollY\)/)
+  assert.match(markup, /id="change-detail" class="radar-shell change-detail" hidden/)
+  assert.match(markup, /id="change-detail-back"[^>]*type="button"/)
+})
+
 const deprecationMarkdown = `
 ### 2026-10-01: GPT-5.3-Codex and TTS
 
