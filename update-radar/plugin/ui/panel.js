@@ -481,6 +481,22 @@ function textAfterTitle(title, text) {
   return match ? source.slice(match[0].length).replace(/^[\s\p{P}…]+/u, '') : source
 }
 
+function collapsedWhitespace(value) {
+  return String(value ?? '').normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase()
+}
+
+// 條列式來源（Claude Code、Claude Platform）一條只有一段，標題就是內文開頭；標題過長被截成「…」時
+// textAfterTitle 對不上最後半個字，會把整段再印一次，所以改用完整內文當唯一的一段。
+function officialHeadline(update) {
+  const title = String(update.title || '').trim()
+  const summary = String(update.summary || '').trim()
+  if (!title) return { headline: summary || '未命名更新', previewText: '' }
+  if (title.endsWith('…') && collapsedWhitespace(summary).startsWith(collapsedWhitespace(title.slice(0, -1)))) {
+    return { headline: summary, previewText: '' }
+  }
+  return { headline: title, previewText: textAfterTitle(title, summary) }
+}
+
 // 原地展開被截斷的預覽，不另外再印一份全文，避免展開後前半段重複。
 function appendExpandToggle(parent, preview) {
   const button = appendText(parent, 'button', 'expand-toggle', '展開全文')
@@ -575,12 +591,14 @@ function renderOfficialUpdate(update) {
   const signal = attentionSignal(update)
   if (signal.tone !== 'neutral') appendText(meta, 'span', `official-meta-tag attention-chip attention-${signal.tone}`, `需要留意 · ${signal.label}`)
   article.append(meta)
-  const title = update.title || '未命名更新'
-  appendText(article, 'h3', 'official-title', title)
-  const previewText = textAfterTitle(title, update.summary)
+  const { headline, previewText } = officialHeadline(update)
   if (previewText) {
+    appendText(article, 'h3', 'official-title', headline)
     const preview = appendText(article, 'p', 'official-preview', previewText)
     observePreview(preview, appendExpandToggle(article, preview))
+  } else {
+    const solo = appendText(article, 'h3', 'official-title official-title-solo', headline)
+    observePreview(solo, appendExpandToggle(article, solo))
   }
   appendDetails(article, update)
   return article

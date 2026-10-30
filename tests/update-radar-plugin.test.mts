@@ -309,6 +309,18 @@ test('Update Radar official previews drop a leading copy of the title', () => {
   assert.equal(textAfterTitle('Release', undefined), '')
 })
 
+test('Update Radar shows a clipped single-paragraph update once instead of title plus repeat', () => {
+  const officialHeadline = runInNewContext(`(() => { ${panelFunctionSource('textAfterTitle')}
+${panelFunctionSource('collapsedWhitespace')}
+return ${panelFunctionSource('officialHeadline')} })()`) as (update: unknown) => { headline: string; previewText: string }
+  const full = 'Added idle compaction to VS Code and Claude Desktop\'s Code tab: a 200K+ token conversation left idle is summarized, and the summary is used on your next message if the prompt cache has expired'
+  assert.deepEqual({ ...officialHeadline({ title: `${full.slice(0, 179).trimEnd()}…`, summary: full }) }, { headline: full, previewText: '' })
+  assert.deepEqual({ ...officialHeadline({ title: 'Fixed claude -p exiting with code 0', summary: 'Fixed claude -p exiting with code 0' }) }, { headline: 'Fixed claude -p exiting with code 0', previewText: '' })
+  assert.deepEqual({ ...officialHeadline({ title: 'New  Responses API', summary: 'New Responses API. Streaming tool calls.' }) }, { headline: 'New  Responses API', previewText: 'Streaming tool calls.' })
+  assert.deepEqual({ ...officialHeadline({ title: 'Model update…', summary: 'Different text entirely.' }) }, { headline: 'Model update…', previewText: 'Different text entirely.' })
+  assert.deepEqual({ ...officialHeadline({ title: '', summary: '' }) }, { headline: '未命名更新', previewText: '' })
+})
+
 test('Update Radar heatmap days filter the list to that day of official updates', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
@@ -347,8 +359,10 @@ test('Update Radar renders Tibo as a bubble and official updates as source-accen
   // 展開是撐開原本的預覽，不再另外印一份全文。
   assert.doesNotMatch(panelSource, /full-copy|展開完整原文|展開原文/)
   assert.match(tiboRender, /appendExpandToggle\(bubble, preview\)/)
-  assert.match(officialRender, /textAfterTitle\(title, update\.summary\)/)
-  assert.match(styles, /\.message-preview\.is-expanded,\s*\.official-preview\.is-expanded \{[^}]*-webkit-line-clamp: unset/)
+  assert.match(officialRender, /officialHeadline\(update\)/)
+  assert.match(officialRender, /appendExpandToggle\(article, solo\)/)
+  assert.match(styles, /\.message-preview\.is-expanded,\s*\.official-preview\.is-expanded,\s*\.official-title-solo\.is-expanded \{[^}]*-webkit-line-clamp: unset/)
+  assert.match(styles, /\.official-title \{[^}]*font-size: var\(--radar-font-lead\)/)
   assert.match(panelSource, /const attention = updates\.filter\(update => !isTiboUpdate\(update\)/)
   assert.match(styles, /\.official-record\.record-openai/)
   assert.match(styles, /\.official-record\.record-anthropic/)

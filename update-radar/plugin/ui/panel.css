@@ -24,6 +24,7 @@
   --heat-level-4: color-mix(in srgb, var(--organic-sage-deep) 88%, var(--organic-surface));
   --radar-font-small: var(--organic-font-label, 11.5px);
   --radar-font-body: var(--organic-font-body-sm, 12.5px);
+  --radar-font-lead: var(--organic-font-body-md, 13.5px);
   --radar-font-heading: var(--organic-font-heading-sm, 16px);
   --radar-font-title: var(--organic-font-display-sm, 22px);
   --radar-gap-1: var(--organic-space-1, 4.4px);
@@ -301,7 +302,8 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .message-preview { margin: 0; color: var(--radar-secondary); font-size: var(--radar-font-body); line-height: 1.55; overflow-wrap: anywhere; }
 .message-preview { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 .message-preview.is-expanded,
-.official-preview.is-expanded { display: block; overflow: visible; white-space: pre-wrap; -webkit-line-clamp: unset; line-clamp: none; }
+.official-preview.is-expanded,
+.official-title-solo.is-expanded { display: block; overflow: visible; white-space: pre-wrap; -webkit-line-clamp: unset; line-clamp: none; }
 .expand-toggle { width: fit-content; min-height: 0; padding: 0; border: 0; color: var(--radar-accent); background: transparent; font-size: var(--radar-font-small); font-weight: 750; }
 .expand-toggle:hover:not(:disabled) { border-color: transparent; background: transparent; text-decoration: underline; transform: none; }
 .update-details { margin-top: var(--radar-gap-2); }
@@ -514,7 +516,9 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .official-time-chip { color: var(--radar-text); background: color-mix(in srgb, var(--radar-accent) 13%, var(--radar-surface)); }
 .official-meta .attention-critical { color: var(--radar-danger); }
 .official-meta .attention-warn { color: var(--radar-warning); }
-.official-title { margin: var(--radar-gap-2) 0 var(--radar-gap-1); font-size: var(--radar-font-body); font-weight: 750; line-height: 1.4; overflow-wrap: anywhere; }
+.official-title { margin: var(--radar-gap-2) 0 6px; color: var(--radar-text); font-size: var(--radar-font-lead); font-weight: 750; line-height: 1.4; overflow-wrap: anywhere; }
+/* 沒有另外內文的條目，整段就是內容而非標題：用內文字級與較輕字重，避免整張卡片都是粗體。 */
+.official-title-solo { display: -webkit-box; margin-bottom: 0; overflow: hidden; font-size: var(--radar-font-body); font-weight: 600; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 .official-preview { display: -webkit-box; margin: 0; overflow: hidden; color: var(--radar-secondary); font-size: var(--radar-font-body); line-height: 1.55; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 .official-record .update-details { margin-top: var(--radar-gap-2); }
 .empty-state { padding: var(--radar-gap-4); border: 1px dashed var(--radar-border); border-radius: var(--radar-radius-md); text-align: center; }
