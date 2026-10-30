@@ -686,6 +686,18 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
   assert.match(markup, /id="change-detail-back"[^>]*type="button"/)
 })
 
+test('Update Radar uses its own palette in both themes and keeps hex colors in tokens only', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.doesNotMatch(styles, /var\(--organic-(?!font|space|radius)[a-z-]+/, 'colors must not come from the pet theme')
+  assert.doesNotMatch(styles, /var\(--(?:surface|text|accent|state|border)-[a-z-]+/, 'colors must not come from the host dark theme')
+  const dark = styles.match(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([^}]*)\}/)?.[1] ?? ''
+  for (const token of ['--radar-bg', '--radar-surface', '--radar-text', '--radar-accent', '--provider-openai', '--provider-anthropic', '--provider-claude-code', '--heat-level-4']) {
+    assert.match(dark, new RegExp(`${token}:`), `dark theme defines ${token}`)
+  }
+  const outsideTokens = styles.split('\n').filter(line => /#[0-9a-f]{3,8}\b/i.test(line) && !/^\s*--[a-z0-9-]+:/.test(line))
+  assert.deepEqual(outsideTokens, [])
+})
+
 const deprecationMarkdown = `
 ### 2026-10-01: GPT-5.3-Codex and TTS
 
