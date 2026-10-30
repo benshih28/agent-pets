@@ -521,6 +521,23 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .official-title-solo { display: -webkit-box; margin-bottom: 0; overflow: hidden; font-size: var(--radar-font-body); font-weight: 600; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 .official-preview { display: -webkit-box; margin: 0; overflow: hidden; color: var(--radar-secondary); font-size: var(--radar-font-body); line-height: 1.55; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 .official-record .update-details { margin-top: var(--radar-gap-2); }
+.release-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--radar-gap-1) var(--radar-gap-2); }
+.release-version { margin-bottom: 0; font-size: var(--radar-font-heading); font-variant-numeric: tabular-nums; }
+.release-previous { color: var(--radar-secondary); font-size: var(--radar-font-small); font-variant-numeric: tabular-nums; }
+.release-counts { display: flex; flex-wrap: wrap; gap: var(--radar-gap-1) var(--radar-gap-2); margin: var(--radar-gap-1) 0 0; padding: 0; list-style: none; font-size: var(--radar-font-small); font-weight: 750; font-variant-numeric: tabular-nums; }
+.release-filter-note { margin: var(--radar-gap-1) 0 0; color: var(--radar-secondary); font-size: var(--radar-font-small); }
+.release-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.release-preview { margin-top: var(--radar-gap-2); padding-top: var(--radar-gap-2); border-top: 1px solid var(--radar-border-soft); }
+/* 類型用文字標籤表示，不只靠顏色；預覽每條最多兩行，完整內容在展開後。 */
+.release-change { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--radar-gap-2); font-size: var(--radar-font-body); line-height: 1.5; }
+.release-change-type { min-width: 2.6em; font-size: var(--radar-font-small); font-weight: 750; white-space: nowrap; }
+.release-change-text { color: var(--radar-text); overflow-wrap: anywhere; }
+.release-preview .release-change-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.release-section { display: grid; gap: 6px; }
+.release-section + .release-section { padding-top: var(--radar-gap-2); border-top: 1px solid var(--radar-border-soft); }
+.release-section-title { margin: 0; font-size: var(--radar-font-small); font-weight: 800; letter-spacing: 0.04em; }
+.release-section .release-change-type { display: none; }
+.release-section .release-change { grid-template-columns: minmax(0, 1fr); padding-left: var(--radar-gap-2); border-left: 2px solid var(--radar-border-soft); }
 .empty-state { padding: var(--radar-gap-4); border: 1px dashed var(--radar-border); border-radius: var(--radar-radius-md); text-align: center; }
 .empty-state h2 { margin: 0; font-size: var(--radar-font-heading); }
 .empty-state p { margin: var(--radar-gap-2) 0 0; color: var(--radar-secondary); }
@@ -576,6 +593,8 @@ footer p { margin: 0; }
   .official-record.record-anthropic { border-left-style: double; }
   .official-record.record-claude-code { border-left-style: dashed; }
   .official-meta-tag { color: CanvasText; border-color: CanvasText; background: Canvas; }
+  .release-change-text, .release-previous, .release-filter-note { color: CanvasText; }
+  .release-preview, .release-section + .release-section, .release-section .release-change { border-color: CanvasText; }
   .loading-copy, .summary-sync-copy { color: CanvasText; }
   .loading-update-card, .loading-skeleton .spotlight-card { color: CanvasText; border-color: CanvasText; border-left-color: Highlight; background: Canvas; box-shadow: none; }
   .skeleton-block, .heat-month-skeleton { border: 1px solid CanvasText; background: Canvas; }

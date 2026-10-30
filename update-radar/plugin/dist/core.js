@@ -22,7 +22,7 @@ export const SOURCE_DEFINITIONS = Object.freeze([
   {
     id: 'claude-code', label: 'Claude Code', provider: 'anthropic', product: 'claude-code', kind: 'github-releases',
     url: 'https://api.github.com/repos/anthropics/claude-code/releases?per_page=10',
-    publicUrl: 'https://github.com/anthropics/claude-code/releases', maxItems: 48, intervalSec: 3600,
+    publicUrl: 'https://github.com/anthropics/claude-code/releases', maxItems: 150, intervalSec: 3600,
   },
   {
     id: 'tibo-x', label: 'Tibo / X', provider: 'x', product: 'social', kind: 'x-public-profile', username: 'thsottiaux',
@@ -93,7 +93,19 @@ function firstSentence(value) {
   return truncate(clean.match(/^(.{24,180}?[.!?。！？])(?:\s|$)/)?.[1] ?? clean, 180)
 }
 
-function inferChangeType(text) {
+// 變更紀錄的條目以動詞開頭（可能先有 [VSCode] 這類標籤）；開頭動詞比全文關鍵字可靠，
+// 例如「Fixed logout reporting success when the sign-in was not removed」是修正而不是移除。
+const LEADING_CHANGE_VERBS = Object.freeze([
+  [/^deprecat(?:ed|es|e)\b/, 'deprecated'],
+  [/^(?:removed|removes|dropped)\b/, 'removed'],
+  [/^(?:fixed|fixes)\b/, 'fixed'],
+  [/^(?:improved|improves|changed|changes|updated|updates|reduced|increased|made|renamed)\b/, 'improved'],
+  [/^(?:added|adds|introduced)\b/, 'added'],
+])
+
+function inferChangeType(text, title = '') {
+  const lead = title.trim().toLowerCase().replace(/^\[[^\]]{1,40}\]\s*/, '')
+  for (const [pattern, type] of LEADING_CHANGE_VERBS) if (pattern.test(lead)) return type
   const normalized = text.toLowerCase()
   if (/\b(deprecat|sunset|retir|shut(?:ting)? down)\w*/.test(normalized)) return 'deprecated'
   if (/\b(remov(?:e|ed|al)|no longer available)\b/.test(normalized)) return 'removed'
@@ -152,9 +164,10 @@ function normalizeUpdate(definition, rawEntry) {
     provider: definition.provider,
     product: definition.product,
     category: inferCategory(`${metadata} ${title} ${plain}`, definition.product),
-    changeType: inferChangeType(`${metadata} ${title} ${plain}`),
+    changeType: inferChangeType(`${metadata} ${title} ${plain}`, stripMarkdown(title)),
     title: truncate(stripMarkdown(title), 180),
-    summary: truncate(plain, 700),
+    // 條列式來源大多一條只有一句，標題就是全文；不重複存一份，狀態才放得進 256 KB 的面板訊息上限。
+    summary: plain === stripMarkdown(title) ? '' : truncate(plain, 700),
     publishedAt: rawEntry.publishedAt ?? null,
     effectiveAt: extractEffectiveAt(plain),
     version,
@@ -234,11 +247,15 @@ export function parseGithubReleases(definition, jsonText) {
     const sourceUrl = typeof release.html_url === 'string' && /^https:\/\/github\.com\/anthropics\/claude-code\/releases\//.test(release.html_url)
       ? release.html_url : definition.publicUrl
     const chunks = splitTopLevelBullets(typeof release.body === 'string' ? release.body.replace(/\r\n?/g, '\n').split('\n') : [])
-    for (const chunk of chunks) {
+    const releaseUpdates = []
+    for (const [position, chunk] of chunks.entries()) {
       const update = normalizeUpdate(definition, { body: chunk, publishedAt, headingTitle: '', version, sourceUrl })
-      if (update) updates.push(update)
-      if (updates.length >= definition.maxItems) return updates
+      if (update) releaseUpdates.push({ ...update, position })
     }
+    // 面板以版本為單位顯示，只收完整版本，否則版本卡的分類數量會少算；最新版本超過上限時才截斷。
+    if (updates.length > 0 && updates.length + releaseUpdates.length > definition.maxItems) break
+    updates.push(...releaseUpdates.slice(0, definition.maxItems))
+    if (updates.length >= definition.maxItems) break
   }
   return updates
 }

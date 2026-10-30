@@ -12,8 +12,10 @@ import {
 const STATE_KEY = 'radar-state'
 const STATE_SCHEMA_VERSION = 4
 const HEARTBEAT_SECONDS = 300
-const MAX_UPDATES = 160
-const MAX_KNOWN_IDS = 400
+const MAX_UPDATES = 330
+const MAX_KNOWN_IDS = 800
+// 面板訊息上限是 256 KB（PLUGIN_UI_MESSAGE_MAX_BYTES）；超過時 postMessage 會被拒絕、面板整片空白，所以預留餘裕。
+const STATE_MESSAGE_BUDGET_BYTES = 230 * 1024
 const MAX_CONVERSATION_LOOKUPS = 5
 const RETRY_DELAYS_SECONDS = Object.freeze([300, 900, 1800, 3600])
 const SOURCE_BY_ID = new Map(SOURCE_DEFINITIONS.map(source => [source.id, source]))
@@ -181,6 +183,7 @@ function isStoredUpdate(value) {
     && (value.previousVersion === undefined || (typeof value.previousVersion === 'string' && value.previousVersion.length <= 80))
     && (value.postKind === undefined || ['root', 'self-reply'].includes(value.postKind))
     && (value.replyToId === undefined || /^x-\d{1,19}$/.test(value.replyToId))
+    && (value.position === undefined || (Number.isSafeInteger(value.position) && value.position >= 0 && value.position < 1000))
     && isSafeSourceUrl(definition, value.sourceUrl)
 }
 
@@ -303,9 +306,77 @@ async function fetchSource(api, definition, now) {
   return sortUpdates([...new Map([...roots, ...replies].map(update => [update.id, update])).values()]).slice(0, definition.maxItems)
 }
 
+function stateBytes(state) {
+  return new TextEncoder().encode(JSON.stringify({ type: 'radar:state', state })).byteLength
+}
+
+// 從最舊的項目開始捨棄，直到狀態放得進面板訊息；Tibo 只保留當天貼文，通常已在最前面。
+export function fitStateToMessageBudget(state) {
+  let updates = state.updates
+  while (updates.length > 0 && stateBytes({ ...state, updates }) > STATE_MESSAGE_BUDGET_BYTES) {
+    updates = updates.slice(0, Math.max(0, updates.length - Math.max(1, Math.ceil(updates.length / 20))))
+  }
+  if (updates === state.updates) return state
+  return {
+    ...state,
+    updates,
+    sources: state.sources.map(source => (source.id === 'codex-resets'
+      ? source
+      : { ...source, itemCount: updates.filter(update => update.sourceId === source.id).length })),
+  }
+}
+
+function versionParts(version) {
+  return String(version ?? '').match(/\d+/g)?.map(Number) ?? []
+}
+
+export function compareVersions(left, right) {
+  const a = versionParts(left)
+  const b = versionParts(right)
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0)
+    if (difference) return difference
+  }
+  return 0
+}
+
+// Claude Code 一個版本常有上百條變更，以版本為單位通知。只有比已知最新版本還新的版本才算新發布；
+// 已知版本補抓到的條目（例如放寬保留上限後）安靜併入，避免升級後第一次同步就推送一大批。
+export function notificationEntries(fresh, previousUpdates) {
+  const knownVersions = previousUpdates
+    .filter(update => update.sourceId === 'claude-code' && update.version)
+    .map(update => update.version)
+  const newestKnown = knownVersions.reduce((newest, version) => (newest && compareVersions(newest, version) >= 0 ? newest : version), null)
+  const releases = new Map()
+  const entries = []
+  for (const update of fresh) {
+    if (update.sourceId !== 'claude-code' || !update.version) { entries.push({ kind: 'update', update }); continue }
+    if (knownVersions.includes(update.version) || (newestKnown && compareVersions(update.version, newestKnown) <= 0)) continue
+    if (!releases.has(update.version)) {
+      const release = { kind: 'release', version: update.version, updates: [] }
+      releases.set(update.version, release)
+      entries.push(release)
+    }
+    releases.get(update.version).updates.push(update)
+  }
+  if (newestKnown) return entries
+  // 沒有任何已知版本時（例如儲存遺失），只通知最新的一版。
+  const newest = [...releases.keys()].reduce((best, version) => (best && compareVersions(best, version) >= 0 ? best : version), null)
+  return entries.filter(entry => entry.kind !== 'release' || entry.version === newest)
+}
+
+const CHANGE_LABELS = Object.freeze({ added: '新增', improved: '改善', fixed: '修正', deprecated: '棄用', removed: '移除' })
+
+function releaseCountsText(updates) {
+  return Object.entries(CHANGE_LABELS)
+    .map(([type, label]) => [label, updates.filter(update => update.changeType === type).length])
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => `${label} ${count}`)
+    .join(' · ')
+}
+
 function notificationBody(update) {
-  const labels = { added: '新增', improved: '改善', fixed: '修正', deprecated: '棄用', removed: '移除' }
-  return truncate(`${update.publishedAt ?? '日期未提供'} · ${labels[update.changeType] ?? '更新'} · ${update.title}`, 240)
+  return truncate(`${update.publishedAt ?? '日期未提供'} · ${CHANGE_LABELS[update.changeType] ?? '更新'} · ${update.title}`, 240)
 }
 
 export function createUpdateRadarRuntime(api, options = {}) {
@@ -323,38 +394,52 @@ export function createUpdateRadarRuntime(api, options = {}) {
     }
   }
 
-  async function notifyNewUpdates(updates) {
-    if (updates.length > 3) {
-      const critical = updates.some(update => ['deprecated', 'removed'].includes(update.changeType))
-      try {
-        await api.feed.notify({
-          title: `AI 更新雷達有 ${updates.length} 則新內容`,
-          body: '開啟更新雷達查看來源、變更類型與版本差異。',
-          link: updates[0].sourceUrl,
-          priority: critical ? 'high' : 'normal',
-          dedupeKey: `update-radar-batch-${updates.map(update => update.id).join('-').slice(0, 95)}`,
-        })
-      } catch (error) {
-        await api.log.warn('Update Radar notification failed', errorCode(error))
-      }
+  async function notify(item) {
+    try {
+      await api.feed.notify(item)
+    } catch (error) {
+      await api.log.warn('Update Radar notification failed', errorCode(error))
+    }
+  }
+
+  async function notifyNewUpdates(entries) {
+    const isCritical = update => ['deprecated', 'removed'].includes(update.changeType)
+    if (entries.length > 3) {
+      const updates = entries.flatMap(entry => (entry.kind === 'release' ? entry.updates : [entry.update]))
+      const key = entries.map(entry => (entry.kind === 'release' ? `claude-code-${entry.version}` : entry.update.id)).join('-')
+      await notify({
+        title: `AI 更新雷達有 ${entries.length} 則新內容`,
+        body: '開啟更新雷達查看來源、變更類型與版本差異。',
+        link: updates[0].sourceUrl,
+        priority: updates.some(isCritical) ? 'high' : 'normal',
+        dedupeKey: `update-radar-batch-${key.slice(0, 95)}`,
+      })
       return
     }
-    for (const update of [...updates].reverse().slice(0, 12)) {
+    for (const entry of [...entries].reverse()) {
+      if (entry.kind === 'release') {
+        const first = entry.updates[0]
+        await notify({
+          title: `Claude Code ${entry.version} 已發布`,
+          body: truncate(`${first.publishedAt ?? '日期未提供'} · ${releaseCountsText(entry.updates)}`, 240),
+          link: first.sourceUrl,
+          priority: entry.updates.some(isCritical) ? 'high' : 'normal',
+          dedupeKey: truncate(`update-radar-claude-code-${entry.version}`, 128),
+        })
+        continue
+      }
+      const { update } = entry
       const definition = SOURCE_BY_ID.get(update.sourceId)
       const title = update.sourceId === 'tibo-x'
         ? (update.postKind === 'self-reply' ? 'Tibo 有新的自我回文' : 'Tibo 有新的原始貼文')
         : `${definition?.label ?? 'AI'} 有新更新`
-      try {
-        await api.feed.notify({
-          title,
-          body: update.sourceId === 'tibo-x' ? truncate(update.summary || update.title, 240) : notificationBody(update),
-          link: update.sourceUrl,
-          priority: update.changeType === 'deprecated' || update.changeType === 'removed' ? 'high' : 'normal',
-          dedupeKey: `update-radar-${update.id}`,
-        })
-      } catch (error) {
-        await api.log.warn('Update Radar notification failed', errorCode(error))
-      }
+      await notify({
+        title,
+        body: update.sourceId === 'tibo-x' ? truncate(update.summary || update.title, 240) : notificationBody(update),
+        link: update.sourceUrl,
+        priority: isCritical(update) ? 'high' : 'normal',
+        dedupeKey: `update-radar-${update.id}`,
+      })
     }
   }
 
@@ -472,7 +557,8 @@ export function createUpdateRadarRuntime(api, options = {}) {
     const completedAt = isoNow(now)
     const merged = [...new Map(sortUpdates(updates).map(update => [update.id, update])).values()]
     const compared = withVersionComparisons(merged).slice(0, MAX_UPDATES)
-    state = {
+    const previousUpdates = state.updates
+    state = fitStateToMessageBudget({
       schemaVersion: STATE_SCHEMA_VERSION,
       sources: nextSources.map(source => ({
         ...source,
@@ -485,10 +571,10 @@ export function createUpdateRadarRuntime(api, options = {}) {
       baselineSourceIds: [...baseline],
       lastCheckedAt: completedAt,
       lastSuccessAt: anySuccess ? completedAt : state.lastSuccessAt,
-    }
+    })
     await persist()
     await postState()
-    await notifyNewUpdates(fresh)
+    await notifyNewUpdates(notificationEntries(fresh, previousUpdates))
     if (resetToNotify) await notifyCodexReset(resetToNotify)
     return state
   }

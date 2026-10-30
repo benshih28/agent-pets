@@ -14,7 +14,14 @@ import {
   parseTiboSelfReplies,
   withVersionComparisons,
 } from '../update-radar/plugin/dist/core.js'
-import plugin, { createUpdateRadarRuntime, parseCodexResetsStatus, parseOpenAiChangelog } from '../update-radar/plugin/dist/main.js'
+import plugin, {
+  compareVersions,
+  createUpdateRadarRuntime,
+  fitStateToMessageBudget,
+  notificationEntries,
+  parseCodexResetsStatus,
+  parseOpenAiChangelog,
+} from '../update-radar/plugin/dist/main.js'
 
 const pluginRoot = path.resolve('update-radar/plugin')
 const FIXED_NOW = Date.parse('2026-10-28T08:00:00Z')
@@ -162,6 +169,7 @@ function createApiFixture() {
   const uiGuard = new PluginUiMessageGuard()
   const uiMessageRejections: Array<{ type: unknown, error: string }> = []
   let openAiBody = baselineMarkdown
+  let githubBody = githubReleases
   let codexStatus: unknown = codexResetPayload()
   let nowMs = FIXED_NOW
   let panelHandler: ((message: any) => Promise<void>) | null = null
@@ -187,7 +195,7 @@ function createApiFixture() {
         if (url.endsWith('/deprecations.md')) return { status: 200, headers: {}, body: baselineMarkdown }
         if (url.includes('release-notes/overview.md')) return { status: 200, headers: {}, body: anthropicMarkdown }
         if (url.includes('model-deprecations.md')) return { status: 200, headers: {}, body: anthropicMarkdown }
-        if (url.startsWith('https://api.github.com/')) return { status: 200, headers: {}, body: githubReleases }
+        if (url.startsWith('https://api.github.com/')) return { status: 200, headers: {}, body: githubBody }
         if (url === 'https://codex-resets.com/api/v1/status') return { status: 200, headers: {}, body: JSON.stringify(codexStatus) }
         if (url === 'https://x.com/thsottiaux') {
           return { status: 200, headers: {}, body: profileHtml([profilePost('2113000000000000000', '2026-10-27T08:00:00Z', 'Yesterday.')]) }
@@ -243,6 +251,7 @@ function createApiFixture() {
     getPanelHandler: () => panelHandler,
     getScheduled: () => scheduled,
     setOpenAiBody: (value: string) => { openAiBody = value },
+    setGithubBody: (value: string) => { githubBody = value },
     setCodexStatus: (value: unknown) => { codexStatus = structuredClone(value) },
     pauseFetches() {
       let release!: () => void
@@ -287,7 +296,7 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.match(markup, /近 26 週官方 AI 更新/)
-  assert.match(markup, /每天的官方更新則數，不含 Tibo 貼文/)
+  assert.match(markup, /每天的官方更新則數，Claude Code 每個版本算一則，不含 Tibo 貼文/)
   assert.match(markup, /官方需留意/)
   assert.match(markup, /id="tibo-summary"[^>]*type="button"/)
   assert.match(panelSource, /function isTiboUpdate\(update\)/)
@@ -363,7 +372,7 @@ test('Update Radar renders Tibo as a bubble and official updates as source-accen
   assert.match(officialRender, /appendExpandToggle\(article, solo\)/)
   assert.match(styles, /\.message-preview\.is-expanded,\s*\.official-preview\.is-expanded,\s*\.official-title-solo\.is-expanded \{[^}]*-webkit-line-clamp: unset/)
   assert.match(styles, /\.official-title \{[^}]*font-size: var\(--radar-font-lead\)/)
-  assert.match(panelSource, /const attention = updates\.filter\(update => !isTiboUpdate\(update\)/)
+  assert.match(panelSource, /const attention = units\.filter\(unitNeedsAttention\)\.length/)
   assert.match(styles, /\.official-record\.record-openai/)
   assert.match(styles, /\.official-record\.record-anthropic/)
   assert.match(styles, /\.official-record\.record-claude-code/)
@@ -537,6 +546,110 @@ test('official parsers classify updates and compare Claude Code versions', () =>
   const compared = withVersionComparisons(parseGithubReleases(definition, githubReleases))
   assert.equal(compared[0].version, 'v2.1.0')
   assert.equal(compared[0].previousVersion, 'v2.0.0')
+})
+
+function release(tag: string, publishedAt: string, bullets: string[]) {
+  return {
+    tag_name: tag,
+    published_at: publishedAt,
+    html_url: `https://github.com/anthropics/claude-code/releases/tag/${tag}`,
+    body: bullets.map(bullet => `- ${bullet}`).join('\n'),
+  }
+}
+
+test('Claude Code parser keeps whole releases in order and drops a summary that repeats the title', () => {
+  const definition = { ...SOURCE_DEFINITIONS.find(source => source.id === 'claude-code')!, maxItems: 4 }
+  const updates = parseGithubReleases(definition, JSON.stringify([
+    release('v2.2.0', '2026-10-28T04:00:00Z', ['Fixed one.', 'Added two.', 'Improved three.']),
+    release('v2.1.9', '2026-10-27T04:00:00Z', ['Fixed four.', 'Fixed five.']),
+  ]))
+  // 第二版放不下時整版捨棄，版本卡的分類數量才不會少算。
+  assert.deepEqual(updates.map(update => [update.version, update.position]), [['v2.2.0', 0], ['v2.2.0', 1], ['v2.2.0', 2]])
+  assert.equal(updates[0].summary, '')
+  assert.equal(updates[0].title, 'Fixed one.')
+
+  const oversized = parseGithubReleases(definition, JSON.stringify([
+    release('v3.0.0', '2026-10-28T04:00:00Z', ['Added a.', 'Added b.', 'Added c.', 'Added d.', 'Added e.']),
+  ]))
+  assert.equal(oversized.length, 4, 'the newest release is truncated rather than dropped')
+  assert.equal(SOURCE_DEFINITIONS.find(source => source.id === 'claude-code')!.maxItems, 150)
+})
+
+test('changelog bullets are classified by their leading verb before body keywords', () => {
+  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'claude-code')!
+  const updates = parseGithubReleases(definition, JSON.stringify([release('v2.2.0', '2026-10-28T04:00:00Z', [
+    'Fixed logout reporting success when the sign-in was not removed',
+    '[VSCode] Fixed a startup warning for a deprecated key',
+    'Changed the Bash tool to clear inherited aliases',
+    'Removed the legacy --foo flag',
+    'Added a new setting',
+  ])]))
+  assert.deepEqual(updates.map(update => update.changeType), ['fixed', 'fixed', 'improved', 'removed', 'added'])
+})
+
+test('Claude Code notifications are grouped per new version and absorb backfilled known versions', () => {
+  assert.ok(compareVersions('v2.1.314', 'v2.1.99') > 0)
+  assert.equal(compareVersions('v2.1.0', '2.1.0'), 0)
+  const change = (version: string, id: string) => ({ id, sourceId: 'claude-code', version, changeType: 'fixed' })
+  const known = [change('v2.1.312', 'a')]
+  const entries = notificationEntries([
+    change('v2.1.314', 'b'), change('v2.1.314', 'c'),
+    change('v2.1.312', 'd'),
+    change('v2.1.311', 'e'),
+    { id: 'openai-x', sourceId: 'openai-api', changeType: 'added' },
+  ], known)
+  assert.deepEqual(entries.map((entry: any) => entry.kind === 'release' ? `${entry.version}:${entry.updates.length}` : entry.update.id), ['v2.1.314:2', 'openai-x'])
+
+  const withoutHistory = notificationEntries([change('v2.1.314', 'b'), change('v2.1.311', 'e')], [])
+  assert.deepEqual(withoutHistory.map((entry: any) => entry.version), ['v2.1.314'])
+})
+
+test('a new Claude Code version sends one notification with per-type counts', async () => {
+  const fixture = createApiFixture()
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+  assert.equal(fixture.notifications.length, 0)
+  fixture.setGithubBody(JSON.stringify([
+    release('v2.2.0', '2026-10-28T04:00:00Z', ['Added a.', 'Fixed b.', 'Fixed c.', 'Removed d.', 'Fixed e.']),
+    ...JSON.parse(githubReleases),
+  ]))
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'claude-code' })
+  assert.equal(fixture.notifications.length, 1)
+  assert.equal(fixture.notifications[0]?.title, 'Claude Code v2.2.0 已發布')
+  assert.equal(fixture.notifications[0]?.body, '2026-10-28 · 新增 1 · 修正 3 · 移除 1')
+  assert.equal(fixture.notifications[0]?.priority, 'high')
+  assert.equal(fixture.notifications[0]?.dedupeKey, 'update-radar-claude-code-v2.2.0')
+  assert.ok(runtime.getState().updates.filter(update => update.version === 'v2.2.0').every(update => Number.isInteger(update.position)))
+})
+
+test('state that would exceed the panel message limit drops the oldest updates first', () => {
+  const update = (index: number) => ({ id: `u${index}`, sourceId: 'openai-api', summary: 'x'.repeat(2000) })
+  const state = {
+    sources: [{ id: 'openai-api', itemCount: 200 }, { id: 'codex-resets', itemCount: 1 }],
+    updates: Array.from({ length: 200 }, (_, index) => update(index)),
+  }
+  const fitted = fitStateToMessageBudget(state)
+  assert.ok(fitted.updates.length < 200 && fitted.updates.length > 50)
+  assert.equal(fitted.updates[0].id, 'u0')
+  assert.ok(new TextEncoder().encode(JSON.stringify({ type: 'radar:state', state: fitted })).byteLength <= 230 * 1024)
+  assert.equal(fitted.sources[0].itemCount, fitted.updates.length)
+  assert.equal(fitted.sources[1].itemCount, 1)
+  const small = { ...state, updates: state.updates.slice(0, 3) }
+  assert.equal(fitStateToMessageBudget(small), small)
+})
+
+test('panel groups one Claude Code version into a single card and counts cards', () => {
+  const source = ['isTiboUpdate', 'attentionSignal', 'findThreadRootId', 'releaseKey', 'byReleasePosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
+    .map(panelFunctionSource).join('\n')
+  const panel = runInNewContext(`(() => { ${source}
+return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
+  const change = (id: string, version: string | null, position: number, changeType = 'fixed') => ({ id, sourceId: version ? 'claude-code' : 'openai-api', provider: 'anthropic', version, position, changeType, title: id, summary: '' })
+  const updates = [change('b', 'v2', 1), change('o', null, 0, 'added'), change('a', 'v2', 0, 'removed'), change('c', 'v1', 0)]
+  const groups = panel.groupUpdates(updates)
+  assert.equal(JSON.stringify(groups.map((group: any) => [group.kind, group.updates.map((update: any) => update.id).join('')])), JSON.stringify([['release', 'ab'], ['single', 'o'], ['release', 'c']]))
+  const units = panel.updateUnits(updates)
+  assert.equal(units.length, 3)
+  assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit))), '[true,false,false]')
 })
 
 test('Tibo parser keeps today roots and chained self replies in one safe data model', () => {

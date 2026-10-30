@@ -604,6 +604,126 @@ function renderOfficialUpdate(update) {
   return article
 }
 
+// --- Claude Code 版本卡 ------------------------------------------------------
+// 一個版本常有上百條變更；面板以版本為單位呈現，儲存仍保留逐條資料，篩選與搜尋照常作用在每一條。
+const RELEASE_SECTION_ORDER = Object.freeze(['added', 'improved', 'fixed', 'deprecated', 'removed'])
+// 預覽先放可能影響既有用法的移除／棄用，再放新增與改善；修正通常最多，排最後。
+const RELEASE_PREVIEW_ORDER = Object.freeze(['removed', 'deprecated', 'added', 'improved', 'fixed'])
+const RELEASE_PREVIEW_COUNT = 3
+
+function releaseKey(update) {
+  return update?.sourceId === 'claude-code' && update.version ? update.version : null
+}
+
+function byReleasePosition(left, right) {
+  return (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER)
+}
+
+// 卡片單位：同一個 Claude Code 版本算一張，其餘每則各算一張；摘要數字與熱度圖都以卡片計。
+function updateUnits(updates) {
+  const units = new Map()
+  for (const update of updates) {
+    const key = releaseKey(update) ? `release:${releaseKey(update)}` : `update:${update.id}`
+    const unit = units.get(key)
+    if (unit) unit.push(update)
+    else units.set(key, [update])
+  }
+  return [...units.values()]
+}
+
+function isCriticalChange(update) {
+  return ['deprecated', 'removed'].includes(update.changeType)
+}
+
+// 版本卡只看移除／棄用；逐條套用關鍵字判斷時，幾乎每個版本都會有一條提到 permission 或 security。
+function unitNeedsAttention(unit) {
+  if (isTiboUpdate(unit[0])) return false
+  if (releaseKey(unit[0])) return unit.some(isCriticalChange)
+  return isCriticalChange(unit[0]) || attentionSignal(unit[0]).tone !== 'neutral'
+}
+
+function appendReleaseChange(list, update) {
+  const item = document.createElement('li')
+  item.className = 'release-change'
+  appendText(item, 'span', `release-change-type change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
+  appendText(item, 'span', 'release-change-text', update.summary || update.title)
+  list.append(item)
+}
+
+function appendReleaseSections(parent, changes) {
+  for (const type of RELEASE_SECTION_ORDER) {
+    const items = changes.filter(update => update.changeType === type)
+    if (items.length === 0) continue
+    const section = document.createElement('section')
+    section.className = 'release-section'
+    appendText(section, 'h4', `release-section-title change-${type}`, `${labels.changeType[type]} ${items.length}`)
+    const list = document.createElement('ul')
+    list.className = 'release-list'
+    for (const update of items) appendReleaseChange(list, update)
+    section.append(list)
+    parent.append(section)
+  }
+}
+
+function renderRelease(changes, matches) {
+  const first = changes[0]
+  const article = document.createElement('article')
+  article.className = `update-item official-record release-record ${officialRecordTone(first)} provider-${providerClass(first)}`
+  const meta = document.createElement('div')
+  meta.className = 'official-meta'
+  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(first))
+  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(first))
+  time.dateTime = first.publishedAtTime ?? first.publishedAt ?? ''
+  appendText(meta, 'span', 'official-meta-tag category-label', '版本更新')
+  if (changes.some(isCriticalChange)) appendText(meta, 'span', 'official-meta-tag attention-chip attention-critical', '需要留意 · 有移除或棄用')
+  article.append(meta)
+
+  const heading = document.createElement('div')
+  heading.className = 'release-heading'
+  appendText(heading, 'h3', 'official-title release-version', first.version)
+  if (first.previousVersion) appendText(heading, 'span', 'release-previous', `上一版 ${first.previousVersion}`)
+  article.append(heading)
+
+  const counts = document.createElement('ul')
+  counts.className = 'release-counts'
+  counts.setAttribute('aria-label', '各類變更數量')
+  for (const type of RELEASE_SECTION_ORDER) {
+    const count = changes.filter(update => update.changeType === type).length
+    if (count) appendText(counts, 'li', `release-count change-${type}`, `${labels.changeType[type]} ${count}`)
+  }
+  article.append(counts)
+  if (matches.length < changes.length) {
+    appendText(article, 'p', 'release-filter-note', `符合篩選 ${matches.length} 項，共 ${changes.length} 項`)
+  }
+
+  const preview = document.createElement('ul')
+  preview.className = 'release-list release-preview'
+  const highlighted = [...matches].sort((left, right) => (
+    RELEASE_PREVIEW_ORDER.indexOf(left.changeType) - RELEASE_PREVIEW_ORDER.indexOf(right.changeType) || byReleasePosition(left, right)
+  )).slice(0, RELEASE_PREVIEW_COUNT)
+  for (const update of highlighted) appendReleaseChange(preview, update)
+  article.append(preview)
+
+  if (matches.length <= RELEASE_PREVIEW_COUNT) {
+    appendSourceAction(article, first)
+    return article
+  }
+  const details = document.createElement('details')
+  details.className = 'update-details release-details'
+  appendText(details, 'summary', '', `展開全部 ${matches.length} 項變更`)
+  const content = document.createElement('div')
+  content.className = 'details-content'
+  details.append(content)
+  // 上百條變更只在第一次展開時建立，避免每次重繪都產生大量節點。
+  details.addEventListener('toggle', () => {
+    if (!details.open || content.childElementCount > 0) return
+    appendReleaseSections(content, matches)
+    appendSourceAction(content, first)
+  })
+  article.append(details)
+  return article
+}
+
 function resetTypeLabel(value) {
   return ({ regular: '定期重設', manual: '手動重設', emergency: '緊急重設', scheduled: '排定重設', observed: '觀測到重設' })[value] ?? '重設'
 }
@@ -749,8 +869,16 @@ function groupUpdates(updates) {
   const byId = new Map(updates.map(update => [update.id, update]))
   const roots = new Map(updates.map(update => [update.id, findThreadRootId(update, byId)]))
   const emitted = new Set()
+  const emittedReleases = new Set()
   const groups = []
   for (const update of updates) {
+    const version = releaseKey(update)
+    if (version) {
+      if (emittedReleases.has(version)) continue
+      emittedReleases.add(version)
+      groups.push({ kind: 'release', updates: updates.filter(candidate => releaseKey(candidate) === version).sort(byReleasePosition) })
+      continue
+    }
     const rootId = roots.get(update.id)
     if (!rootId) { groups.push({ kind: 'single', updates: [update] }); continue }
     if (emitted.has(rootId)) continue
@@ -809,17 +937,18 @@ function renderUpdates() {
   }
   setBusy(elements.updates, updateLoading)
   const groups = groupUpdates(allUpdates).filter(group => group.updates.some(matchesFilters))
-  const visibleCount = groups.reduce((total, group) => total + group.updates.length, 0)
+  const visibleCount = groups.reduce((total, group) => total + group.updates.filter(matchesFilters).length, 0)
   elements.updates.replaceChildren(...groups.map((group) => {
     if (group.kind === 'thread') return renderThread(group)
+    if (group.kind === 'release') return renderRelease(group.updates, group.updates.filter(matchesFilters))
     const update = group.updates[0]
     return isTiboUpdate(update) ? renderTiboUpdate(update) : renderOfficialUpdate(update)
   }))
   elements.empty.hidden = groups.length > 0
   elements.resultStatus.textContent = groups.length > 0
-    ? `顯示 ${groups.length} 個區塊、${visibleCount} 則內容。Tibo 對話會保留整串上下文。`
+    ? `顯示 ${groups.length} 個區塊、${visibleCount} 則內容。Claude Code 依版本合併，Tibo 對話會保留整串上下文。`
     : '目前的篩選條件沒有結果。'
-  renderDayFilter(visibleCount)
+  renderDayFilter(groups.length)
 }
 
 function dayLabel(key) {
@@ -828,11 +957,11 @@ function dayLabel(key) {
   return `${month}/${day}（${weekday}）`
 }
 
-function renderDayFilter(visibleCount) {
+function renderDayFilter(cardCount) {
   elements.dayFilter.hidden = !state.day
   // 日期列已說明筆數；保留一般結果說明只會重複，且日期篩選不含 Tibo。
   elements.resultStatus.hidden = Boolean(state.day)
-  if (state.day) elements.dayFilterText.textContent = `只顯示 ${dayLabel(state.day)} 的官方更新 ${visibleCount} 則`
+  if (state.day) elements.dayFilterText.textContent = `只顯示 ${dayLabel(state.day)} 的官方更新 ${cardCount} 則`
 }
 
 function scrollToUpdates() {
@@ -936,8 +1065,8 @@ function renderHeatmap() {
   elements.heatLoader.hidden = !officialLoading
   // 重新繪製會替換所有格子；保留鍵盤焦點，避免每次選取或同步後焦點跳回頁首。
   const focusedDay = elements.heatmap.contains(document.activeElement) ? document.activeElement.dataset.day : null
-  for (const update of officialUpdates) {
-    const key = heatDateKey(update)
+  for (const unit of updateUnits(officialUpdates)) {
+    const key = heatDateKey(unit[0])
     if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   const today = new Date()
@@ -1071,10 +1200,10 @@ function render(radar) {
   const sources = Array.isArray(radar?.sources) ? radar.sources : []
   const loading = sources.some(source => source.status === 'loading')
   syncTracker.observe(sources)
-  const attention = updates.filter(update => !isTiboUpdate(update)
-    && (['deprecated', 'removed'].includes(update.changeType) || attentionSignal(update).tone !== 'neutral')).length
+  const units = updateUnits(updates)
+  const attention = units.filter(unitNeedsAttention).length
   const healthy = sources.filter(source => source.status === 'ok').length
-  elements.count.textContent = String(updates.length)
+  elements.count.textContent = String(units.length)
   elements.attentionCount.textContent = String(attention)
   elements.healthyCount.textContent = `${healthy}/${sources.length || 7}`
   elements.healthySummary.textContent = `${healthy}/${sources.length || 7} 正常`
