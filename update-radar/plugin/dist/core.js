@@ -142,6 +142,45 @@ function extractReplacement(raw) {
   return raw.match(/(?:migrate|switch|replacement|replace(?:d)?)(?:\s+from\s+`[^`]+`)?\s+(?:to|is)\s+`([^`]{1,80})`/i)?.[1] ?? null
 }
 
+const RETIREMENT_DATE_HEADER = /\b(?:shutdown|retirement)\s+date\b/i
+const RETIREMENT_MODEL_HEADER = /\b(?:model|system|snapshot|endpoint)/i
+const RETIREMENT_REPLACEMENT_HEADER = /\breplacement\b/i
+const MAX_RETIREMENTS = 12
+
+function isTableLine(line) {
+  return line.trim().startsWith('|')
+}
+
+// 儲存格內的 \| 是同一格裡的多個名稱（例如別名與快照），不是欄位分隔。
+function tableCells(line) {
+  return line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/).map(cell => cell.replace(/\\\|/g, ' / ').trim())
+}
+
+// 停用公告的重點（哪些型號、哪天停用、改用什麼）都在表格裡；壓成一段文字後就讀不出來，所以逐列解析。
+export function extractRetirements(raw) {
+  const rows = []
+  const lines = String(raw ?? '').split('\n')
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!isTableLine(lines[index]) || !/^\s*\|?\s*:?-{3,}/.test(lines[index + 1])) continue
+    const header = tableCells(lines[index])
+    const dateIndex = header.findIndex(cell => RETIREMENT_DATE_HEADER.test(cell))
+    const replacementIndex = header.findIndex(cell => RETIREMENT_REPLACEMENT_HEADER.test(cell))
+    const modelIndex = header.findIndex((cell, cellIndex) => (
+      cellIndex !== dateIndex && cellIndex !== replacementIndex && RETIREMENT_MODEL_HEADER.test(cell)
+    ))
+    if (dateIndex < 0 || modelIndex < 0) continue
+    for (let rowIndex = index + 2; rowIndex < lines.length && isTableLine(lines[rowIndex]); rowIndex += 1) {
+      const cells = tableCells(lines[rowIndex])
+      const model = truncate(stripMarkdown(cells[modelIndex] ?? '').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'), 120)
+      if (!model) continue
+      const replacement = replacementIndex >= 0 ? truncate(stripMarkdown(cells[replacementIndex] ?? ''), 120) : ''
+      rows.push({ model, date: parseDateText(stripMarkdown(cells[dateIndex] ?? '')), replacement: replacement || null })
+      if (rows.length >= MAX_RETIREMENTS) return rows
+    }
+  }
+  return rows
+}
+
 function metadataAndBody(raw) {
   const lines = raw.split('\n').map(line => line.trim()).filter(Boolean)
   if (/^(Feature|Update|Fix|Announcement)(?:\s*·.*)?$/i.test(lines[0] ?? '')) {
@@ -154,6 +193,11 @@ function normalizeUpdate(definition, rawEntry) {
   const { metadata, body } = metadataAndBody(rawEntry.body)
   const plain = stripMarkdown(body)
   if (!plain) return null
+  const retirements = extractRetirements(body)
+  // 表格已另外解析；摘要只留說明文字，分類仍用全文判斷。
+  const prose = retirements.length ? stripMarkdown(body.split('\n').filter(line => !isTableLine(line)).join('\n')) : plain
+  const retirementDates = retirements.map(row => row.date).filter(Boolean).sort()
+  const replacements = [...new Set(retirements.map(row => row.replacement).filter(Boolean))]
   const title = rawEntry.headingTitle || firstSentence(body)
   const version = rawEntry.version ?? null
   const canonicalBody = stripMarkdown(rawEntry.body)
@@ -167,12 +211,13 @@ function normalizeUpdate(definition, rawEntry) {
     changeType: inferChangeType(`${metadata} ${title} ${plain}`, stripMarkdown(title)),
     title: truncate(stripMarkdown(title), 180),
     // 條列式來源大多一條只有一句，標題就是全文；不重複存一份，狀態才放得進 256 KB 的面板訊息上限。
-    summary: plain === stripMarkdown(title) ? '' : truncate(plain, 700),
+    summary: prose === stripMarkdown(title) ? '' : truncate(prose, 700),
     publishedAt: rawEntry.publishedAt ?? null,
-    effectiveAt: extractEffectiveAt(plain),
+    effectiveAt: extractEffectiveAt(plain) ?? retirementDates[0] ?? null,
     version,
     subjects: extractSubjects(rawEntry.body, metadata),
-    replacement: extractReplacement(rawEntry.body),
+    replacement: extractReplacement(rawEntry.body) ?? (replacements.length === 1 ? truncate(replacements[0], 80) : null),
+    ...(retirements.length ? { retirements } : {}),
     sourceUrl: rawEntry.sourceUrl ?? definition.publicUrl,
   }
 }
@@ -225,9 +270,9 @@ export function parseDatedMarkdown(definition, markdown) {
   const updates = []
   for (const section of extractDatedSections(markdown)) {
     const bullets = definition.splitBullets ? splitTopLevelBullets(section.lines) : []
-    for (const chunk of (bullets.length ? bullets : [section.lines.join('\n')])) {
+    for (const [position, chunk] of (bullets.length ? bullets : [section.lines.join('\n')]).entries()) {
       const update = normalizeUpdate(definition, { body: chunk, publishedAt: section.publishedAt, headingTitle: section.headingTitle })
-      if (update) updates.push(update)
+      if (update) updates.push(bullets.length ? { ...update, position } : update)
       if (updates.length >= definition.maxItems) return updates
     }
   }

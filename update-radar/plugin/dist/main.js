@@ -167,6 +167,13 @@ function isSafeSourceUrl(definition, value) {
   }
 }
 
+function isStoredRetirement(value) {
+  return Boolean(value) && typeof value === 'object'
+    && typeof value.model === 'string' && value.model.length > 0 && value.model.length <= 120
+    && (value.date === null || /^\d{4}-\d{2}-\d{2}$/.test(value.date))
+    && (value.replacement === null || (typeof value.replacement === 'string' && value.replacement.length <= 120))
+}
+
 function isStoredUpdate(value) {
   if (!value || typeof value !== 'object') return false
   const definition = SOURCE_BY_ID.get(value.sourceId)
@@ -184,6 +191,7 @@ function isStoredUpdate(value) {
     && (value.postKind === undefined || ['root', 'self-reply'].includes(value.postKind))
     && (value.replyToId === undefined || /^x-\d{1,19}$/.test(value.replyToId))
     && (value.position === undefined || (Number.isSafeInteger(value.position) && value.position >= 0 && value.position < 1000))
+    && (value.retirements === undefined || (Array.isArray(value.retirements) && value.retirements.length <= 12 && value.retirements.every(isStoredRetirement)))
     && isSafeSourceUrl(definition, value.sourceUrl)
 }
 
@@ -348,8 +356,19 @@ export function notificationEntries(fresh, previousUpdates) {
     .map(update => update.version)
   const newestKnown = knownVersions.reduce((newest, version) => (newest && compareVersions(newest, version) >= 0 ? newest : version), null)
   const releases = new Map()
+  const days = new Map()
   const entries = []
   for (const update of fresh) {
+    // Claude Platform 同一天常一次公布好幾項，和面板一樣以日期合併成一則。
+    if (update.sourceId === 'anthropic-platform' && update.publishedAt) {
+      if (!days.has(update.publishedAt)) {
+        const day = { kind: 'day', date: update.publishedAt, updates: [] }
+        days.set(update.publishedAt, day)
+        entries.push(day)
+      }
+      days.get(update.publishedAt).updates.push(update)
+      continue
+    }
     if (update.sourceId !== 'claude-code' || !update.version) { entries.push({ kind: 'update', update }); continue }
     if (knownVersions.includes(update.version) || (newestKnown && compareVersions(update.version, newestKnown) <= 0)) continue
     if (!releases.has(update.version)) {
@@ -359,10 +378,11 @@ export function notificationEntries(fresh, previousUpdates) {
     }
     releases.get(update.version).updates.push(update)
   }
-  if (newestKnown) return entries
+  const flattened = entries.map(entry => (entry.kind === 'day' && entry.updates.length === 1 ? { kind: 'update', update: entry.updates[0] } : entry))
+  if (newestKnown) return flattened
   // 沒有任何已知版本時（例如儲存遺失），只通知最新的一版。
   const newest = [...releases.keys()].reduce((best, version) => (best && compareVersions(best, version) >= 0 ? best : version), null)
-  return entries.filter(entry => entry.kind !== 'release' || entry.version === newest)
+  return flattened.filter(entry => entry.kind !== 'release' || entry.version === newest)
 }
 
 const CHANGE_LABELS = Object.freeze({ added: '新增', improved: '改善', fixed: '修正', deprecated: '棄用', removed: '移除' })
@@ -405,8 +425,8 @@ export function createUpdateRadarRuntime(api, options = {}) {
   async function notifyNewUpdates(entries) {
     const isCritical = update => ['deprecated', 'removed'].includes(update.changeType)
     if (entries.length > 3) {
-      const updates = entries.flatMap(entry => (entry.kind === 'release' ? entry.updates : [entry.update]))
-      const key = entries.map(entry => (entry.kind === 'release' ? `claude-code-${entry.version}` : entry.update.id)).join('-')
+      const updates = entries.flatMap(entry => entry.updates ?? [entry.update])
+      const key = entries.map(entry => (entry.kind === 'release' ? `claude-code-${entry.version}` : (entry.updates ?? [entry.update])[0].id)).join('-')
       await notify({
         title: `AI 更新雷達有 ${entries.length} 則新內容`,
         body: '開啟更新雷達查看來源、變更類型與版本差異。',
@@ -425,6 +445,17 @@ export function createUpdateRadarRuntime(api, options = {}) {
           link: first.sourceUrl,
           priority: entry.updates.some(isCritical) ? 'high' : 'normal',
           dedupeKey: truncate(`update-radar-claude-code-${entry.version}`, 128),
+        })
+        continue
+      }
+      if (entry.kind === 'day') {
+        const first = entry.updates[0]
+        await notify({
+          title: `Claude Platform 有 ${entry.updates.length} 項更新`,
+          body: truncate(`${entry.date} · ${releaseCountsText(entry.updates)} · ${first.title}`, 240),
+          link: first.sourceUrl,
+          priority: entry.updates.some(isCritical) ? 'high' : 'normal',
+          dedupeKey: `update-radar-${first.id}-day`,
         })
         continue
       }

@@ -604,26 +604,29 @@ function renderOfficialUpdate(update) {
   return article
 }
 
-// --- Claude Code 版本卡 ------------------------------------------------------
-// 一個版本常有上百條變更；面板以版本為單位呈現，儲存仍保留逐條資料，篩選與搜尋照常作用在每一條。
-const RELEASE_SECTION_ORDER = Object.freeze(['added', 'improved', 'fixed', 'deprecated', 'removed'])
+// --- 合併卡片：Claude Code 版本、Claude Platform 日期 ----------------------------
+// Claude Code 一個版本常有上百條變更、Claude Platform 同一天常公布好幾項；面板依版本／日期合併成一張卡，
+// 儲存仍保留逐條資料，篩選與搜尋照常作用在每一條。
+const CHANGE_SECTION_ORDER = Object.freeze(['added', 'improved', 'fixed', 'deprecated', 'removed'])
 // 預覽先放可能影響既有用法的移除／棄用，再放新增與改善；修正通常最多，排最後。
-const RELEASE_PREVIEW_ORDER = Object.freeze(['removed', 'deprecated', 'added', 'improved', 'fixed'])
-const RELEASE_PREVIEW_COUNT = 3
+const CHANGE_PREVIEW_ORDER = Object.freeze(['removed', 'deprecated', 'added', 'improved', 'fixed'])
+const CHANGE_PREVIEW_COUNT = 3
 
-function releaseKey(update) {
-  return update?.sourceId === 'claude-code' && update.version ? update.version : null
+function groupKey(update) {
+  if (update?.sourceId === 'claude-code' && update.version) return `release:${update.version}`
+  if (update?.sourceId === 'anthropic-platform' && update.publishedAt) return `day:${update.publishedAt}`
+  return null
 }
 
-function byReleasePosition(left, right) {
+function byPosition(left, right) {
   return (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER)
 }
 
-// 卡片單位：同一個 Claude Code 版本算一張，其餘每則各算一張；摘要數字與熱度圖都以卡片計。
+// 卡片單位：同一個版本或同一天的 Platform 更新算一張，其餘每則各算一張；摘要數字與熱度圖都以卡片計。
 function updateUnits(updates) {
   const units = new Map()
   for (const update of updates) {
-    const key = releaseKey(update) ? `release:${releaseKey(update)}` : `update:${update.id}`
+    const key = groupKey(update) ?? `update:${update.id}`
     const unit = units.get(key)
     if (unit) unit.push(update)
     else units.set(key, [update])
@@ -635,91 +638,173 @@ function isCriticalChange(update) {
   return ['deprecated', 'removed'].includes(update.changeType)
 }
 
-// 版本卡只看移除／棄用；逐條套用關鍵字判斷時，幾乎每個版本都會有一條提到 permission 或 security。
+// 合併卡只看移除／棄用；逐條套用關鍵字判斷時，幾乎每個版本都會有一條提到 permission 或 security。
 function unitNeedsAttention(unit) {
   if (isTiboUpdate(unit[0])) return false
-  if (releaseKey(unit[0])) return unit.some(isCriticalChange)
+  if (unit.length > 1 || groupKey(unit[0])?.startsWith('release:')) return unit.some(isCriticalChange)
   return isCriticalChange(unit[0]) || attentionSignal(unit[0]).tone !== 'neutral'
 }
 
-function appendReleaseChange(list, update) {
+function appendGroupedChange(list, update, withDetail) {
+  const { headline, previewText } = officialHeadline(update)
   const item = document.createElement('li')
-  item.className = 'release-change'
-  appendText(item, 'span', `release-change-type change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
-  appendText(item, 'span', 'release-change-text', update.summary || update.title)
+  item.className = 'change-item'
+  appendText(item, 'span', `change-item-type change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
+  const body = document.createElement('div')
+  body.className = 'change-item-body'
+  appendText(body, 'p', 'change-item-text', headline)
+  if (withDetail && previewText) appendText(body, 'p', 'change-item-detail', previewText)
+  item.append(body)
   list.append(item)
 }
 
-function appendReleaseSections(parent, changes) {
-  for (const type of RELEASE_SECTION_ORDER) {
+function appendChangeSections(parent, changes) {
+  for (const type of CHANGE_SECTION_ORDER) {
     const items = changes.filter(update => update.changeType === type)
     if (items.length === 0) continue
     const section = document.createElement('section')
-    section.className = 'release-section'
-    appendText(section, 'h4', `release-section-title change-${type}`, `${labels.changeType[type]} ${items.length}`)
+    section.className = 'change-section'
+    appendText(section, 'h4', `change-section-title change-${type}`, `${labels.changeType[type]} ${items.length}`)
     const list = document.createElement('ul')
-    list.className = 'release-list'
-    for (const update of items) appendReleaseChange(list, update)
+    list.className = 'change-list'
+    for (const update of items) appendGroupedChange(list, update, true)
     section.append(list)
     parent.append(section)
   }
 }
 
-function renderRelease(changes, matches) {
+function renderChangeGroup(changes, matches) {
   const first = changes[0]
+  const isRelease = groupKey(first)?.startsWith('release:')
   const article = document.createElement('article')
-  article.className = `update-item official-record release-record ${officialRecordTone(first)} provider-${providerClass(first)}`
+  article.className = `update-item official-record change-group ${officialRecordTone(first)} provider-${providerClass(first)}`
   const meta = document.createElement('div')
   meta.className = 'official-meta'
   appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(first))
   const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(first))
   time.dateTime = first.publishedAtTime ?? first.publishedAt ?? ''
-  appendText(meta, 'span', 'official-meta-tag category-label', '版本更新')
+  appendText(meta, 'span', 'official-meta-tag category-label', isRelease ? '版本更新' : '當日更新')
   if (changes.some(isCriticalChange)) appendText(meta, 'span', 'official-meta-tag attention-chip attention-critical', '需要留意 · 有移除或棄用')
   article.append(meta)
 
   const heading = document.createElement('div')
-  heading.className = 'release-heading'
-  appendText(heading, 'h3', 'official-title release-version', first.version)
-  if (first.previousVersion) appendText(heading, 'span', 'release-previous', `上一版 ${first.previousVersion}`)
+  heading.className = 'change-group-heading'
+  appendText(heading, 'h3', 'official-title change-group-title', isRelease ? first.version : formatDate(first.publishedAt))
+  if (isRelease && first.previousVersion) appendText(heading, 'span', 'change-group-subtitle', `上一版 ${first.previousVersion}`)
+  if (!isRelease) appendText(heading, 'span', 'change-group-subtitle', `共 ${changes.length} 項`)
   article.append(heading)
 
   const counts = document.createElement('ul')
-  counts.className = 'release-counts'
+  counts.className = 'change-counts'
   counts.setAttribute('aria-label', '各類變更數量')
-  for (const type of RELEASE_SECTION_ORDER) {
+  for (const type of CHANGE_SECTION_ORDER) {
     const count = changes.filter(update => update.changeType === type).length
-    if (count) appendText(counts, 'li', `release-count change-${type}`, `${labels.changeType[type]} ${count}`)
+    if (count) appendText(counts, 'li', `change-count change-${type}`, `${labels.changeType[type]} ${count}`)
   }
   article.append(counts)
   if (matches.length < changes.length) {
-    appendText(article, 'p', 'release-filter-note', `符合篩選 ${matches.length} 項，共 ${changes.length} 項`)
+    appendText(article, 'p', 'change-filter-note', `符合篩選 ${matches.length} 項，共 ${changes.length} 項`)
   }
 
   const preview = document.createElement('ul')
-  preview.className = 'release-list release-preview'
+  preview.className = 'change-list change-preview'
   const highlighted = [...matches].sort((left, right) => (
-    RELEASE_PREVIEW_ORDER.indexOf(left.changeType) - RELEASE_PREVIEW_ORDER.indexOf(right.changeType) || byReleasePosition(left, right)
-  )).slice(0, RELEASE_PREVIEW_COUNT)
-  for (const update of highlighted) appendReleaseChange(preview, update)
+    CHANGE_PREVIEW_ORDER.indexOf(left.changeType) - CHANGE_PREVIEW_ORDER.indexOf(right.changeType) || byPosition(left, right)
+  )).slice(0, CHANGE_PREVIEW_COUNT)
+  for (const update of highlighted) appendGroupedChange(preview, update, false)
   article.append(preview)
 
-  if (matches.length <= RELEASE_PREVIEW_COUNT) {
+  // 條目少但有補充說明時（Platform 常見），仍提供展開；兩者都沒有就直接放來源按鈕。
+  const hasDetail = matches.some(update => officialHeadline(update).previewText)
+  if (matches.length <= CHANGE_PREVIEW_COUNT && !hasDetail) {
     appendSourceAction(article, first)
     return article
   }
   const details = document.createElement('details')
-  details.className = 'update-details release-details'
-  appendText(details, 'summary', '', `展開全部 ${matches.length} 項變更`)
+  details.className = 'update-details change-details'
+  appendText(details, 'summary', '', matches.length > CHANGE_PREVIEW_COUNT ? `展開全部 ${matches.length} 項變更` : '展開完整內容')
   const content = document.createElement('div')
   content.className = 'details-content'
   details.append(content)
   // 上百條變更只在第一次展開時建立，避免每次重繪都產生大量節點。
   details.addEventListener('toggle', () => {
     if (!details.open || content.childElementCount > 0) return
-    appendReleaseSections(content, matches)
+    appendChangeSections(content, matches)
     appendSourceAction(content, first)
   })
+  article.append(details)
+  return article
+}
+
+// --- 停用警示卡 ---------------------------------------------------------------
+const RETIREMENT_PREVIEW_COUNT = 4
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function daysUntil(isoDay) {
+  const [year, month, day] = isoDay.split('-').map(Number)
+  const now = new Date()
+  return Math.round((Date.UTC(year, month - 1, day) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / DAY_MS)
+}
+
+// 以最近一個尚未到的停用日為準；全部已過則顯示最後一個停用日。顏色之外也用文字說明緊急程度。
+function retirementStatus(retirements) {
+  const dates = [...new Set(retirements.map(row => row.date).filter(Boolean))].sort()
+  if (dates.length === 0) return { text: '停用日期未定', tone: 'neutral' }
+  const upcoming = dates.find(date => daysUntil(date) >= 0)
+  if (!upcoming) return { text: `已於 ${formatDate(dates[dates.length - 1])} 停用`, tone: 'past' }
+  const days = daysUntil(upcoming)
+  const prefix = dates.length > 1 ? '最早 ' : ''
+  const when = days === 0 ? '今天停用' : `${days} 天後停用`
+  return { text: `${prefix}${when} · ${formatDate(upcoming)}`, tone: days <= 30 ? 'critical' : days <= 90 ? 'warn' : 'neutral' }
+}
+
+function appendRetirementRow(list, row, showDate) {
+  const item = document.createElement('li')
+  item.className = 'retirement-row'
+  appendText(item, 'span', 'retirement-model', row.model)
+  appendText(item, 'span', 'retirement-arrow', '→').setAttribute('aria-label', '改用')
+  appendText(item, 'span', row.replacement ? 'retirement-replacement' : 'retirement-replacement is-missing', row.replacement ?? '未提供替代')
+  if (showDate) appendText(item, 'span', 'retirement-date', row.date ? formatDate(row.date) : '日期未定')
+  list.append(item)
+}
+
+function renderRetirement(update) {
+  const rows = update.retirements
+  const article = document.createElement('article')
+  article.className = `update-item official-record retirement-record ${officialRecordTone(update)} provider-${providerClass(update)}`
+  const meta = document.createElement('div')
+  meta.className = 'official-meta'
+  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(update))
+  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(update))
+  time.dateTime = update.publishedAtTime ?? update.publishedAt ?? ''
+  appendText(meta, 'span', `official-meta-tag change-label change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
+  article.append(meta)
+  appendText(article, 'h3', 'official-title', update.title || '未命名公告')
+  const status = retirementStatus(rows)
+  appendText(article, 'p', `retirement-status retirement-${status.tone}`, status.text)
+
+  const showDate = new Set(rows.map(row => row.date)).size > 1
+  const list = document.createElement('ul')
+  list.className = 'retirement-list'
+  list.setAttribute('aria-label', '停用型號與建議替代')
+  for (const row of rows.slice(0, RETIREMENT_PREVIEW_COUNT)) appendRetirementRow(list, row, showDate)
+  article.append(list)
+
+  const details = document.createElement('details')
+  details.className = 'update-details'
+  const extra = rows.length - RETIREMENT_PREVIEW_COUNT
+  appendText(details, 'summary', '', extra > 0 ? `展開其餘 ${extra} 個型號與說明` : '展開說明')
+  const content = document.createElement('div')
+  content.className = 'details-content'
+  if (extra > 0) {
+    const rest = document.createElement('ul')
+    rest.className = 'retirement-list'
+    for (const row of rows.slice(RETIREMENT_PREVIEW_COUNT)) appendRetirementRow(rest, row, showDate)
+    content.append(rest)
+  }
+  if (update.summary) appendText(content, 'p', 'retirement-note', update.summary)
+  appendSourceAction(content, update)
+  details.append(content)
   article.append(details)
   return article
 }
@@ -869,14 +954,16 @@ function groupUpdates(updates) {
   const byId = new Map(updates.map(update => [update.id, update]))
   const roots = new Map(updates.map(update => [update.id, findThreadRootId(update, byId)]))
   const emitted = new Set()
-  const emittedReleases = new Set()
+  const emittedGroups = new Set()
   const groups = []
   for (const update of updates) {
-    const version = releaseKey(update)
-    if (version) {
-      if (emittedReleases.has(version)) continue
-      emittedReleases.add(version)
-      groups.push({ kind: 'release', updates: updates.filter(candidate => releaseKey(candidate) === version).sort(byReleasePosition) })
+    const key = groupKey(update)
+    if (key) {
+      if (emittedGroups.has(key)) continue
+      emittedGroups.add(key)
+      const members = updates.filter(candidate => groupKey(candidate) === key).sort(byPosition)
+      // 只有一項的 Platform 日期直接用一般卡片；版本卡即使只有一條也保留版本資訊。
+      groups.push({ kind: members.length > 1 || key.startsWith('release:') ? 'changes' : 'single', updates: members })
       continue
     }
     const rootId = roots.get(update.id)
@@ -923,7 +1010,8 @@ function matchesFilters(update) {
   const query = elements.search.value.trim().toLocaleLowerCase('zh-Hant')
   if (!query) return true
   const subjects = Array.isArray(update.subjects) ? update.subjects : []
-  return [update.title, update.summary, update.version, ...subjects]
+  const retirements = Array.isArray(update.retirements) ? update.retirements.flatMap(row => [row.model, row.replacement]) : []
+  return [update.title, update.summary, update.version, ...subjects, ...retirements]
     .filter(Boolean).join(' ').toLocaleLowerCase('zh-Hant').includes(query)
 }
 
@@ -940,13 +1028,14 @@ function renderUpdates() {
   const visibleCount = groups.reduce((total, group) => total + group.updates.filter(matchesFilters).length, 0)
   elements.updates.replaceChildren(...groups.map((group) => {
     if (group.kind === 'thread') return renderThread(group)
-    if (group.kind === 'release') return renderRelease(group.updates, group.updates.filter(matchesFilters))
+    if (group.kind === 'changes') return renderChangeGroup(group.updates, group.updates.filter(matchesFilters))
     const update = group.updates[0]
-    return isTiboUpdate(update) ? renderTiboUpdate(update) : renderOfficialUpdate(update)
+    if (isTiboUpdate(update)) return renderTiboUpdate(update)
+    return Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update) : renderOfficialUpdate(update)
   }))
   elements.empty.hidden = groups.length > 0
   elements.resultStatus.textContent = groups.length > 0
-    ? `顯示 ${groups.length} 個區塊、${visibleCount} 則內容。Claude Code 依版本合併，Tibo 對話會保留整串上下文。`
+    ? `顯示 ${groups.length} 個區塊、${visibleCount} 則內容。Claude Code 依版本、Claude Platform 依日期合併，Tibo 對話會保留整串上下文。`
     : '目前的篩選條件沒有結果。'
   renderDayFilter(groups.length)
 }

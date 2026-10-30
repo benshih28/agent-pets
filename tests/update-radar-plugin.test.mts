@@ -9,6 +9,8 @@ import { PluginRegistry } from '../electron/plugin-registry.ts'
 import { PluginUiMessageGuard } from '../electron/plugin-ui-messages.ts'
 import {
   SOURCE_DEFINITIONS,
+  extractRetirements,
+  parseDatedMarkdown,
   parseGithubReleases,
   parseTiboPublicProfile,
   parseTiboSelfReplies,
@@ -296,7 +298,7 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.match(markup, /近 26 週官方 AI 更新/)
-  assert.match(markup, /每天的官方更新則數，Claude Code 每個版本算一則，不含 Tibo 貼文/)
+  assert.match(markup, /每天的官方更新則數，Claude Code 每個版本、Claude Platform 每天各算一則，不含 Tibo 貼文/)
   assert.match(markup, /官方需留意/)
   assert.match(markup, /id="tibo-summary"[^>]*type="button"/)
   assert.match(panelSource, /function isTiboUpdate\(update\)/)
@@ -638,18 +640,71 @@ test('state that would exceed the panel message limit drops the oldest updates f
   assert.equal(fitStateToMessageBudget(small), small)
 })
 
-test('panel groups one Claude Code version into a single card and counts cards', () => {
-  const source = ['isTiboUpdate', 'attentionSignal', 'findThreadRootId', 'releaseKey', 'byReleasePosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
+test('panel groups a Claude Code version and a multi-item Platform day into one card each', () => {
+  const source = ['isTiboUpdate', 'attentionSignal', 'findThreadRootId', 'groupKey', 'byPosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
     .map(panelFunctionSource).join('\n')
   const panel = runInNewContext(`(() => { ${source}
 return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
-  const change = (id: string, version: string | null, position: number, changeType = 'fixed') => ({ id, sourceId: version ? 'claude-code' : 'openai-api', provider: 'anthropic', version, position, changeType, title: id, summary: '' })
-  const updates = [change('b', 'v2', 1), change('o', null, 0, 'added'), change('a', 'v2', 0, 'removed'), change('c', 'v1', 0)]
+  const change = (id: string, sourceId: string, extra: Record<string, unknown>) => ({ id, sourceId, provider: 'anthropic', changeType: 'fixed', title: id, summary: '', ...extra })
+  const updates = [
+    change('b', 'claude-code', { version: 'v2', position: 1 }),
+    change('p2', 'anthropic-platform', { publishedAt: '2026-10-29', position: 1 }),
+    change('o', 'openai-api', { changeType: 'added' }),
+    change('a', 'claude-code', { version: 'v2', position: 0, changeType: 'removed' }),
+    change('p1', 'anthropic-platform', { publishedAt: '2026-10-29', position: 0 }),
+    change('p3', 'anthropic-platform', { publishedAt: '2026-10-28', position: 0 }),
+    change('c', 'claude-code', { version: 'v1', position: 0 }),
+  ]
   const groups = panel.groupUpdates(updates)
-  assert.equal(JSON.stringify(groups.map((group: any) => [group.kind, group.updates.map((update: any) => update.id).join('')])), JSON.stringify([['release', 'ab'], ['single', 'o'], ['release', 'c']]))
+  assert.equal(JSON.stringify(groups.map((group: any) => [group.kind, group.updates.map((update: any) => update.id).join('')])),
+    JSON.stringify([['changes', 'ab'], ['changes', 'p1p2'], ['single', 'o'], ['single', 'p3'], ['changes', 'c']]))
   const units = panel.updateUnits(updates)
-  assert.equal(units.length, 3)
-  assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit))), '[true,false,false]')
+  assert.equal(units.length, 5)
+  assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit))), '[true,false,false,false,false]')
+})
+
+const deprecationMarkdown = `
+### 2026-10-01: GPT-5.3-Codex and TTS
+
+The following models are deprecated and will be removed from the API.
+
+| Shutdown date | Model / system                              | Recommended replacement |
+| ------------- | ------------------------------------------- | ----------------------- |
+| Apr 1, 2027   | \`gpt-5.3-codex\`                             | \`gpt-6-sol\`             |
+| Jan 6, 2027   | GPT-4o mini (\`gpt-4o-mini\`) \\| \`tts-1\`    |                         |
+`
+
+test('deprecation tables become structured retirements and leave prose as the summary', () => {
+  const rows = extractRetirements(deprecationMarkdown)
+  assert.deepEqual(rows, [
+    { model: 'gpt-5.3-codex', date: '2027-04-01', replacement: 'gpt-6-sol' },
+    { model: 'GPT-4o mini (gpt-4o-mini) / tts-1', date: '2027-01-06', replacement: null },
+  ])
+  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'openai-deprecations')!
+  const [update] = parseDatedMarkdown(definition, deprecationMarkdown)
+  assert.equal(update.summary, 'The following models are deprecated and will be removed from the API.')
+  assert.equal(update.effectiveAt, '2027-01-06')
+  assert.equal(update.replacement, 'gpt-6-sol')
+  assert.equal(update.changeType, 'deprecated')
+  assert.deepEqual(extractRetirements('| Name | Value |\n| --- | --- |\n| a | b |'), [])
+})
+
+test('retirement status counts down to the nearest upcoming shutdown and reports past ones', () => {
+  const source = ['formatDate', 'daysUntil', 'retirementStatus'].map(panelFunctionSource).join('\n')
+  const retirementStatus = runInNewContext(`(() => { const DAY_MS = 86400000\n${source}\nreturn retirementStatus })()`, { Intl, Date }) as (rows: unknown[]) => { text: string, tone: string }
+  const iso = (offset: number) => { const date = new Date(); date.setDate(date.getDate() + offset); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
+  assert.match(retirementStatus([{ date: iso(10) }]).text, /^10 天後停用 · /)
+  assert.equal(retirementStatus([{ date: iso(10) }]).tone, 'critical')
+  assert.equal(retirementStatus([{ date: iso(60) }]).tone, 'warn')
+  assert.match(retirementStatus([{ date: iso(200) }, { date: iso(-5) }]).text, /^最早 200 天後停用/)
+  assert.match(retirementStatus([{ date: iso(-5) }]).text, /^已於 .* 停用$/)
+  assert.equal(retirementStatus([{ date: null }]).text, '停用日期未定')
+})
+
+test('several new Claude Platform items on one date send one notification', () => {
+  const item = (id: string, publishedAt: string) => ({ id, sourceId: 'anthropic-platform', publishedAt, changeType: 'added', title: id })
+  const entries = notificationEntries([item('a', '2026-10-29'), item('b', '2026-10-29'), item('c', '2026-10-28')], [])
+  assert.equal(JSON.stringify(entries.map((entry: any) => entry.kind === 'day' ? `day:${entry.updates.length}` : `update:${entry.update.id}`)), '["day:2","update:c"]')
 })
 
 test('Tibo parser keeps today roots and chained self replies in one safe data model', () => {
