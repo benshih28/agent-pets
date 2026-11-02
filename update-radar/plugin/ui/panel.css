@@ -165,6 +165,9 @@ a:focus-visible {
   padding: var(--radar-gap-3);
 }
 
+/* 窄版時側欄容器不參與排版，維持原本單欄順序；寬版才成為左側欄。 */
+.radar-sidebar { display: contents; }
+
 .radar-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -630,6 +633,41 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .empty-state p { margin: var(--radar-gap-2) 0 0; color: var(--radar-secondary); }
 footer { margin: var(--radar-gap-3) 0; color: var(--radar-muted); font-size: var(--radar-font-small); }
 footer p { margin: 0; }
+
+/* 電腦版：插件區加寬（拉寬視窗或放大）到 800px 以上時改為雙欄。
+   左側欄放 Codex 重設、摘要、熱度圖與來源狀態並固定在畫面上，右側是可篩選的更新列表；
+   800px 時右欄仍約 420px，與窄版卡片寬度相同。 */
+@media (min-width: 800px) {
+  main.radar-shell {
+    display: grid;
+    grid-template-columns: 352px minmax(0, 1fr);
+    grid-template-areas: "header header" "sidebar main";
+    align-items: start;
+    column-gap: var(--radar-gap-4);
+    row-gap: var(--radar-gap-3);
+    width: 100%;
+    max-width: 1120px;
+  }
+  .radar-header { grid-area: header; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .intro { max-width: none; }
+  .header-actions { grid-auto-flow: column; align-items: center; }
+  .radar-sidebar {
+    --heat-cell-size: 10px;
+    position: sticky;
+    top: var(--radar-gap-3);
+    display: flex;
+    max-height: calc(100vh - 2 * var(--radar-gap-3));
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--radar-gap-3);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* 側欄高度受限時要捲動，而不是把卡片壓扁。 */
+  .radar-sidebar > * { flex-shrink: 0; }
+  .updates-region { grid-area: main; min-width: 0; }
+  .change-detail { width: min(100%, 760px); }
+}
 
 @media (max-width: 390px) {
   .radar-header { grid-template-columns: minmax(0, 1fr); align-items: start; }
