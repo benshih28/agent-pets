@@ -634,35 +634,41 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 footer { margin: var(--radar-gap-3) 0; color: var(--radar-muted); font-size: var(--radar-font-small); }
 footer p { margin: 0; }
 
-/* 電腦版：插件區加寬（拉寬視窗或放大）到 800px 以上時改為雙欄。
+/* 電腦版：插件區加寬（拉寬視窗或放大）到 820px 以上時改為雙欄。
    左側欄放 Codex 重設、摘要、熱度圖與來源狀態並固定在畫面上，右側是可篩選的更新列表；
-   800px 時右欄仍約 420px，與窄版卡片寬度相同。 */
-@media (min-width: 800px) {
+   820px 時右欄仍約 400px，與窄版卡片寬度相近。 */
+@media (min-width: 820px) {
   main.radar-shell {
     display: grid;
-    grid-template-columns: 352px minmax(0, 1fr);
+    grid-template-columns: 368px minmax(0, 1fr);
     grid-template-areas: "header header" "sidebar main";
     align-items: start;
     column-gap: var(--radar-gap-4);
     row-gap: var(--radar-gap-3);
     width: 100%;
     max-width: 1120px;
+    padding: var(--radar-gap-4);
   }
-  .radar-header { grid-area: header; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  /* 頁首橫跨兩欄，以分隔線和下方內容區隔。 */
+  .radar-header { grid-area: header; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding-bottom: var(--radar-gap-3); border-bottom: 1px solid var(--radar-border-soft); }
   .intro { max-width: none; }
   .header-actions { grid-auto-flow: column; align-items: center; }
   .radar-sidebar {
     --heat-cell-size: 10px;
     position: sticky;
-    top: var(--radar-gap-3);
+    top: var(--radar-gap-4);
     display: flex;
-    max-height: calc(100vh - 2 * var(--radar-gap-3));
+    max-height: calc(100vh - 2 * var(--radar-gap-4));
     min-width: 0;
     flex-direction: column;
     gap: var(--radar-gap-3);
     overflow-y: auto;
     overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--radar-border) transparent;
   }
+  /* 側欄裡熱度圖也包成卡片，與 Codex、摘要卡片一致。 */
+  .radar-sidebar .heat-section { padding: var(--radar-gap-3); border: 1px solid var(--radar-border-soft); border-radius: var(--radar-radius-md); background: var(--radar-surface); box-shadow: var(--radar-shadow-card); }
   /* 側欄高度受限時要捲動，而不是把卡片壓扁。 */
   .radar-sidebar > * { flex-shrink: 0; }
   .updates-region { grid-area: main; min-width: 0; }

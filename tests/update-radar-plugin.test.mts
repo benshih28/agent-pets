@@ -737,12 +737,14 @@ test('wide panels switch to a two-column desktop layout while narrow panels keep
   const sidebar = markup.match(/<div class="radar-sidebar">([\s\S]*?)<section class="updates-region"/)?.[1] ?? ''
   for (const part of ['spotlight-section', 'summary-grid', 'heat-section', 'status-panel']) assert.match(sidebar, new RegExp(part))
   assert.match(styles, /\.radar-sidebar \{ display: contents; \}/, 'narrow layout ignores the sidebar wrapper')
-  const desktop = styles.match(/@media \(min-width: 800px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  const desktop = styles.match(/@media \(min-width: 820px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
   assert.match(desktop, /grid-template-areas: "header header" "sidebar main"/)
-  assert.match(desktop, /grid-template-columns: 352px minmax\(0, 1fr\)/)
+  assert.match(desktop, /grid-template-columns: 368px minmax\(0, 1fr\)/)
   assert.match(desktop, /\.radar-sidebar \{[^}]*position: sticky;[^}]*overflow-y: auto;/)
   assert.match(desktop, /\.radar-sidebar > \* \{ flex-shrink: 0; \}/)
   assert.match(desktop, /\.change-detail \{ width: min\(100%, 760px\); \}/)
+  assert.match(desktop, /\.radar-sidebar \.heat-section \{[^}]*border-radius/)
+  assert.match(desktop, /scrollbar-width: thin;/)
 })
 
 const deprecationMarkdown = `
