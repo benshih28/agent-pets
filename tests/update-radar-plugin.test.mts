@@ -717,17 +717,18 @@ test('panel theme keeps light or dark, otherwise follows the system, and applies
   assert.equal(root.attrs.has('data-theme'), false); assert.equal(root.style.colorScheme, 'light dark')
 })
 
-test('appearance switch is a two-option radio group that only animates after the user switches', () => {
+test('appearance is a single toggle button that names the mode it switches to', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  const group = markup.match(/<div class="appearance-options" role="radiogroup" aria-label="外觀"[^>]*>([\s\S]*?)<\/div>/)
-  assert.ok(group)
-  const options = Array.from(group[1].matchAll(/data-panel-theme="([^"]+)"[^>]*>[\s\S]*?<span>([^<]+)<\/span>/g))
-  assert.equal(JSON.stringify(options.map(([, value, label]) => [value, label])), JSON.stringify([['light', '淺色'], ['dark', '深色']]))
-  assert.doesNotMatch(styles, /\.appearance-options::before \{[^}]*transition/)
-  assert.match(styles, /\.appearance-options\.is-interactive::before \{ transition: transform 160ms ease; \}/)
-  assert.match(panelSource, /elements\.themeGroup\.classList\.add\('is-interactive'\)/)
+  assert.match(markup, /<button id="theme-toggle" class="theme-toggle" type="button" data-mode="light" aria-label="切換為深色" title="切換為深色">/)
+  assert.doesNotMatch(markup, /role="radiogroup"|appearance-option/)
+  assert.match(markup, /class="icon-moon"[^>]*aria-hidden="true"/)
+  assert.match(markup, /class="icon-sun"[^>]*aria-hidden="true"/)
+  // 圖示表示按下後的模式：淺色顯示月亮、深色顯示太陽。
+  assert.match(styles, /\.theme-toggle\[data-mode="dark"\] \.icon-sun \{ display: block; \}/)
+  assert.match(panelSource, /const label = shown === 'dark' \? '切換為淺色' : '切換為深色'/)
+  assert.match(panelSource, /selectPanelTheme\(elements\.themeToggle\.dataset\.mode === 'dark' \? 'light' : 'dark'\)/)
   assert.doesNotMatch(panelSource, /await api\.storage\.get\('panel-theme'\)/, 'theme read must not block panel startup')
 })
 

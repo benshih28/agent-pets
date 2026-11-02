@@ -180,20 +180,14 @@ a:focus-visible {
 h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .intro { max-width: 300px; margin: var(--radar-gap-1) 0 0; color: var(--radar-secondary); font-size: var(--radar-font-small); line-height: 1.45; }
 .primary-action { min-height: 38px; white-space: nowrap; color: var(--radar-accent); background: var(--radar-surface); }
-/* 外觀切換疊在重新整理上方，標題欄寬度維持原樣，不必改動頁首版面。 */
-.header-actions { display: grid; justify-items: end; gap: 6px; }
-.appearance-options { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 3px; border: 1px solid var(--radar-border-soft); border-radius: 999px; background: var(--radar-raised); isolation: isolate; }
-/* 滑塊以位置與外框表示目前選擇，選取文字同時加粗，不只靠顏色辨識。 */
-.appearance-options::before { content: ''; position: absolute; z-index: -1; inset: 3px auto 3px 3px; width: calc(50% - 3px); border: 1px solid var(--radar-border); border-radius: 999px; background: var(--radar-surface); box-shadow: var(--radar-shadow-card); }
-.appearance-options[data-selected="dark"]::before { transform: translateX(100%); }
-/* 只有使用者自己切換時才滑動；開啟面板還原已存選擇時直接到位。 */
-.appearance-options.is-interactive::before { transition: transform 160ms ease; }
-.appearance-option { display: inline-flex; min-width: 0; min-height: 28px; align-items: center; justify-content: center; gap: 5px; padding: 0 11px; border: 0; border-radius: 999px; color: var(--radar-secondary); background: transparent; font-size: var(--radar-font-small); font-weight: 650; white-space: nowrap; }
-.appearance-option svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-.appearance-option[aria-checked="true"] { color: var(--radar-text); font-weight: 800; }
-.appearance-option[aria-checked="true"] svg { stroke: var(--radar-accent); }
-.appearance-option:hover:not(:disabled) { border-color: transparent; background: transparent; color: var(--radar-text); transform: none; }
-.appearance-option:focus-visible { outline: 2px solid var(--radar-accent); outline-offset: 1px; }
+.header-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--radar-gap-2); }
+/* 單一圖示按鈕：顯示「按下後會切換成」的模式（淺色時是月亮、深色時是太陽），文字說明放在 aria-label 與 title。 */
+.theme-toggle { display: grid; width: 38px; height: 38px; min-height: 38px; flex: none; place-items: center; padding: 0; border-radius: 999px; color: var(--radar-secondary); background: var(--radar-surface); }
+.theme-toggle:hover:not(:disabled) { color: var(--radar-accent); }
+.theme-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+.theme-toggle .icon-sun,
+.theme-toggle[data-mode="dark"] .icon-moon { display: none; }
+.theme-toggle[data-mode="dark"] .icon-sun { display: block; }
 .primary-action { display: inline-flex; align-items: center; justify-content: center; gap: var(--radar-gap-2); }
 
 .pixel-loader {
@@ -652,7 +646,6 @@ footer p { margin: 0; }
   /* 頁首橫跨兩欄，以分隔線和下方內容區隔。 */
   .radar-header { grid-area: header; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding-bottom: var(--radar-gap-3); border-bottom: 1px solid var(--radar-border-soft); }
   .intro { max-width: none; }
-  .header-actions { grid-auto-flow: column; align-items: center; }
   .radar-sidebar {
     --heat-cell-size: 10px;
     position: sticky;
@@ -677,7 +670,7 @@ footer p { margin: 0; }
 
 @media (max-width: 390px) {
   .radar-header { grid-template-columns: minmax(0, 1fr); align-items: start; }
-  .header-actions { justify-items: start; grid-auto-flow: column; align-items: center; }
+  .header-actions { justify-content: flex-start; }
   .section-heading { align-items: start; flex-direction: column; gap: 1px; }
   .section-note { text-align: start; }
   .source-grid { grid-template-columns: minmax(0, 1fr); }
@@ -705,10 +698,6 @@ footer p { margin: 0; }
   .pixel-loader-cell { background: var(--radar-text); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .appearance-options.is-interactive::before { transition: none; }
-}
-
 @media (prefers-reduced-transparency: reduce) {
   .toolbar, .detail-bar { background: var(--radar-surface); backdrop-filter: none; }
 }
@@ -729,8 +718,7 @@ footer p { margin: 0; }
   .official-record.record-claude-code { border-left-style: dashed; }
   .official-meta-tag { color: CanvasText; border-color: CanvasText; background: Canvas; }
   .change-item-text, .change-item-detail, .change-group-subtitle, .change-filter-note, .retirement-status, .retirement-model, .retirement-replacement, .retirement-date, .retirement-note { color: CanvasText; }
-  .appearance-options::before { border: 2px solid Highlight; background: Canvas; box-shadow: none; }
-  .appearance-option, .appearance-option[aria-checked="true"] { color: CanvasText; }
+  .theme-toggle { color: ButtonText; }
   .detail-bar { color: CanvasText; border-color: CanvasText; background: Canvas; box-shadow: none; backdrop-filter: none; }
   .type-chip[aria-pressed="true"] { border-color: Highlight; outline: 2px solid Highlight; }
   .change-preview, .change-section + .change-section, .change-section .change-item, .retirement-list { border-color: CanvasText; }

@@ -29,8 +29,7 @@ const elements = {
   detailView: document.querySelector('#change-detail'),
   detailBack: document.querySelector('#change-detail-back'),
   refresh: document.querySelector('#refresh'),
-  themeGroup: document.querySelector('.appearance-options'),
-  themeOptions: Array.from(document.querySelectorAll('[data-panel-theme]')),
+  themeToggle: document.querySelector('#theme-toggle'),
   refreshLoader: document.querySelector('#refresh-loader'),
   status: document.querySelector('#status'),
   resultStatus: document.querySelector('#result-status'),
@@ -67,17 +66,14 @@ const elements = {
 
 function renderPanelThemeControls() {
   const shown = effectivePanelTheme(panelTheme, systemDarkQuery?.matches ?? false)
-  elements.themeGroup.dataset.selected = shown
-  for (const option of elements.themeOptions) {
-    const selected = option.dataset.panelTheme === shown
-    option.setAttribute('aria-checked', String(selected))
-    option.tabIndex = selected ? 0 : -1
-  }
+  const label = shown === 'dark' ? '切換為淺色' : '切換為深色'
+  elements.themeToggle.dataset.mode = shown
+  elements.themeToggle.setAttribute('aria-label', label)
+  elements.themeToggle.title = label
 }
 
 async function selectPanelTheme(value) {
   panelThemeChosen = true
-  elements.themeGroup.classList.add('is-interactive')
   panelTheme = normalizePanelTheme(value)
   applyPanelTheme(panelTheme)
   renderPanelThemeControls()
@@ -100,16 +96,9 @@ api.storage.get('panel-theme').then((stored) => {
   renderPanelThemeControls()
 }).catch(() => {})
 
-for (const option of elements.themeOptions) {
-  option.addEventListener('click', () => { void selectPanelTheme(option.dataset.panelTheme) })
-  option.addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
-    event.preventDefault()
-    const next = elements.themeOptions.find(candidate => candidate !== option)
-    next.focus()
-    void selectPanelTheme(next.dataset.panelTheme)
-  })
-}
+elements.themeToggle.addEventListener('click', () => {
+  void selectPanelTheme(elements.themeToggle.dataset.mode === 'dark' ? 'light' : 'dark')
+})
 
 const labels = Object.freeze({
   provider: { openai: 'OpenAI', anthropic: 'Anthropic', x: 'Tibo / X', codex: 'Codex' },
