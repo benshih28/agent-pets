@@ -15,10 +15,22 @@
           <h1>AI 更新雷達</h1>
           <p class="intro">追蹤 OpenAI、Anthropic、Claude Code、Tibo 與 Codex 重設公告。</p>
         </div>
-        <button id="refresh" class="primary-action" type="button">
-          <span>全部重新整理</span>
-          <span id="refresh-loader" class="pixel-loader" aria-hidden="true" hidden></span>
-        </button>
+        <div class="header-actions">
+          <div class="appearance-options" role="radiogroup" aria-label="外觀" data-selected="light">
+            <button class="appearance-option" type="button" role="radio" aria-checked="true" tabindex="0" data-panel-theme="light">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.8" /><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1" /></svg>
+              <span>淺色</span>
+            </button>
+            <button class="appearance-option" type="button" role="radio" aria-checked="false" tabindex="-1" data-panel-theme="dark">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.2 10.1A5.6 5.6 0 0 1 5.9 2.8a5.6 5.6 0 1 0 7.3 7.3Z" /></svg>
+              <span>深色</span>
+            </button>
+          </div>
+          <button id="refresh" class="primary-action" type="button">
+            <span>全部重新整理</span>
+            <span id="refresh-loader" class="pixel-loader" aria-hidden="true" hidden></span>
+          </button>
+        </div>
       </header>
 
       <section class="spotlight-section" aria-labelledby="spotlight-heading">

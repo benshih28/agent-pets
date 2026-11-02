@@ -1,4 +1,25 @@
 const api = window.agentPetsPlugin
+
+// --- 外觀（淺色／深色）-------------------------------------------------------
+// 'system' 代表尚未選擇：未選擇前跟隨系統，控制項顯示系統目前的模式。
+function normalizePanelTheme(value) {
+  return value === 'light' || value === 'dark' ? value : 'system'
+}
+
+function effectivePanelTheme(theme, systemDark) {
+  return theme === 'system' ? (systemDark ? 'dark' : 'light') : theme
+}
+
+function applyPanelTheme(theme, root = document.documentElement) {
+  const selected = normalizePanelTheme(theme)
+  if (selected === 'system') root.removeAttribute('data-theme')
+  else root.setAttribute('data-theme', selected)
+  root.style.colorScheme = selected === 'system' ? 'light dark' : selected
+}
+
+let panelTheme = 'system'
+let panelThemeChosen = false
+const systemDarkQuery = window.matchMedia?.('(prefers-color-scheme: dark)') ?? null
 const state = { radar: null, absoluteTime: false, day: null, detail: null }
 let codexResetCountdownTimer = null
 let previewResizeObserver = null
@@ -8,6 +29,8 @@ const elements = {
   detailView: document.querySelector('#change-detail'),
   detailBack: document.querySelector('#change-detail-back'),
   refresh: document.querySelector('#refresh'),
+  themeGroup: document.querySelector('.appearance-options'),
+  themeOptions: Array.from(document.querySelectorAll('[data-panel-theme]')),
   refreshLoader: document.querySelector('#refresh-loader'),
   status: document.querySelector('#status'),
   resultStatus: document.querySelector('#result-status'),
@@ -40,6 +63,52 @@ const elements = {
   dayFilterClear: document.querySelector('#day-filter-clear'),
   timeMode: document.querySelector('#time-mode'),
   timeModeLabel: document.querySelector('#time-mode-label'),
+}
+
+function renderPanelThemeControls() {
+  const shown = effectivePanelTheme(panelTheme, systemDarkQuery?.matches ?? false)
+  elements.themeGroup.dataset.selected = shown
+  for (const option of elements.themeOptions) {
+    const selected = option.dataset.panelTheme === shown
+    option.setAttribute('aria-checked', String(selected))
+    option.tabIndex = selected ? 0 : -1
+  }
+}
+
+async function selectPanelTheme(value) {
+  panelThemeChosen = true
+  elements.themeGroup.classList.add('is-interactive')
+  panelTheme = normalizePanelTheme(value)
+  applyPanelTheme(panelTheme)
+  renderPanelThemeControls()
+  try {
+    await api.storage.set('panel-theme', panelTheme)
+  } catch {
+    elements.status.textContent = '無法儲存外觀設定，變更只套用於目前面板。'
+  }
+}
+
+renderPanelThemeControls()
+systemDarkQuery?.addEventListener?.('change', () => {
+  if (panelTheme === 'system') renderPanelThemeControls()
+})
+// 不等待讀取：storage 回應慢時，面板初始化與訊息監聽不能被卡住；讀到前使用者已自行選擇則以選擇為準。
+api.storage.get('panel-theme').then((stored) => {
+  if (panelThemeChosen) return
+  panelTheme = normalizePanelTheme(stored?.found ? stored.value : 'system')
+  applyPanelTheme(panelTheme)
+  renderPanelThemeControls()
+}).catch(() => {})
+
+for (const option of elements.themeOptions) {
+  option.addEventListener('click', () => { void selectPanelTheme(option.dataset.panelTheme) })
+  option.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+    event.preventDefault()
+    const next = elements.themeOptions.find(candidate => candidate !== option)
+    next.focus()
+    void selectPanelTheme(next.dataset.panelTheme)
+  })
 }
 
 const labels = Object.freeze({

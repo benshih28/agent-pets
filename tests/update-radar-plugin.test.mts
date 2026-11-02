@@ -690,12 +690,45 @@ test('Update Radar uses its own palette in both themes and keeps hex colors in t
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.doesNotMatch(styles, /var\(--organic-(?!font|space|radius)[a-z-]+/, 'colors must not come from the pet theme')
   assert.doesNotMatch(styles, /var\(--(?:surface|text|accent|state|border)-[a-z-]+/, 'colors must not come from the host dark theme')
-  const dark = styles.match(/@media \(prefers-color-scheme: dark\) \{\s*:root \{([^}]*)\}/)?.[1] ?? ''
+  const dark = styles.match(/:root\[data-theme="dark"\] \{([^}]*)\}/)?.[1] ?? ''
+  const systemDark = styles.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([^}]*)\}/)?.[1] ?? ''
+  const tokens = (block: string) => JSON.stringify(Array.from(block.matchAll(/(--[\w-]+):\s*([^;]+);/g), ([, name, value]) => [name, value.trim()]))
+  assert.equal(tokens(dark), tokens(systemDark), 'manual dark and system dark use identical tokens')
   for (const token of ['--radar-bg', '--radar-surface', '--radar-text', '--radar-accent', '--provider-openai', '--provider-anthropic', '--provider-claude-code', '--heat-level-4']) {
     assert.match(dark, new RegExp(`${token}:`), `dark theme defines ${token}`)
   }
   const outsideTokens = styles.split('\n').filter(line => /#[0-9a-f]{3,8}\b/i.test(line) && !/^\s*--[a-z0-9-]+:/.test(line))
   assert.deepEqual(outsideTokens, [])
+})
+
+test('panel theme keeps light or dark, otherwise follows the system, and applies data-theme', () => {
+  const source = ['normalizePanelTheme', 'effectivePanelTheme', 'applyPanelTheme'].map(panelFunctionSource).join('\n')
+  const theme = runInNewContext(`(() => { ${source}; return { normalizePanelTheme, effectivePanelTheme, applyPanelTheme } })()`) as any
+  for (const value of ['light', 'dark']) assert.equal(theme.normalizePanelTheme(value), value)
+  for (const value of [undefined, 'system', 'blue', 42]) assert.equal(theme.normalizePanelTheme(value), 'system')
+  assert.equal(theme.effectivePanelTheme('system', true), 'dark')
+  assert.equal(theme.effectivePanelTheme('system', false), 'light')
+  assert.equal(theme.effectivePanelTheme('light', true), 'light')
+  const root = { attrs: new Map<string, string>(), style: { colorScheme: '' },
+    setAttribute(name: string, value: string) { this.attrs.set(name, value) }, removeAttribute(name: string) { this.attrs.delete(name) } }
+  theme.applyPanelTheme('dark', root)
+  assert.equal(root.attrs.get('data-theme'), 'dark'); assert.equal(root.style.colorScheme, 'dark')
+  theme.applyPanelTheme('system', root)
+  assert.equal(root.attrs.has('data-theme'), false); assert.equal(root.style.colorScheme, 'light dark')
+})
+
+test('appearance switch is a two-option radio group that only animates after the user switches', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const group = markup.match(/<div class="appearance-options" role="radiogroup" aria-label="外觀"[^>]*>([\s\S]*?)<\/div>/)
+  assert.ok(group)
+  const options = Array.from(group[1].matchAll(/data-panel-theme="([^"]+)"[^>]*>[\s\S]*?<span>([^<]+)<\/span>/g))
+  assert.equal(JSON.stringify(options.map(([, value, label]) => [value, label])), JSON.stringify([['light', '淺色'], ['dark', '深色']]))
+  assert.doesNotMatch(styles, /\.appearance-options::before \{[^}]*transition/)
+  assert.match(styles, /\.appearance-options\.is-interactive::before \{ transition: transform 160ms ease; \}/)
+  assert.match(panelSource, /elements\.themeGroup\.classList\.add\('is-interactive'\)/)
+  assert.doesNotMatch(panelSource, /await api\.storage\.get\('panel-theme'\)/, 'theme read must not block panel startup')
 })
 
 const deprecationMarkdown = `
