@@ -664,11 +664,12 @@ footer p { margin: 0; }
     --heat-cell-size: 10px;
     grid-area: sidebar;
     display: flex;
+    align-self: start;
     min-width: 0;
     flex-direction: column;
     gap: var(--radar-gap-3);
   }
-  .radar-sidebar[data-sticky="true"] { position: sticky; top: calc(var(--radar-sticky-offset) + var(--radar-gap-4)); }
+  .radar-sidebar[data-sticky="true"] { position: sticky; z-index: 1; top: var(--radar-sidebar-top); }
   /* 側欄裡熱度圖也包成卡片，與 Codex、摘要卡片一致。 */
   .radar-sidebar .heat-section { padding: var(--radar-gap-3); border: 1px solid var(--radar-border-soft); border-radius: var(--radar-radius-md); background: var(--radar-surface); box-shadow: var(--radar-shadow-card); }
   .radar-sidebar > * { flex-shrink: 0; }

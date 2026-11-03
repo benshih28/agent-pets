@@ -26,13 +26,17 @@ let previewResizeObserver = null
 let sidebarLayoutFrame = null
 const previewMeasurements = new Map()
 
-function sidebarCanStick({ sidebarHeight, viewportHeight, offset, gap }) {
+// 因不追蹤捲動方向，回捲時側欄會維持底部對齊，直到頁面接近頂部才露出上方內容。
+function sidebarStickyTop({ sidebarHeight, viewportHeight, offset, gap }) {
   return [sidebarHeight, viewportHeight, offset, gap].every(Number.isFinite)
     && sidebarHeight >= 0
     && viewportHeight >= 0
     && offset >= 0
     && gap >= 0
-    && sidebarHeight <= viewportHeight - offset - 2 * gap
+    ? sidebarHeight <= viewportHeight - offset - 2 * gap
+      ? offset + gap
+      : viewportHeight - sidebarHeight - gap
+    : null
 }
 
 const elements = {
@@ -85,16 +89,19 @@ function applySidebarLayout() {
   const detailVisible = !elements.detailView.hidden
   const offset = wide && !detailVisible ? elements.header.getBoundingClientRect().height : 0
   const toolbarHeight = detailVisible ? 0 : elements.toolbar.getBoundingClientRect().height
-  const gap = Number.parseFloat(getComputedStyle(elements.shell).paddingTop) || 0
-
-  root.style.setProperty('--radar-sticky-offset', `${offset}px`)
-  root.style.setProperty('--radar-toolbar-sticky-height', `${toolbarHeight}px`)
-  elements.sidebar.dataset.sticky = String(wide && !detailVisible && sidebarCanStick({
+  const gap = Number.parseFloat(getComputedStyle(elements.shell).paddingTop)
+  const sidebarTop = wide && !detailVisible ? sidebarStickyTop({
     sidebarHeight: elements.sidebar.getBoundingClientRect().height,
     viewportHeight: window.innerHeight,
     offset,
     gap,
-  }))
+  }) : null
+
+  root.style.setProperty('--radar-sticky-offset', `${offset}px`)
+  root.style.setProperty('--radar-toolbar-sticky-height', `${toolbarHeight}px`)
+  elements.sidebar.dataset.sticky = String(sidebarTop !== null)
+  if (sidebarTop === null) root.style.removeProperty('--radar-sidebar-top')
+  else root.style.setProperty('--radar-sidebar-top', `${sidebarTop}px`)
 }
 
 function scheduleSidebarLayout() {

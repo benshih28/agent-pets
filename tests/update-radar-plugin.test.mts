@@ -732,14 +732,62 @@ test('appearance is a single toggle button that names the mode it switches to', 
   assert.doesNotMatch(panelSource, /await api\.storage\.get\('panel-theme'\)/, 'theme read must not block panel startup')
 })
 
-test('sidebar stickiness only applies when the full sidebar fits below the sticky header', () => {
-  const sidebarCanStick = runInNewContext(`(${panelFunctionSource('sidebarCanStick')})`) as (sizes: {
+test('sidebar sticky top aligns to the header when it fits and the viewport bottom when it does not', () => {
+  const sidebarStickyTop = runInNewContext(`(${panelFunctionSource('sidebarStickyTop')})`) as (sizes: {
     sidebarHeight: number, viewportHeight: number, offset: number, gap: number,
-  }) => boolean
-  assert.equal(sidebarCanStick({ sidebarHeight: 600, viewportHeight: 700, offset: 50, gap: 25 }), true)
-  assert.equal(sidebarCanStick({ sidebarHeight: 601, viewportHeight: 700, offset: 50, gap: 25 }), false)
-  assert.equal(sidebarCanStick({ sidebarHeight: 650, viewportHeight: 700, offset: 0, gap: 25 }), true)
-  assert.equal(sidebarCanStick({ sidebarHeight: 651, viewportHeight: 700, offset: 0, gap: 25 }), false)
+  }) => number | null
+  assert.equal(sidebarStickyTop({ sidebarHeight: 600, viewportHeight: 700, offset: 50, gap: 25 }), 75)
+  assert.equal(sidebarStickyTop({ sidebarHeight: 601, viewportHeight: 700, offset: 50, gap: 25 }), 74)
+  assert.equal(sidebarStickyTop({ sidebarHeight: 700, viewportHeight: 700, offset: 0, gap: 0 }), 0)
+  assert.equal(sidebarStickyTop({ sidebarHeight: 701, viewportHeight: 700, offset: 0, gap: 0 }), -1)
+  assert.equal(sidebarStickyTop({ sidebarHeight: 650, viewportHeight: 700, offset: 0, gap: 25 }), 25)
+
+  const validSizes = { sidebarHeight: 600, viewportHeight: 700, offset: 50, gap: 25 }
+  for (const key of Object.keys(validSizes) as (keyof typeof validSizes)[]) {
+    assert.equal(sidebarStickyTop({ ...validSizes, [key]: Number.NaN }), null, `${key} rejects NaN`)
+    assert.equal(sidebarStickyTop({ ...validSizes, [key]: Number.POSITIVE_INFINITY }), null, `${key} rejects infinity`)
+    assert.equal(sidebarStickyTop({ ...validSizes, [key]: -1 }), null, `${key} rejects negative values`)
+  }
+})
+
+test('sidebar sticky is enabled only on wide non-detail pages and clears its top otherwise', () => {
+  const sidebarStickyTop = runInNewContext(`(${panelFunctionSource('sidebarStickyTop')})`)
+
+  function layoutFor(wide: boolean, detailVisible: boolean) {
+    const styleProperties = new Map<string, string>([['--radar-sidebar-top', 'stale']])
+    const dataset: { sticky?: string } = {}
+    const context = {
+      window: { matchMedia: () => ({ matches: wide }), innerWidth: 1000, innerHeight: 535 },
+      document: { documentElement: { style: {
+        setProperty: (name: string, value: string) => styleProperties.set(name, value),
+        removeProperty: (name: string) => styleProperties.delete(name),
+      } } },
+      getComputedStyle: () => ({ paddingTop: '18px' }),
+      elements: {
+        shell: {},
+        header: { getBoundingClientRect: () => ({ height: 60 }) },
+        toolbar: { getBoundingClientRect: () => ({ height: 34 }) },
+        sidebar: { dataset, getBoundingClientRect: () => ({ height: 641 }) },
+        detailView: { hidden: !detailVisible },
+      },
+      sidebarStickyTop,
+    }
+    const applySidebarLayout = runInNewContext(`(${panelFunctionSource('applySidebarLayout')})`, context) as () => void
+    applySidebarLayout()
+    return { dataset, styleProperties }
+  }
+
+  const desktop = layoutFor(true, false)
+  assert.equal(desktop.dataset.sticky, 'true')
+  assert.equal(desktop.styleProperties.get('--radar-sidebar-top'), '-124px')
+
+  const narrow = layoutFor(false, false)
+  assert.equal(narrow.dataset.sticky, 'false')
+  assert.equal(narrow.styleProperties.has('--radar-sidebar-top'), false)
+
+  const detail = layoutFor(true, true)
+  assert.equal(detail.dataset.sticky, 'false')
+  assert.equal(detail.styleProperties.has('--radar-sidebar-top'), false)
 })
 
 test('wide panels use one document scroller with responsive sticky navigation', () => {
@@ -760,11 +808,19 @@ test('wide panels use one document scroller with responsive sticky navigation', 
   assert.match(desktop, /grid-template-columns: 368px minmax\(0, 1fr\)/)
   assert.match(desktop, /max-width: 920px/)
   assert.match(desktop, /\.radar-header \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: var\(--radar-bg\)/)
-  assert.match(desktop, /\.radar-sidebar\[data-sticky="true"\] \{ position: sticky; top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-gap-4\)\); \}/)
+  assert.match(desktop, /\.radar-sidebar\[data-sticky="true"\] \{ position: sticky; z-index: 1; top: var\(--radar-sidebar-top\); \}/)
   assert.doesNotMatch(desktop, /\.radar-sidebar \{[^}]*position: sticky/)
+  assert.match(desktop, /\.radar-sidebar \{[^}]*align-self: start;/)
   assert.match(desktop, /\.radar-sidebar > \* \{ flex-shrink: 0; \}/)
   assert.match(desktop, /\.toolbar \{ top: var\(--radar-sticky-offset\); \}/)
-  assert.match(panelSource, /String\(wide && !detailVisible && sidebarCanStick\(/)
+  assert.match(panelSource, /const sidebarTop = wide && !detailVisible \? sidebarStickyTop\(/)
+  assert.match(panelSource, /elements\.sidebar\.dataset\.sticky = String\(sidebarTop !== null\)/)
+  assert.match(panelSource, /root\.style\.removeProperty\('--radar-sidebar-top'\)/)
+  assert.doesNotMatch(panelSource, /addEventListener\(\s*['"]scroll['"]/, 'sidebar layout must not track scroll events')
+  const headerZIndex = Number(desktop.match(/\.radar-header \{[^}]*z-index:\s*(\d+)/)?.[1])
+  const sidebarZIndex = Number(desktop.match(/\.radar-sidebar\[data-sticky="true"\] \{[^}]*z-index:\s*(\d+)/)?.[1])
+  assert.ok(headerZIndex > sidebarZIndex, 'the header must layer above the sticky sidebar')
+  assert.doesNotMatch(desktop, /\boverflow-y\s*:|\bmax-height\s*:/)
   assert.doesNotMatch(styles, /overflow-y:\s*(?:auto|scroll)\b/)
   assert.doesNotMatch(styles, /\.radar-sidebar[^}]*max-height\s*:/)
   assert.doesNotMatch(styles, /\.radar-sidebar[^}]*scrollbar-(?:width|color)\s*:/)
