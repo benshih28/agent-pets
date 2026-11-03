@@ -23,9 +23,24 @@ const systemDarkQuery = window.matchMedia?.('(prefers-color-scheme: dark)') ?? n
 const state = { radar: null, absoluteTime: false, day: null, detail: null }
 let codexResetCountdownTimer = null
 let previewResizeObserver = null
+let sidebarLayoutFrame = null
 const previewMeasurements = new Map()
+
+function sidebarCanStick({ sidebarHeight, viewportHeight, offset, gap }) {
+  return [sidebarHeight, viewportHeight, offset, gap].every(Number.isFinite)
+    && sidebarHeight >= 0
+    && viewportHeight >= 0
+    && offset >= 0
+    && gap >= 0
+    && sidebarHeight <= viewportHeight - offset - 2 * gap
+}
+
 const elements = {
   shell: document.querySelector('.radar-shell'),
+  header: document.querySelector('.radar-header'),
+  sidebar: document.querySelector('.radar-sidebar'),
+  toolbar: document.querySelector('.toolbar'),
+  statusPanel: document.querySelector('.status-panel'),
   detailView: document.querySelector('#change-detail'),
   detailBack: document.querySelector('#change-detail-back'),
   refresh: document.querySelector('#refresh'),
@@ -62,6 +77,39 @@ const elements = {
   dayFilterClear: document.querySelector('#day-filter-clear'),
   timeMode: document.querySelector('#time-mode'),
   timeModeLabel: document.querySelector('#time-mode-label'),
+}
+
+function applySidebarLayout() {
+  const root = document.documentElement
+  const wide = window.matchMedia?.('(min-width: 900px)').matches ?? window.innerWidth >= 900
+  const detailVisible = !elements.detailView.hidden
+  const offset = wide && !detailVisible ? elements.header.getBoundingClientRect().height : 0
+  const toolbarHeight = detailVisible ? 0 : elements.toolbar.getBoundingClientRect().height
+  const gap = Number.parseFloat(getComputedStyle(elements.shell).paddingTop) || 0
+
+  root.style.setProperty('--radar-sticky-offset', `${offset}px`)
+  root.style.setProperty('--radar-toolbar-sticky-height', `${toolbarHeight}px`)
+  elements.sidebar.dataset.sticky = String(wide && !detailVisible && sidebarCanStick({
+    sidebarHeight: elements.sidebar.getBoundingClientRect().height,
+    viewportHeight: window.innerHeight,
+    offset,
+    gap,
+  }))
+}
+
+function scheduleSidebarLayout() {
+  if (sidebarLayoutFrame !== null) return
+  sidebarLayoutFrame = window.requestAnimationFrame(() => {
+    sidebarLayoutFrame = null
+    applySidebarLayout()
+  })
+}
+
+const sidebarLayoutObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(scheduleSidebarLayout)
+  : null
+for (const element of [elements.header, elements.sidebar, elements.toolbar]) {
+  sidebarLayoutObserver?.observe(element)
 }
 
 function renderPanelThemeControls() {
@@ -888,6 +936,7 @@ function findChangeGroup(key) {
 function openChangeDetail(key) {
   state.detail = { key, type: 'all', scrollY: window.scrollY }
   renderChangeDetail()
+  applySidebarLayout()
   window.scrollTo(0, 0)
   elements.detailBack.focus({ preventScroll: true })
 }
@@ -898,9 +947,12 @@ function closeChangeDetail() {
   elements.detailView.hidden = true
   elements.detailView.replaceChildren()
   elements.shell.hidden = false
+  applySidebarLayout()
   if (!detail) return
   window.scrollTo(0, detail.scrollY)
-  elements.updates.querySelector(`[data-detail-key="${CSS.escape(detail.key)}"]`)?.focus({ preventScroll: true })
+  const returnTarget = elements.updates.querySelector(`[data-detail-key="${CSS.escape(detail.key)}"]`)
+  returnTarget?.scrollIntoView?.({ block: 'nearest' })
+  returnTarget?.focus({ preventScroll: true })
 }
 
 function renderChangeDetail() {
@@ -1516,6 +1568,7 @@ function render(radar) {
   renderTimeMode()
   // 背景同步會在閱讀詳情時送來新狀態；就地重繪並保留目前的類型選擇，版本消失時才回到列表。
   renderChangeDetail()
+  scheduleSidebarLayout()
 }
 
 for (const element of [elements.search, elements.provider, elements.category, elements.changeType]) {
@@ -1582,11 +1635,17 @@ renderUpdateListSkeleton()
 renderFilterControls()
 
 window.addEventListener('resize', () => {
+  scheduleSidebarLayout()
   if (!previewMeasurements.size) return
   requestAnimationFrame(() => {
     for (const measure of previewMeasurements.values()) measure()
   })
 })
+
+elements.statusPanel.addEventListener('toggle', scheduleSidebarLayout)
+document.fonts?.ready?.then(scheduleSidebarLayout)
+document.fonts?.addEventListener?.('loadingdone', scheduleSidebarLayout)
+scheduleSidebarLayout()
 
 elements.timeMode.addEventListener('click', () => {
   state.absoluteTime = !state.absoluteTime

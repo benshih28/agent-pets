@@ -732,20 +732,67 @@ test('appearance is a single toggle button that names the mode it switches to', 
   assert.doesNotMatch(panelSource, /await api\.storage\.get\('panel-theme'\)/, 'theme read must not block panel startup')
 })
 
-test('wide panels switch to a two-column desktop layout while narrow panels keep the single column', () => {
+test('sidebar stickiness only applies when the full sidebar fits below the sticky header', () => {
+  const sidebarCanStick = runInNewContext(`(${panelFunctionSource('sidebarCanStick')})`) as (sizes: {
+    sidebarHeight: number, viewportHeight: number, offset: number, gap: number,
+  }) => boolean
+  assert.equal(sidebarCanStick({ sidebarHeight: 600, viewportHeight: 700, offset: 50, gap: 25 }), true)
+  assert.equal(sidebarCanStick({ sidebarHeight: 601, viewportHeight: 700, offset: 50, gap: 25 }), false)
+  assert.equal(sidebarCanStick({ sidebarHeight: 650, viewportHeight: 700, offset: 0, gap: 25 }), true)
+  assert.equal(sidebarCanStick({ sidebarHeight: 651, viewportHeight: 700, offset: 0, gap: 25 }), false)
+})
+
+test('wide panels use one document scroller with responsive sticky navigation', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   const sidebar = markup.match(/<div class="radar-sidebar">([\s\S]*?)<section class="updates-region"/)?.[1] ?? ''
   for (const part of ['spotlight-section', 'summary-grid', 'heat-section', 'status-panel']) assert.match(sidebar, new RegExp(part))
+  assert.ok(markup.indexOf('<header class="radar-header">') < markup.indexOf('<div class="radar-sidebar">'))
+  assert.ok(markup.indexOf('spotlight-section') < markup.indexOf('id="summary-grid"'))
+  assert.ok(markup.indexOf('id="summary-grid"') < markup.indexOf('heat-section'))
+  assert.ok(markup.indexOf('heat-section') < markup.indexOf('class="status-panel"'))
+  assert.ok(markup.indexOf('class="status-panel"') < markup.indexOf('class="updates-region"'))
   assert.match(styles, /\.radar-sidebar \{ display: contents; \}/, 'narrow layout ignores the sidebar wrapper')
-  const desktop = styles.match(/@media \(min-width: 820px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.doesNotMatch(styles, /@media \(min-width: 820px\)/)
+  const desktop = styles.match(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
   assert.match(desktop, /grid-template-areas: "header header" "sidebar main"/)
   assert.match(desktop, /grid-template-columns: 368px minmax\(0, 1fr\)/)
-  assert.match(desktop, /\.radar-sidebar \{[^}]*position: sticky;[^}]*overflow-y: auto;/)
+  assert.match(desktop, /max-width: 920px/)
+  assert.match(desktop, /\.radar-header \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: var\(--radar-bg\)/)
+  assert.match(desktop, /\.radar-sidebar\[data-sticky="true"\] \{ position: sticky; top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-gap-4\)\); \}/)
+  assert.doesNotMatch(desktop, /\.radar-sidebar \{[^}]*position: sticky/)
   assert.match(desktop, /\.radar-sidebar > \* \{ flex-shrink: 0; \}/)
+  assert.match(desktop, /\.toolbar \{ top: var\(--radar-sticky-offset\); \}/)
+  assert.match(panelSource, /String\(wide && !detailVisible && sidebarCanStick\(/)
+  assert.doesNotMatch(styles, /overflow-y:\s*(?:auto|scroll)\b/)
+  assert.doesNotMatch(styles, /\.radar-sidebar[^}]*max-height\s*:/)
+  assert.doesNotMatch(styles, /\.radar-sidebar[^}]*scrollbar-(?:width|color)\s*:/)
+  assert.doesNotMatch(styles, /(?:^|\n)\s*\.radar-sidebar\s*\{[^}]*overflow-y\s*:/)
+  const layoutRules = [
+    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*\.radar-shell(?:\.change-detail)?\s*\{([^}]*)\}/g), match => match[1]),
+    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*main\.radar-shell\s*\{([^}]*)\}/g), match => match[1]),
+    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*\.radar-sidebar(?:\[data-sticky="true"\])?\s*\{([^}]*)\}/g), match => match[1]),
+    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*\.updates-region\s*(?:,\s*\.feed-content)?\s*\{([^}]*)\}/g), match => match[1]),
+  ]
+  for (const declarations of layoutRules) assert.doesNotMatch(declarations, /\b(?:height|max-height)\s*:/)
+  assert.match(styles, /\.updates-region \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-gap-3\)\); \}/)
+  assert.match(styles, /\.update-list > \* \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-toolbar-sticky-height\) \+ var\(--radar-gap-3\)\); \}/)
+  assert.match(styles, /\.radar-shell\.change-detail \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-toolbar-sticky-height\) \+ var\(--radar-gap-3\)\); \}/)
+  assert.match(styles, /\.detail-bar \{[^}]*position: sticky;[^}]*top: 0;/)
   assert.match(desktop, /\.change-detail \{ width: min\(100%, 760px\); \}/)
   assert.match(desktop, /\.radar-sidebar \.heat-section \{[^}]*border-radius/)
-  assert.match(desktop, /scrollbar-width: thin;/)
+  const narrowHeatmap = styles.match(/@media \(max-width: 300px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.match(styles, /\.heat-months \{ min-height: 15px; overflow: clip;/)
+  assert.match(narrowHeatmap, /--heat-cell-size: clamp\(6px, 2\.4vw, 7px\)/)
+  assert.match(narrowHeatmap, /\.heat-layout \{ grid-template-columns: 14px minmax\(0, 1fr\); gap: 2px; \}/)
+  assert.match(narrowHeatmap, /\.heat-grid \{ gap: 1px; \}/)
+  assert.match(styles, /\.toolbar input,\s*\.toolbar select \{[^}]*min-height: 36px;/)
+  assert.match(styles, /\.filter-toggle,\s*\.time-mode \{[^}]*min-height: 36px;/)
+  assert.match(styles, /\.update-list button:not\(\.heat-cell-button\) \{ min-height: 36px; \}/)
+  assert.match(panelSource, /new ResizeObserver\(scheduleSidebarLayout\)/)
+  assert.match(panelSource, /document\.fonts\?\.ready\?\.then\(scheduleSidebarLayout\)/)
+  assert.match(panelSource, /elements\.statusPanel\.addEventListener\('toggle', scheduleSidebarLayout\)/)
 })
 
 const deprecationMarkdown = `
