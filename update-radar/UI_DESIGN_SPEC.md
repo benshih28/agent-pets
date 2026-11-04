@@ -137,6 +137,8 @@ activateTab(id) ─▶ 若 tabRenderedVersion[id] !== state.dataVersion 才 rend
 
 ### 2.2 更新動態（Updates）
 
+**需留意的時效（2026-11-04 使用者決策）**：只有近期的卡片算需留意。卡片內最新一則的發布時間在 14 天內（`ATTENTION_WINDOW_DAYS = 14`），或停用／生效日在未來 14 天內（含今天），才算需留意；更舊的卡片不顯示需留意標記、不計入總覽數字與警示、不出現在「只看需留意」。注意事項（quick read）的內容判讀不受影響。
+
 「只看需留意」篩選：存成 `state.attentionOnly`，套用條件是 `unitNeedsAttention(unit)`（以卡片單位判斷），計入 `appliedFilterCount`，「清除篩選」會清除它，篩選鈕上的數字也會反映它。它和其他篩選是 AND 關係；如果與日期篩選或 Tibo 來源同時生效導致沒有結果，沿用空狀態。從總覽導向時，只設定 `attentionOnly = true`，**不清除**使用者在本次開啟中已設的其他篩選；但會在工具列下方顯示「只看需留意 ×」，讓使用者一眼看出列表被篩過。
 
 
@@ -288,7 +290,7 @@ activateTab(id) ─▶ 若 tabRenderedVersion[id] !== state.dataVersion 才 rend
 | 字重 | 400 正文、500 來源與標籤、600 標題與數字 |
 | 數字 | 全部 `font-variant-numeric: tabular-nums` |
 | 間距 | 4／8／12／16 四個值；卡片內距 12px 14px；列表項目間距 8px；區塊間距 16px |
-| 邊框 | 1px `--radar-border-soft`；圓角：卡片 8px、標籤 4px、按鈕 6px |
+| 邊框 | 1px `--radar-border-soft`；圓角：卡片 8px、標籤 4px、按鈕膠囊形（`999px`，2026-11-04 使用者決策：6px 太方正）；搜尋框與時間切換跟按鈕一致 |
 | 陰影 | 內容區 0。只允許浮層（篩選面板若為浮層）使用一層淡陰影 |
 | 背景 | 頁面 `--radar-bg`，卡片 `--radar-surface`，不使用漸層、不使用 glass（Liquid Glass 規則：內容區不用 glass，避免 glass-on-glass） |
 | 色彩 | accent 只用在選中頁籤底線、主要數值、連結；warning／danger 只用在需留意、失敗、停用倒數；新增、改善、修正、移除沿用既有類型色 |

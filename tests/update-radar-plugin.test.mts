@@ -387,7 +387,8 @@ test('Update Radar renders full Tibo text and unified official disclosures', () 
   assert.match(styles, /\.message-preview \{[^}]*white-space: pre-wrap/)
   assert.match(styles, /\.update-card-title \{[^}]*-webkit-line-clamp: 2/)
   assert.match(styles, /\.official-preview \{[^}]*-webkit-line-clamp: 1/)
-  assert.match(panelSource, /const attention = units\.filter\(unitNeedsAttention\)\.length/)
+  assert.match(panelSource, /const attentionUnits = units\.filter\(unit => unitNeedsAttention\(unit, now\)\)/)
+  assert.match(panelSource, /const attention = attentionUnits\.length/)
   assert.match(styles, /\.official-record \{[^}]*border: 1px solid var\(--radar-border-soft\);[^}]*border-radius: 8px/s)
   assert.doesNotMatch(styles, /\.official-record\.record-(?:openai|anthropic|claude-code)|border-left:\s*4px/)
   assert.match(styles, /\.update-thread \{[^}]*border: 1px solid var\(--radar-border-soft\)[^}]*border-radius: 8px/s)
@@ -656,16 +657,16 @@ test('state that would exceed the panel message limit drops the oldest updates f
 })
 
 test('panel groups a Claude Code version and a multi-item Platform day into one card each', () => {
-  const source = ['isTiboUpdate', 'attentionSignal', 'findThreadRootId', 'groupKey', 'byPosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
+  const source = ['updateDate', 'isTiboUpdate', 'attentionSignal', 'findThreadRootId', 'groupKey', 'byPosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
     .map(panelFunctionSource).join('\n')
-  const panel = runInNewContext(`(() => { ${source}
+  const panel = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}
 return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
   const change = (id: string, sourceId: string, extra: Record<string, unknown>) => ({ id, sourceId, provider: 'anthropic', changeType: 'fixed', title: id, summary: '', ...extra })
   const updates = [
     change('b', 'claude-code', { version: 'v2', position: 1 }),
     change('p2', 'anthropic-platform', { publishedAt: '2026-10-29', position: 1 }),
     change('o', 'openai-api', { changeType: 'added' }),
-    change('a', 'claude-code', { version: 'v2', position: 0, changeType: 'removed' }),
+    change('a', 'claude-code', { version: 'v2', position: 0, changeType: 'removed', publishedAtTime: '2026-10-28T07:00:00.000Z' }),
     change('p1', 'anthropic-platform', { publishedAt: '2026-10-29', position: 0 }),
     change('p3', 'anthropic-platform', { publishedAt: '2026-10-28', position: 0 }),
     change('c', 'claude-code', { version: 'v1', position: 0 }),
@@ -675,7 +676,35 @@ return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
     JSON.stringify([['changes', 'ab'], ['changes', 'p1p2'], ['single', 'o'], ['single', 'p3'], ['changes', 'c']]))
   const units = panel.updateUnits(updates)
   assert.equal(units.length, 5)
-  assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit))), '[true,false,false,false,false]')
+  assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit, FIXED_NOW))), '[true,false,false,false,false]')
+})
+
+test('Update Radar needs attention only within the 14-day publication or lifecycle window', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  assert.match(panelSource, /const ATTENTION_WINDOW_DAYS = 14\s*\/\/[^\n]+/)
+  const source = [
+    'updateDate', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal', 'unitNeedsAttention',
+  ].map(panelFunctionSource).join('\n')
+  const unitNeedsAttention = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}\nreturn unitNeedsAttention })()`, { Date }) as (unit: unknown[], now: number) => boolean
+  const now = Date.parse('2026-11-04T12:00:00.000Z')
+  const daysAgo = (days: number) => new Date(now - days * 86_400_000).toISOString()
+  const attentionUnit = (extra: Record<string, unknown> = {}) => [{
+    id: 'deprecated-api',
+    provider: 'openai',
+    sourceId: 'openai-api',
+    changeType: 'deprecated',
+    publishedAtTime: daysAgo(3),
+    ...extra,
+  }]
+
+  assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(15) }), now), false, 'a 15-day-old deprecation has expired')
+  assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(3) }), now), true, 'a 3-day-old deprecation remains current')
+  assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(30), retirements: [{ date: '2026-11-14' }] }), now), true, 'a retirement in 10 days remains current')
+  assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(30), retirements: [{ date: '2026-10-15' }] }), now), false, 'a retirement date 20 days past does not extend attention')
+  assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(30), effectiveAt: '2026-11-04' }), now), true, 'an effective date today is included')
+  assert.equal(unitNeedsAttention(attentionUnit({ provider: 'x', sourceId: 'tibo-x', publishedAtTime: daysAgo(1), effectiveAt: '2026-11-05' }), now), false, 'Tibo posts never need attention')
+  const invalidDateNow = Date.parse('2026-11-20T12:00:00.000Z')
+  assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: '2026-11-31', effectiveAt: '2026-11-31', retirements: [{ date: '2026-11-31' }] }), invalidDateNow), false, 'unparseable and normalized-invalid dates do not satisfy the time window')
 })
 
 test('grouped cards preview five mixed changes and disclose full lists or the details page', () => {
@@ -823,6 +852,25 @@ test('Update Radar Phase 5 applies the compact type, color, and surface rules', 
     const muted = token(block, '--radar-muted') === 'var(--radar-secondary)' ? token(block, '--radar-secondary') : token(block, '--radar-muted')
     assert.ok(contrast(muted, token(block, '--radar-bg')) >= 4.5, 'muted text meets 4.5:1 contrast')
   }
+})
+
+test('Update Radar actions use the pill token while cards and row controls keep their existing radii', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(styles, /--radar-radius-pill:\s*999px;/)
+  assert.match(styles, /^button \{[^}]*border-radius:\s*var\(--radar-radius-pill\);[^}]*padding:\s*0 var\(--radar-gap-3\);/m)
+  assert.match(styles, /\.theme-toggle \{[^}]*border-radius:\s*50%;[^}]*\}/)
+  assert.match(styles, /\.toolbar-main \.search-field input \{[^}]*border-radius:\s*var\(--radar-radius-pill\);/)
+  assert.match(styles, /\.filter-toggle,\s*\.time-mode \{[^}]*min-height:\s*36px;[^}]*padding:\s*0 var\(--radar-gap-3\);[^}]*border-radius:\s*var\(--radar-radius-pill\);/)
+  assert.match(styles, /\.overview-all-updates,\s*\.overview-retry \{[^}]*padding:\s*0 var\(--radar-gap-3\);[^}]*border-radius:\s*var\(--radar-radius-pill\);/)
+  assert.match(styles, /\.attention-filter-chip \{[^}]*min-height:\s*36px;[^}]*padding:\s*0 var\(--radar-gap-3\);[^}]*border-radius:\s*var\(--radar-radius-pill\);/)
+  assert.match(styles, /\.retry-button \{[^}]*min-height:\s*36px;[^}]*padding-inline:\s*var\(--radar-gap-3\);/)
+  assert.match(styles, /\.message-meta \.source-button \{[^}]*min-height:\s*36px;[^}]*padding-inline:\s*var\(--radar-gap-3\);/)
+  assert.match(styles, /\.type-chip \{[^}]*min-height:\s*36px;[^}]*padding:\s*0 var\(--radar-gap-3\);[^}]*border-radius:\s*var\(--radar-radius-pill\);/)
+  assert.match(styles, /\.official-record \{[^}]*border-radius:\s*8px;/s)
+  assert.match(styles, /\.summary-card \{[^}]*border-radius:\s*8px;/s)
+  assert.match(styles, /\.update-type-chip \{[^}]*border-radius:\s*4px;/)
+  assert.match(styles, /button:focus-visible,[\s\S]*?outline:\s*3px solid var\(--radar-accent\);\s*outline-offset:\s*2px;/)
+  assert.match(styles, /@media \(forced-colors: active\)[\s\S]*?button, input, select,[\s\S]*?border-color:\s*CanvasText;/)
 })
 
 test('Phase 5a important update metadata has no decorative trailing separator', () => {
@@ -1033,7 +1081,7 @@ test('Update Radar overview highlights sort attention, near retirements, time, a
     'updateDate', 'updateTimestamp', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal',
     'unitNeedsAttention', 'overviewHighlights',
   ].map(panelFunctionSource).join('\n')
-  const overviewHighlights = runInNewContext(`(() => { ${source}\nreturn overviewHighlights })()`, { Date, Math, Number }) as (units: unknown[][], now: number, limit?: number) => unknown[][]
+  const overviewHighlights = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}\nreturn overviewHighlights })()`, { Date, Math, Number }) as (units: unknown[][], now: number, limit?: number) => unknown[][]
   const now = Date.parse('2026-11-04T12:00:00.000Z')
   const at = (days: number) => new Date(now + days * 86_400_000).toISOString().slice(0, 10)
   const unit = (id: string, options: Record<string, unknown> = {}) => [{
@@ -1061,6 +1109,45 @@ test('Update Radar overview highlights sort attention, near retirements, time, a
   assert.deepEqual(overviewHighlights(units, now).map(entries => entries[0].id), ['attention-position-3', 'attention-position-8', 'attention-old'])
   assert.deepEqual(overviewHighlights(units, now, 2).map(entries => entries[0].id), ['attention-position-3', 'attention-position-8'])
   assert.deepEqual(overviewHighlights([], now), [])
+})
+
+test('overview ranking and attention-only filtering share the same current-card decision', () => {
+  const source = [
+    'updateDate', 'updateTimestamp', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal',
+    'unitNeedsAttention', 'overviewHighlights',
+  ].map(panelFunctionSource).join('\n')
+  const helpers = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}\nreturn { unitNeedsAttention, overviewHighlights } })()`, { Date, Math, Number }) as {
+    unitNeedsAttention: (unit: unknown[], now: number) => boolean,
+    overviewHighlights: (units: unknown[][], now: number, limit: number) => unknown[][],
+  }
+  const now = Date.parse('2026-11-04T12:00:00.000Z')
+  const update = (id: string, daysAgo: number, changeType: string, position: number) => ({
+    id,
+    provider: 'openai',
+    sourceId: 'openai-api',
+    changeType,
+    publishedAtTime: new Date(now - daysAgo * 86_400_000).toISOString(),
+    position,
+  })
+  const oldAttention = [update('old-attention', 15, 'deprecated', 0)]
+  const freshAttention = [update('fresh-attention', 3, 'deprecated', 50)]
+  const recentNormal = [update('recent-normal', 1, 'improved', 99)]
+  const units = [oldAttention, freshAttention, recentNormal]
+  assert.deepEqual(helpers.overviewHighlights(units, now, 3).map(unit => unit[0].id), [
+    'fresh-attention', 'recent-normal', 'old-attention',
+  ])
+
+  const matchesFilters = runInNewContext(`(${panelFunctionSource('matchesFilters')})`, {
+    state: { day: null, attentionOnly: true },
+    elements: {
+      provider: { value: '' }, category: { value: '' }, changeType: { value: '' }, search: { value: '' },
+    },
+    isTiboUpdate: (item: any) => item.provider === 'x',
+    heatDateKey: () => '',
+    unitNeedsAttention: helpers.unitNeedsAttention,
+  }) as (item: unknown, unit: unknown[], now: number) => boolean
+  assert.equal(matchesFilters(oldAttention[0], oldAttention, now), false, 'an expired card is hidden by attention-only')
+  assert.equal(matchesFilters(freshAttention[0], freshAttention, now), true, 'a current card remains visible by attention-only')
 })
 
 test('Update Radar attention-only is a counted, clearable card-level filter', () => {

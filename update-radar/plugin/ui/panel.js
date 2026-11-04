@@ -754,7 +754,7 @@ function renderTiboUpdate(update) {
   return article
 }
 
-function renderOfficialUpdate(update, unitKey) {
+function renderOfficialUpdate(update, unitKey, now = Date.now()) {
   const article = document.createElement('article')
   article.className = 'update-item official-record'
   article.classList.toggle('is-expanded', state.expanded.has(unitKey))
@@ -763,7 +763,7 @@ function renderOfficialUpdate(update, unitKey) {
   appendText(meta, 'span', 'update-source', sourceLabel(update))
   appendText(meta, 'span', 'update-type-chip', updateChangeLabel(update))
   const unit = [update]
-  if (unitNeedsAttention(unit)) {
+  if (unitNeedsAttention(unit, now)) {
     const signal = attentionSignal(update)
     const attention = appendText(meta, 'span', `update-attention attention-${signal.tone}`, '')
     appendText(attention, 'span', 'attention-dot', '').setAttribute('aria-hidden', 'true')
@@ -851,7 +851,7 @@ function overviewHighlights(units, now = Date.now(), limit = 3) {
     .filter(unit => Array.isArray(unit) && unit.length > 0 && !unit.some(isTiboUpdate))
     .slice()
     .sort((left, right) => {
-      const attentionOrder = Number(unitNeedsAttention(right)) - Number(unitNeedsAttention(left))
+      const attentionOrder = Number(unitNeedsAttention(right, now)) - Number(unitNeedsAttention(left, now))
       if (attentionOrder) return attentionOrder
       const retirementOrder = nearestRetirement(left) - nearestRetirement(right)
       if (retirementOrder) return retirementOrder
@@ -867,10 +867,62 @@ function isCriticalChange(update) {
 }
 
 // 合併卡只看移除／棄用；逐條套用關鍵字判斷時，幾乎每個版本都會有一條提到 permission 或 security。
-function unitNeedsAttention(unit) {
-  if (isTiboUpdate(unit[0])) return false
-  if (unit.length > 1 || groupKey(unit[0])?.startsWith('release:')) return unit.some(isCriticalChange)
-  return isCriticalChange(unit[0]) || attentionSignal(unit[0]).tone !== 'neutral'
+const ATTENTION_WINDOW_DAYS = 14 // Keep attention useful within the one-to-two-week window requested by users.
+
+function unitNeedsAttention(unit, now = Date.now()) {
+  if (!Array.isArray(unit) || unit.length === 0 || unit.some(isTiboUpdate)) return false
+  const first = unit[0]
+  const hasExistingAttention = unit.length > 1 || groupKey(first)?.startsWith('release:')
+    ? unit.some(isCriticalChange)
+    : isCriticalChange(first) || attentionSignal(first).tone !== 'neutral'
+  if (!hasExistingAttention) return false
+
+  const nowTime = now instanceof Date ? now.getTime() : Number(now)
+  if (!Number.isFinite(nowTime)) return false
+  const dayMilliseconds = 86_400_000
+  const windowMilliseconds = ATTENTION_WINDOW_DAYS * dayMilliseconds
+  const parseAttentionTimestamp = value => {
+    if (typeof value !== 'string') return Number.NaN
+    const dateParts = /^(\d{4})-(\d{2})-(\d{2})(?=$|T|\s)/.exec(value)
+    if (dateParts) {
+      const year = Number(dateParts[1])
+      const month = Number(dateParts[2])
+      const day = Number(dateParts[3])
+      const parsed = new Date(0)
+      parsed.setUTCHours(0, 0, 0, 0)
+      parsed.setUTCFullYear(year, month - 1, day)
+      if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return Number.NaN
+    }
+    const timestamp = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`).getTime() : Date.parse(value)
+    return Number.isFinite(timestamp) ? timestamp : Number.NaN
+  }
+  const latestPublishedAt = Math.max(...unit.map(update => {
+    const publishedAtTime = parseAttentionTimestamp(update.publishedAtTime)
+    const timestamp = Number.isFinite(publishedAtTime) ? publishedAtTime : parseAttentionTimestamp(update.publishedAt)
+    return Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY
+  }))
+  if (latestPublishedAt >= nowTime - windowMilliseconds && latestPublishedAt <= nowTime) return true
+
+  const today = new Date(nowTime)
+  const todayKey = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const isUpcomingDate = value => {
+    if (typeof value !== 'string') return false
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+    if (dateOnly) {
+      const year = Number(dateOnly[1])
+      const month = Number(dateOnly[2])
+      const day = Number(dateOnly[3])
+      const parsed = parseAttentionTimestamp(value)
+      if (!Number.isFinite(parsed)) return false
+      const daysAhead = (Date.UTC(year, month - 1, day) - todayKey) / dayMilliseconds
+      return Number.isInteger(daysAhead) && daysAhead >= 0 && daysAhead <= ATTENTION_WINDOW_DAYS
+    }
+    const timestamp = parseAttentionTimestamp(value)
+    return Number.isFinite(timestamp) && timestamp >= nowTime && timestamp <= nowTime + windowMilliseconds
+  }
+
+  return unit.some(update => isUpcomingDate(update.effectiveAt)
+    || (Array.isArray(update.retirements) && update.retirements.some(row => isUpcomingDate(row?.date))))
 }
 
 // 卡片內直接列出、原地展開、或切換到詳情頁的門檻；面板高度有限，上百條不在列表中展開。
@@ -951,7 +1003,7 @@ function changeGroupTitle(first) {
   return groupKey(first)?.startsWith('release:') ? first.version : formatDate(first.publishedAt)
 }
 
-function renderChangeGroup(changes, matches, unitKey) {
+function renderChangeGroup(changes, matches, unitKey, now = Date.now()) {
   const first = changes[0]
   const key = groupKey(first)
   const isRelease = key?.startsWith('release:')
@@ -961,7 +1013,7 @@ function renderChangeGroup(changes, matches, unitKey) {
   meta.className = 'update-card-meta'
   appendText(meta, 'span', 'update-source', sourceLabel(first))
   appendText(meta, 'span', 'update-type-chip', isRelease ? '版本更新' : '每日更新')
-  if (unitNeedsAttention(changes)) {
+  if (unitNeedsAttention(changes, now)) {
     const attention = appendText(meta, 'span', 'update-attention attention-critical', '')
     appendText(attention, 'span', 'attention-dot', '').setAttribute('aria-hidden', 'true')
     appendText(attention, 'span', '', '需留意 · 含移除或棄用')
@@ -1059,13 +1111,14 @@ function closeChangeDetail() {
 
 function renderChangeDetail() {
   if (!state.detail) return
+  const now = Date.now()
   const group = findChangeGroup(state.detail.key)
   if (!group) {
     closeChangeDetail()
     return
   }
   const changes = group.updates
-  const matches = changes.filter(update => matchesFilters(update, changes))
+  const matches = changes.filter(update => matchesFilters(update, changes, now))
   const shown = matches.length ? matches : changes
   const first = changes[0]
   const isRelease = state.detail.key.startsWith('release:')
@@ -1129,7 +1182,7 @@ function appendRetirementRow(list, row, showDate) {
   list.append(item)
 }
 
-function renderRetirement(update, unitKey) {
+function renderRetirement(update, unitKey, now = Date.now()) {
   const rows = update.retirements
   const article = document.createElement('article')
   article.className = 'update-item official-record retirement-record'
@@ -1147,7 +1200,7 @@ function renderRetirement(update, unitKey) {
   const retirement = appendText(flags, 'span', `retirement-status retirement-${status.tone}`, '')
   appendText(retirement, 'span', 'retirement-status-dot', '').setAttribute('aria-hidden', 'true')
   appendText(retirement, 'span', '', status.text)
-  if (unitNeedsAttention([update])) {
+  if (unitNeedsAttention([update], now)) {
     const signal = attentionSignal(update)
     const attention = appendText(flags, 'span', `update-attention attention-${signal.tone}`, '')
     appendText(attention, 'span', 'attention-dot', '').setAttribute('aria-hidden', 'true')
@@ -1510,12 +1563,12 @@ function renderThread(group, unitKey) {
   return article
 }
 
-function matchesFilters(update, unit = [update]) {
+function matchesFilters(update, unit = [update], now = Date.now()) {
   if (state.day && (isTiboUpdate(update) || heatDateKey(update) !== state.day)) return false
   if (elements.provider.value && update.provider !== elements.provider.value) return false
   if (elements.category.value && update.category !== elements.category.value) return false
   if (elements.changeType.value && update.changeType !== elements.changeType.value) return false
-  if (state.attentionOnly && !unitNeedsAttention(unit)) return false
+  if (state.attentionOnly && !unitNeedsAttention(unit, now)) return false
   const query = elements.search.value.trim().toLocaleLowerCase('zh-Hant')
   if (!query) return true
   const subjects = Array.isArray(update.subjects) ? update.subjects : []
@@ -1525,6 +1578,7 @@ function matchesFilters(update, unit = [update]) {
 }
 
 function renderUpdates() {
+  const now = Date.now()
   const allUpdates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
   const updateLoading = isUpdateSourceLoading()
   if (allUpdates.length === 0 && !hasKnownUpdateSnapshot() && (state.radar === null || updateLoading || isInitialDataSyncing())) {
@@ -1532,8 +1586,8 @@ function renderUpdates() {
     return
   }
   setBusy(elements.updates, updateLoading)
-  const matchesGroupFilters = group => group.updates.some(update => matchesFilters(update, group.updates))
-  const matchingUpdates = group => group.updates.filter(update => matchesFilters(update, group.updates))
+  const matchesGroupFilters = group => group.updates.some(update => matchesFilters(update, group.updates, now))
+  const matchingUpdates = group => group.updates.filter(update => matchesFilters(update, group.updates, now))
   const groups = groupUpdates(allUpdates).filter(matchesGroupFilters)
   const visibleCount = groups.reduce((total, group) => total + matchingUpdates(group).length, 0)
   elements.updates.replaceChildren(...groups.map((group) => {
@@ -1541,11 +1595,11 @@ function renderUpdates() {
     const unitKey = groupKey(first) ?? `update:${first.id}`
     let card
     if (group.kind === 'thread') card = renderThread(group, unitKey)
-    else if (group.kind === 'changes') card = renderChangeGroup(group.updates, matchingUpdates(group), unitKey)
+    else if (group.kind === 'changes') card = renderChangeGroup(group.updates, matchingUpdates(group), unitKey, now)
     else {
       const update = first
       if (isTiboUpdate(update)) card = renderTiboUpdate(update)
-      else card = Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update, unitKey) : renderOfficialUpdate(update, unitKey)
+      else card = Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update, unitKey, now) : renderOfficialUpdate(update, unitKey, now)
     }
     card.dataset.unitKey = unitKey
     card.tabIndex = -1
@@ -1627,7 +1681,8 @@ function clearUpdateFilters() {
 }
 
 function goToOverviewHighlight(unit) {
-  const visible = unit.some(update => matchesFilters(update, unit))
+  const now = Date.now()
+  const visible = unit.some(update => matchesFilters(update, unit, now))
   if (!visible) {
     clearUpdateFilters()
     setGlobalStatus('已清除篩選以顯示這則更新')
@@ -1988,7 +2043,7 @@ function renderOverviewHighlights(units, now, limit) {
       ? (version.toLowerCase().startsWith('v') ? version : `v${version}`)
       : first.title || first.summary || '未命名更新'
     const timeUpdate = unit.reduce((latest, update) => updateTimestamp(update) > updateTimestamp(latest) ? update : latest, unit[0])
-    const attention = unitNeedsAttention(unit)
+    const attention = unitNeedsAttention(unit, now)
     const item = document.createElement('li')
     const button = appendText(item, 'button', 'overview-highlight-row', '')
     button.type = 'button'
@@ -2028,11 +2083,12 @@ function renderOverviewHighlights(units, now, limit) {
 }
 
 function renderOverview() {
+  const now = Date.now()
   const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
   const sources = currentSources()
   const units = updateUnits(updates)
-  const attention = units.filter(unitNeedsAttention).length
-  const attentionUnits = units.filter(unitNeedsAttention)
+  const attentionUnits = units.filter(unit => unitNeedsAttention(unit, now))
+  const attention = attentionUnits.length
   const healthy = sources.filter(source => source.status === 'ok').length
   const updateLoading = sources.some(source => source.status === 'loading' && source.id !== 'codex-resets')
   elements.count.textContent = String(units.length)
@@ -2076,7 +2132,7 @@ function renderOverview() {
   renderSources()
 
   renderOverviewCodexStatus()
-  renderOverviewHighlights(units, Date.now(), window.innerWidth >= 900 ? 5 : 3)
+  renderOverviewHighlights(units, now, window.innerWidth >= 900 ? 5 : 3)
 
   const today = new Date()
   today.setHours(12, 0, 0, 0)
