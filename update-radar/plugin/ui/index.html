@@ -81,7 +81,7 @@
       <section id="panel-updates" class="tab-panel updates-panel" role="tabpanel" aria-labelledby="tab-updates" tabindex="0" hidden>
         <section class="updates-region" aria-label="更新動態">
           <div class="feed-content">
-            <h2 class="feed-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 1.8h7.2L14 4.6v9.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1ZM11 2v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3.5" /></svg><span>更新動態</span></h2>
+            <h2 class="feed-heading visually-hidden"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 1.8h7.2L14 4.6v9.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1ZM11 2v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3.5" /></svg><span>更新動態</span></h2>
             <div class="toolbar" aria-label="更新篩選">
               <div class="toolbar-main">
                 <label class="search-field">
@@ -146,34 +146,33 @@
               <span id="day-filter-text" aria-live="polite"></span>
               <button id="day-filter-clear" class="day-filter-clear" type="button">顯示全部</button>
             </div>
-            <section class="heat-section" aria-labelledby="heat-heading">
-              <div class="heat-heading">
-                <div>
-                  <h2 id="heat-heading">近 26 週官方 AI 更新</h2>
+            <section id="heat-disclosure-host" class="heat-section" aria-label="每日更新熱度">
+              <div id="heat-content" class="heat-content">
+                <div class="heat-description-row">
                   <p>每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo</p>
+                  <span class="pixel-loader section-pixel-loader heat-loader" aria-hidden="true" hidden></span>
                 </div>
-                <span class="pixel-loader section-pixel-loader heat-loader" aria-hidden="true" hidden></span>
-              </div>
-              <div class="heat-layout">
-                <div class="heat-weekdays" aria-hidden="true">
-                  <span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span>
+                <div class="heat-layout">
+                  <div class="heat-weekdays" aria-hidden="true">
+                    <span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span>
+                  </div>
+                  <div class="heat-plot">
+                    <div id="heat-months" class="heat-months" aria-hidden="true"></div>
+                    <ol id="heatmap" class="heat-grid" aria-label="近 26 週每日官方 AI 更新數，週日至週六排列"></ol>
+                  </div>
                 </div>
-                <div class="heat-plot">
-                  <div id="heat-months" class="heat-months" aria-hidden="true"></div>
-                  <ol id="heatmap" class="heat-grid" aria-label="近 26 週每日官方 AI 更新數，週日至週六排列"></ol>
+                <div class="heat-legend" role="group" aria-label="更新數量等級，五個等級由少至多">
+                  <span>少</span>
+                  <span class="heat-swatch" data-level="0" aria-hidden="true"></span>
+                  <span class="heat-swatch" data-level="1" aria-hidden="true"></span>
+                  <span class="heat-swatch" data-level="2" aria-hidden="true"></span>
+                  <span class="heat-swatch" data-level="3" aria-hidden="true"></span>
+                  <span class="heat-swatch" data-level="4" aria-hidden="true"></span>
+                  <span>多</span>
                 </div>
-              </div>
-              <div class="heat-legend" role="group" aria-label="更新數量等級，五個等級由少至多">
-                <span>少</span>
-                <span class="heat-swatch" data-level="0" aria-hidden="true"></span>
-                <span class="heat-swatch" data-level="1" aria-hidden="true"></span>
-                <span class="heat-swatch" data-level="2" aria-hidden="true"></span>
-                <span class="heat-swatch" data-level="3" aria-hidden="true"></span>
-                <span class="heat-swatch" data-level="4" aria-hidden="true"></span>
-                <span>多</span>
               </div>
             </section>
-            <p id="result-status" class="result-status" aria-live="polite"></p>
+            <p id="result-status" class="result-status visually-hidden" aria-live="polite"></p>
             <section id="updates" class="update-list" aria-label="AI 更新" aria-busy="true"></section>
             <section id="empty" class="empty-state" hidden>
               <h2>目前沒有符合條件的更新</h2>

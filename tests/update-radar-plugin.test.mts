@@ -297,13 +297,16 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  assert.match(markup, /近 26 週官方 AI 更新/)
+  assert.match(markup, /id="heat-disclosure-host" class="heat-section"/)
   assert.match(markup, /每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo/)
   assert.match(markup, /需留意/)
   assert.match(markup, /id="tibo-summary"[^>]*type="button"/)
   assert.match(panelSource, /function isTiboUpdate\(update\)/)
   assert.match(panelSource, /const officialUpdates = updates\.filter\(update => !isTiboUpdate\(update\)\)/)
   assert.match(panelSource, /isTiboUpdate\(update\) && heatDateKey\(update\) === todayKey/)
+  assert.match(panelSource, /title: '每日更新熱度 · 近 26 週'/)
+  assert.match(panelSource, /open: state\.disclosures\.get\(heatDisclosureId\) === true/)
+  assert.match(panelSource, /meta: state\.day \? `已選 \$\{month\}\/\$\{day\}` : ''/)
   assert.match(panelSource, /postKind === 'root'/)
   assert.match(panelSource, /postKind === 'self-reply'/)
   assert.match(panelSource, /elements\.provider\.value = 'x'/)
@@ -359,32 +362,31 @@ test('Update Radar heatmap days filter the list to that day of official updates'
   assert.match(markup, /id="day-filter-clear"[^>]*type="button"/)
 })
 
-test('Update Radar renders Tibo as a bubble and official updates as source-accent records', () => {
+test('Update Radar renders full Tibo text and unified official disclosures', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   const tiboRender = panelSource.slice(panelSource.indexOf('function renderTiboBubble'), panelSource.indexOf('function renderTiboUpdate'))
   const officialRender = panelSource.slice(panelSource.indexOf('function renderOfficialUpdate'), panelSource.indexOf('function resetTypeLabel'))
-  assert.match(tiboRender, /time-chip/)
+  assert.match(tiboRender, /message-time/)
   assert.match(tiboRender, /Tibo \/ X/)
   assert.match(tiboRender, /'貼文'/)
   assert.match(tiboRender, /'續文'/)
-  assert.doesNotMatch(tiboRender, /change-label|category-label|attention-chip|appendQuickRead/)
-  assert.match(panelFunctionSource('appendDetails'), /appendQuickRead\(content, update\)/)
+  assert.doesNotMatch(tiboRender, /change-label|category-label|attention-chip|appendQuickRead|appendExpandToggle/)
+  assert.match(panelFunctionSource('renderOfficialUpdate'), /appendQuickRead\(disclosure\.region, update\)/)
+  assert.match(panelFunctionSource('renderOfficialUpdate'), /official-full-text/)
   assert.match(officialRender, /official-record/)
-  assert.match(officialRender, /official-meta-tag/)
+  assert.match(officialRender, /update-card-meta/)
+  assert.match(officialRender, /update-time/)
   assert.doesNotMatch(officialRender, /source-avatar|message-bubble|renderTiboBubble/)
-  assert.match(panelSource, /preview\.scrollHeight > preview\.clientHeight \+ 1/)
   assert.match(panelSource, /new ResizeObserver/)
   assert.match(panelSource, /window\.addEventListener\('resize'/)
-  assert.match(panelSource, /展開重點/)
-  // 展開是撐開原本的預覽，不再另外印一份全文。
-  assert.doesNotMatch(panelSource, /full-copy|展開完整原文|展開原文/)
-  assert.match(tiboRender, /appendExpandToggle\(bubble, preview\)/)
+  assert.match(officialRender, /buttonText: '展開'/)
+  assert.doesNotMatch(panelSource, /appendExpandToggle|previewMeasurements|previewResizeObserver/)
   assert.match(officialRender, /officialHeadline\(update\)/)
-  assert.match(officialRender, /appendExpandToggle\(article, solo\)/)
-  assert.match(styles, /\.message-preview\.is-expanded,\s*\.official-preview\.is-expanded,\s*\.official-title-solo\.is-expanded \{[^}]*-webkit-line-clamp: unset/)
-  assert.match(styles, /\.official-title \{[^}]*font-size: var\(--radar-font-lead\)/)
+  assert.match(styles, /\.message-preview \{[^}]*white-space: pre-wrap/)
+  assert.match(styles, /\.update-card-title \{[^}]*-webkit-line-clamp: 2/)
+  assert.match(styles, /\.official-preview \{[^}]*-webkit-line-clamp: 1/)
   assert.match(panelSource, /const attention = units\.filter\(unitNeedsAttention\)\.length/)
   assert.match(styles, /\.official-record\.record-openai/)
   assert.match(styles, /\.official-record\.record-anthropic/)
@@ -675,22 +677,25 @@ return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
   assert.equal(JSON.stringify(units.map((unit: unknown) => panel.unitNeedsAttention(unit))), '[true,false,false,false,false]')
 })
 
-test('grouped card previews mix change types and expanded views replace the preview', () => {
+test('grouped cards preview five mixed changes and disclose full lists or the details page', () => {
   const source = ['byPosition', 'previewChanges'].map(panelFunctionSource).join('\n')
-  const previewChanges = runInNewContext(`(() => { const CHANGE_PREVIEW_ORDER = ['removed', 'deprecated', 'added', 'improved', 'fixed']; const CHANGE_PREVIEW_COUNT = 3
+  const previewChanges = runInNewContext(`(() => { const CHANGE_PREVIEW_ORDER = ['removed', 'deprecated', 'added', 'improved', 'fixed']; const CHANGE_PREVIEW_COUNT = 5
 ${source}
 return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
   const change = (id: string, changeType: string, position: number) => ({ id, changeType, position })
   const ids = (changes: unknown[]) => previewChanges(changes).map(update => update.id).join('')
-  assert.equal(ids([change('a1', 'added', 0), change('a2', 'added', 1), change('i', 'improved', 2), change('f', 'fixed', 3)]), 'a1if')
-  assert.equal(ids([change('f1', 'fixed', 0), change('f2', 'fixed', 1), change('f3', 'fixed', 2), change('f4', 'fixed', 3)]), 'f1f2f3')
+  assert.equal(ids([change('a1', 'added', 0), change('a2', 'added', 1), change('i', 'improved', 2), change('f', 'fixed', 3)]), 'a1ifa2')
+  assert.equal(ids([change('f1', 'fixed', 0), change('f2', 'fixed', 1), change('f3', 'fixed', 2), change('f4', 'fixed', 3)]), 'f1f2f3f4')
   assert.equal(ids([change('a', 'added', 0), change('f', 'fixed', 1), change('r', 'removed', 2)]), 'raf')
 
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
-  assert.match(panelSource, /const CHANGE_INLINE_ALL_MAX = 5/)
+  assert.match(panelSource, /const CHANGE_PREVIEW_COUNT = 5/)
   assert.match(panelSource, /const CHANGE_INLINE_EXPAND_MAX = 20/)
-  assert.match(panelSource, /preview\.hidden = details\.open/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /matches\.length > CHANGE_INLINE_EXPAND_MAX/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /previewChanges\(matches\)/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /查看全部 \$\{matches\.length\} 項變更/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /appendChangeBrowser\(disclosure\.region, matches\)/)
   assert.match(panelSource, /button\.setAttribute\('aria-pressed', String\(button\.dataset\.type === selected\)\)/)
   assert.match(panelSource, /event\.key === 'Escape' && state\.detail/)
   assert.match(panelSource, /window\.scrollTo\(0, detail\.scrollY\)/)
@@ -1010,7 +1015,7 @@ test('Update Radar disclosure keeps aria state, region links, and native button 
   }
   const context: Record<string, any> = {
     document: { createElement: () => new DisclosureElement() },
-    state: { disclosures: new Map<string, boolean>() },
+    state: { disclosures: new Map<string, boolean>(), expanded: new Set<string>() },
     createIcon: (_name: string, className: string) => {
       const icon = new DisclosureElement()
       icon.className = className
@@ -1038,9 +1043,95 @@ test('Update Radar disclosure keeps aria state, region links, and native button 
   assert.equal(context.state.disclosures.get('source-status'), false)
   assert.match(panelFunctionSource('createDisclosure'), /button\.type = 'button'/)
 
+  const unitKey = 'release:v2.1.316'
+  const cardDisclosure = createDisclosure({
+    id: 'update-release-v2-1-316', title: '更新內容', meta: '', buttonText: '展開', expandedText: '收合',
+    open: context.state.expanded.has(unitKey), onToggle: (expanded: boolean) => {
+      if (expanded) context.state.expanded.add(unitKey)
+      else context.state.expanded.delete(unitKey)
+    },
+  })
+  cardDisclosure.button.listeners.get('click')?.()
+  assert.equal(context.state.expanded.has(unitKey), true, 'card expansion is stored under its stable unitKey')
+  const redrawnCardDisclosure = createDisclosure({
+    id: 'update-release-v2-1-316', title: '更新內容', meta: '', buttonText: '展開', expandedText: '收合',
+    open: context.state.expanded.has(unitKey), onToggle: (expanded: boolean) => {
+      if (expanded) context.state.expanded.add(unitKey)
+      else context.state.expanded.delete(unitKey)
+    },
+  })
+  assert.equal(redrawnCardDisclosure.button.getAttribute('aria-expanded'), 'true', 'a redraw restores the expanded state')
+  assert.equal(redrawnCardDisclosure.region.hidden, false)
+
   const renderOverview = panelFunctionSource('renderOverview')
   assert.match(renderOverview, /failedCount\s*\?\s*`\$\{failedCount\} 個失敗/u)
   assert.ok(renderOverview.indexOf("disclosure.root.querySelector('.disclosure-meta')") < renderOverview.indexOf("appendText(disclosure.region, 'p'"))
+})
+
+test('Update Radar Phase 3 cards use one disclosure and retain accessible unit identity', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const cardFunctions = ['renderOfficialUpdate', 'renderChangeGroup', 'renderRetirement', 'renderThread']
+  for (const name of cardFunctions) {
+    const source = panelFunctionSource(name)
+    assert.ok((source.match(/createDisclosure\(/g) ?? []).length <= 1, `${name} adds at most one disclosure`)
+    assert.doesNotMatch(source, /article\.addEventListener\('click'/, `${name} leaves card background non-clickable`)
+    if (source.includes('article.append(flags)')) {
+      assert.ok(source.indexOf('article.append(flags)') < source.indexOf('article.append(disclosure.root)'), `${name} keeps warning metadata outside the region`)
+    }
+    if (source.includes('update-attention')) {
+      assert.ok(source.indexOf('update-attention') < source.indexOf('createDisclosure('), `${name} keeps attention markers outside the region`)
+    }
+  }
+  assert.match(panelSource, /card\.dataset\.unitKey = unitKey/)
+  assert.match(panelSource, /button\.setAttribute\('aria-controls', `\$\{id\}-region`\)/)
+  assert.match(panelSource, /region\.id = `\$\{id\}-region`/)
+  assert.match(panelSource, /region\.setAttribute\('aria-labelledby', button\.id\)/)
+  assert.doesNotMatch(panelSource, /document\.createElement\(['"]details['"]\)|document\.createElement\(['"]summary['"]\)/)
+  assert.doesNotMatch(styles, /\.update-details|\.details-content|::-webkit-details-marker|(?:^|,\s*)summary:focus-visible/m)
+  assert.doesNotMatch(panelFunctionSource('renderTiboUpdate'), /createDisclosure\(/, 'a standalone Tibo post is shown without a disclosure')
+  assert.match(panelFunctionSource('renderThread'), /buttonText: `\$\{replies\.length\} 則續文`/)
+  assert.match(panelFunctionSource('renderThread'), /thread-timeline/)
+})
+
+test('Update Radar expanded unit keys survive redraws and are pruned only when data removes the card', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const receiveStateStart = panelSource.lastIndexOf('function receiveState(radar)')
+  const receiveStateEnd = panelSource.indexOf('\n}\n', receiveStateStart)
+  const receiveStateSource = panelSource.slice(receiveStateStart, receiveStateEnd + 2)
+  const source = ['findThreadRootId', 'groupKey', 'byPosition', 'groupUpdates'].map(panelFunctionSource).join('\n') + `\n${receiveStateSource}`
+  const state = { expanded: new Set(['release:v2.1.316', 'update:keep', 'update:gone']) }
+  const receiveState = runInNewContext(`(() => { ${source}\nreturn receiveState })()`, {
+    state,
+    tabController: { receiveState: (radar: unknown) => radar },
+  }) as (radar: unknown) => unknown
+  const radar = { updates: [
+    { id: 'release-item', sourceId: 'claude-code', version: 'v2.1.316', position: 0 },
+    { id: 'keep', sourceId: 'openai-api', position: 1 },
+  ] }
+  assert.equal(receiveState(radar), radar)
+  assert.deepEqual([...state.expanded].sort(), ['release:v2.1.316', 'update:keep'])
+})
+
+test('Update Radar heatmap disclosure is collapsed by default and reflects a selected day', () => {
+  const renderUpdatesTab = panelFunctionSource('renderUpdatesTab')
+  const renderHeatmap = panelFunctionSource('renderHeatmap')
+  assert.match(renderUpdatesTab, /title: '每日更新熱度 · 近 26 週'/)
+  assert.match(renderUpdatesTab, /open: state\.disclosures\.get\(heatDisclosureId\) === true/)
+  assert.match(renderUpdatesTab, /meta: state\.day \? `已選 \$\{month\}\/\$\{day\}` : ''/)
+  assert.match(renderHeatmap, /heatMeta\.textContent = state\.day \? `已選 \$\{month\}\/\$\{day\}` : ''/)
+})
+
+test('Update Radar update cards hide the browser hint and keep the footer explanation', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.doesNotMatch(panelSource, /appendText\([^\n]*'source-note', '使用系統瀏覽器開啟'/)
+  assert.match(panelSource, /button\.title = '使用系統瀏覽器開啟'/)
+  assert.match(panelSource, /appendText\(row, 'span', 'source-note', ''\)/)
+  assert.match(styles, /\.source-note:empty \{ display: none; \}/)
+  assert.match(markup, /內容為官方原文，未經 AI 摘要；連結會在系統瀏覽器開啟。/)
+  assert.match(styles, /footer \{[^}]*font-size: 12px/)
 })
 
 test('Update Radar keyboard tab navigation wraps, supports Home and End, and ignores other keys', () => {
@@ -1061,11 +1152,10 @@ test('Update Radar keyboard tab navigation wraps, supports Home and End, and ign
   assert.match(panelSource, /window\.scrollTo\(0, Math\.min\(scrollY, maxScrollY\)\)/, 'restoration clamps when the target content is shorter')
 })
 
-test('Update Radar reset timers and preview measurements follow their visible tab', () => {
+test('Update Radar reset timers follow their visible tab and removed preview toggles need no observer', () => {
   const syncLifecycleSource = panelFunctionSource('syncTabLifecycles')
   const overviewResetSource = panelFunctionSource('renderOverviewCodexStatus')
   const countdownTickSource = panelFunctionSource('tickCodexCountdown')
-  assert.match(syncLifecycleSource, /const updatesVisible = state\.activeTab === 'updates' && !state\.detail && !elements\.panels\.updates\.hidden/)
   assert.match(syncLifecycleSource, /const countdownVisible = !state\.detail && \['overview', 'reset'\]\.includes\(state\.activeTab\)/)
   assert.match(overviewResetSource, /text = countdown === '預定時間已到，等待狀態更新'\s*\? countdown\s*:/)
   assert.match(countdownTickSource, /countdownText === '預定時間已到，等待狀態更新'\s*\? countdownText\s*:/)
@@ -1074,9 +1164,6 @@ test('Update Radar reset timers and preview measurements follow their visible ta
   let nextTimer = 1
   const context = {
     state: { activeTab: 'updates', detail: null },
-    elements: { panels: { updates: { hidden: false } } },
-    previewMeasurements: new Map(),
-    previewResizeObserver: null,
     codexResetCountdownTick: () => {},
     codexResetCountdownTimer: 42,
     clearTimeout: (timer: number) => cleared.push(timer),
@@ -1100,7 +1187,7 @@ test('Update Radar reset timers and preview measurements follow their visible ta
   assert.equal(cleared.at(-1), 55, 'the detail subview pauses the countdown')
 
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
-  assert.match(panelSource, /if \(state\.activeTab !== 'updates' \|\| state\.detail \|\| elements\.panels\.updates\.hidden\) return/)
+  assert.doesNotMatch(panelSource, /previewMeasurements|previewResizeObserver|observePreview/)
 })
 
 test('Update Radar uses sticky single-column tabs and removes sidebar layout code', () => {
@@ -1388,4 +1475,61 @@ test('default activation starts the five-minute due-source heartbeat', async () 
   await plugin.activate(fixture.api)
   assert.equal(fixture.getScheduled()?.seconds, 300)
   assert.equal(fixture.notifications.length, 0)
+})
+
+test('expanded official updates hide the preview and show only summary text after the title', () => {
+  const source = ['collapsedWhitespace', 'textAfterTitle', 'officialHeadline', 'officialBodyText'].map(panelFunctionSource).join('\n')
+  const helpers = runInNewContext(`(() => { ${source}\nreturn { officialHeadline, officialBodyText } })()`) as {
+    officialHeadline: (update: unknown) => { headline: string; previewText: string },
+    officialBodyText: (title: string, summary: string) => string,
+  }
+  const fullTitle = "We've deprecated fast mode for Claude Opus 4.8"
+  const summary = `${fullTitle}. Fast mode is no longer available.`
+  const expandedHeadline = helpers.officialHeadline({ title: `${fullTitle}…`, summary }).headline
+  assert.equal(helpers.officialBodyText(expandedHeadline, summary), '', 'a title-prefix summary is not repeated as a full paragraph')
+  assert.equal(helpers.officialBodyText(fullTitle, summary), 'Fast mode is no longer available.')
+
+  const renderSource = panelFunctionSource('renderOfficialUpdate')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(renderSource, /article\.classList\.toggle\('is-expanded', expanded\)/)
+  assert.match(renderSource, /officialBodyText\(headline, update\.summary\)/)
+  assert.match(styles, /\.official-record\.is-expanded \.official-preview \{ display: none; \}/)
+  assert.match(styles, /\.official-record\.is-expanded \.update-card-title \{[^}]*-webkit-line-clamp: unset/)
+})
+
+test('official quick-read switches to label-value rows below 360px without splitting words', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(styles, /container-name: official-update-card; container-type: inline-size;/)
+  assert.match(styles, /@container official-update-card \(max-width: 360px\)/)
+  assert.match(styles, /\.insight-item \{ display: grid; grid-template-columns: max-content minmax\(0, 1fr\)/)
+  assert.match(styles, /\.insight-label::after \{ content: '：'; \}/)
+  assert.match(styles, /\.insight-value \{[^}]*overflow-wrap: normal; word-break: keep-all;/)
+})
+
+test('official update type labels share the expanded change label for deprecated and removed records', () => {
+  const labelSource = panelFunctionSource('updateChangeLabel')
+  const updateChangeLabel = runInNewContext(`(() => { ${labelSource}\nreturn updateChangeLabel })()`, {
+    labels: { changeType: { deprecated: '棄用', removed: '移除' }, category: { 'new-model': '新模型' } },
+  }) as (update: unknown) => string
+  assert.equal(updateChangeLabel({ changeType: 'deprecated', category: 'new-model' }), '棄用')
+  assert.equal(updateChangeLabel({ changeType: 'removed', category: 'new-model' }), '移除')
+  assert.match(panelFunctionSource('renderOfficialUpdate'), /'update-type-chip', updateChangeLabel\(update\)/)
+  assert.match(panelFunctionSource('appendQuickRead'), /appendInsight\(section, '變更', updateChangeLabel\(update\)\)/)
+})
+
+test('updates density keeps accessible heading, co-locates counts, and preserves 36px actions', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(markup, /<h2 class="feed-heading visually-hidden">[\s\S]*?更新動態[\s\S]*?<\/h2>/)
+  assert.match(markup, /id="result-status" class="result-status visually-hidden" aria-live="polite"/)
+  assert.match(panelFunctionSource('renderUpdates'), /heatMeta\.textContent = \[selectedDay, elements\.resultStatus\.textContent\]/)
+  assert.match(styles, /\.heat-disclosure-button \{ min-height: 36px;/)
+  assert.match(styles, /\.result-status\.visually-hidden \{[\s\S]*?height: 20px;[\s\S]*?line-height: 20px;/)
+  assert.match(panelFunctionSource('renderTiboBubble'), /appendSourceAction\(meta, update, \{ inline: true \}\)/)
+  assert.match(styles, /\.message-meta \.source-button \{ min-height: 36px;/)
+  assert.match(styles, /\.card-disclosure \{ margin-top: 4px; border-top: 0; \}/)
+  assert.match(styles, /\.card-disclosure-button \{ min-height: 36px;/)
+  assert.match(panelFunctionSource('renderOfficialUpdate'), /heading\.append\(disclosure\.root\)/)
+  assert.match(styles, /\.official-headline-row > \.card-disclosure \{ display: contents; \}/)
 })

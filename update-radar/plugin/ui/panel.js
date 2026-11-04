@@ -29,14 +29,13 @@ const state = {
   absoluteTime: false,
   day: null,
   attentionOnly: false,
+  expanded: new Set(),
   disclosures: new Map(),
   detail: null,
 }
 let codexResetCountdownTimer = null
 let codexResetCountdownTick = null
 let globalStatusTimer = null
-let previewResizeObserver = null
-const previewMeasurements = new Map()
 
 const elements = {
   tabList: document.querySelector('#radar-tabs'),
@@ -74,6 +73,8 @@ const elements = {
   sourceStatus: document.querySelector('#source-status'),
   sources: null,
   resetSpotlight: document.querySelector('#spotlight-reset'),
+  heatDisclosureHost: document.querySelector('#heat-disclosure-host'),
+  heatContent: document.querySelector('#heat-content'),
   heatmap: document.querySelector('#heatmap'),
   heatLoader: document.querySelector('.heat-loader'),
   heatMonths: document.querySelector('#heat-months'),
@@ -173,30 +174,48 @@ function appendText(parent, tagName, className, text) {
   return element
 }
 
-function createDisclosure({ id, title, meta, open = false, tone = 'neutral' } = {}) {
+function createDisclosure({
+  id,
+  title,
+  meta,
+  open = false,
+  tone = 'neutral',
+  buttonText,
+  expandedText,
+  buttonClass = 'disclosure-button',
+  rootClass = 'disclosure-root',
+  regionClass = '',
+  ariaLabel,
+  onToggle,
+} = {}) {
   const root = document.createElement('div')
-  root.className = 'disclosure-root'
+  root.className = rootClass
   const button = document.createElement('button')
   button.id = `${id}-button`
   button.type = 'button'
-  button.className = 'disclosure-button'
+  button.className = buttonClass
   button.setAttribute('aria-expanded', String(Boolean(open)))
   button.setAttribute('aria-controls', `${id}-region`)
-  appendText(button, 'span', 'disclosure-title', title)
+  const visibleTitle = appendText(button, 'span', 'disclosure-title', buttonText ?? title)
   appendText(button, 'span', `disclosure-meta disclosure-meta-${tone}`, meta)
   const chevron = createIcon('chevron', 'disclosure-chevron')
   chevron.setAttribute('aria-hidden', 'true')
   button.append(chevron)
   const region = document.createElement('div')
+  if (regionClass) region.className = regionClass
   region.id = `${id}-region`
   region.setAttribute('role', 'region')
   region.setAttribute('aria-labelledby', button.id)
   region.hidden = !open
+  if (ariaLabel) button.setAttribute('aria-label', `${open ? expandedText ?? buttonText ?? title : buttonText ?? title}：${ariaLabel}`)
   button.addEventListener('click', () => {
     const expanded = button.getAttribute('aria-expanded') !== 'true'
     button.setAttribute('aria-expanded', String(expanded))
     region.hidden = !expanded
-    state.disclosures.set(id, expanded)
+    if (buttonText !== undefined) visibleTitle.textContent = expanded ? expandedText ?? buttonText : buttonText
+    if (ariaLabel) button.setAttribute('aria-label', `${expanded ? expandedText ?? buttonText ?? title : buttonText ?? title}：${ariaLabel}`)
+    if (typeof onToggle === 'function') onToggle(expanded)
+    else state.disclosures.set(id, expanded)
   })
   root.append(button, region)
   return { root, button, region }
@@ -578,12 +597,16 @@ function appendInsight(parent, label, value, className = '') {
   parent.append(item)
 }
 
+function updateChangeLabel(update) {
+  return labels.changeType[update?.changeType] ?? labels.category[update?.category] ?? '更新'
+}
+
 function appendQuickRead(parent, update) {
   const attention = attentionSignal(update)
   const section = document.createElement('section')
   section.className = 'quick-read'
   section.setAttribute('aria-label', '重點')
-  appendInsight(section, '變更', labels.changeType[update.changeType] ?? '更新')
+  appendInsight(section, '變更', updateChangeLabel(update))
   appendInsight(section, '影響範圍', `${labels.product[update.product] ?? '其他'} · ${labels.category[update.category] ?? '其他更新'}`)
   appendInsight(section, '注意事項', attention.label, `attention-${attention.tone}`)
   parent.append(section)
@@ -640,45 +663,35 @@ function bindExternalLink(link, sourceUrl, note) {
   })
 }
 
-function appendSourceAction(parent, update) {
+function appendSourceAction(parent, update, { inline = false } = {}) {
   const sourceUrl = safeSourceUrl(update.sourceUrl)
   if (!sourceUrl) {
     return appendText(parent, 'p', 'source-unavailable', '無法驗證這個連結。')
   }
-  const row = document.createElement('div')
-  row.className = 'source-action'
-  const button = appendText(row, 'button', 'source-button', isTiboUpdate(update) ? '查看 X 原文' : '查看官方來源')
+  const row = inline ? parent : document.createElement('div')
+  if (!inline) row.className = 'source-action'
+  const button = appendText(row, 'button', `source-button${inline ? ' source-button-inline' : ''}`, isTiboUpdate(update) ? '查看 X 原文' : '查看官方來源')
   button.prepend(createIcon(isTiboUpdate(update) ? 'x' : 'external'))
   button.type = 'button'
-  const note = appendText(row, 'span', 'source-note', '使用系統瀏覽器開啟')
-  note.prepend(createIcon('external'))
+  button.title = '使用系統瀏覽器開啟'
+  const note = appendText(row, 'span', 'source-note', '')
   bindExternalButton(button, sourceUrl, note)
-  parent.append(row)
+  if (!inline) parent.append(row)
   return row
-}
-
-function appendDetails(parent, update) {
-  const details = document.createElement('details')
-  details.className = 'update-details'
-  appendText(details, 'summary', '', '展開重點')
-  const content = document.createElement('div')
-  content.className = 'details-content'
-  appendQuickRead(content, update)
-  appendVersion(content, update)
-  appendSourceAction(content, update)
-  details.append(content)
-  parent.append(details)
-  return details
 }
 
 // 官方摘要常以標題開頭；預覽只留標題之後的內容，同一句才不會在標題與預覽各出現一次。
 function textAfterTitle(title, text) {
-  const words = String(title ?? '').normalize('NFC').trim().split(/\s+/u).filter(Boolean)
   const source = String(text ?? '').normalize('NFC').trim()
-  if (!words.length) return source
-  const escaped = words.map(word => word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('\\s+')
-  const match = source.match(new RegExp(`^${escaped}`, 'iu'))
-  return match ? source.slice(match[0].length).replace(/^[\s\p{P}…]+/u, '') : source
+  const heading = String(title ?? '').normalize('NFC').trim()
+  const candidates = [heading, heading.replace(/(?:…|\.{3})$/u, '')].filter(Boolean)
+  for (const candidate of [...new Set(candidates)]) {
+    const words = candidate.split(/\s+/u).filter(Boolean)
+    const escaped = words.map(word => word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('\\s+')
+    const match = source.match(new RegExp(`^${escaped}`, 'iu'))
+    if (match) return source.slice(match[0].length).replace(/^[\s\p{P}…]+/u, '')
+  }
+  return source
 }
 
 function collapsedWhitespace(value) {
@@ -697,48 +710,11 @@ function officialHeadline(update) {
   return { headline: title, previewText: textAfterTitle(title, summary) }
 }
 
-// 原地展開被截斷的預覽，不另外再印一份全文，避免展開後前半段重複。
-function appendExpandToggle(parent, preview) {
-  const button = appendText(parent, 'button', 'expand-toggle', '展開全文')
-  button.type = 'button'
-  button.hidden = true
-  button.setAttribute('aria-expanded', 'false')
-  button.addEventListener('click', () => {
-    const expanded = preview.classList.toggle('is-expanded')
-    button.textContent = expanded ? '收合' : '展開全文'
-    button.setAttribute('aria-expanded', String(expanded))
-  })
-  return () => {
-    const expanded = preview.classList.contains('is-expanded')
-    button.hidden = !(expanded || preview.scrollHeight > preview.clientHeight + 1)
-  }
-}
-
-function clearPreviewMeasurements() {
-  previewResizeObserver?.disconnect()
-  previewResizeObserver = null
-  previewMeasurements.clear()
+function officialBodyText(title, summary) {
+  return textAfterTitle(title, summary).trim()
 }
 
 function syncTabLifecycles() {
-  const updatesVisible = state.activeTab === 'updates' && !state.detail && !elements.panels.updates.hidden
-  if (!updatesVisible) {
-    previewResizeObserver?.disconnect()
-  } else if (typeof ResizeObserver === 'function') {
-    previewResizeObserver ??= new ResizeObserver(entries => {
-      if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
-      for (const entry of entries) previewMeasurements.get(entry.target)?.()
-    })
-    previewResizeObserver.disconnect()
-    for (const [preview] of previewMeasurements) {
-      if (preview.isConnected) previewResizeObserver.observe(preview)
-    }
-  } else {
-    for (const [preview, measure] of previewMeasurements) {
-      if (preview.isConnected) measure()
-    }
-  }
-
   const countdownVisible = !state.detail && ['overview', 'reset'].includes(state.activeTab)
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
   const interval = reducedMotion || state.activeTab === 'overview' ? 60_000 : 1_000
@@ -748,25 +724,6 @@ function syncTabLifecycles() {
   } else if (codexResetCountdownTimer === null) {
     codexResetCountdownTimer = setTimeout(() => codexResetCountdownTick?.(), interval)
   }
-}
-
-function observePreview(preview, measure) {
-  if (!preview) {
-    if (state.activeTab === 'updates' && !state.detail) measure()
-    return
-  }
-  previewMeasurements.set(preview, measure)
-  if (state.activeTab !== 'updates' || state.detail) return
-  if (typeof ResizeObserver === 'function') {
-    previewResizeObserver ??= new ResizeObserver(entries => {
-      if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
-      for (const entry of entries) previewMeasurements.get(entry.target)?.()
-    })
-    previewResizeObserver.observe(preview)
-  }
-  requestAnimationFrame(() => {
-    if (state.activeTab === 'updates' && !state.detail && !elements.panels.updates.hidden && preview.isConnected) measure()
-  })
 }
 
 function renderTiboBubble(update, role = '') {
@@ -780,16 +737,14 @@ function renderTiboBubble(update, role = '') {
   const meta = document.createElement('div')
   meta.className = 'message-meta'
   const dateTime = update.publishedAtTime ?? update.publishedAt ?? ''
-  const time = appendText(meta, 'time', 'time-chip', formatUpdateTime(update))
+  appendText(meta, 'span', 'message-source-label', 'Tibo / X')
+  appendText(meta, 'span', 'message-type-chip', role === 'self-reply' ? '續文' : '貼文')
+  const time = appendText(meta, 'time', 'message-time', formatUpdateTime(update))
   time.dateTime = dateTime
-  appendText(meta, 'span', 'provider-label provider-x', 'Tibo / X')
-  if (role === 'root') appendText(meta, 'span', 'post-kind post-kind-root', '貼文')
-  if (role === 'self-reply') appendText(meta, 'span', 'post-kind post-kind-self-reply', '續文')
   bubble.append(meta)
 
-  const preview = appendText(bubble, 'p', 'message-preview', update.summary || update.title || '原文內容未提供。')
-  observePreview(preview, appendExpandToggle(bubble, preview))
-  appendSourceAction(bubble, update)
+  appendText(bubble, 'p', 'message-preview message-full', update.summary || update.title || '原文內容未提供。')
+  appendSourceAction(meta, update, { inline: true })
   row.append(bubble)
   return row
 }
@@ -809,30 +764,56 @@ function officialRecordTone(update) {
   return 'record-other'
 }
 
-function renderOfficialUpdate(update) {
+function renderOfficialUpdate(update, unitKey) {
   const article = document.createElement('article')
   article.className = `update-item official-record ${officialRecordTone(update)} provider-${providerClass(update)}`
+  article.classList.toggle('is-expanded', state.expanded.has(unitKey))
   const meta = document.createElement('div')
-  meta.className = 'official-meta'
-  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(update))
-  const dateTime = update.publishedAtTime ?? update.publishedAt ?? ''
-  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(update))
-  time.dateTime = dateTime
-  appendText(meta, 'span', `official-meta-tag change-label change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
-  appendText(meta, 'span', 'official-meta-tag category-label', labels.category[update.category] ?? '其他更新')
-  const signal = attentionSignal(update)
-  if (signal.tone !== 'neutral') appendText(meta, 'span', `official-meta-tag attention-chip attention-${signal.tone}`, `需留意 · ${signal.label}`)
-  article.append(meta)
-  const { headline, previewText } = officialHeadline(update)
-  if (previewText) {
-    appendText(article, 'h3', 'official-title', headline)
-    const preview = appendText(article, 'p', 'official-preview', previewText)
-    observePreview(preview, appendExpandToggle(article, preview))
-  } else {
-    const solo = appendText(article, 'h3', 'official-title official-title-solo', headline)
-    observePreview(solo, appendExpandToggle(article, solo))
+  meta.className = 'update-card-meta'
+  appendText(meta, 'span', 'update-source', sourceLabel(update))
+  appendText(meta, 'span', 'update-type-chip', updateChangeLabel(update))
+  const unit = [update]
+  if (unitNeedsAttention(unit)) {
+    const signal = attentionSignal(update)
+    const attention = appendText(meta, 'span', `update-attention attention-${signal.tone}`, '')
+    appendText(attention, 'span', 'attention-dot', '').setAttribute('aria-hidden', 'true')
+    appendText(attention, 'span', '', `需留意 · ${signal.label}`)
   }
-  appendDetails(article, update)
+  const dateTime = update.publishedAtTime ?? update.publishedAt ?? ''
+  const time = appendText(meta, 'time', 'update-time', formatUpdateTime(update))
+  time.dateTime = dateTime
+  article.append(meta)
+
+  const { headline, previewText } = officialHeadline(update)
+  const heading = document.createElement('div')
+  heading.className = 'official-headline-row'
+  appendText(heading, 'h3', 'official-title update-card-title', headline)
+  if (previewText) appendText(heading, 'p', 'official-preview', previewText)
+
+  const disclosure = createDisclosure({
+    id: `update-${encodeURIComponent(unitKey)}`,
+    title: '更新內容',
+    meta: '',
+    open: state.expanded.has(unitKey),
+    buttonText: '展開',
+    expandedText: '收合',
+    buttonClass: 'disclosure-button card-disclosure-button',
+    rootClass: 'card-disclosure',
+    regionClass: 'disclosure-region update-disclosure-region',
+    ariaLabel: `${sourceLabel(update)}：${headline}`,
+    onToggle(expanded) {
+      article.classList.toggle('is-expanded', expanded)
+      if (expanded) state.expanded.add(unitKey)
+      else state.expanded.delete(unitKey)
+    },
+  })
+  appendQuickRead(disclosure.region, update)
+  const bodyText = officialBodyText(headline, update.summary)
+  if (bodyText) appendText(disclosure.region, 'p', 'official-full-text', bodyText)
+  appendVersion(disclosure.region, update)
+  appendSourceAction(disclosure.region, update)
+  heading.append(disclosure.root)
+  article.append(heading)
   return article
 }
 
@@ -842,7 +823,7 @@ function renderOfficialUpdate(update) {
 const CHANGE_SECTION_ORDER = Object.freeze(['added', 'improved', 'fixed', 'deprecated', 'removed'])
 // 預覽先放可能影響既有用法的移除／棄用，再放新增與改善；修正通常最多，排最後。
 const CHANGE_PREVIEW_ORDER = Object.freeze(['removed', 'deprecated', 'added', 'improved', 'fixed'])
-const CHANGE_PREVIEW_COUNT = 3
+const CHANGE_PREVIEW_COUNT = 5
 
 function groupKey(update) {
   if (update?.sourceId === 'claude-code' && update.version) return `release:${update.version}`
@@ -903,7 +884,6 @@ function unitNeedsAttention(unit) {
 }
 
 // 卡片內直接列出、原地展開、或切換到詳情頁的門檻；面板高度有限，上百條不在列表中展開。
-const CHANGE_INLINE_ALL_MAX = 5
 const CHANGE_INLINE_EXPAND_MAX = 20
 
 // 預覽盡量涵蓋不同類型：先放移除／棄用，再各取一條新增、改善、修正，不足時依原順序補滿。
@@ -967,22 +947,12 @@ function appendChangeBrowser(parent, changes, initialType = 'all', onTypeChange 
     })
     return button
   })
-  const singleType = options.length <= 2
   function paint() {
     for (const button of buttons) button.setAttribute('aria-pressed', String(button.dataset.type === selected))
     sections.replaceChildren()
-    if (!singleType) {
-      appendChangeSections(sections, changes, selected)
-      return
-    }
-    // 只有一種類型時，卡片上方的數量已說明類型，不再重複分區標題。
-    const list = document.createElement('ul')
-    list.className = 'change-list'
-    for (const update of [...changes].sort(byPosition)) appendGroupedChange(list, update, true)
-    sections.append(list)
+    appendChangeSections(sections, changes, selected)
   }
-  // 只有一種類型時切換沒有意義，不顯示按鈕列。
-  if (!singleType) parent.append(chips)
+  parent.append(chips)
   parent.append(sections)
   paint()
 }
@@ -991,19 +961,24 @@ function changeGroupTitle(first) {
   return groupKey(first)?.startsWith('release:') ? first.version : formatDate(first.publishedAt)
 }
 
-function renderChangeGroup(changes, matches) {
+function renderChangeGroup(changes, matches, unitKey) {
   const first = changes[0]
   const key = groupKey(first)
   const isRelease = key?.startsWith('release:')
   const article = document.createElement('article')
   article.className = `update-item official-record change-group ${officialRecordTone(first)} provider-${providerClass(first)}`
   const meta = document.createElement('div')
-  meta.className = 'official-meta'
-  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(first))
-  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(first))
-  time.dateTime = first.publishedAtTime ?? first.publishedAt ?? ''
-  appendText(meta, 'span', 'official-meta-tag category-label', isRelease ? '版本更新' : '當日更新')
-  if (changes.some(isCriticalChange)) appendText(meta, 'span', 'official-meta-tag attention-chip attention-critical', '需留意 · 含移除或棄用')
+  meta.className = 'update-card-meta'
+  appendText(meta, 'span', 'update-source', sourceLabel(first))
+  appendText(meta, 'span', 'update-type-chip', isRelease ? '版本更新' : '每日更新')
+  if (unitNeedsAttention(changes)) {
+    const attention = appendText(meta, 'span', 'update-attention attention-critical', '')
+    appendText(attention, 'span', 'attention-dot', '').setAttribute('aria-hidden', 'true')
+    appendText(attention, 'span', '', '需留意 · 含移除或棄用')
+  }
+  const latest = changes.reduce((current, update) => updateTimestamp(update) > updateTimestamp(current) ? update : current, first)
+  const time = appendText(meta, 'time', 'update-time', formatUpdateTime(latest))
+  time.dateTime = latest.publishedAtTime ?? latest.publishedAt ?? ''
   article.append(meta)
 
   const heading = document.createElement('div')
@@ -1025,52 +1000,37 @@ function renderChangeGroup(changes, matches) {
     appendText(article, 'p', 'change-filter-note', `符合 ${matches.length} 項，共 ${changes.length} 項`)
   }
 
-  // 少量變更直接完整列出，不需要再展開。
-  if (matches.length <= CHANGE_INLINE_ALL_MAX) {
-    const list = document.createElement('ul')
-    list.className = 'change-list change-preview'
-    for (const update of [...matches].sort(byPosition)) appendGroupedChange(list, update, true)
-    article.append(list)
-    appendSourceAction(article, first)
-    return article
-  }
-
-  const preview = document.createElement('ul')
-  preview.className = 'change-list change-preview'
-  for (const update of previewChanges(matches)) appendGroupedChange(preview, update, false)
-  article.append(preview)
+  const disclosure = createDisclosure({
+    id: `update-${encodeURIComponent(unitKey)}`,
+    title: isRelease ? first.version : formatDate(first.publishedAt),
+    meta: '',
+    open: state.expanded.has(unitKey),
+    buttonText: '展開',
+    expandedText: '收合',
+    buttonClass: 'disclosure-button card-disclosure-button',
+    rootClass: 'card-disclosure',
+    regionClass: 'disclosure-region update-disclosure-region',
+    ariaLabel: `${sourceLabel(first)} ${changeGroupTitle(first)} 的完整變更`,
+    onToggle(expanded) {
+      if (expanded) state.expanded.add(unitKey)
+      else state.expanded.delete(unitKey)
+    },
+  })
 
   if (matches.length > CHANGE_INLINE_EXPAND_MAX) {
-    const open = appendText(article, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
+    const preview = document.createElement('ul')
+    preview.className = 'change-list change-preview'
+    for (const update of previewChanges(matches)) appendGroupedChange(preview, update, false)
+    disclosure.region.append(preview)
+    const open = appendText(disclosure.region, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
     open.type = 'button'
     open.dataset.detailKey = key
     open.addEventListener('click', () => openChangeDetail(key))
-    return article
+  } else {
+    appendChangeBrowser(disclosure.region, matches)
+    appendSourceAction(disclosure.region, first)
   }
-
-  // 原地展開時以完整清單取代預覽，避免同樣幾條在預覽與清單中連續出現兩次。
-  const details = document.createElement('details')
-  details.className = 'update-details change-details'
-  const summary = appendText(details, 'summary', '', `展開全部 ${matches.length} 項變更`)
-  const content = document.createElement('div')
-  content.className = 'details-content'
-  details.append(content)
-  details.addEventListener('toggle', () => {
-    preview.hidden = details.open
-    summary.textContent = details.open ? '收合' : `展開全部 ${matches.length} 項變更`
-    if (!details.open || content.childElementCount > 0) return
-    appendChangeBrowser(content, matches)
-    appendSourceAction(content, first)
-    // 清單較長時不必捲回頂端才能收合。
-    const collapse = appendText(content, 'button', 'change-collapse', '收合')
-    collapse.type = 'button'
-    collapse.addEventListener('click', () => {
-      details.open = false
-      summary.focus({ preventScroll: true })
-      article.scrollIntoView({ block: 'nearest' })
-    })
-  })
-  article.append(details)
+  article.append(disclosure.root)
   return article
 }
 
@@ -1148,7 +1108,7 @@ function renderChangeDetail() {
 }
 
 // --- 停用警示卡 ---------------------------------------------------------------
-const RETIREMENT_PREVIEW_COUNT = 4
+const RETIREMENT_PREVIEW_COUNT = 2
 const DAY_MS = 24 * 60 * 60 * 1000
 
 function daysUntil(isoDay) {
@@ -1179,20 +1139,30 @@ function appendRetirementRow(list, row, showDate) {
   list.append(item)
 }
 
-function renderRetirement(update) {
+function renderRetirement(update, unitKey) {
   const rows = update.retirements
   const article = document.createElement('article')
   article.className = `update-item official-record retirement-record ${officialRecordTone(update)} provider-${providerClass(update)}`
   const meta = document.createElement('div')
-  meta.className = 'official-meta'
-  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(update))
-  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(update))
+  meta.className = 'update-card-meta'
+  appendText(meta, 'span', 'update-source', sourceLabel(update))
+  appendText(meta, 'span', 'update-type-chip', updateChangeLabel(update))
+  const time = appendText(meta, 'time', 'update-time', formatUpdateTime(update))
   time.dateTime = update.publishedAtTime ?? update.publishedAt ?? ''
-  appendText(meta, 'span', `official-meta-tag change-label change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
   article.append(meta)
-  appendText(article, 'h3', 'official-title', update.title || '未命名公告')
+
+  const flags = document.createElement('div')
+  flags.className = 'update-card-flags'
   const status = retirementStatus(rows)
-  appendText(article, 'p', `retirement-status retirement-${status.tone}`, status.text)
+  appendText(flags, 'span', `retirement-status retirement-${status.tone}`, status.text)
+  if (unitNeedsAttention([update])) {
+    const signal = attentionSignal(update)
+    const attention = appendText(flags, 'span', `update-attention attention-${signal.tone}`, '')
+    appendText(attention, 'span', 'attention-dot', '').setAttribute('aria-hidden', 'true')
+    appendText(attention, 'span', '', `需留意 · ${signal.label}`)
+  }
+  article.append(flags)
+  appendText(article, 'h3', 'official-title update-card-title', update.title || '未命名公告')
 
   const showDate = new Set(rows.map(row => row.date)).size > 1
   const list = document.createElement('ul')
@@ -1201,22 +1171,35 @@ function renderRetirement(update) {
   for (const row of rows.slice(0, RETIREMENT_PREVIEW_COUNT)) appendRetirementRow(list, row, showDate)
   article.append(list)
 
-  const details = document.createElement('details')
-  details.className = 'update-details'
   const extra = rows.length - RETIREMENT_PREVIEW_COUNT
-  appendText(details, 'summary', '', extra > 0 ? `展開其餘 ${extra} 個型號與說明` : '展開說明')
-  const content = document.createElement('div')
-  content.className = 'details-content'
-  if (extra > 0) {
-    const rest = document.createElement('ul')
-    rest.className = 'retirement-list'
-    for (const row of rows.slice(RETIREMENT_PREVIEW_COUNT)) appendRetirementRow(rest, row, showDate)
-    content.append(rest)
+  const hasSource = Boolean(update.sourceUrl)
+  if (extra > 0 || update.summary || hasSource) {
+    const disclosure = createDisclosure({
+      id: `update-${encodeURIComponent(unitKey)}`,
+      title: update.title || '停用型號與說明',
+      meta: '',
+      open: state.expanded.has(unitKey),
+      buttonText: '展開',
+      expandedText: '收合',
+      buttonClass: 'disclosure-button card-disclosure-button',
+      rootClass: 'card-disclosure',
+      regionClass: 'disclosure-region update-disclosure-region',
+      ariaLabel: `${sourceLabel(update)}：停用型號與說明`,
+      onToggle(expanded) {
+        if (expanded) state.expanded.add(unitKey)
+        else state.expanded.delete(unitKey)
+      },
+    })
+    if (extra > 0) {
+      const rest = document.createElement('ul')
+      rest.className = 'retirement-list retirement-extra-list'
+      for (const row of rows.slice(RETIREMENT_PREVIEW_COUNT)) appendRetirementRow(rest, row, showDate)
+      disclosure.region.append(rest)
+    }
+    if (update.summary) appendText(disclosure.region, 'p', 'retirement-note', update.summary)
+    if (hasSource) appendSourceAction(disclosure.region, update)
+    article.append(disclosure.root)
   }
-  if (update.summary) appendText(content, 'p', 'retirement-note', update.summary)
-  appendSourceAction(content, update)
-  details.append(content)
-  article.append(details)
   return article
 }
 
@@ -1297,8 +1280,8 @@ function appendAnnouncementAction(parent, latestReset) {
   const button = appendText(row, 'button', 'source-button', '查看公告')
   button.prepend(createIcon('megaphone'))
   button.type = 'button'
-  const note = appendText(row, 'span', 'source-note', '使用系統瀏覽器開啟')
-  note.prepend(createIcon('external'))
+  button.title = '使用系統瀏覽器開啟'
+  const note = appendText(row, 'span', 'source-note', '')
   bindExternalButton(button, sourceUrl, note)
   parent.append(row)
 }
@@ -1435,25 +1418,41 @@ function groupUpdates(updates) {
   return groups
 }
 
-function renderThread(group) {
+function renderThread(group, unitKey) {
   const article = document.createElement('article')
   article.className = 'update-thread provider-x'
   article.setAttribute('aria-label', `Tibo 對話串，共 ${group.updates.length} 則`)
-  const header = document.createElement('header')
-  header.className = 'thread-header'
-  appendText(header, 'h3', '', 'Tibo 對話')
-  appendText(header, 'span', 'thread-count', `${group.updates.length} 則內容`)
-  article.append(header)
+  const root = group.updates.find(update => update.postKind === 'root') ?? group.updates[0]
+  article.append(renderTiboBubble(root, 'root'))
+  const replies = group.updates.filter(update => update.id !== root.id)
+  if (replies.length === 0) return article
+
+  const disclosure = createDisclosure({
+    id: `update-${encodeURIComponent(unitKey)}`,
+    title: `${replies.length} 則續文`,
+    meta: '',
+    open: state.expanded.has(unitKey),
+    buttonText: `${replies.length} 則續文`,
+    expandedText: `${replies.length} 則續文`,
+    buttonClass: 'disclosure-button card-disclosure-button thread-disclosure-button',
+    rootClass: 'card-disclosure thread-disclosure',
+    regionClass: 'disclosure-region thread-disclosure-region',
+    ariaLabel: `Tibo 對話串續文，共 ${replies.length} 則`,
+    onToggle(expanded) {
+      if (expanded) state.expanded.add(unitKey)
+      else state.expanded.delete(unitKey)
+    },
+  })
   const timeline = document.createElement('ol')
   timeline.className = 'thread-timeline'
-  for (const update of group.updates) {
-    const role = update.postKind === 'self-reply' ? 'self-reply' : 'root'
+  for (const update of replies) {
     const item = document.createElement('li')
-    item.className = `thread-item thread-${role}`
-    item.append(renderTiboBubble(update, role))
+    item.className = 'thread-item thread-self-reply'
+    item.append(renderTiboBubble(update, 'self-reply'))
     timeline.append(item)
   }
-  article.append(timeline)
+  disclosure.region.append(timeline)
+  article.append(disclosure.root)
   return article
 }
 
@@ -1472,7 +1471,6 @@ function matchesFilters(update, unit = [update]) {
 }
 
 function renderUpdates() {
-  clearPreviewMeasurements()
   const allUpdates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
   const updateLoading = isUpdateSourceLoading()
   if (allUpdates.length === 0 && !hasKnownUpdateSnapshot() && (state.radar === null || updateLoading || isInitialDataSyncing())) {
@@ -1485,16 +1483,17 @@ function renderUpdates() {
   const groups = groupUpdates(allUpdates).filter(matchesGroupFilters)
   const visibleCount = groups.reduce((total, group) => total + matchingUpdates(group).length, 0)
   elements.updates.replaceChildren(...groups.map((group) => {
-    let card
-    if (group.kind === 'thread') card = renderThread(group)
-    else if (group.kind === 'changes') card = renderChangeGroup(group.updates, matchingUpdates(group))
-    else {
-      const update = group.updates[0]
-      if (isTiboUpdate(update)) card = renderTiboUpdate(update)
-      else card = Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update) : renderOfficialUpdate(update)
-    }
     const first = group.updates[0]
-    card.dataset.unitKey = groupKey(first) ?? `update:${first.id}`
+    const unitKey = groupKey(first) ?? `update:${first.id}`
+    let card
+    if (group.kind === 'thread') card = renderThread(group, unitKey)
+    else if (group.kind === 'changes') card = renderChangeGroup(group.updates, matchingUpdates(group), unitKey)
+    else {
+      const update = first
+      if (isTiboUpdate(update)) card = renderTiboUpdate(update)
+      else card = Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update, unitKey) : renderOfficialUpdate(update, unitKey)
+    }
+    card.dataset.unitKey = unitKey
     card.tabIndex = -1
     return card
   }))
@@ -1502,6 +1501,12 @@ function renderUpdates() {
   elements.resultStatus.textContent = groups.length > 0
     ? `${groups.length} 組 · ${visibleCount} 則`
     : '沒有符合篩選的更新。'
+  const heatMeta = elements.heatDisclosureHost.querySelector('.disclosure-meta')
+  if (heatMeta) {
+    const [, month, day] = state.day?.split('-').map(Number) ?? []
+    const selectedDay = state.day ? `已選 ${month}/${day}` : ''
+    heatMeta.textContent = [selectedDay, elements.resultStatus.textContent].filter(Boolean).join(' · ')
+  }
   renderDayFilter(groups.length)
 }
 
@@ -1523,6 +1528,11 @@ function selectDay(key) {
   // 日期只篩官方更新；若停在 Tibo 篩選會永遠沒有結果，所以一併解除。
   if (state.day && elements.provider.value === 'x') elements.provider.value = ''
   renderFilterControls()
+  const heatMeta = elements.heatDisclosureHost.querySelector('.disclosure-meta')
+  if (heatMeta) {
+    const [, month, day] = state.day?.split('-').map(Number) ?? []
+    heatMeta.textContent = state.day ? `已選 ${month}/${day}` : ''
+  }
   renderHeatmap()
   renderUpdates()
 }
@@ -1640,6 +1650,11 @@ function renderHeatmapSkeleton() {
 }
 
 function renderHeatmap() {
+  const heatMeta = elements.heatDisclosureHost.querySelector('.disclosure-meta')
+  if (heatMeta) {
+    const [, month, day] = state.day?.split('-').map(Number) ?? []
+    heatMeta.textContent = state.day ? `已選 ${month}/${day}` : ''
+  }
   const counts = new Map()
   const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
   const officialUpdates = updates.filter(update => !isTiboUpdate(update))
@@ -1995,6 +2010,19 @@ function renderOverview() {
 function renderUpdatesTab() {
   renderFilterControls()
   renderTimeMode()
+  const heatDisclosureId = 'updates-heat-disclosure'
+  const [, month, day] = state.day?.split('-').map(Number) ?? []
+  const heatDisclosure = createDisclosure({
+    id: heatDisclosureId,
+    title: '每日更新熱度 · 近 26 週',
+    meta: state.day ? `已選 ${month}/${day}` : '',
+    open: state.disclosures.get(heatDisclosureId) === true,
+    rootClass: 'disclosure-root heat-disclosure-root',
+    buttonClass: 'disclosure-button heat-disclosure-button',
+    regionClass: 'disclosure-region heat-disclosure-region',
+  })
+  heatDisclosure.region.append(elements.heatContent)
+  elements.heatDisclosureHost.replaceChildren(heatDisclosure.root)
   renderHeatmap()
   renderUpdates()
 }
@@ -2114,6 +2142,14 @@ const tabController = createTabController({
 })
 
 function receiveState(radar) {
+  const updates = Array.isArray(radar?.updates) ? radar.updates : []
+  const currentUnitKeys = new Set(groupUpdates(updates).map(group => {
+    const first = group.updates[0]
+    return groupKey(first) ?? `update:${first.id}`
+  }))
+  for (const unitKey of state.expanded) {
+    if (!currentUnitKeys.has(unitKey)) state.expanded.delete(unitKey)
+  }
   return tabController.receiveState(radar)
 }
 
@@ -2225,11 +2261,6 @@ window.addEventListener('resize', () => {
     const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
     renderOverviewHighlights(updateUnits(updates), Date.now(), window.innerWidth >= 900 ? 5 : 3)
   }
-  if (state.activeTab !== 'updates' || state.detail || !previewMeasurements.size) return
-  requestAnimationFrame(() => {
-    if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
-    for (const measure of previewMeasurements.values()) measure()
-  })
 })
 
 document.fonts?.ready?.then(updateStickyMeasurements)
