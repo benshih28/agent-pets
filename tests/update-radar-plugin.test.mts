@@ -352,7 +352,7 @@ test('Update Radar heatmap days filter the list to that day of official updates'
   assert.match(panelFunctionSource('selectDay'), /state\.day = state\.day === key \? null : key/)
   assert.match(panelFunctionSource('appliedFilterCount'), /state\.day/)
   assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{[^}]*state\.day = null/s)
-  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{\s*elements\.provider\.value = 'x'\s*state\.day = null\s*activateTab\('updates', \{\s*force: true/s)
+  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{\s*state\.attentionOnly = false\s*elements\.provider\.value = 'x'\s*state\.day = null\s*activateTab\('updates', \{\s*force: true/s)
   assert.match(panelSource, /elements\.updates\.scrollIntoView\?\.\(\{ block: 'start' \}\)/)
   assert.doesNotMatch(panelSource, /scrollToUpdates/)
   assert.match(markup, /id="day-filter" class="day-filter" hidden/)
@@ -882,6 +882,167 @@ test('Update Radar tab controller defers stale panels and never reads storage or
   assert.deepEqual(apiCalls, callsAtStartup)
 })
 
+test('Update Radar overview highlights sort attention, near retirements, time, and position', () => {
+  const source = [
+    'updateDate', 'updateTimestamp', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal',
+    'unitNeedsAttention', 'overviewHighlights',
+  ].map(panelFunctionSource).join('\n')
+  const overviewHighlights = runInNewContext(`(() => { ${source}\nreturn overviewHighlights })()`, { Date, Math, Number }) as (units: unknown[][], now: number, limit?: number) => unknown[][]
+  const now = Date.parse('2026-11-04T12:00:00.000Z')
+  const at = (days: number) => new Date(now + days * 86_400_000).toISOString().slice(0, 10)
+  const unit = (id: string, options: Record<string, unknown> = {}) => [{
+    id,
+    provider: 'openai',
+    sourceId: 'openai-api',
+    changeType: 'improved',
+    publishedAtTime: '2026-10-20T00:00:00.000Z',
+    position: 10,
+    ...options,
+  }]
+  const attentionPositionLate = unit('attention-position-8', { changeType: 'removed', publishedAtTime: '2026-10-30T00:00:00.000Z', position: 8 })
+  const attentionPositionFirst = unit('attention-position-3', { changeType: 'deprecated', publishedAtTime: '2026-10-30T00:00:00.000Z', position: 3 })
+  const attentionOlder = unit('attention-old', { changeType: 'removed', publishedAtTime: '2026-10-29T00:00:00.000Z', position: 1 })
+  const retirementSoon = unit('retirement-soon', { publishedAtTime: '2026-10-01T00:00:00.000Z', position: 7, retirements: [{ date: at(10) }] })
+  const fresh = unit('fresh', { publishedAtTime: '2026-11-03T00:00:00.000Z', position: 0 })
+  const retirementFar = unit('retirement-far', { publishedAtTime: '2026-10-29T00:00:00.000Z', position: 2, retirements: [{ date: at(31) }] })
+  const tibo = unit('tibo', { provider: 'x', sourceId: 'tibo-x', publishedAtTime: '2026-11-04T11:00:00.000Z' })
+  const units = [fresh, tibo, retirementFar, attentionPositionLate, retirementSoon, attentionOlder, attentionPositionFirst]
+
+  const ordered = overviewHighlights(units, now, 10).map(entries => entries[0].id)
+  assert.deepEqual(ordered, [
+    'attention-position-3', 'attention-position-8', 'attention-old', 'retirement-soon', 'fresh', 'retirement-far',
+  ])
+  assert.deepEqual(overviewHighlights(units, now).map(entries => entries[0].id), ['attention-position-3', 'attention-position-8', 'attention-old'])
+  assert.deepEqual(overviewHighlights(units, now, 2).map(entries => entries[0].id), ['attention-position-3', 'attention-position-8'])
+  assert.deepEqual(overviewHighlights([], now), [])
+})
+
+test('Update Radar attention-only is a counted, clearable card-level filter', () => {
+  const context = {
+    state: { day: null as string | null, attentionOnly: true },
+    elements: {
+      search: { value: '' }, provider: { value: '' }, category: { value: '' }, changeType: { value: '' },
+    },
+  }
+  const appliedFilterCount = runInNewContext(`(${panelFunctionSource('appliedFilterCount')})`, context) as () => number
+  assert.equal(appliedFilterCount(), 1)
+  const clearUpdateFilters = runInNewContext(`(${panelFunctionSource('clearUpdateFilters')})`, context) as () => void
+  clearUpdateFilters()
+  assert.equal(context.state.attentionOnly, false)
+  assert.equal(appliedFilterCount(), 0)
+
+  const matchesFilters = runInNewContext(`(${panelFunctionSource('matchesFilters')})`, {
+    state: { day: null, attentionOnly: true },
+    elements: {
+      provider: { value: '' }, category: { value: '' }, changeType: { value: '' }, search: { value: '' },
+    },
+    isTiboUpdate: (update: any) => update.provider === 'x',
+    heatDateKey: () => '',
+    unitNeedsAttention: (unit: any[]) => unit.some(update => ['removed', 'deprecated'].includes(update.changeType)),
+  }) as (update: unknown, unit: unknown[]) => boolean
+  const grouped = [{ id: 'release-added', changeType: 'added' }, { id: 'release-removed', changeType: 'removed' }]
+  assert.equal(matchesFilters(grouped[0], grouped), true, 'a qualifying grouped card remains visible as one unit')
+  assert.equal(matchesFilters(grouped[0], [grouped[0]]), false, 'a non-attention card is excluded')
+})
+
+test('Update Radar overview contains only the summary and source disclosure surface', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const overviewStart = markup.indexOf('<section id="panel-overview"')
+  const updatesStart = markup.indexOf('<section id="panel-updates"')
+  assert.ok(overviewStart >= 0 && updatesStart > overviewStart)
+  const overview = markup.slice(overviewStart, updatesStart)
+  assert.doesNotMatch(overview, /id="updates"|id="heatmap"|codex-reset-facts/)
+  assert.match(overview, /id="overview-alerts"[^>]*aria-label="更新警示"/)
+  assert.match(overview, /id="overview-count-button"[^>]*type="button"/)
+  assert.match(overview, /id="overview-attention-button"[^>]*type="button"/)
+  assert.match(overview, /id="overview-sources-button"[^>]*type="button"/)
+  assert.match(overview, /id="codex-overview-status"[^>]*type="button"/)
+  assert.match(overview, /id="overview-highlights-list"/)
+  assert.match(markup, /id="attention-only" type="checkbox"/)
+  assert.match(markup, /id="active-filter-chips"/)
+})
+
+test('Update Radar desktop summary numbers and labels remain untruncated', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(styles, /\.summary-copy strong\s*\{[^}]*overflow:\s*visible[^}]*text-overflow:\s*clip[^}]*white-space:\s*nowrap/s)
+  assert.match(styles, /\.summary-copy > span\s*\{[^}]*overflow:\s*visible[^}]*text-overflow:\s*clip[^}]*white-space:\s*nowrap/s)
+  const desktopOverview = styles.match(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.match(desktopOverview, /\.summary-card\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/)
+  assert.match(desktopOverview, /\.summary-icon\s*\{\s*display:\s*none;\s*\}/)
+})
+
+test('Update Radar disclosure chevron is SVG only and legacy details rules are removed', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  assert.match(panelSource, /createIcon\('chevron', 'disclosure-chevron'\)/)
+  assert.match(styles, /\.disclosure-button\[aria-expanded="true"\] \.disclosure-chevron\s*\{\s*transform:\s*rotate\(180deg\);\s*\}/)
+  assert.doesNotMatch(styles, /\.disclosure-chevron\s*\{[^}]*border-(?:right|bottom)/s)
+  assert.doesNotMatch(styles, /\.status-summary|\.status-panel\[open\].*disclosure-chevron|::-webkit-details-marker/)
+  assert.match(styles, /\.disclosure-button \.disclosure-chevron\s*\{[^}]*transition:\s*transform\s+0\.15s\s+ease/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.disclosure-button \.disclosure-chevron\s*\{\s*transition:\s*none;/)
+})
+
+test('Update Radar compact overview highlights put metadata and title on separate lines', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const compactOverview = styles.match(/@media \(max-width: 430px\), \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.match(compactOverview, /\.overview-highlight-row\s*\{[^}]*grid-template-areas:[\s\S]*?"source right"\s*"title title"/)
+  assert.match(compactOverview, /\.overview-highlight-source::after\s*\{\s*content:\s*" ·";/)
+  assert.match(styles, /\.overview-highlight-version\s*\{[^}]*text-overflow:\s*clip[^}]*white-space:\s*nowrap/)
+  assert.match(panelSource, /appendText\(right, 'time', 'overview-highlight-time'/)
+})
+
+test('Update Radar disclosure keeps aria state, region links, and native button activation in sync', () => {
+  class DisclosureElement {
+    id = ''
+    type = ''
+    className = ''
+    textContent = ''
+    hidden = false
+    children: DisclosureElement[] = []
+    attributes = new Map<string, string>()
+    listeners = new Map<string, () => void>()
+    setAttribute(name: string, value: string) { this.attributes.set(name, value) }
+    getAttribute(name: string) { return this.attributes.get(name) ?? null }
+    append(...children: DisclosureElement[]) { this.children.push(...children) }
+    prepend(child: DisclosureElement) { this.children.unshift(child) }
+    addEventListener(name: string, listener: () => void) { this.listeners.set(name, listener) }
+  }
+  const context: Record<string, any> = {
+    document: { createElement: () => new DisclosureElement() },
+    state: { disclosures: new Map<string, boolean>() },
+    createIcon: (_name: string, className: string) => {
+      const icon = new DisclosureElement()
+      icon.className = className
+      return icon
+    },
+  }
+  context.appendText = runInNewContext(`(${panelFunctionSource('appendText')})`, context)
+  const createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context) as (options: Record<string, unknown>) => any
+  const disclosure = createDisclosure({ id: 'source-status', title: '來源狀態', meta: '2 個失敗', tone: 'danger' })
+  const { button, region } = disclosure
+  assert.equal(button.type, 'button', 'native button Enter/Space activation is retained')
+  assert.equal(button.getAttribute('aria-expanded'), 'false')
+  assert.equal(region.hidden, true)
+  assert.equal(button.getAttribute('aria-controls'), region.id)
+  assert.equal(region.getAttribute('aria-labelledby'), button.id)
+  assert.equal(button.children[1].className, 'disclosure-meta disclosure-meta-danger')
+  assert.equal(region.children.includes(button.children[1]), false, 'collapsed failure meta remains outside the region')
+  button.listeners.get('click')?.()
+  assert.equal(button.getAttribute('aria-expanded'), 'true')
+  assert.equal(region.hidden, false)
+  assert.equal(context.state.disclosures.get('source-status'), true)
+  button.listeners.get('click')?.()
+  assert.equal(button.getAttribute('aria-expanded'), 'false')
+  assert.equal(region.hidden, true)
+  assert.equal(context.state.disclosures.get('source-status'), false)
+  assert.match(panelFunctionSource('createDisclosure'), /button\.type = 'button'/)
+
+  const renderOverview = panelFunctionSource('renderOverview')
+  assert.match(renderOverview, /failedCount\s*\?\s*`\$\{failedCount\} 個失敗/u)
+  assert.ok(renderOverview.indexOf("disclosure.root.querySelector('.disclosure-meta')") < renderOverview.indexOf("appendText(disclosure.region, 'p'"))
+})
+
 test('Update Radar keyboard tab navigation wraps, supports Home and End, and ignores other keys', () => {
   const nextTabIndex = runInNewContext(`(${panelFunctionSource('nextTabIndex')})`) as (key: string, current: number, count: number) => number | null
   assert.equal(nextTabIndex('ArrowLeft', 0, 3), 2)
@@ -902,8 +1063,12 @@ test('Update Radar keyboard tab navigation wraps, supports Home and End, and ign
 
 test('Update Radar reset timers and preview measurements follow their visible tab', () => {
   const syncLifecycleSource = panelFunctionSource('syncTabLifecycles')
+  const overviewResetSource = panelFunctionSource('renderOverviewCodexStatus')
+  const countdownTickSource = panelFunctionSource('tickCodexCountdown')
   assert.match(syncLifecycleSource, /const updatesVisible = state\.activeTab === 'updates' && !state\.detail && !elements\.panels\.updates\.hidden/)
   assert.match(syncLifecycleSource, /const countdownVisible = !state\.detail && \['overview', 'reset'\]\.includes\(state\.activeTab\)/)
+  assert.match(overviewResetSource, /text = countdown === '預定時間已到，等待狀態更新'\s*\? countdown\s*:/)
+  assert.match(countdownTickSource, /countdownText === '預定時間已到，等待狀態更新'\s*\? countdownText\s*:/)
   const cleared: number[] = []
   const timers: Array<{ id: number, callback: () => void }> = []
   let nextTimer = 1
@@ -968,7 +1133,8 @@ test('Update Radar uses sticky single-column tabs and removes sidebar layout cod
   assert.match(styles, /\.radar-tab\[aria-selected="true"\] \{ border-bottom-color: Highlight; color: CanvasText; font-weight: 700; \}/)
   assert.match(narrowTabs, /\.radar-tab-count \{ display: none; \}/)
   assert.match(desktop, /width: min\(100%, 760px\)/)
-  assert.doesNotMatch(desktop, /grid-template-areas|grid-template-columns: 368px/)
+  assert.doesNotMatch(desktop, /grid-template-columns: 368px/)
+  assert.match(desktop, /\.overview-grid \{[^}]*grid-template-areas:/s, 'the overview alone uses the required two-column desktop layout')
   assert.doesNotMatch(markup + styles + panelSource, /radar-sidebar|sidebarStickyTop|applySidebarLayout|--radar-sidebar-top|data-sticky/)
   assert.doesNotMatch(styles, /overflow-y:\s*(?:auto|scroll)\b/)
   assert.match(styles, /\.update-list \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-toolbar-sticky-height\) \+ var\(--radar-gap-3\)\); \}/)

@@ -28,10 +28,13 @@ const state = {
   tabScrollY: { overview: null, updates: null, reset: null },
   absoluteTime: false,
   day: null,
+  attentionOnly: false,
+  disclosures: new Map(),
   detail: null,
 }
 let codexResetCountdownTimer = null
 let codexResetCountdownTick = null
+let globalStatusTimer = null
 let previewResizeObserver = null
 const previewMeasurements = new Map()
 
@@ -57,13 +60,19 @@ const elements = {
   refreshLoader: document.querySelector('#refresh-loader'),
   status: document.querySelector('#status'),
   resultStatus: document.querySelector('#result-status'),
+  overviewAlerts: document.querySelector('#overview-alerts'),
   summaryGrid: document.querySelector('#summary-grid'),
   count: document.querySelector('#count'),
   attentionCount: document.querySelector('#attention-count'),
   healthyCount: document.querySelector('#healthy-count'),
-  healthySummary: document.querySelector('#healthy-summary'),
-  sources: document.querySelector('#sources'),
-  spotlight: document.querySelector('#spotlight'),
+  overviewCountButton: document.querySelector('#overview-count-button'),
+  overviewAttentionButton: document.querySelector('#overview-attention-button'),
+  overviewSourcesButton: document.querySelector('#overview-sources-button'),
+  codexOverviewStatus: document.querySelector('#codex-overview-status'),
+  overviewHighlightsList: document.querySelector('#overview-highlights-list'),
+  overviewAllUpdates: document.querySelector('#overview-all-updates'),
+  sourceStatus: document.querySelector('#source-status'),
+  sources: null,
   resetSpotlight: document.querySelector('#spotlight-reset'),
   heatmap: document.querySelector('#heatmap'),
   heatLoader: document.querySelector('.heat-loader'),
@@ -79,6 +88,8 @@ const elements = {
   filterToggle: document.querySelector('#filter-toggle'),
   filterToggleLabel: document.querySelector('#filter-toggle-label'),
   filterPanel: document.querySelector('#filter-panel'),
+  attentionOnly: document.querySelector('#attention-only'),
+  activeFilterChips: document.querySelector('#active-filter-chips'),
   filterCountStatus: document.querySelector('#filter-count-status'),
   clearFilters: document.querySelector('#clear-filters'),
   dayFilter: document.querySelector('#day-filter'),
@@ -117,7 +128,7 @@ async function selectPanelTheme(value) {
   try {
     await api.storage.set('panel-theme', panelTheme)
   } catch {
-    elements.status.textContent = '外觀設定未儲存，只在這次有效。'
+    setGlobalStatus('外觀設定未儲存，只在這次有效。')
   }
 }
 
@@ -162,9 +173,41 @@ function appendText(parent, tagName, className, text) {
   return element
 }
 
+function createDisclosure({ id, title, meta, open = false, tone = 'neutral' } = {}) {
+  const root = document.createElement('div')
+  root.className = 'disclosure-root'
+  const button = document.createElement('button')
+  button.id = `${id}-button`
+  button.type = 'button'
+  button.className = 'disclosure-button'
+  button.setAttribute('aria-expanded', String(Boolean(open)))
+  button.setAttribute('aria-controls', `${id}-region`)
+  appendText(button, 'span', 'disclosure-title', title)
+  appendText(button, 'span', `disclosure-meta disclosure-meta-${tone}`, meta)
+  const chevron = createIcon('chevron', 'disclosure-chevron')
+  chevron.setAttribute('aria-hidden', 'true')
+  button.append(chevron)
+  const region = document.createElement('div')
+  region.id = `${id}-region`
+  region.setAttribute('role', 'region')
+  region.setAttribute('aria-labelledby', button.id)
+  region.hidden = !open
+  button.addEventListener('click', () => {
+    const expanded = button.getAttribute('aria-expanded') !== 'true'
+    button.setAttribute('aria-expanded', String(expanded))
+    region.hidden = !expanded
+    state.disclosures.set(id, expanded)
+  })
+  root.append(button, region)
+  return { root, button, region }
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const ICON_PATHS = Object.freeze({
   history: ['M13.2 5.2A6.3 6.3 0 1 0 14.2 9', 'M13.4 2.5v3.2h-3.2', 'M8 4.6v3.7l2.3 1.4'],
+  attention: ['M8 1.5 14.5 14h-13L8 1.5Z', 'M8 5v4', 'M8 11.5v.1'],
+  chevron: ['m5.5 6.5 2.5 2.5 2.5-2.5'],
+  arrow: ['M2.5 8h10', 'm8.5 4 4 4-4 4'],
   megaphone: ['M2 6.2h3l7-3v9.6l-7-3H2z', 'M5 9.8l1.4 4h2.1l-1.5-3.4', 'M14 6.2a2.3 2.3 0 0 1 0 3.6'],
   external: ['M9 3h4v4M13 3 7.5 8.5', 'M11.5 8.5v3.8H4V4.8h3.8'],
   link: ['M6.4 9.6 9.6 6.4M5.2 11.8l-1 1a2.7 2.7 0 0 1-3.8-3.8l3-3a2.7 2.7 0 0 1 3.8 0', 'M10.8 4.2l1-1a2.7 2.7 0 0 1 3.8 3.8l-3 3a2.7 2.7 0 0 1-3.8 0'],
@@ -229,6 +272,18 @@ function setBusy(element, busy) {
   else element.removeAttribute('aria-busy')
 }
 
+function setGlobalStatus(message, duration = 4500) {
+  if (globalStatusTimer !== null) clearTimeout(globalStatusTimer)
+  globalStatusTimer = null
+  elements.status.textContent = message || ''
+  if (message && duration > 0) {
+    globalStatusTimer = setTimeout(() => {
+      elements.status.textContent = ''
+      globalStatusTimer = null
+    }, duration)
+  }
+}
+
 function createPendingSyncTracker({ timeoutMs = 30_000, setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} } = {}) {
   const pending = new Map()
 
@@ -280,12 +335,12 @@ const syncTracker = createPendingSyncTracker({
   timeoutMs: 30_000,
   onChange(key, outcome) {
     if (key === 'all') renderRefreshControl()
-    else if (state.radar && state.activeTab === 'overview' && !state.detail && outcome !== 'complete') renderSources()
+    else if (state.radar && state.activeTab === 'overview' && !state.detail && elements.sources && outcome !== 'complete') renderSources()
     if (outcome === 'timeout') {
       const source = currentSources().find(item => item.id === key)
-      elements.status.textContent = key === 'all'
+      setGlobalStatus(key === 'all'
         ? '同步逾時，請查看來源狀態。'
-        : `${source?.label ?? labels.source[key] ?? '來源'} 同步逾時，請稍後再試。`
+        : `${source?.label ?? labels.source[key] ?? '來源'} 同步逾時，請稍後再試。`)
     }
   },
 })
@@ -372,7 +427,7 @@ function renderSummaryLoading(show) {
 }
 
 function renderSpotlightSkeleton(target) {
-  target ??= state.activeTab === 'reset' ? elements.resetSpotlight : elements.spotlight
+  target ??= elements.resetSpotlight
   const card = document.createElement('article')
   card.className = 'spotlight-card codex-reset-card loading-skeleton'
   makeSkeletonBlock(card, 'skeleton-flag', '38%')
@@ -686,7 +741,7 @@ function syncTabLifecycles() {
 
   const countdownVisible = !state.detail && ['overview', 'reset'].includes(state.activeTab)
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  const interval = reducedMotion ? 60_000 : 1_000
+  const interval = reducedMotion || state.activeTab === 'overview' ? 60_000 : 1_000
   if (!countdownVisible || !codexResetCountdownTick) {
     if (codexResetCountdownTimer !== null) clearTimeout(codexResetCountdownTimer)
     codexResetCountdownTimer = null
@@ -809,6 +864,31 @@ function updateUnits(updates) {
     else units.set(key, [update])
   }
   return [...units.values()]
+}
+
+function overviewHighlights(units, now = Date.now(), limit = 3) {
+  const nowValue = now instanceof Date ? now.getTime() : new Date(now).getTime()
+  const dateValue = Number.isFinite(nowValue) ? new Date(nowValue) : new Date(0)
+  const today = Date.UTC(dateValue.getUTCFullYear(), dateValue.getUTCMonth(), dateValue.getUTCDate())
+  const cutoff = today + 30 * 86_400_000
+  const nearestRetirement = unit => Math.min(...unit.flatMap(update => Array.isArray(update.retirements) ? update.retirements : [])
+    .map(row => typeof row.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.date) ? Date.parse(`${row.date}T00:00:00Z`) : Number.NaN)
+    .filter(timestamp => Number.isFinite(timestamp) && timestamp >= today && timestamp <= cutoff))
+  const latestTimestamp = unit => Math.max(...unit.map(updateTimestamp))
+  const unitPosition = unit => Math.min(...unit.map(update => Number.isFinite(update.position) ? update.position : Number.MAX_SAFE_INTEGER))
+  return units
+    .filter(unit => Array.isArray(unit) && unit.length > 0 && !unit.some(isTiboUpdate))
+    .slice()
+    .sort((left, right) => {
+      const attentionOrder = Number(unitNeedsAttention(right)) - Number(unitNeedsAttention(left))
+      if (attentionOrder) return attentionOrder
+      const retirementOrder = nearestRetirement(left) - nearestRetirement(right)
+      if (retirementOrder) return retirementOrder
+      const timeOrder = latestTimestamp(right) - latestTimestamp(left)
+      if (timeOrder) return timeOrder
+      return unitPosition(left) - unitPosition(right)
+    })
+    .slice(0, Math.max(0, Math.floor(limit)))
 }
 
 function isCriticalChange(update) {
@@ -1035,7 +1115,7 @@ function renderChangeDetail() {
     return
   }
   const changes = group.updates
-  const matches = changes.filter(matchesFilters)
+  const matches = changes.filter(update => matchesFilters(update, changes))
   const shown = matches.length ? matches : changes
   const first = changes[0]
   const isRelease = state.detail.key.startsWith('release:')
@@ -1170,6 +1250,32 @@ function formatScheduledCountdown(value) {
   return `${days} 天 ${hours} 時 ${minutes} 分 ${seconds} 秒`
 }
 
+function tickCodexCountdown() {
+  const scheduledAt = state.radar?.codexReset?.scheduledReset?.at
+  if (typeof scheduledAt !== 'string') {
+    codexResetCountdownTick = null
+    codexResetCountdownTimer = null
+    return
+  }
+  const countdownText = formatScheduledCountdown(scheduledAt)
+  if (state.activeTab === 'overview') {
+    const shortCountdown = countdownText.match(/^\d+ 天 \d+ 時/u)?.[0]
+    elements.codexOverviewStatus.textContent = countdownText === '預定時間已到，等待狀態更新'
+      ? countdownText
+      : `Codex 重設 · ${shortCountdown ?? countdownText} 後重設`
+  } else if (state.activeTab === 'reset') {
+    const countdown = elements.resetSpotlight.querySelector('.codex-reset-countdown')
+    if (countdown) {
+      countdown.replaceChildren()
+      appendHighlightedNumbers(countdown, countdownText)
+      countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
+    }
+  }
+  codexResetCountdownTimer = null
+  if (countdownText === '預定時間已到，等待狀態更新') codexResetCountdownTick = null
+  syncTabLifecycles()
+}
+
 function appendCodexSourceAttribution(parent) {
   const sourceUrl = safeSourceUrl('https://codex-resets.com/')
   if (!sourceUrl) return
@@ -1198,7 +1304,7 @@ function appendAnnouncementAction(parent, latestReset) {
 }
 
 function renderSpotlight(target) {
-  target ??= state.activeTab === 'reset' ? elements.resetSpotlight : elements.spotlight
+  target ??= elements.resetSpotlight
   if (codexResetCountdownTimer !== null) {
     clearTimeout(codexResetCountdownTimer)
   }
@@ -1256,18 +1362,7 @@ function renderSpotlight(target) {
     countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
     const scheduledTime = appendText(card, 'time', 'codex-reset-scheduled-time', `預定時間：${formatAbsoluteResetTime(scheduledAt)}`)
     scheduledTime.dateTime = scheduledAt
-    codexResetCountdownTick = () => {
-      const nextCountdownText = formatScheduledCountdown(scheduledAt)
-      const activeSpotlight = state.activeTab === 'overview' ? elements.spotlight : elements.resetSpotlight
-      const activeCountdown = activeSpotlight.querySelector('.codex-reset-countdown')
-      if (activeCountdown) {
-        activeCountdown.replaceChildren()
-        appendHighlightedNumbers(activeCountdown, nextCountdownText)
-        activeCountdown.setAttribute('aria-label', `距預定重設時間 ${activeCountdown.textContent}`)
-      }
-      codexResetCountdownTimer = null
-      syncTabLifecycles()
-    }
+    codexResetCountdownTick = tickCodexCountdown
   } else {
     const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
     appendHighlightedNumbers(countdown, formatTimeSinceReset(reset.stats.lastResetAt))
@@ -1362,11 +1457,12 @@ function renderThread(group) {
   return article
 }
 
-function matchesFilters(update) {
+function matchesFilters(update, unit = [update]) {
   if (state.day && (isTiboUpdate(update) || heatDateKey(update) !== state.day)) return false
   if (elements.provider.value && update.provider !== elements.provider.value) return false
   if (elements.category.value && update.category !== elements.category.value) return false
   if (elements.changeType.value && update.changeType !== elements.changeType.value) return false
+  if (state.attentionOnly && !unitNeedsAttention(unit)) return false
   const query = elements.search.value.trim().toLocaleLowerCase('zh-Hant')
   if (!query) return true
   const subjects = Array.isArray(update.subjects) ? update.subjects : []
@@ -1384,14 +1480,23 @@ function renderUpdates() {
     return
   }
   setBusy(elements.updates, updateLoading)
-  const groups = groupUpdates(allUpdates).filter(group => group.updates.some(matchesFilters))
-  const visibleCount = groups.reduce((total, group) => total + group.updates.filter(matchesFilters).length, 0)
+  const matchesGroupFilters = group => group.updates.some(update => matchesFilters(update, group.updates))
+  const matchingUpdates = group => group.updates.filter(update => matchesFilters(update, group.updates))
+  const groups = groupUpdates(allUpdates).filter(matchesGroupFilters)
+  const visibleCount = groups.reduce((total, group) => total + matchingUpdates(group).length, 0)
   elements.updates.replaceChildren(...groups.map((group) => {
-    if (group.kind === 'thread') return renderThread(group)
-    if (group.kind === 'changes') return renderChangeGroup(group.updates, group.updates.filter(matchesFilters))
-    const update = group.updates[0]
-    if (isTiboUpdate(update)) return renderTiboUpdate(update)
-    return Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update) : renderOfficialUpdate(update)
+    let card
+    if (group.kind === 'thread') card = renderThread(group)
+    else if (group.kind === 'changes') card = renderChangeGroup(group.updates, matchingUpdates(group))
+    else {
+      const update = group.updates[0]
+      if (isTiboUpdate(update)) card = renderTiboUpdate(update)
+      else card = Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update) : renderOfficialUpdate(update)
+    }
+    const first = group.updates[0]
+    card.dataset.unitKey = groupKey(first) ?? `update:${first.id}`
+    card.tabIndex = -1
+    return card
   }))
   elements.empty.hidden = groups.length > 0
   elements.resultStatus.textContent = groups.length > 0
@@ -1423,7 +1528,7 @@ function selectDay(key) {
 }
 
 function appliedFilterCount() {
-  return [elements.search.value.trim(), elements.provider.value, elements.category.value, elements.changeType.value, state.day]
+  return [elements.search.value.trim(), elements.provider.value, elements.category.value, elements.changeType.value, state.day, state.attentionOnly]
     .filter(Boolean).length
 }
 
@@ -1432,6 +1537,48 @@ function renderFilterControls() {
   elements.filterToggleLabel.textContent = count ? `篩選 · ${count}` : '篩選'
   elements.filterCountStatus.textContent = count ? `已套用 ${count} 個篩選` : '未套用篩選'
   elements.clearFilters.disabled = count === 0
+  elements.attentionOnly.checked = state.attentionOnly
+  elements.activeFilterChips.replaceChildren()
+  elements.activeFilterChips.hidden = !state.attentionOnly
+  if (state.attentionOnly) {
+    const chip = appendText(elements.activeFilterChips, 'button', 'attention-filter-chip', '只看需留意')
+    chip.type = 'button'
+    chip.setAttribute('aria-label', '移除只看需留意篩選')
+    appendText(chip, 'span', 'attention-filter-chip-close', '×').setAttribute('aria-hidden', 'true')
+    chip.addEventListener('click', () => {
+      state.attentionOnly = false
+      renderFilterControls()
+      renderUpdates()
+    })
+  }
+}
+
+function clearUpdateFilters() {
+  elements.search.value = ''
+  elements.provider.value = ''
+  elements.category.value = ''
+  elements.changeType.value = ''
+  state.day = null
+  state.attentionOnly = false
+}
+
+function goToOverviewHighlight(unit) {
+  const visible = unit.some(update => matchesFilters(update, unit))
+  if (!visible) {
+    clearUpdateFilters()
+    setGlobalStatus('已清除篩選以顯示這則更新')
+  }
+  const first = unit.slice().sort(byPosition)[0]
+  const unitKey = groupKey(first) ?? `update:${first.id}`
+  activateTab('updates', {
+    force: true,
+    afterRestore() {
+      const card = [...elements.updates.querySelectorAll('[data-unit-key]')].find(item => item.dataset.unitKey === unitKey)
+      if (!card) return
+      card.scrollIntoView?.({ block: 'start' })
+      card.focus({ preventScroll: true })
+    },
+  })
 }
 
 function setFilterPanelOpen(open) {
@@ -1576,9 +1723,12 @@ function renderHeatmap() {
 }
 
 function renderSources() {
+  if (!elements.sources) return
   const sources = Array.isArray(state.radar?.sources) ? state.radar.sources : []
   elements.sources.replaceChildren(...sources.map((source) => {
     const row = document.createElement('article')
+    row.dataset.sourceId = source.id
+    row.tabIndex = -1
     const status = ['idle', 'loading', 'ok', 'stale', 'error'].includes(source.status) ? source.status : 'idle'
     const pendingRetry = syncTracker.isPending(source.id)
     const displayStatus = pendingRetry && status !== 'loading' ? 'loading' : status
@@ -1602,7 +1752,7 @@ function renderSources() {
       retry.disabled = pendingRetry
       if (pendingRetry) retry.append(createPixelLoader('pixel-loader retry-pixel-loader'))
       retry.addEventListener('click', async () => {
-        elements.status.textContent = `正在重新同步${source.label ?? labels.source[source.id] ?? '來源'}…`
+        setGlobalStatus(`正在重新同步${source.label ?? labels.source[source.id] ?? '來源'}…`, 0)
         const delivered = await dispatchSyncRequest(
           syncTracker,
           message => api.ui.postMessage(message),
@@ -1610,7 +1760,7 @@ function renderSources() {
           { type: 'radar:retry-source', sourceId: source.id },
         )
         if (!delivered) {
-          elements.status.textContent = '插件沒有回應，請確認已啟用。'
+          setGlobalStatus('插件沒有回應，請確認已啟用。')
         }
       })
     }
@@ -1626,20 +1776,210 @@ function renderTimeMode() {
   elements.timeMode.setAttribute('aria-label', `切換為${nextLabel}`)
 }
 
+function renderOverviewAlerts(sources, attentionUnits) {
+  const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+  const failedSources = sources.filter(source => ['error', 'stale'].includes(source.status))
+  const hasCache = Boolean(state.radar?.codexReset || updates.length || state.radar?.baselineSourceIds?.length || sources.some(source => source.itemCount > 0))
+  const allFailed = sources.length > 0 && failedSources.length === sources.length
+  const alerts = []
+
+  if (failedSources.length > 0) {
+    const message = `${failedSources.length} 個來源讀取失敗${allFailed && hasCache ? '，顯示上次的資料' : ''}`
+    const item = document.createElement('li')
+    const button = appendText(item, 'button', 'overview-alert-action overview-alert-danger', '')
+    button.type = 'button'
+    button.append(createIcon('attention', 'overview-alert-icon'))
+    appendText(button, 'span', 'overview-alert-copy', message)
+    button.append(createIcon('arrow', 'overview-alert-arrow'))
+    button.addEventListener('click', () => {
+      const disclosureButton = elements.sourceStatus.querySelector('.disclosure-button')
+      if (disclosureButton?.getAttribute('aria-expanded') !== 'true') disclosureButton?.click()
+      window.requestAnimationFrame(() => {
+        const sourceRow = [...(elements.sources?.children ?? [])].find(row => row.dataset.sourceId === failedSources[0].id)
+        if (!sourceRow) return
+        sourceRow.scrollIntoView?.({ block: 'nearest' })
+        ;(sourceRow.querySelector('.retry-button') ?? sourceRow).focus({ preventScroll: true })
+      })
+    })
+    alerts.push(item)
+  }
+
+  if (attentionUnits.length > 0) {
+    const includesLifecycleChange = attentionUnits.some(unit => unit.some(isCriticalChange))
+    const includesEffectiveDate = attentionUnits.some(unit => unit.some(update => Boolean(update.effectiveAt)))
+    const hasCritical = attentionUnits.some(unit => unit.some(update => attentionSignal(update).tone === 'critical'))
+    const reason = includesLifecycleChange ? '含移除或棄用' : includesEffectiveDate ? '含生效日期' : ''
+    const message = `${attentionUnits.length} 則需留意更新${reason ? `（${reason}）` : ''}`
+    const item = document.createElement('li')
+    const button = appendText(item, 'button', `overview-alert-action ${hasCritical ? 'overview-alert-danger' : 'overview-alert-warning'}`, '')
+    button.type = 'button'
+    button.append(createIcon('attention', 'overview-alert-icon'))
+    appendText(button, 'span', 'overview-alert-copy', message)
+    button.append(createIcon('arrow', 'overview-alert-arrow'))
+    button.addEventListener('click', () => {
+      state.attentionOnly = true
+      activateTab('updates', { force: true })
+    })
+    alerts.push(item)
+  }
+
+  elements.overviewAlerts.replaceChildren(...alerts)
+  elements.overviewAlerts.hidden = alerts.length === 0
+}
+
+function renderOverviewCodexStatus() {
+  if (codexResetCountdownTimer !== null) clearTimeout(codexResetCountdownTimer)
+  codexResetCountdownTimer = null
+  codexResetCountdownTick = null
+  const reset = state.radar?.codexReset
+  const source = currentSources().find(item => item.id === 'codex-resets')
+  const scheduledAt = reset?.scheduledReset?.at
+  const validSchedule = typeof scheduledAt === 'string' && Number.isFinite(Date.parse(scheduledAt))
+  const futureSchedule = validSchedule && Date.parse(scheduledAt) > Date.now()
+  let text
+
+  if (!reset) {
+    if (['error', 'stale'].includes(source?.status)) text = '無法讀取 Codex 重設資料，請稍後再試。'
+    else if (!state.radar || source?.status === 'loading' || isInitialDataSyncing()) {
+      elements.codexOverviewStatus.replaceChildren()
+      appendText(elements.codexOverviewStatus, 'span', 'codex-overview-prefix', 'Codex 重設 ·')
+      const skeleton = makeSkeletonBlock(elements.codexOverviewStatus, 'codex-overview-skeleton', '52%')
+      skeleton.classList.add('loading-skeleton')
+      elements.codexOverviewStatus.classList.add('is-loading')
+      setBusy(elements.codexOverviewStatus, true)
+      return
+    } else text = '尚無 Codex 重設資料，同步中…'
+  } else if (futureSchedule) {
+    const countdown = formatScheduledCountdown(scheduledAt)
+    const shortCountdown = countdown.match(/^\d+ 天 \d+ 時/u)?.[0]
+    text = `Codex 重設 · ${shortCountdown ?? countdown} 後重設`
+    codexResetCountdownTick = tickCodexCountdown
+  } else if (validSchedule) {
+    const countdown = formatScheduledCountdown(scheduledAt)
+    text = countdown === '預定時間已到，等待狀態更新'
+      ? countdown
+      : `Codex 重設 · ${countdown}`
+  } else {
+    const elapsedText = formatTimeSinceReset(reset.stats?.lastResetAt)
+    const elapsed = elapsedText.replace(/^距上次重設\s*/u, '')
+    const distance = elapsedText === '上次重設時間不明' ? elapsedText : `距上次 ${elapsed}`
+    text = `Codex 重設 · ${distance} · 共 ${reset.stats?.total ?? 0} 次`
+  }
+
+  elements.codexOverviewStatus.classList.remove('is-loading')
+  elements.codexOverviewStatus.textContent = text
+  setBusy(elements.codexOverviewStatus, !reset && (source?.status === 'loading' || isInitialDataSyncing()))
+}
+
+function renderOverviewHighlights(units, now, limit) {
+  const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+  const sources = currentSources()
+  const allFailed = sources.length > 0 && sources.every(source => ['error', 'stale'].includes(source.status))
+  const hasCache = Boolean(state.radar?.codexReset || updates.length || state.radar?.baselineSourceIds?.length || sources.some(source => source.itemCount > 0))
+  if (updates.length === 0 && !hasKnownOfficialSnapshot() && isInitialDataSyncing()) {
+    const rows = Array.from({ length: 3 }, () => {
+      const item = document.createElement('li')
+      item.className = 'overview-highlight-skeleton loading-skeleton'
+      makeSkeletonBlock(item, 'overview-highlight-skeleton-source', '22%')
+      makeSkeletonBlock(item, 'overview-highlight-skeleton-title', '46%')
+      makeSkeletonBlock(item, 'overview-highlight-skeleton-time', '15%')
+      return item
+    })
+    elements.overviewHighlightsList.replaceChildren(...rows)
+    elements.overviewHighlightsList.setAttribute('aria-busy', 'true')
+    elements.overviewAllUpdates.hidden = true
+    return
+  }
+
+  const highlights = overviewHighlights(units, now, limit)
+  const items = highlights.map((unit) => {
+    const first = unit.slice().sort(byPosition)[0]
+    const version = unit.find(update => typeof update.version === 'string' && update.version.length > 0)?.version
+    const title = version
+      ? (version.toLowerCase().startsWith('v') ? version : `v${version}`)
+      : first.title || first.summary || '未命名更新'
+    const timeUpdate = unit.reduce((latest, update) => updateTimestamp(update) > updateTimestamp(latest) ? update : latest, unit[0])
+    const attention = unitNeedsAttention(unit)
+    const item = document.createElement('li')
+    const button = appendText(item, 'button', 'overview-highlight-row', '')
+    button.type = 'button'
+    appendText(button, 'span', 'overview-highlight-source', sourceLabel(first))
+    const right = document.createElement('span')
+    right.className = 'overview-highlight-right'
+    const time = appendText(right, 'time', 'overview-highlight-time', formatUpdateTime(timeUpdate))
+    time.dateTime = timeUpdate.publishedAtTime ?? timeUpdate.publishedAt ?? ''
+    if (attention) {
+      const marker = document.createElement('span')
+      marker.className = 'overview-highlight-attention'
+      marker.append(createIcon('attention', 'overview-highlight-attention-icon'))
+      appendText(marker, 'span', '', '需留意')
+      right.append(marker)
+    }
+    button.append(right)
+    appendText(button, 'span', `overview-highlight-title${version ? ' overview-highlight-version' : ''}`, title)
+    button.addEventListener('click', () => goToOverviewHighlight(unit))
+    return item
+  })
+
+  if (items.length === 0) {
+    const item = document.createElement('li')
+    if (allFailed && !hasCache) {
+      appendText(item, 'p', 'overview-highlights-empty', '目前無法讀取更新，請稍後重新整理。')
+      const retry = appendText(item, 'button', 'overview-retry', '重新整理')
+      retry.type = 'button'
+      retry.addEventListener('click', () => elements.refresh.click())
+    } else {
+      appendText(item, 'p', 'overview-highlights-empty', '目前沒有官方更新')
+    }
+    items.push(item)
+  }
+  elements.overviewHighlightsList.replaceChildren(...items)
+  elements.overviewHighlightsList.setAttribute('aria-busy', 'false')
+  elements.overviewAllUpdates.hidden = false
+}
+
 function renderOverview() {
   const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
   const sources = currentSources()
   const units = updateUnits(updates)
   const attention = units.filter(unitNeedsAttention).length
+  const attentionUnits = units.filter(unitNeedsAttention)
   const healthy = sources.filter(source => source.status === 'ok').length
+  const updateLoading = sources.some(source => source.status === 'loading' && source.id !== 'codex-resets')
   elements.count.textContent = String(units.length)
   elements.attentionCount.textContent = String(attention)
   elements.healthyCount.textContent = `${healthy}/${sources.length || 7}`
-  elements.healthySummary.textContent = `${healthy}/${sources.length || 7} 正常`
-  const updateLoading = sources.some(source => source.status === 'loading' && source.id !== 'codex-resets')
   renderSummaryLoading(updates.length === 0 && !hasKnownUpdateSnapshot() && (updateLoading || isInitialDataSyncing()))
-  renderSpotlight()
+  renderOverviewAlerts(sources, attentionUnits)
+
+  const latestSourceCheck = sources.reduce((latest, source) => {
+    const timestamp = Date.parse(source.fetchedAt ?? '')
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest
+  }, 0)
+  const checkedAt = Date.parse(state.radar?.lastCheckedAt ?? '') || latestSourceCheck
+  const checkedText = Number.isFinite(checkedAt)
+    ? new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(checkedAt)
+    : '尚未檢查'
+  const failedCount = sources.filter(source => ['error', 'stale'].includes(source.status)).length
+  const sourceMeta = failedCount
+    ? `${failedCount} 個失敗 · 上次檢查 ${checkedText}`
+    : `${healthy}/${sources.length || 7} 正常 · 上次檢查 ${checkedText}`
+  const disclosure = createDisclosure({
+    id: 'source-status-disclosure',
+    title: '來源狀態',
+    meta: sourceMeta,
+    open: state.disclosures.get('source-status-disclosure') === true,
+    tone: failedCount ? 'danger' : 'neutral',
+  })
+  if (failedCount) disclosure.root.querySelector('.disclosure-meta')?.prepend(createIcon('attention', 'disclosure-meta-icon'))
+  const sourceMessage = appendText(disclosure.region, 'p', 'source-status-message', '失敗的來源會自動重試，已有資料會保留。')
+  sourceMessage.setAttribute('aria-live', 'off')
+  elements.sources = appendText(disclosure.region, 'div', 'source-grid', '')
+  elements.sourceStatus.replaceChildren(disclosure.root)
   renderSources()
+
+  renderOverviewCodexStatus()
+  renderOverviewHighlights(units, Date.now(), window.innerWidth >= 900 ? 5 : 3)
 
   const today = new Date()
   today.setHours(12, 0, 0, 0)
@@ -1754,15 +2094,16 @@ const tabController = createTabController({
     const resetAt = radar?.codexReset?.scheduledReset?.at
     const hasFutureSchedule = typeof resetAt === 'string' && Number.isFinite(Date.parse(resetAt)) && Date.parse(resetAt) > Date.now()
     syncTracker.observe(sources)
+    const pendingSync = syncTracker.isPending('all') || sources.some(source => syncTracker.isPending(source.id))
     elements.updatesCount.textContent = String(units.length)
     elements.tabs.updates.setAttribute('aria-label', `更新動態，${units.length} 張卡片`)
     elements.resetTabDot.hidden = !hasFutureSchedule
     elements.tabs.reset.setAttribute('aria-label', hasFutureSchedule ? 'Codex 重設，已排定重設' : 'Codex 重設')
     renderRefreshControl()
-    elements.status.textContent = loading
+    setGlobalStatus(loading
       ? '正在檢查公開來源…'
-      : syncTracker.isPending('all') ? '正在重新整理所有來源…'
-      : `上次檢查：${formatDateTime(radar?.lastCheckedAt)}。失敗的來源會自動重試，已有資料會保留。`
+      : pendingSync ? (syncTracker.isPending('all') ? '正在重新整理所有來源…' : '正在重新整理來源…')
+      : '', 0)
     // 詳情頁是更新動態的子畫面；同步時就地更新，版本消失時返回清單。
     renderChangeDetail()
   },
@@ -1807,15 +2148,36 @@ elements.filterToggle.addEventListener('click', () => {
 })
 
 elements.clearFilters.addEventListener('click', () => {
-  elements.search.value = ''
-  elements.provider.value = ''
-  elements.category.value = ''
-  elements.changeType.value = ''
-  state.day = null
+  clearUpdateFilters()
   renderFilterControls()
   renderHeatmap()
   renderUpdates()
 })
+
+elements.attentionOnly.addEventListener('change', () => {
+  state.attentionOnly = elements.attentionOnly.checked
+  renderFilterControls()
+  renderUpdates()
+})
+
+elements.overviewCountButton.addEventListener('click', () => {
+  clearUpdateFilters()
+  activateTab('updates', { force: true })
+})
+
+elements.overviewAttentionButton.addEventListener('click', () => {
+  state.attentionOnly = true
+  activateTab('updates', { force: true })
+})
+
+elements.overviewSourcesButton.addEventListener('click', () => {
+  const disclosureButton = elements.sourceStatus.querySelector('.disclosure-button')
+  if (disclosureButton?.getAttribute('aria-expanded') !== 'true') disclosureButton?.click()
+  elements.sourceStatus.scrollIntoView?.({ block: 'nearest' })
+})
+
+elements.codexOverviewStatus.addEventListener('click', () => activateTab('reset'))
+elements.overviewAllUpdates.addEventListener('click', () => activateTab('updates', { force: true }))
 
 elements.heatmap.addEventListener('click', (event) => {
   const button = event.target.closest?.('.heat-cell-button')
@@ -1827,6 +2189,7 @@ elements.dayFilterClear.addEventListener('click', () => {
 })
 
 elements.tiboSummary.addEventListener('click', () => {
+  state.attentionOnly = false
   elements.provider.value = 'x'
   state.day = null
   activateTab('updates', {
@@ -1858,6 +2221,10 @@ tabController.renderCurrent()
 
 window.addEventListener('resize', () => {
   updateStickyMeasurements()
+  if (state.activeTab === 'overview' && !state.detail) {
+    const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+    renderOverviewHighlights(updateUnits(updates), Date.now(), window.innerWidth >= 900 ? 5 : 3)
+  }
   if (state.activeTab !== 'updates' || state.detail || !previewMeasurements.size) return
   requestAnimationFrame(() => {
     if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
@@ -1875,10 +2242,10 @@ elements.timeMode.addEventListener('click', () => {
 
 elements.refresh.addEventListener('click', async () => {
   if (syncTracker.isPending('all')) return
-  elements.status.textContent = '正在重新整理所有來源…'
+  setGlobalStatus('正在重新整理所有來源…', 0)
   const delivered = await dispatchSyncRequest(syncTracker, message => api.ui.postMessage(message), 'all', { type: 'radar:refresh' })
   if (!delivered) {
-    elements.status.textContent = '插件沒有回應，請確認已啟用。'
+    setGlobalStatus('插件沒有回應，請確認已啟用。')
   }
 })
 
@@ -1890,12 +2257,12 @@ try {
   const stored = await api.storage.get('radar-state')
   if (stored.found) receiveState(stored.value)
 } catch {
-  elements.status.textContent = '讀不到已保存的資料，正在重新取得…'
+  setGlobalStatus('讀不到已保存的資料，正在重新取得…')
 }
 
 try {
   const result = await api.ui.postMessage({ type: 'radar:get-state' })
-  if (!result.delivered) elements.status.textContent = '插件沒有回應，請確認已啟用。'
+  if (!result.delivered) setGlobalStatus('插件沒有回應，請確認已啟用。')
 } catch {
-  elements.status.textContent = '插件沒有回應，請確認已啟用。'
+  setGlobalStatus('插件沒有回應，請確認已啟用。')
 }
