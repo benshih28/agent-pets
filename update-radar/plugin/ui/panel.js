@@ -73,6 +73,7 @@ const elements = {
   sourceStatus: document.querySelector('#source-status'),
   sources: null,
   resetSpotlight: document.querySelector('#spotlight-reset'),
+  resetSources: null,
   heatDisclosureHost: document.querySelector('#heat-disclosure-host'),
   heatContent: document.querySelector('#heat-content'),
   heatmap: document.querySelector('#heatmap'),
@@ -354,7 +355,12 @@ const syncTracker = createPendingSyncTracker({
   timeoutMs: 30_000,
   onChange(key, outcome) {
     if (key === 'all') renderRefreshControl()
-    else if (state.radar && state.activeTab === 'overview' && !state.detail && elements.sources && outcome !== 'complete') renderSources()
+    else if (state.radar && !state.detail && outcome !== 'complete') {
+      if (state.activeTab === 'overview' && elements.sources) renderSources()
+      else if (state.activeTab === 'reset' && elements.resetSources) {
+        renderSources(elements.resetSources, currentSources().filter(source => source.id === 'codex-resets'))
+      }
+    }
     if (outcome === 'timeout') {
       const source = currentSources().find(item => item.id === key)
       setGlobalStatus(key === 'all'
@@ -458,8 +464,6 @@ function renderSpotlightSkeleton(target) {
     makeSkeletonBlock(row, 'skeleton-fact-value', width)
     card.append(row)
   }
-  makeSkeletonBlock(card, 'skeleton-action', '30%')
-  appendText(card, 'p', 'loading-copy', '正在同步…')
   target.replaceChildren(card)
   setBusy(target, true)
 }
@@ -1288,18 +1292,22 @@ function appendAnnouncementAction(parent, latestReset) {
 
 function renderSpotlight(target) {
   target ??= elements.resetSpotlight
+  elements.resetSources = null
   if (codexResetCountdownTimer !== null) {
     clearTimeout(codexResetCountdownTimer)
   }
   codexResetCountdownTimer = null
   codexResetCountdownTick = null
   const reset = state.radar?.codexReset
-  const source = currentSources().find(item => item.id === 'codex-resets')
+  const sources = currentSources()
+  const source = sources.find(item => item.id === 'codex-resets')
+  const allSourcesFailed = sources.length > 0 && sources.every(item => ['stale', 'error'].includes(item.status))
   const sourceLoading = source?.status === 'loading'
   const spotlightLoader = target.closest('.spotlight-section').querySelector('.spotlight-loader')
   spotlightLoader.hidden = !sourceLoading || !reset
   const scheduledAt = reset?.scheduledReset?.at
-  const hasFutureSchedule = typeof scheduledAt === 'string' && Number.isFinite(Date.parse(scheduledAt)) && Date.parse(scheduledAt) > Date.now()
+  const hasScheduledReset = typeof scheduledAt === 'string' && Number.isFinite(Date.parse(scheduledAt))
+  const hasFutureSchedule = hasScheduledReset && Date.parse(scheduledAt) > Date.now()
   const card = document.createElement('article')
   card.className = 'spotlight-card codex-reset-card'
 
@@ -1308,44 +1316,42 @@ function renderSpotlight(target) {
       renderSpotlightSkeleton(target)
       return
     }
-    const statusText = ['error', 'stale'].includes(source?.status)
-      ? '無法讀取 Codex 重設資料，請稍後再試。'
-      : '尚無 Codex 重設資料，同步中…'
-    appendText(card, 'p', 'codex-reset-status', statusText).setAttribute('role', 'status')
-    appendCodexSourceAttribution(card)
+    appendText(card, 'p', 'codex-reset-status', '無法讀取 Codex 重設資料，請稍後再試。').setAttribute('role', 'status')
+    appendCodexSourceDisclosure(card, source)
     target.replaceChildren(card)
     setBusy(target, false)
     return
   }
   setBusy(target, sourceLoading)
+  const staleWarning = allSourcesFailed ? document.createElement('p') : null
+  if (staleWarning) {
+    staleWarning.className = 'codex-reset-status'
+    staleWarning.textContent = '讀取失敗，顯示上次的資料。'
+    staleWarning.setAttribute('role', 'status')
+  }
 
   const cardHead = document.createElement('div')
   cardHead.className = 'codex-reset-card-head'
   const flag = document.createElement('span')
-  flag.className = 'spotlight-flag attention-neutral'
+  flag.className = `spotlight-flag ${hasScheduledReset ? 'attention-warn' : 'attention-neutral'}`
   const dot = document.createElement('span')
   dot.className = 'spotlight-flag-dot'
   dot.setAttribute('aria-hidden', 'true')
-  flag.append(dot, document.createTextNode(hasFutureSchedule ? '已排定重設' : '最新狀態'))
+  flag.append(dot, document.createTextNode(hasScheduledReset ? '已排定重設' : '最新狀態'))
   const history = document.createElement('span')
   history.className = 'reset-history-emblem'
   history.setAttribute('aria-hidden', 'true')
   history.append(createIcon('history'))
   cardHead.append(flag, history)
   card.append(cardHead)
-  if (['stale', 'error'].includes(source?.status)) {
-    appendText(card, 'p', 'codex-reset-status', '讀取失敗，顯示上次的資料。').setAttribute('role', 'status')
-  }
 
-  if (hasFutureSchedule) {
+  if (hasScheduledReset) {
     const countdownText = formatScheduledCountdown(scheduledAt)
     const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
     appendHighlightedNumbers(countdown, countdownText)
     countdown.setAttribute('aria-live', 'off')
     countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
-    const scheduledTime = appendText(card, 'time', 'codex-reset-scheduled-time', `預定時間：${formatAbsoluteResetTime(scheduledAt)}`)
-    scheduledTime.dateTime = scheduledAt
-    codexResetCountdownTick = tickCodexCountdown
+    if (hasFutureSchedule) codexResetCountdownTick = tickCodexCountdown
   } else {
     const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
     appendHighlightedNumbers(countdown, formatTimeSinceReset(reset.stats.lastResetAt))
@@ -1358,19 +1364,85 @@ function renderSpotlight(target) {
     ['重設類型', resetTypeLabel(reset.latestReset.resetType)],
     ['累計次數', `${reset.stats.total} 次`],
   ]
-  for (const [label, value] of factRows) {
+  if (hasScheduledReset) factRows.push(['預定時間', formatAbsoluteResetTime(scheduledAt), scheduledAt])
+  for (const [label, value, dateTime] of factRows) {
     const row = document.createElement('div')
     row.className = 'codex-reset-fact'
     appendText(row, 'dt', '', label)
     const factValue = appendText(row, 'dd', '', '')
     if (label === '重設類型') appendText(factValue, 'span', 'reset-type-chip', value)
-    else factValue.textContent = value
+    else if (dateTime) {
+      const scheduledTime = appendText(factValue, 'time', '', value)
+      scheduledTime.dateTime = dateTime
+    } else factValue.textContent = value
     facts.append(row)
   }
   card.append(facts)
-  appendAnnouncementAction(card, reset.latestReset)
-  appendCodexSourceAttribution(card)
-  target.replaceChildren(card)
+  appendCodexAnnouncementDisclosure(card, reset.latestReset)
+  appendCodexSourceDisclosure(card, source)
+  target.replaceChildren(...(staleWarning ? [staleWarning, card] : [card]))
+}
+
+function appendCodexAnnouncementDisclosure(parent, latestReset) {
+  const text = typeof latestReset?.text === 'string' ? latestReset.text : ''
+  const sourceUrl = safeSourceUrl(latestReset?.sourceUrl)
+  if (!text.trim() && !sourceUrl) return null
+  const id = 'codex-reset-announcement'
+  const disclosure = createDisclosure({
+    id,
+    title: '公告',
+    meta: '',
+    open: state.disclosures.get(id) === true,
+    onToggle(expanded) {
+      state.disclosures.set(id, expanded)
+      if (expanded) appendAnnouncement()
+    },
+    rootClass: 'disclosure-root codex-reset-disclosure-root',
+    buttonClass: 'disclosure-button codex-reset-disclosure-button',
+    regionClass: 'disclosure-region codex-reset-disclosure-region',
+  })
+  let populated = false
+  function appendAnnouncement() {
+    if (populated) return
+    populated = true
+    if (text.trim()) appendText(disclosure.region, 'p', 'codex-announcement-text', text.slice(0, 280))
+    if (sourceUrl) appendAnnouncementAction(disclosure.region, latestReset)
+  }
+  if (state.disclosures.get(id) === true) appendAnnouncement()
+  parent.append(disclosure.root)
+  return disclosure
+}
+
+function appendCodexSourceDisclosure(parent, source) {
+  const failed = ['stale', 'error'].includes(source?.status)
+  let readAt = ''
+  const timestamp = Date.parse(source?.fetchedAt ?? '')
+  if (Number.isFinite(timestamp)) {
+    const parts = new Map(new Intl.DateTimeFormat('zh-TW', {
+      month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(timestamp).map(part => [part.type, part.value]))
+    readAt = `${parts.get('month')}/${parts.get('day')} ${parts.get('hour')}:${parts.get('minute')}`
+  }
+  const meta = failed ? '讀取失敗' : source?.status === 'ok' ? `正常${readAt ? ` · ${readAt}` : ''}`
+    : source?.status === 'loading' ? '正在讀取' : '尚未讀取'
+  const id = 'codex-reset-source'
+  const disclosure = createDisclosure({
+    id,
+    title: '資料來源',
+    meta,
+    tone: failed ? 'danger' : 'neutral',
+    open: state.disclosures.get(id) === true,
+    rootClass: 'disclosure-root codex-reset-disclosure-root',
+    buttonClass: 'disclosure-button codex-reset-disclosure-button',
+    regionClass: 'disclosure-region codex-reset-disclosure-region',
+  })
+  if (failed) disclosure.root.querySelector('.disclosure-meta')?.prepend(createIcon('attention', 'disclosure-meta-icon'))
+  const sourceGrid = appendText(disclosure.region, 'div', 'source-grid codex-reset-source-grid', '')
+  elements.resetSources = sourceGrid
+  renderSources(sourceGrid, source ? [source] : [])
+  appendCodexSourceAttribution(disclosure.region)
+  parent.append(disclosure.root)
+  return disclosure
 }
 
 function findThreadRootId(update, byId) {
@@ -1737,10 +1809,10 @@ function renderHeatmap() {
   elements.heatmap.setAttribute('aria-label', '近 26 週每日官方 AI 更新數，週日至週六排列')
 }
 
-function renderSources() {
-  if (!elements.sources) return
-  const sources = Array.isArray(state.radar?.sources) ? state.radar.sources : []
-  elements.sources.replaceChildren(...sources.map((source) => {
+function renderSources(target = elements.sources, sourceList = currentSources()) {
+  if (!target) return
+  const sources = Array.isArray(sourceList) ? sourceList : []
+  target.replaceChildren(...sources.map((source) => {
     const row = document.createElement('article')
     row.dataset.sourceId = source.id
     row.tabIndex = -1
@@ -1752,9 +1824,14 @@ function renderSources() {
     const copy = document.createElement('div')
     copy.className = 'source-copy'
     appendText(copy, 'strong', '', source.label ?? labels.source[source.id] ?? '公開來源')
-    const detail = displayStatus === 'loading' ? '正在讀取公開來源…' : status === 'ok'
-        ? `${source.itemCount} 筆 · ${formatDateTime(source.fetchedAt)}`
-        : source.nextAttemptAt ? `${source.itemCount} 筆 · 將於 ${formatDateTime(source.nextAttemptAt)} 重試` : `${source.itemCount} 筆`
+    const lastRead = formatDateTime(source.fetchedAt)
+    const detail = displayStatus === 'loading'
+        ? (source.id === 'codex-resets' && source.fetchedAt ? `正在讀取 · 上次讀取 ${lastRead}` : '正在讀取公開來源…')
+        : status === 'ok'
+        ? `${source.itemCount} 筆 · ${lastRead}`
+        : ['stale', 'error'].includes(status)
+          ? `${source.itemCount} 筆 · 上次讀取 ${lastRead}${source.nextAttemptAt ? ` · 將於 ${formatDateTime(source.nextAttemptAt)} 重試` : ''}`
+          : source.nextAttemptAt ? `${source.itemCount} 筆 · 將於 ${formatDateTime(source.nextAttemptAt)} 重試` : `${source.itemCount} 筆`
     appendText(copy, 'span', '', detail)
     row.append(copy)
     const actions = document.createElement('div')

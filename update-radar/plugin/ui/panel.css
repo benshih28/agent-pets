@@ -468,11 +468,11 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .skeleton-fact-label,
 .skeleton-fact-value { height: 14px; }
 .skeleton-action { height: 34px; border-radius: var(--radar-radius-sm); }
-.codex-reset-countdown { margin: 0; color: var(--radar-text); font-size: clamp(18px, 5vw, 25px); font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.25; overflow-wrap: anywhere; }
-.codex-reset-number { color: var(--radar-accent); font-size: 1.15em; font-weight: 850; }
+.codex-reset-countdown { margin: 0; color: var(--radar-text); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25; overflow-wrap: anywhere; }
+.codex-reset-number { color: var(--radar-accent); font-size: inherit; font-weight: 600; }
 .codex-reset-scheduled-time { color: var(--radar-secondary); font-size: var(--radar-font-small); overflow-wrap: anywhere; }
 .codex-reset-facts { display: grid; gap: var(--radar-gap-1); margin: 0; padding-bottom: var(--radar-gap-1); }
-.codex-reset-fact { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--radar-gap-1) var(--radar-gap-2); min-width: 0; font-size: var(--radar-font-small); }
+.codex-reset-fact { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--radar-gap-1) var(--radar-gap-2); min-width: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
 .codex-reset-fact dt { color: var(--radar-secondary); }
 .codex-reset-fact dd { margin: 0; color: var(--radar-text); text-align: end; overflow-wrap: anywhere; }
 .reset-type-chip { display: inline-flex; align-items: center; min-height: 22px; padding: 1px var(--radar-gap-2); border-radius: 999px; color: var(--radar-accent); background: color-mix(in srgb, var(--radar-accent) 11%, var(--radar-surface)); font-weight: 750; }
@@ -484,6 +484,12 @@ h1 { margin: 0; font-size: var(--radar-font-title); line-height: 1.15; }
 .codex-source-link:focus-visible { outline: 3px solid var(--radar-accent); outline-offset: 2px; border-radius: 2px; }
 .codex-source-note { color: var(--radar-secondary); font-size: max(11px, var(--radar-font-small)); }
 .codex-reset-card .source-note { display: inline-flex; align-items: center; gap: var(--radar-gap-1); }
+.codex-reset-disclosure-root { min-width: 0; }
+.codex-reset-disclosure-button { min-height: 36px; padding-inline: 0; font-size: 14px; }
+.codex-reset-disclosure-region { display: grid; gap: 8px; min-width: 0; padding: 0 0 8px; }
+.codex-announcement-text { margin: 0; color: var(--radar-text); font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codex-reset-source-grid { grid-template-columns: minmax(0, 1fr); margin-top: 0; }
+.codex-reset-source-grid .source-copy span { font-variant-numeric: tabular-nums; }
 .spotlight-flag.attention-critical { color: var(--radar-danger); }
 .spotlight-flag.attention-warn { color: var(--radar-warning); }
 .spotlight-flag.attention-neutral { color: var(--radar-success); }

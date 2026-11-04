@@ -1068,6 +1068,158 @@ test('Update Radar disclosure keeps aria state, region links, and native button 
   assert.ok(renderOverview.indexOf("disclosure.root.querySelector('.disclosure-meta')") < renderOverview.indexOf("appendText(disclosure.region, 'p'"))
 })
 
+test('Update Radar Phase 4 Codex announcement and source disclosures stay collapsed and expose source failures', () => {
+  class MockNode {
+    id = ''
+    type = ''
+    className = ''
+    hidden = false
+    children: MockNode[] = []
+    attributes = new Map<string, string>()
+    listeners = new Map<string, (...args: any[]) => void>()
+    parent: MockNode | null = null
+    private ownText = ''
+    href = ''
+    dateTime = ''
+    get textContent() { return this.ownText + this.children.map(child => child.textContent).join('') }
+    set textContent(value: string) { this.ownText = String(value ?? ''); this.children = [] }
+    append(...children: MockNode[]) {
+      if (this.ownText) {
+        const textNode = new MockNode()
+        textNode.textContent = this.ownText
+        textNode.parent = this
+        this.children.push(textNode)
+        this.ownText = ''
+      }
+      for (const child of children) { child.parent = this; this.children.push(child) }
+    }
+    prepend(child: MockNode) {
+      if (this.ownText) {
+        const textNode = new MockNode()
+        textNode.textContent = this.ownText
+        textNode.parent = this
+        this.children.unshift(textNode)
+        this.ownText = ''
+      }
+      child.parent = this
+      this.children.unshift(child)
+    }
+    replaceChildren(...children: MockNode[]) { this.ownText = ''; this.children = []; this.append(...children) }
+    setAttribute(name: string, value: string) { this.attributes.set(name, value) }
+    getAttribute(name: string) { return this.attributes.get(name) ?? null }
+    removeAttribute(name: string) { this.attributes.delete(name) }
+    addEventListener(name: string, listener: (...args: any[]) => void) { this.listeners.set(name, listener) }
+    contains(node: MockNode): boolean { return this === node || this.children.some(child => child.contains(node)) }
+    querySelector(selector: string): MockNode | null {
+      const className = selector.startsWith('.') ? selector.slice(1) : ''
+      const queue = [...this.children]
+      while (queue.length) {
+        const node = queue.shift()!
+        if (className && String(node.className ?? '').split(/\s+/u).includes(className)) return node
+        queue.push(...(node.children ?? []))
+      }
+      return null
+    }
+  }
+  const context: Record<string, any> = {
+    document: {
+      createElement: () => new MockNode(),
+      createTextNode: (text: string) => { const node = new MockNode(); node.textContent = text; return node },
+    },
+    URL,
+    Intl,
+    Date,
+    Map,
+    state: { disclosures: new Map<string, boolean>() },
+    elements: { resetSources: null },
+    createIcon: (_name: string, className: string) => { const icon = new MockNode(); icon.className = className; return icon },
+    bindExternalButton: () => {},
+    bindExternalLink: () => {},
+    renderSources: (target: MockNode, sources: Array<{ status: string }>) => {
+      target.replaceChildren(...sources.map(source => {
+        const row = new MockNode()
+        row.className = 'source-row'
+        const retry = new MockNode()
+        retry.className = 'retry-button'
+        retry.textContent = ['error', 'stale'].includes(source.status) ? '立即重試' : ''
+        row.append(retry)
+        return row
+      }))
+    },
+  }
+  context.appendText = runInNewContext(`(${panelFunctionSource('appendText')})`, context)
+  context.createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context)
+  context.safeSourceUrl = runInNewContext(`(${panelFunctionSource('safeSourceUrl')})`, context)
+  context.appendAnnouncementAction = runInNewContext(`(${panelFunctionSource('appendAnnouncementAction')})`, context)
+  context.appendCodexSourceAttribution = runInNewContext(`(${panelFunctionSource('appendCodexSourceAttribution')})`, context)
+  const appendAnnouncement = runInNewContext(`(${panelFunctionSource('appendCodexAnnouncementDisclosure')})`, context) as (parent: MockNode, latest: any) => any
+  const appendSource = runInNewContext(`(${panelFunctionSource('appendCodexSourceDisclosure')})`, context) as (parent: MockNode, source: any) => any
+
+  const emptyParent = new MockNode()
+  assert.equal(appendAnnouncement(emptyParent, { text: '', sourceUrl: undefined }), null)
+  assert.equal(emptyParent.children.length, 0, 'no announcement section is created without text or a source URL')
+
+  const longText = '公告'.repeat(141)
+  const announcementParent = new MockNode()
+  const announcement = appendAnnouncement(announcementParent, { text: longText, sourceUrl: 'https://x.com/thsottiaux/status/123' })
+  assert.equal(announcement.region.hidden, true)
+  assert.equal(announcement.region.textContent, '', 'announcement content is absent from the DOM until expanded')
+  assert.equal(announcement.button.getAttribute('aria-expanded'), 'false')
+  announcement.button.listeners.get('click')?.()
+  const announcementText = announcement.region.querySelector('.codex-announcement-text')
+  assert.equal(announcement.region.hidden, false)
+  assert.equal(announcementText?.textContent.length, 280, 'announcement text has a 280 character cap')
+  assert.equal(announcement.region.querySelector('.source-button')?.textContent, '查看公告')
+  assert.equal(context.state.disclosures.get('codex-reset-announcement'), true)
+
+  context.state.disclosures.set('codex-reset-announcement', false)
+  const linkedOnly = appendAnnouncement(new MockNode(), { text: '', sourceUrl: 'https://x.com/thsottiaux/status/124' })
+  assert.ok(linkedOnly, 'a source URL alone creates the announcement disclosure')
+  assert.equal(linkedOnly.region.children.length, 0, 'a source-only announcement starts empty')
+  linkedOnly.button.listeners.get('click')?.()
+  assert.equal(linkedOnly.region.querySelector('.codex-announcement-text'), null)
+  assert.equal(linkedOnly.region.querySelector('.source-button')?.textContent, '查看公告')
+
+  const sourceParent = new MockNode()
+  const source = appendSource(sourceParent, {
+    id: 'codex-resets', status: 'error', itemCount: 1, fetchedAt: '2026-11-04T02:20:00.000Z',
+    label: 'Codex 重設',
+  })
+  const failureMeta = source.button.querySelector('.disclosure-meta')
+  assert.equal(failureMeta?.textContent, '讀取失敗')
+  assert.ok(failureMeta?.querySelector('.disclosure-meta-icon'), 'collapsed failure metadata includes an icon')
+  assert.equal(source.region.hidden, true)
+  assert.equal(source.region.contains(failureMeta!), false, 'the failure metadata is outside the collapsed region')
+  assert.equal(source.button.contains(source.region.querySelector('.source-row')!), false, 'the failure metadata stays in the title row, outside its region')
+  assert.ok(source.region.querySelector('.retry-button'), 'the Codex source row keeps the existing retry control')
+  assert.match(source.region.textContent, /codex-resets\.com/)
+  context.state.disclosures.set('codex-reset-source', false)
+  const healthySource = appendSource(new MockNode(), {
+    id: 'codex-resets', status: 'ok', itemCount: 1, fetchedAt: '2026-11-04T02:20:00.000Z', label: 'Codex 重設',
+  })
+  assert.match(healthySource.button.querySelector('.disclosure-meta')?.textContent ?? '', /^正常 · 11\/4 \d{2}:\d{2}$/)
+
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(panelFunctionSource('renderSpotlight'), /appendCodexAnnouncementDisclosure\(card, reset\.latestReset\)/)
+  assert.match(panelFunctionSource('renderSpotlight'), /appendCodexSourceDisclosure\(card, source\)/)
+  assert.match(panelFunctionSource('renderSpotlight'), /target\.replaceChildren\(\.\.\.\(staleWarning \? \[staleWarning, card\] : \[card\]\)\)/)
+  assert.match(panelFunctionSource('renderSpotlight'), /讀取失敗，顯示上次的資料。/)
+  assert.match(panelFunctionSource('renderSpotlight'), /無法讀取 Codex 重設資料，請稍後再試。/)
+  assert.match(panelFunctionSource('renderSpotlight'), /factRows\.push\(\['預定時間', formatAbsoluteResetTime\(scheduledAt\), scheduledAt\]\)/)
+  assert.match(panelFunctionSource('renderSpotlightSkeleton'), /for \(const width of \['78%', '54%', '36%'\]\)/)
+  assert.doesNotMatch(panelFunctionSource('renderSpotlightSkeleton'), /skeleton-action/)
+  assert.doesNotMatch(markup, /最新狀態與排定時間[\s\S]{0,100}(?:chevron|section-note-arrow)/, 'the false section-link affordance is removed')
+  assert.doesNotMatch(`${markup}${panelSource}`, /歷史/u, 'no history copy or empty history section is rendered')
+  assert.match(panelFunctionSource('appendCodexAnnouncementDisclosure'), /text\.slice\(0, 280\)/)
+  assert.match(panelFunctionSource('appendText'), /element\.textContent = String\(text \?\? ''\)/)
+  assert.match(panelFunctionSource('appendCodexSourceDisclosure'), /renderSources\(sourceGrid, source \? \[source\] : \[\]\)/)
+  assert.match(panelFunctionSource('renderSources'), /dispatchSyncRequest\([\s\S]*?source\.id,[\s\S]*?type: 'radar:retry-source'/)
+  assert.match(styles, /\.codex-announcement-text\s*\{[^}]*white-space:\s*pre-wrap/)
+  assert.match(styles, /\.codex-reset-countdown\s*\{[^}]*font-size:\s*24px/)
+})
+
 test('Update Radar Phase 3 cards use one disclosure and retain accessible unit identity', () => {
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
