@@ -28,153 +28,181 @@
         </div>
       </header>
 
-      <div class="radar-sidebar">
-      <section class="spotlight-section" aria-labelledby="spotlight-heading">
-        <div class="section-heading">
-          <h2 id="spotlight-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5.2 3-4 5 4 5M10.8 3l4 5-4 5M9.2 2.2 6.8 13.8" /></svg><span>Codex 重設</span></h2>
-          <span id="spotlight-loader" class="pixel-loader section-pixel-loader" aria-hidden="true" hidden></span>
-          <span class="section-note">最新狀態與排定時間<svg class="section-note-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m6 3 5 5-5 5" /></svg></span>
-        </div>
-        <div id="spotlight" class="spotlight-content" aria-busy="true"></div>
-      </section>
-
-      <section id="summary-grid" class="summary-grid" aria-label="更新摘要" aria-busy="true">
-        <div class="summary-card summary-info">
-          <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 9 4.5-9 4.5-9-4.5L12 3ZM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5" /></svg></span>
-          <div class="summary-copy"><strong id="count">0</strong><span>目前更新</span></div>
-        </div>
-        <div class="summary-card summary-attention">
-          <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3ZM12 9v5m0 3v.1" /></svg></span>
-          <div class="summary-copy"><strong id="attention-count">0</strong><span title="只計官方更新">需留意</span></div>
-        </div>
-        <div class="summary-card summary-healthy">
-          <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM7.5 12.2l3 3 6-6" /></svg></span>
-          <div class="summary-copy"><strong id="healthy-count">0/7</strong><span>來源正常</span></div>
-        </div>
-      </section>
-
-      <section class="heat-section" aria-labelledby="heat-heading">
-        <div class="heat-heading">
-          <div>
-            <h2 id="heat-heading">近 26 週官方 AI 更新</h2>
-            <p>每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo</p>
-          </div>
-          <span id="heat-loader" class="pixel-loader section-pixel-loader" aria-hidden="true" hidden></span>
-        </div>
-        <div class="heat-layout">
-          <div class="heat-weekdays" aria-hidden="true">
-            <span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span>
-          </div>
-          <div class="heat-plot">
-            <div id="heat-months" class="heat-months" aria-hidden="true"></div>
-            <ol id="heatmap" class="heat-grid" aria-label="近 26 週每日官方 AI 更新數，週日至週六排列"></ol>
-          </div>
-        </div>
-        <div class="heat-legend" role="group" aria-label="更新數量等級，五個等級由少至多">
-          <span>少</span>
-          <span class="heat-swatch" data-level="0" aria-hidden="true"></span>
-          <span class="heat-swatch" data-level="1" aria-hidden="true"></span>
-          <span class="heat-swatch" data-level="2" aria-hidden="true"></span>
-          <span class="heat-swatch" data-level="3" aria-hidden="true"></span>
-          <span class="heat-swatch" data-level="4" aria-hidden="true"></span>
-          <span>多</span>
-        </div>
-        <button id="tibo-summary" class="tibo-summary" type="button">
-          <span class="tibo-summary-marker" aria-hidden="true"></span>
-          <span id="tibo-summary-text">今天 Tibo 尚無新貼文</span>
+      <div id="radar-tabs" class="radar-tabs" role="tablist" aria-label="更新雷達功能">
+        <button id="tab-overview" class="radar-tab" type="button" role="tab" aria-selected="true" aria-controls="panel-overview" tabindex="0">總覽</button>
+        <button id="tab-updates" class="radar-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-updates" tabindex="-1" aria-label="更新動態">
+          <span>更新動態</span><span id="updates-count" class="radar-tab-count" aria-hidden="true">0</span>
         </button>
-      </section>
-
-      <details class="status-panel">
-        <summary class="status-summary">
-          <span class="status-summary-title">來源狀態</span>
-            <span id="healthy-summary" class="status-summary-count">0/7 正常</span>
-          <span class="disclosure-chevron" aria-hidden="true"></span>
-        </summary>
-        <div class="status-content">
-          <p id="status" role="status" aria-live="polite">正在讀取已保存的資料…</p>
-          <div id="sources" class="source-grid"></div>
-        </div>
-      </details>
+        <button id="tab-reset" class="radar-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-reset" tabindex="-1" aria-label="Codex 重設">
+          <span id="reset-tab-dot" class="radar-tab-dot" aria-hidden="true" hidden></span><span>Codex 重設</span>
+        </button>
       </div>
 
-      <section class="updates-region" aria-label="更新動態">
-        <div class="feed-content">
-          <h2 class="feed-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 1.8h7.2L14 4.6v9.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1ZM11 2v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3.5" /></svg><span>更新動態</span></h2>
-          <div class="toolbar" aria-label="更新篩選">
-            <div class="toolbar-main">
-              <label class="search-field">
-                <span class="visually-hidden">搜尋更新內容</span>
-                <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M7 2.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6ZM10.5 10.5 14 14" /></svg>
-                <input id="search" type="search" placeholder="模型、API、Codex…" autocomplete="off">
-              </label>
-              <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-panel">
-                <span id="filter-toggle-label">篩選</span>
-                <span class="filter-chevron" aria-hidden="true"></span>
-              </button>
-              <button id="time-mode" class="time-mode" type="button" aria-pressed="false" aria-label="切換為絕對時間">
-                <span id="time-mode-label">相對時間</span>
-                <span class="switch-track" aria-hidden="true"><span></span></span>
-              </button>
-            </div>
-            <div id="filter-panel" class="filter-panel" hidden>
-              <div class="filter-fields">
-                <label>
-                  <span>來源</span>
-                  <select id="provider">
-                    <option value="">全部</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="x">Tibo / X</option>
-                  </select>
-                </label>
-                <label>
-                  <span>類型</span>
-                  <select id="category">
-                    <option value="">全部</option>
-                    <option value="new-model">新模型</option>
-                    <option value="feature">新功能</option>
-                    <option value="developer-tool">開發工具</option>
-                    <option value="api-change">API 變更</option>
-                  </select>
-                </label>
-                <label>
-                  <span>變更</span>
-                  <select id="change-type">
-                    <option value="">全部</option>
-                    <option value="added">新增</option>
-                    <option value="improved">改善</option>
-                    <option value="fixed">修正</option>
-                    <option value="deprecated">棄用</option>
-                    <option value="removed">移除</option>
-                  </select>
-                </label>
-              </div>
-              <div class="filter-actions">
-                <span id="filter-count-status">未套用篩選</span>
-                <button id="clear-filters" class="clear-filters" type="button" disabled>清除篩選</button>
-              </div>
-            </div>
+      <p id="status" class="global-status" role="status" aria-live="polite">正在讀取已保存的資料…</p>
+
+      <section id="panel-overview" class="tab-panel overview-panel" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+        <section class="spotlight-section" aria-labelledby="spotlight-heading">
+          <div class="section-heading">
+            <h2 id="spotlight-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5.2 3-4 5 4 5M10.8 3l4 5-4 5M9.2 2.2 6.8 13.8" /></svg><span>Codex 重設</span></h2>
+            <span class="pixel-loader section-pixel-loader spotlight-loader" aria-hidden="true" hidden></span>
+            <span class="section-note">最新狀態與排定時間<svg class="section-note-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m6 3 5 5-5 5" /></svg></span>
           </div>
-          <div id="day-filter" class="day-filter" hidden>
-            <span id="day-filter-text" aria-live="polite"></span>
-            <button id="day-filter-clear" class="day-filter-clear" type="button">顯示全部</button>
+          <div id="spotlight" class="spotlight-content" aria-busy="true"></div>
+        </section>
+
+        <section id="summary-grid" class="summary-grid" aria-label="更新摘要" aria-busy="true">
+          <div class="summary-card summary-info">
+            <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 9 4.5-9 4.5-9-4.5L12 3ZM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5" /></svg></span>
+            <div class="summary-copy"><strong id="count">0</strong><span>目前更新</span></div>
           </div>
-          <p id="result-status" class="result-status" aria-live="polite"></p>
-          <section id="updates" class="update-list" aria-label="AI 更新" aria-busy="true"></section>
-          <section id="empty" class="empty-state" hidden>
-            <h2>目前沒有符合條件的更新</h2>
-            <p>試著放寬篩選，或稍後重新整理。</p>
-          </section>
-          <footer>
-            <p>內容為官方原文，未經 AI 摘要；連結會在系統瀏覽器開啟。</p>
-          </footer>
-        </div>
+          <div class="summary-card summary-attention">
+            <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3ZM12 9v5m0 3v.1" /></svg></span>
+            <div class="summary-copy"><strong id="attention-count">0</strong><span title="只計官方更新">需留意</span></div>
+          </div>
+          <div class="summary-card summary-healthy">
+            <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM7.5 12.2l3 3 6-6" /></svg></span>
+            <div class="summary-copy"><strong id="healthy-count">0/7</strong><span>來源正常</span></div>
+          </div>
+        </section>
+
+        <section class="tibo-summary-section" aria-labelledby="tibo-summary-heading">
+          <h2 id="tibo-summary-heading">Tibo 今日</h2>
+          <button id="tibo-summary" class="tibo-summary" type="button">
+            <span class="tibo-summary-marker" aria-hidden="true"></span>
+            <span id="tibo-summary-text">今天 Tibo 尚無新貼文</span>
+          </button>
+        </section>
+
+        <details class="status-panel">
+          <summary class="status-summary">
+            <span class="status-summary-title">來源狀態</span>
+            <span id="healthy-summary" class="status-summary-count">0/7 正常</span>
+            <span class="disclosure-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="status-content">
+            <div id="sources" class="source-grid"></div>
+          </div>
+        </details>
+      </section>
+
+      <section id="panel-updates" class="tab-panel updates-panel" role="tabpanel" aria-labelledby="tab-updates" tabindex="0" hidden>
+        <section class="updates-region" aria-label="更新動態">
+          <div class="feed-content">
+            <h2 class="feed-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 1.8h7.2L14 4.6v9.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1ZM11 2v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3.5" /></svg><span>更新動態</span></h2>
+            <div class="toolbar" aria-label="更新篩選">
+              <div class="toolbar-main">
+                <label class="search-field">
+                  <span class="visually-hidden">搜尋更新內容</span>
+                  <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M7 2.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6ZM10.5 10.5 14 14" /></svg>
+                  <input id="search" type="search" placeholder="模型、API、Codex…" autocomplete="off">
+                </label>
+                <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-panel">
+                  <span id="filter-toggle-label">篩選</span>
+                  <span class="filter-chevron" aria-hidden="true"></span>
+                </button>
+                <button id="time-mode" class="time-mode" type="button" aria-pressed="false" aria-label="切換為絕對時間">
+                  <span id="time-mode-label">相對時間</span>
+                  <span class="switch-track" aria-hidden="true"><span></span></span>
+                </button>
+              </div>
+              <div id="filter-panel" class="filter-panel" hidden>
+                <div class="filter-fields">
+                  <label>
+                    <span>來源</span>
+                    <select id="provider">
+                      <option value="">全部</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="x">Tibo / X</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>類型</span>
+                    <select id="category">
+                      <option value="">全部</option>
+                      <option value="new-model">新模型</option>
+                      <option value="feature">新功能</option>
+                      <option value="developer-tool">開發工具</option>
+                      <option value="api-change">API 變更</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>變更</span>
+                    <select id="change-type">
+                      <option value="">全部</option>
+                      <option value="added">新增</option>
+                      <option value="improved">改善</option>
+                      <option value="fixed">修正</option>
+                      <option value="deprecated">棄用</option>
+                      <option value="removed">移除</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="filter-actions">
+                  <span id="filter-count-status">未套用篩選</span>
+                  <button id="clear-filters" class="clear-filters" type="button" disabled>清除篩選</button>
+                </div>
+              </div>
+            </div>
+            <div id="day-filter" class="day-filter" hidden>
+              <span id="day-filter-text" aria-live="polite"></span>
+              <button id="day-filter-clear" class="day-filter-clear" type="button">顯示全部</button>
+            </div>
+            <section class="heat-section" aria-labelledby="heat-heading">
+              <div class="heat-heading">
+                <div>
+                  <h2 id="heat-heading">近 26 週官方 AI 更新</h2>
+                  <p>每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo</p>
+                </div>
+                <span class="pixel-loader section-pixel-loader heat-loader" aria-hidden="true" hidden></span>
+              </div>
+              <div class="heat-layout">
+                <div class="heat-weekdays" aria-hidden="true">
+                  <span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span>
+                </div>
+                <div class="heat-plot">
+                  <div id="heat-months" class="heat-months" aria-hidden="true"></div>
+                  <ol id="heatmap" class="heat-grid" aria-label="近 26 週每日官方 AI 更新數，週日至週六排列"></ol>
+                </div>
+              </div>
+              <div class="heat-legend" role="group" aria-label="更新數量等級，五個等級由少至多">
+                <span>少</span>
+                <span class="heat-swatch" data-level="0" aria-hidden="true"></span>
+                <span class="heat-swatch" data-level="1" aria-hidden="true"></span>
+                <span class="heat-swatch" data-level="2" aria-hidden="true"></span>
+                <span class="heat-swatch" data-level="3" aria-hidden="true"></span>
+                <span class="heat-swatch" data-level="4" aria-hidden="true"></span>
+                <span>多</span>
+              </div>
+            </section>
+            <p id="result-status" class="result-status" aria-live="polite"></p>
+            <section id="updates" class="update-list" aria-label="AI 更新" aria-busy="true"></section>
+            <section id="empty" class="empty-state" hidden>
+              <h2>目前沒有符合條件的更新</h2>
+              <p>試著放寬篩選，或稍後重新整理。</p>
+            </section>
+            <footer>
+              <p>內容為官方原文，未經 AI 摘要；連結會在系統瀏覽器開啟。</p>
+            </footer>
+          </div>
+        </section>
+      </section>
+
+      <section id="panel-reset" class="tab-panel reset-panel" role="tabpanel" aria-labelledby="tab-reset" tabindex="0" hidden>
+        <section class="spotlight-section" aria-labelledby="reset-spotlight-heading">
+          <div class="section-heading">
+            <h2 id="reset-spotlight-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5.2 3-4 5 4 5M10.8 3l4 5-4 5M9.2 2.2 6.8 13.8" /></svg><span>Codex 重設</span></h2>
+            <span class="pixel-loader section-pixel-loader spotlight-loader" aria-hidden="true" hidden></span>
+            <span class="section-note">最新狀態與排定時間<svg class="section-note-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m6 3 5 5-5 5" /></svg></span>
+          </div>
+          <div id="spotlight-reset" class="spotlight-content" aria-busy="true"></div>
+        </section>
+      </section>
+
+      <section id="change-detail" class="change-detail" hidden>
+        <button id="change-detail-back" class="detail-back" type="button">← 返回</button>
       </section>
     </main>
-    <section id="change-detail" class="radar-shell change-detail" hidden>
-      <button id="change-detail-back" class="detail-back" type="button">← 返回</button>
-    </section>
     <script type="module" src="./panel.js"></script>
   </body>
 </html>

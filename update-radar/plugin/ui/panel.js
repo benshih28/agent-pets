@@ -20,31 +20,36 @@ function applyPanelTheme(theme, root = document.documentElement) {
 let panelTheme = 'system'
 let panelThemeChosen = false
 const systemDarkQuery = window.matchMedia?.('(prefers-color-scheme: dark)') ?? null
-const state = { radar: null, absoluteTime: false, day: null, detail: null }
+const state = {
+  radar: null,
+  dataVersion: 0,
+  activeTab: 'overview',
+  tabRenderedVersion: { overview: -1, updates: -1, reset: -1 },
+  tabScrollY: { overview: null, updates: null, reset: null },
+  absoluteTime: false,
+  day: null,
+  detail: null,
+}
 let codexResetCountdownTimer = null
+let codexResetCountdownTick = null
 let previewResizeObserver = null
-let sidebarLayoutFrame = null
 const previewMeasurements = new Map()
 
-// 因不追蹤捲動方向，回捲時側欄會維持底部對齊，直到頁面接近頂部才露出上方內容。
-function sidebarStickyTop({ sidebarHeight, viewportHeight, offset, gap }) {
-  return [sidebarHeight, viewportHeight, offset, gap].every(Number.isFinite)
-    && sidebarHeight >= 0
-    && viewportHeight >= 0
-    && offset >= 0
-    && gap >= 0
-    ? sidebarHeight <= viewportHeight - offset - 2 * gap
-      ? offset + gap
-      : viewportHeight - sidebarHeight - gap
-    : null
-}
-
 const elements = {
-  shell: document.querySelector('.radar-shell'),
-  header: document.querySelector('.radar-header'),
-  sidebar: document.querySelector('.radar-sidebar'),
+  tabList: document.querySelector('#radar-tabs'),
+  tabs: {
+    overview: document.querySelector('#tab-overview'),
+    updates: document.querySelector('#tab-updates'),
+    reset: document.querySelector('#tab-reset'),
+  },
+  panels: {
+    overview: document.querySelector('#panel-overview'),
+    updates: document.querySelector('#panel-updates'),
+    reset: document.querySelector('#panel-reset'),
+  },
+  updatesCount: document.querySelector('#updates-count'),
+  resetTabDot: document.querySelector('#reset-tab-dot'),
   toolbar: document.querySelector('.toolbar'),
-  statusPanel: document.querySelector('.status-panel'),
   detailView: document.querySelector('#change-detail'),
   detailBack: document.querySelector('#change-detail-back'),
   refresh: document.querySelector('#refresh'),
@@ -59,9 +64,9 @@ const elements = {
   healthySummary: document.querySelector('#healthy-summary'),
   sources: document.querySelector('#sources'),
   spotlight: document.querySelector('#spotlight'),
-  spotlightLoader: document.querySelector('#spotlight-loader'),
+  resetSpotlight: document.querySelector('#spotlight-reset'),
   heatmap: document.querySelector('#heatmap'),
-  heatLoader: document.querySelector('#heat-loader'),
+  heatLoader: document.querySelector('.heat-loader'),
   heatMonths: document.querySelector('#heat-months'),
   tiboSummary: document.querySelector('#tibo-summary'),
   tiboSummaryText: document.querySelector('#tibo-summary-text'),
@@ -83,41 +88,18 @@ const elements = {
   timeModeLabel: document.querySelector('#time-mode-label'),
 }
 
-function applySidebarLayout() {
-  const root = document.documentElement
-  const wide = window.matchMedia?.('(min-width: 900px)').matches ?? window.innerWidth >= 900
-  const detailVisible = !elements.detailView.hidden
-  const offset = wide && !detailVisible ? elements.header.getBoundingClientRect().height : 0
-  const toolbarHeight = detailVisible ? 0 : elements.toolbar.getBoundingClientRect().height
-  const gap = Number.parseFloat(getComputedStyle(elements.shell).paddingTop)
-  const sidebarTop = wide && !detailVisible ? sidebarStickyTop({
-    sidebarHeight: elements.sidebar.getBoundingClientRect().height,
-    viewportHeight: window.innerHeight,
-    offset,
-    gap,
-  }) : null
-
-  root.style.setProperty('--radar-sticky-offset', `${offset}px`)
-  root.style.setProperty('--radar-toolbar-sticky-height', `${toolbarHeight}px`)
-  elements.sidebar.dataset.sticky = String(sidebarTop !== null)
-  if (sidebarTop === null) root.style.removeProperty('--radar-sidebar-top')
-  else root.style.setProperty('--radar-sidebar-top', `${sidebarTop}px`)
+const updateStickyMeasurements = () => {
+  document.documentElement.style.setProperty('--radar-sticky-offset', `${elements.tabList.getBoundingClientRect().height}px`)
+  const toolbarHeight = state.activeTab === 'updates' && !state.detail
+    ? elements.toolbar.getBoundingClientRect().height
+    : 0
+  document.documentElement.style.setProperty('--radar-toolbar-sticky-height', `${toolbarHeight}px`)
 }
-
-function scheduleSidebarLayout() {
-  if (sidebarLayoutFrame !== null) return
-  sidebarLayoutFrame = window.requestAnimationFrame(() => {
-    sidebarLayoutFrame = null
-    applySidebarLayout()
-  })
-}
-
-const sidebarLayoutObserver = typeof ResizeObserver === 'function'
-  ? new ResizeObserver(scheduleSidebarLayout)
+const stickyLayoutObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(updateStickyMeasurements)
   : null
-for (const element of [elements.header, elements.sidebar, elements.toolbar]) {
-  sidebarLayoutObserver?.observe(element)
-}
+stickyLayoutObserver?.observe(elements.tabList)
+stickyLayoutObserver?.observe(elements.toolbar)
 
 function renderPanelThemeControls() {
   const shown = effectivePanelTheme(panelTheme, systemDarkQuery?.matches ?? false)
@@ -298,7 +280,7 @@ const syncTracker = createPendingSyncTracker({
   timeoutMs: 30_000,
   onChange(key, outcome) {
     if (key === 'all') renderRefreshControl()
-    else if (state.radar && outcome !== 'complete') renderSources()
+    else if (state.radar && state.activeTab === 'overview' && !state.detail && outcome !== 'complete') renderSources()
     if (outcome === 'timeout') {
       const source = currentSources().find(item => item.id === key)
       elements.status.textContent = key === 'all'
@@ -389,7 +371,8 @@ function renderSummaryLoading(show) {
   }
 }
 
-function renderSpotlightSkeleton() {
+function renderSpotlightSkeleton(target) {
+  target ??= state.activeTab === 'reset' ? elements.resetSpotlight : elements.spotlight
   const card = document.createElement('article')
   card.className = 'spotlight-card codex-reset-card loading-skeleton'
   makeSkeletonBlock(card, 'skeleton-flag', '38%')
@@ -403,8 +386,8 @@ function renderSpotlightSkeleton() {
   }
   makeSkeletonBlock(card, 'skeleton-action', '30%')
   appendText(card, 'p', 'loading-copy', '正在同步…')
-  elements.spotlight.replaceChildren(card)
-  setBusy(elements.spotlight, true)
+  target.replaceChildren(card)
+  setBusy(target, true)
 }
 
 function renderUpdateListSkeleton() {
@@ -682,20 +665,52 @@ function clearPreviewMeasurements() {
   previewMeasurements.clear()
 }
 
+function syncTabLifecycles() {
+  const updatesVisible = state.activeTab === 'updates' && !state.detail && !elements.panels.updates.hidden
+  if (!updatesVisible) {
+    previewResizeObserver?.disconnect()
+  } else if (typeof ResizeObserver === 'function') {
+    previewResizeObserver ??= new ResizeObserver(entries => {
+      if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
+      for (const entry of entries) previewMeasurements.get(entry.target)?.()
+    })
+    previewResizeObserver.disconnect()
+    for (const [preview] of previewMeasurements) {
+      if (preview.isConnected) previewResizeObserver.observe(preview)
+    }
+  } else {
+    for (const [preview, measure] of previewMeasurements) {
+      if (preview.isConnected) measure()
+    }
+  }
+
+  const countdownVisible = !state.detail && ['overview', 'reset'].includes(state.activeTab)
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  const interval = reducedMotion ? 60_000 : 1_000
+  if (!countdownVisible || !codexResetCountdownTick) {
+    if (codexResetCountdownTimer !== null) clearTimeout(codexResetCountdownTimer)
+    codexResetCountdownTimer = null
+  } else if (codexResetCountdownTimer === null) {
+    codexResetCountdownTimer = setTimeout(() => codexResetCountdownTick?.(), interval)
+  }
+}
+
 function observePreview(preview, measure) {
   if (!preview) {
-    measure()
+    if (state.activeTab === 'updates' && !state.detail) measure()
     return
   }
   previewMeasurements.set(preview, measure)
+  if (state.activeTab !== 'updates' || state.detail) return
   if (typeof ResizeObserver === 'function') {
     previewResizeObserver ??= new ResizeObserver(entries => {
+      if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
       for (const entry of entries) previewMeasurements.get(entry.target)?.()
     })
     previewResizeObserver.observe(preview)
   }
   requestAnimationFrame(() => {
-    if (preview.isConnected) measure()
+    if (state.activeTab === 'updates' && !state.detail && !elements.panels.updates.hidden && preview.isConnected) measure()
   })
 }
 
@@ -989,7 +1004,8 @@ function findChangeGroup(key) {
 function openChangeDetail(key) {
   state.detail = { key, type: 'all', scrollY: window.scrollY }
   renderChangeDetail()
-  applySidebarLayout()
+  syncTabLifecycles()
+  updateStickyMeasurements()
   window.scrollTo(0, 0)
   elements.detailBack.focus({ preventScroll: true })
 }
@@ -999,8 +1015,11 @@ function closeChangeDetail() {
   state.detail = null
   elements.detailView.hidden = true
   elements.detailView.replaceChildren()
-  elements.shell.hidden = false
-  applySidebarLayout()
+  elements.tabList.hidden = false
+  for (const [id, panel] of Object.entries(elements.panels)) panel.hidden = id !== state.activeTab
+  tabController.renderIfStale()
+  syncTabLifecycles()
+  updateStickyMeasurements()
   if (!detail) return
   window.scrollTo(0, detail.scrollY)
   const returnTarget = elements.updates.querySelector(`[data-detail-key="${CSS.escape(detail.key)}"]`)
@@ -1043,7 +1062,8 @@ function renderChangeDetail() {
   appendSourceAction(article, first)
   elements.detailView.append(article)
   elements.detailView.setAttribute('aria-labelledby', title.id)
-  elements.shell.hidden = true
+  elements.tabList.hidden = true
+  for (const panel of Object.values(elements.panels)) panel.hidden = true
   elements.detailView.hidden = false
 }
 
@@ -1177,15 +1197,18 @@ function appendAnnouncementAction(parent, latestReset) {
   parent.append(row)
 }
 
-function renderSpotlight() {
-  if (codexResetCountdownTimer) {
+function renderSpotlight(target) {
+  target ??= state.activeTab === 'reset' ? elements.resetSpotlight : elements.spotlight
+  if (codexResetCountdownTimer !== null) {
     clearTimeout(codexResetCountdownTimer)
-    codexResetCountdownTimer = null
   }
+  codexResetCountdownTimer = null
+  codexResetCountdownTick = null
   const reset = state.radar?.codexReset
   const source = currentSources().find(item => item.id === 'codex-resets')
   const sourceLoading = source?.status === 'loading'
-  elements.spotlightLoader.hidden = !sourceLoading || !reset
+  const spotlightLoader = target.closest('.spotlight-section').querySelector('.spotlight-loader')
+  spotlightLoader.hidden = !sourceLoading || !reset
   const scheduledAt = reset?.scheduledReset?.at
   const hasFutureSchedule = typeof scheduledAt === 'string' && Number.isFinite(Date.parse(scheduledAt)) && Date.parse(scheduledAt) > Date.now()
   const card = document.createElement('article')
@@ -1193,7 +1216,7 @@ function renderSpotlight() {
 
   if (!reset) {
     if (sourceLoading || isInitialDataSyncing()) {
-      renderSpotlightSkeleton()
+      renderSpotlightSkeleton(target)
       return
     }
     const statusText = ['error', 'stale'].includes(source?.status)
@@ -1201,11 +1224,11 @@ function renderSpotlight() {
       : '尚無 Codex 重設資料，同步中…'
     appendText(card, 'p', 'codex-reset-status', statusText).setAttribute('role', 'status')
     appendCodexSourceAttribution(card)
-    elements.spotlight.replaceChildren(card)
-    setBusy(elements.spotlight, false)
+    target.replaceChildren(card)
+    setBusy(target, false)
     return
   }
-  setBusy(elements.spotlight, sourceLoading)
+  setBusy(target, sourceLoading)
 
   const cardHead = document.createElement('div')
   cardHead.className = 'codex-reset-card-head'
@@ -1233,15 +1256,18 @@ function renderSpotlight() {
     countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
     const scheduledTime = appendText(card, 'time', 'codex-reset-scheduled-time', `預定時間：${formatAbsoluteResetTime(scheduledAt)}`)
     scheduledTime.dateTime = scheduledAt
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-    const updateCountdown = () => {
+    codexResetCountdownTick = () => {
       const nextCountdownText = formatScheduledCountdown(scheduledAt)
-      countdown.replaceChildren()
-      appendHighlightedNumbers(countdown, nextCountdownText)
-      countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
-      codexResetCountdownTimer = setTimeout(updateCountdown, reducedMotion ? 60_000 : 1_000)
+      const activeSpotlight = state.activeTab === 'overview' ? elements.spotlight : elements.resetSpotlight
+      const activeCountdown = activeSpotlight.querySelector('.codex-reset-countdown')
+      if (activeCountdown) {
+        activeCountdown.replaceChildren()
+        appendHighlightedNumbers(activeCountdown, nextCountdownText)
+        activeCountdown.setAttribute('aria-label', `距預定重設時間 ${activeCountdown.textContent}`)
+      }
+      codexResetCountdownTimer = null
+      syncTabLifecycles()
     }
-    codexResetCountdownTimer = setTimeout(updateCountdown, reducedMotion ? 60_000 : 1_000)
   } else {
     const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
     appendHighlightedNumbers(countdown, formatTimeSinceReset(reset.stats.lastResetAt))
@@ -1266,7 +1292,7 @@ function renderSpotlight() {
   card.append(facts)
   appendAnnouncementAction(card, reset.latestReset)
   appendCodexSourceAttribution(card)
-  elements.spotlight.replaceChildren(card)
+  target.replaceChildren(card)
 }
 
 function findThreadRootId(update, byId) {
@@ -1387,14 +1413,6 @@ function renderDayFilter(cardCount) {
   if (state.day) elements.dayFilterText.textContent = `只顯示 ${dayLabel(state.day)} 的官方更新 ${cardCount} 則`
 }
 
-function scrollToUpdates() {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  document.querySelector('.updates-region')?.scrollIntoView?.({
-    behavior: reducedMotion ? 'auto' : 'smooth',
-    block: 'start',
-  })
-}
-
 function selectDay(key) {
   state.day = state.day === key ? null : key
   // 日期只篩官方更新；若停在 Tibo 篩選會永遠沒有結果，所以一併解除。
@@ -1402,7 +1420,6 @@ function selectDay(key) {
   renderFilterControls()
   renderHeatmap()
   renderUpdates()
-  if (state.day) scrollToUpdates()
 }
 
 function appliedFilterCount() {
@@ -1494,13 +1511,6 @@ function renderHeatmap() {
   }
   const today = new Date()
   today.setHours(12, 0, 0, 0)
-  const todayKey = localDateKey(today)
-  const todayTibo = updates.filter(update => isTiboUpdate(update) && heatDateKey(update) === todayKey)
-  const originalPosts = todayTibo.filter(update => update.postKind === 'root').length
-  const selfReplies = todayTibo.filter(update => update.postKind === 'self-reply').length
-  elements.tiboSummaryText.textContent = todayTibo.length
-    ? `今天 Tibo 貼文 ${todayTibo.length} 則（貼文 ${originalPosts}、續文 ${selfReplies}）`
-    : '今天 Tibo 尚無新貼文'
   const currentSunday = new Date(today)
   currentSunday.setDate(today.getDate() - today.getDay())
   const firstSunday = new Date(currentSunday)
@@ -1616,12 +1626,9 @@ function renderTimeMode() {
   elements.timeMode.setAttribute('aria-label', `切換為${nextLabel}`)
 }
 
-function render(radar) {
-  state.radar = radar
-  const updates = Array.isArray(radar?.updates) ? radar.updates : []
-  const sources = Array.isArray(radar?.sources) ? radar.sources : []
-  const loading = sources.some(source => source.status === 'loading')
-  syncTracker.observe(sources)
+function renderOverview() {
+  const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+  const sources = currentSources()
   const units = updateUnits(updates)
   const attention = units.filter(unitNeedsAttention).length
   const healthy = sources.filter(source => source.status === 'ok').length
@@ -1631,20 +1638,162 @@ function render(radar) {
   elements.healthySummary.textContent = `${healthy}/${sources.length || 7} 正常`
   const updateLoading = sources.some(source => source.status === 'loading' && source.id !== 'codex-resets')
   renderSummaryLoading(updates.length === 0 && !hasKnownUpdateSnapshot() && (updateLoading || isInitialDataSyncing()))
-  renderRefreshControl()
-  elements.status.textContent = loading
-    ? '正在檢查公開來源…'
-    : syncTracker.isPending('all') ? '正在重新整理所有來源…'
-    : `上次檢查：${formatDateTime(radar?.lastCheckedAt)}。失敗的來源會自動重試，已有資料會保留。`
-  renderSources()
   renderSpotlight()
+  renderSources()
+
+  const today = new Date()
+  today.setHours(12, 0, 0, 0)
+  const todayKey = localDateKey(today)
+  const todayTibo = updates.filter(update => isTiboUpdate(update) && heatDateKey(update) === todayKey)
+  const originalPosts = todayTibo.filter(update => update.postKind === 'root').length
+  const selfReplies = todayTibo.filter(update => update.postKind === 'self-reply').length
+  elements.tiboSummaryText.textContent = todayTibo.length
+    ? `今天 Tibo 貼文 ${todayTibo.length} 則（貼文 ${originalPosts}、續文 ${selfReplies}）`
+    : '今天 Tibo 尚無新貼文'
+}
+
+function renderUpdatesTab() {
+  renderFilterControls()
+  renderTimeMode()
   renderHeatmap()
   renderUpdates()
-  renderTimeMode()
-  // 背景同步會在閱讀詳情時送來新狀態；就地重繪並保留目前的類型選擇，版本消失時才回到列表。
-  renderChangeDetail()
-  scheduleSidebarLayout()
 }
+
+function renderResetTab() {
+  renderSpotlight()
+}
+
+function nextTabIndex(key, current, count) {
+  if (!Number.isInteger(current) || !Number.isInteger(count) || count < 1) return null
+  if (key === 'ArrowLeft') return (current - 1 + count) % count
+  if (key === 'ArrowRight') return (current + 1) % count
+  if (key === 'Home') return 0
+  if (key === 'End') return count - 1
+  return null
+}
+
+function createTabController({ state, renderers, now = () => 0, schedule = () => {}, restoreScroll = () => {}, beforeActivate = () => {}, onState = () => {}, onVisible = () => {} } = {}) {
+  function renderActive(force = false) {
+    if (state.detail) return false
+    const renderer = renderers[state.activeTab]
+    if (typeof renderer !== 'function') return false
+    if (!force && state.tabRenderedVersion[state.activeTab] === state.dataVersion) return false
+    renderer()
+    state.tabRenderedVersion[state.activeTab] = state.dataVersion
+    return true
+  }
+
+  function receiveState(radar) {
+    state.radar = radar
+    state.dataVersion += 1
+    onState(radar)
+    const rendered = renderActive()
+    onVisible(state.activeTab, rendered)
+    return rendered
+  }
+
+  function activateTab(id, { force = false, afterRestore } = {}) {
+    if (typeof renderers[id] !== 'function' || state.detail || id === state.activeTab) return false
+    state.tabScrollY[state.activeTab] = now()
+    const previous = state.activeTab
+    state.activeTab = id
+    beforeActivate(id, previous)
+    const rendered = renderActive(force)
+    onVisible(id, rendered)
+    schedule(() => {
+      restoreScroll(state.tabScrollY[id] ?? 0)
+      afterRestore?.()
+    })
+    return true
+  }
+
+  function renderIfStale() {
+    const rendered = renderActive()
+    onVisible(state.activeTab, rendered)
+    return rendered
+  }
+
+  function renderCurrent() {
+    const rendered = renderActive(true)
+    onVisible(state.activeTab, rendered)
+    return rendered
+  }
+
+  return { receiveState, activateTab, renderIfStale, renderCurrent }
+}
+
+const TAB_RENDERERS = {
+  overview: renderOverview,
+  updates: renderUpdatesTab,
+  reset: renderResetTab,
+}
+
+const tabController = createTabController({
+  state,
+  renderers: TAB_RENDERERS,
+  now: () => window.scrollY,
+  schedule: callback => window.requestAnimationFrame(callback),
+  restoreScroll(scrollY) {
+    const maxScrollY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+    window.scrollTo(0, Math.min(scrollY, maxScrollY))
+  },
+  beforeActivate(id) {
+    for (const [tabId, tab] of Object.entries(elements.tabs)) {
+      const selected = tabId === id
+      tab.setAttribute('aria-selected', String(selected))
+      tab.tabIndex = selected ? 0 : -1
+    }
+    for (const [panelId, panel] of Object.entries(elements.panels)) panel.hidden = panelId !== id
+    elements.tabList.hidden = false
+  },
+  onState(radar) {
+    const updates = Array.isArray(radar?.updates) ? radar.updates : []
+    const sources = Array.isArray(radar?.sources) ? radar.sources : []
+    const units = updateUnits(updates)
+    const loading = sources.some(source => source.status === 'loading')
+    const resetAt = radar?.codexReset?.scheduledReset?.at
+    const hasFutureSchedule = typeof resetAt === 'string' && Number.isFinite(Date.parse(resetAt)) && Date.parse(resetAt) > Date.now()
+    syncTracker.observe(sources)
+    elements.updatesCount.textContent = String(units.length)
+    elements.tabs.updates.setAttribute('aria-label', `更新動態，${units.length} 張卡片`)
+    elements.resetTabDot.hidden = !hasFutureSchedule
+    elements.tabs.reset.setAttribute('aria-label', hasFutureSchedule ? 'Codex 重設，已排定重設' : 'Codex 重設')
+    renderRefreshControl()
+    elements.status.textContent = loading
+      ? '正在檢查公開來源…'
+      : syncTracker.isPending('all') ? '正在重新整理所有來源…'
+      : `上次檢查：${formatDateTime(radar?.lastCheckedAt)}。失敗的來源會自動重試，已有資料會保留。`
+    // 詳情頁是更新動態的子畫面；同步時就地更新，版本消失時返回清單。
+    renderChangeDetail()
+  },
+  onVisible() {
+    syncTabLifecycles()
+    updateStickyMeasurements()
+  },
+})
+
+function receiveState(radar) {
+  return tabController.receiveState(radar)
+}
+
+function activateTab(id, options) {
+  return tabController.activateTab(id, options)
+}
+
+const TAB_IDS = Object.keys(TAB_RENDERERS)
+for (const id of TAB_IDS) {
+  elements.tabs[id].addEventListener('click', () => activateTab(id))
+}
+
+elements.tabList.addEventListener('keydown', (event) => {
+  const current = TAB_IDS.indexOf(state.activeTab)
+  const next = nextTabIndex(event.key, current, TAB_IDS.length)
+  if (next === null) return
+  event.preventDefault()
+  const id = TAB_IDS[next]
+  elements.tabs[id].focus()
+  activateTab(id)
+})
 
 for (const element of [elements.search, elements.provider, elements.category, elements.changeType]) {
   element.addEventListener(element === elements.search ? 'input' : 'change', () => {
@@ -1680,10 +1829,12 @@ elements.dayFilterClear.addEventListener('click', () => {
 elements.tiboSummary.addEventListener('click', () => {
   elements.provider.value = 'x'
   state.day = null
-  renderFilterControls()
-  renderHeatmap()
-  renderUpdates()
-  scrollToUpdates()
+  activateTab('updates', {
+    force: true,
+    afterRestore() {
+      elements.updates.scrollIntoView?.({ block: 'start' })
+    },
+  })
 })
 
 elements.detailBack.addEventListener('click', closeChangeDetail)
@@ -1702,31 +1853,24 @@ document.addEventListener('keydown', (event) => {
   elements.filterToggle.focus()
 })
 
-for (const loader of [elements.refreshLoader, elements.spotlightLoader, elements.heatLoader]) populatePixelLoader(loader)
-renderSpotlightSkeleton()
-renderSummaryLoading(true)
-renderHeatmapSkeleton()
-renderUpdateListSkeleton()
-renderFilterControls()
+for (const loader of [elements.refreshLoader, ...document.querySelectorAll('.spotlight-loader'), elements.heatLoader]) populatePixelLoader(loader)
+tabController.renderCurrent()
 
 window.addEventListener('resize', () => {
-  scheduleSidebarLayout()
-  if (!previewMeasurements.size) return
+  updateStickyMeasurements()
+  if (state.activeTab !== 'updates' || state.detail || !previewMeasurements.size) return
   requestAnimationFrame(() => {
+    if (state.activeTab !== 'updates' || state.detail || elements.panels.updates.hidden) return
     for (const measure of previewMeasurements.values()) measure()
   })
 })
 
-elements.statusPanel.addEventListener('toggle', scheduleSidebarLayout)
-document.fonts?.ready?.then(scheduleSidebarLayout)
-document.fonts?.addEventListener?.('loadingdone', scheduleSidebarLayout)
-scheduleSidebarLayout()
+document.fonts?.ready?.then(updateStickyMeasurements)
+document.fonts?.addEventListener?.('loadingdone', updateStickyMeasurements)
 
 elements.timeMode.addEventListener('click', () => {
   state.absoluteTime = !state.absoluteTime
-  renderTimeMode()
-  renderSpotlight()
-  renderUpdates()
+  tabController.renderCurrent()
 })
 
 elements.refresh.addEventListener('click', async () => {
@@ -1739,12 +1883,12 @@ elements.refresh.addEventListener('click', async () => {
 })
 
 api.ui.onMessage((message) => {
-  if (message?.type === 'radar:state') render(message.state)
+  if (message?.type === 'radar:state') receiveState(message.state)
 })
 
 try {
   const stored = await api.storage.get('radar-state')
-  if (stored.found) render(stored.value)
+  if (stored.found) receiveState(stored.value)
 } catch {
   elements.status.textContent = '讀不到已保存的資料，正在重新取得…'
 }

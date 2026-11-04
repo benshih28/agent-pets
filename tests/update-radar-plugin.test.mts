@@ -352,6 +352,9 @@ test('Update Radar heatmap days filter the list to that day of official updates'
   assert.match(panelFunctionSource('selectDay'), /state\.day = state\.day === key \? null : key/)
   assert.match(panelFunctionSource('appliedFilterCount'), /state\.day/)
   assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{[^}]*state\.day = null/s)
+  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{\s*elements\.provider\.value = 'x'\s*state\.day = null\s*activateTab\('updates', \{\s*force: true/s)
+  assert.match(panelSource, /elements\.updates\.scrollIntoView\?\.\(\{ block: 'start' \}\)/)
+  assert.doesNotMatch(panelSource, /scrollToUpdates/)
   assert.match(markup, /id="day-filter" class="day-filter" hidden/)
   assert.match(markup, /id="day-filter-clear"[^>]*type="button"/)
 })
@@ -410,12 +413,13 @@ test('Update Radar initial skeletons cover no state and an empty all-loading sta
     lastCheckedAt: '2026-10-28T08:01:00.000Z',
   }), false)
 
-  assert.match(panelSource, /renderSpotlightSkeleton\(\)\s*renderSummaryLoading\(true\)\s*renderHeatmapSkeleton\(\)\s*renderUpdateListSkeleton\(\)/)
-  assert.match(panelFunctionSource('renderSpotlight'), /renderSpotlightSkeleton\(\)\s*return/)
+  assert.match(panelSource, /tabController\.renderCurrent\(\)/, 'startup renders only the default overview panel')
+  assert.doesNotMatch(panelSource, /renderHeatmapSkeleton\(\)\s*renderUpdateListSkeleton\(\)/, 'inactive update content is deferred')
+  assert.match(panelFunctionSource('renderSpotlight'), /renderSpotlightSkeleton\(target\)\s*return/)
   assert.match(panelFunctionSource('renderHeatmap'), /renderHeatmapSkeleton\(\)\s*return/)
   assert.match(panelFunctionSource('renderUpdates'), /renderUpdateListSkeleton\(\)\s*return/)
   assert.match(panelFunctionSource('renderSummaryLoading'), /setBusy\(elements\.summaryGrid, show \|\|/)
-  assert.match(panelFunctionSource('renderSpotlight'), /setBusy\(elements\.spotlight, false\)/)
+  assert.match(panelFunctionSource('renderSpotlight'), /setBusy\(target, false\)/)
   assert.match(panelFunctionSource('renderHeatmap'), /setBusy\(elements\.heatmap, officialLoading\)/)
   assert.match(panelFunctionSource('renderUpdates'), /setBusy\(elements\.updates, updateLoading\)/)
 
@@ -690,7 +694,7 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
   assert.match(panelSource, /button\.setAttribute\('aria-pressed', String\(button\.dataset\.type === selected\)\)/)
   assert.match(panelSource, /event\.key === 'Escape' && state\.detail/)
   assert.match(panelSource, /window\.scrollTo\(0, detail\.scrollY\)/)
-  assert.match(markup, /id="change-detail" class="radar-shell change-detail" hidden/)
+  assert.match(markup, /id="change-detail" class="change-detail" hidden/)
   assert.match(markup, /id="change-detail-back"[^>]*type="button"/)
 })
 
@@ -786,123 +790,194 @@ test('appearance is a single toggle button that names the mode it switches to', 
   assert.doesNotMatch(panelSource, /await api\.storage\.get\('panel-theme'\)/, 'theme read must not block panel startup')
 })
 
-test('sidebar sticky top aligns to the header when it fits and the viewport bottom when it does not', () => {
-  const sidebarStickyTop = runInNewContext(`(${panelFunctionSource('sidebarStickyTop')})`) as (sizes: {
-    sidebarHeight: number, viewportHeight: number, offset: number, gap: number,
-  }) => number | null
-  assert.equal(sidebarStickyTop({ sidebarHeight: 600, viewportHeight: 700, offset: 50, gap: 25 }), 75)
-  assert.equal(sidebarStickyTop({ sidebarHeight: 601, viewportHeight: 700, offset: 50, gap: 25 }), 74)
-  assert.equal(sidebarStickyTop({ sidebarHeight: 700, viewportHeight: 700, offset: 0, gap: 0 }), 0)
-  assert.equal(sidebarStickyTop({ sidebarHeight: 701, viewportHeight: 700, offset: 0, gap: 0 }), -1)
-  assert.equal(sidebarStickyTop({ sidebarHeight: 650, viewportHeight: 700, offset: 0, gap: 25 }), 25)
+test('Update Radar WAI-ARIA tabs have matching panels and default to overview', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  assert.equal((markup.match(/role="tablist"/g) ?? []).length, 1)
+  assert.equal((markup.match(/role="tab"/g) ?? []).length, 3)
+  assert.equal((markup.match(/role="tabpanel"/g) ?? []).length, 3)
 
-  const validSizes = { sidebarHeight: 600, viewportHeight: 700, offset: 50, gap: 25 }
-  for (const key of Object.keys(validSizes) as (keyof typeof validSizes)[]) {
-    assert.equal(sidebarStickyTop({ ...validSizes, [key]: Number.NaN }), null, `${key} rejects NaN`)
-    assert.equal(sidebarStickyTop({ ...validSizes, [key]: Number.POSITIVE_INFINITY }), null, `${key} rejects infinity`)
-    assert.equal(sidebarStickyTop({ ...validSizes, [key]: -1 }), null, `${key} rejects negative values`)
+  const tabs = [...markup.matchAll(/<button\b(?=[^>]*role="tab")[^>]*>[\s\S]*?<\/button>/g)].map(match => match[0])
+  const panels = [...markup.matchAll(/<section\b(?=[^>]*role="tabpanel")[^>]*>/g)].map(match => match[0])
+  const attribute = (element: string, name: string) => element.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1]
+  assert.deepEqual(tabs.map(tab => attribute(tab, 'id')), ['tab-overview', 'tab-updates', 'tab-reset'])
+  assert.deepEqual(panels.map(panel => attribute(panel, 'id')), ['panel-overview', 'panel-updates', 'panel-reset'])
+  for (let index = 0; index < tabs.length; index += 1) {
+    assert.equal(attribute(tabs[index], 'aria-controls'), attribute(panels[index], 'id'))
+    assert.equal(attribute(panels[index], 'aria-labelledby'), attribute(tabs[index], 'id'))
+    assert.equal(attribute(panels[index], 'tabindex'), '0')
   }
+  assert.equal(attribute(tabs[0], 'aria-selected'), 'true')
+  assert.equal(attribute(tabs[0], 'tabindex'), '0')
+  assert.match(tabs[0], />總覽<\/button>/)
+  for (const tab of tabs.slice(1)) {
+    assert.equal(attribute(tab, 'aria-selected'), 'false')
+    assert.equal(attribute(tab, 'tabindex'), '-1')
+  }
+  assert.doesNotMatch(panels[0], /\shidden(?:\s|>)/)
+  assert.match(panels[1], /\shidden(?:\s|>)/)
+  assert.match(panels[2], /\shidden(?:\s|>)/)
+  assert.match(markup, /role="tablist" aria-label="更新雷達功能"/)
 })
 
-test('sidebar sticky is enabled only on wide non-detail pages and clears its top otherwise', () => {
-  const sidebarStickyTop = runInNewContext(`(${panelFunctionSource('sidebarStickyTop')})`)
-
-  function layoutFor(wide: boolean, detailVisible: boolean) {
-    const styleProperties = new Map<string, string>([['--radar-sidebar-top', 'stale']])
-    const dataset: { sticky?: string } = {}
-    const context = {
-      window: { matchMedia: () => ({ matches: wide }), innerWidth: 1000, innerHeight: 535 },
-      document: { documentElement: { style: {
-        setProperty: (name: string, value: string) => styleProperties.set(name, value),
-        removeProperty: (name: string) => styleProperties.delete(name),
-      } } },
-      getComputedStyle: () => ({ paddingTop: '18px' }),
-      elements: {
-        shell: {},
-        header: { getBoundingClientRect: () => ({ height: 60 }) },
-        toolbar: { getBoundingClientRect: () => ({ height: 34 }) },
-        sidebar: { dataset, getBoundingClientRect: () => ({ height: 641 }) },
-        detailView: { hidden: !detailVisible },
-      },
-      sidebarStickyTop,
-    }
-    const applySidebarLayout = runInNewContext(`(${panelFunctionSource('applySidebarLayout')})`, context) as () => void
-    applySidebarLayout()
-    return { dataset, styleProperties }
+test('Update Radar tab controller defers stale panels and never reads storage or posts while switching', async () => {
+  const createTabController = runInNewContext(`(${panelFunctionSource('createTabController')})`) as (options: Record<string, unknown>) => any
+  const state = {
+    radar: null as unknown,
+    dataVersion: 0,
+    activeTab: 'overview',
+    tabRenderedVersion: { overview: -1, updates: -1, reset: -1 },
+    tabScrollY: { overview: null as number | null, updates: null as number | null, reset: null as number | null },
+    detail: null,
   }
+  const renders = { overview: 0, updates: 0, reset: 0 }
+  const scheduled: Array<() => void> = []
+  let scrollY = 48
+  const apiCalls = { storageGet: 0, postMessage: 0 }
+  const api = {
+    storage: { async get() { apiCalls.storageGet += 1; return { found: false } } },
+    ui: { async postMessage() { apiCalls.postMessage += 1; return { delivered: true } } },
+  }
+  await api.storage.get()
+  await api.storage.get()
+  await api.ui.postMessage()
+  const callsAtStartup = { ...apiCalls }
+  const controller = createTabController({
+    state,
+    renderers: {
+      overview: () => { renders.overview += 1 },
+      updates: () => { renders.updates += 1 },
+      reset: () => { renders.reset += 1 },
+    },
+    now: () => scrollY,
+    schedule: (callback: () => void) => scheduled.push(callback),
+    restoreScroll: (next: number) => { scrollY = next },
+  })
+  controller.renderCurrent()
+  const switchTo = (id: string) => {
+    controller.activateTab(id)
+    scheduled.shift()?.()
+  }
+  scrollY = 120
+  switchTo('updates')
+  assert.equal(state.tabScrollY.overview, 120, 'leaving a tab saves the current document scroll position')
+  assert.equal(scrollY, 0, 'a tab without a saved position starts at the top')
+  scrollY = 240
+  switchTo('overview')
+  assert.equal(scrollY, 120, 'returning to a visited tab restores its saved position')
+  for (const id of ['updates', 'reset', 'overview', 'updates', 'reset', 'overview', 'updates', 'reset', 'overview', 'updates']) switchTo(id)
+  assert.deepEqual(apiCalls, callsAtStartup, 'tab switches make no API calls')
 
-  const desktop = layoutFor(true, false)
-  assert.equal(desktop.dataset.sticky, 'true')
-  assert.equal(desktop.styleProperties.get('--radar-sidebar-top'), '-124px')
-
-  const narrow = layoutFor(false, false)
-  assert.equal(narrow.dataset.sticky, 'false')
-  assert.equal(narrow.styleProperties.has('--radar-sidebar-top'), false)
-
-  const detail = layoutFor(true, true)
-  assert.equal(detail.dataset.sticky, 'false')
-  assert.equal(detail.styleProperties.has('--radar-sidebar-top'), false)
+  switchTo('overview')
+  const updatesBeforeState = renders.updates
+  controller.receiveState({ updates: [{ id: 'fresh' }], sources: [] })
+  assert.equal(state.dataVersion, 1)
+  assert.deepEqual(state.radar, { updates: [{ id: 'fresh' }], sources: [] })
+  assert.equal(renders.updates, updatesBeforeState, 'a background update leaves the inactive updates panel untouched')
+  switchTo('updates')
+  assert.equal(renders.updates, updatesBeforeState + 1, 'the stale panel renders exactly once when activated')
+  switchTo('reset')
+  const rendered = { ...renders }
+  for (const id of ['reset', 'overview', 'updates', 'reset', 'overview', 'updates']) switchTo(id)
+  assert.deepEqual(renders, rendered, 'switching without new data does not call any renderer')
+  assert.deepEqual(apiCalls, callsAtStartup)
 })
 
-test('wide panels use one document scroller with responsive sticky navigation', () => {
+test('Update Radar keyboard tab navigation wraps, supports Home and End, and ignores other keys', () => {
+  const nextTabIndex = runInNewContext(`(${panelFunctionSource('nextTabIndex')})`) as (key: string, current: number, count: number) => number | null
+  assert.equal(nextTabIndex('ArrowLeft', 0, 3), 2)
+  assert.equal(nextTabIndex('ArrowLeft', 2, 3), 1)
+  assert.equal(nextTabIndex('ArrowRight', 2, 3), 0)
+  assert.equal(nextTabIndex('ArrowRight', 0, 3), 1)
+  assert.equal(nextTabIndex('Home', 2, 3), 0)
+  assert.equal(nextTabIndex('End', 0, 3), 2)
+  assert.equal(nextTabIndex('Enter', 0, 3), null)
+  assert.equal(nextTabIndex('ArrowLeft', 0, 0), null)
+
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  assert.doesNotMatch(panelFunctionSource('activateTab'), /postMessage/)
+  assert.match(panelSource, /elements\.tabList\.addEventListener\('keydown'/)
+  assert.match(panelSource, /elements\.tabs\[id\]\.focus\(\)/)
+  assert.match(panelSource, /window\.scrollTo\(0, Math\.min\(scrollY, maxScrollY\)\)/, 'restoration clamps when the target content is shorter')
+})
+
+test('Update Radar reset timers and preview measurements follow their visible tab', () => {
+  const syncLifecycleSource = panelFunctionSource('syncTabLifecycles')
+  assert.match(syncLifecycleSource, /const updatesVisible = state\.activeTab === 'updates' && !state\.detail && !elements\.panels\.updates\.hidden/)
+  assert.match(syncLifecycleSource, /const countdownVisible = !state\.detail && \['overview', 'reset'\]\.includes\(state\.activeTab\)/)
+  const cleared: number[] = []
+  const timers: Array<{ id: number, callback: () => void }> = []
+  let nextTimer = 1
+  const context = {
+    state: { activeTab: 'updates', detail: null },
+    elements: { panels: { updates: { hidden: false } } },
+    previewMeasurements: new Map(),
+    previewResizeObserver: null,
+    codexResetCountdownTick: () => {},
+    codexResetCountdownTimer: 42,
+    clearTimeout: (timer: number) => cleared.push(timer),
+    setTimeout: (callback: () => void) => { const id = nextTimer++; timers.push({ id, callback }); return id },
+    window: { matchMedia: () => ({ matches: false }) },
+  }
+  const syncTabLifecycles = runInNewContext(`(${syncLifecycleSource})`, context) as () => void
+  syncTabLifecycles()
+  assert.deepEqual(cleared, [42], 'leaving Codex tabs clears the countdown timer')
+  assert.equal(context.codexResetCountdownTimer, null)
+  context.state.activeTab = 'overview'
+  syncTabLifecycles()
+  assert.equal(timers.length, 1, 'the countdown is scheduled on an eligible tab')
+  context.state.activeTab = 'reset'
+  context.codexResetCountdownTimer = null
+  syncTabLifecycles()
+  assert.equal(timers.length, 2, 'the Codex reset tab also schedules the countdown')
+  context.state.detail = { key: 'detail' }
+  context.codexResetCountdownTimer = 55
+  syncTabLifecycles()
+  assert.equal(cleared.at(-1), 55, 'the detail subview pauses the countdown')
+
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  assert.match(panelSource, /if \(state\.activeTab !== 'updates' \|\| state\.detail \|\| elements\.panels\.updates\.hidden\) return/)
+})
+
+test('Update Radar uses sticky single-column tabs and removes sidebar layout code', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  const sidebar = markup.match(/<div class="radar-sidebar">([\s\S]*?)<section class="updates-region"/)?.[1] ?? ''
-  for (const part of ['spotlight-section', 'summary-grid', 'heat-section', 'status-panel']) assert.match(sidebar, new RegExp(part))
-  assert.ok(markup.indexOf('<header class="radar-header">') < markup.indexOf('<div class="radar-sidebar">'))
-  assert.ok(markup.indexOf('spotlight-section') < markup.indexOf('id="summary-grid"'))
-  assert.ok(markup.indexOf('id="summary-grid"') < markup.indexOf('heat-section'))
-  assert.ok(markup.indexOf('heat-section') < markup.indexOf('class="status-panel"'))
-  assert.ok(markup.indexOf('class="status-panel"') < markup.indexOf('class="updates-region"'))
-  assert.match(styles, /\.radar-sidebar \{ display: contents; \}/, 'narrow layout ignores the sidebar wrapper')
-  assert.doesNotMatch(styles, /@media \(min-width: 820px\)/)
   const desktop = styles.match(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  assert.match(desktop, /grid-template-areas: "header header" "sidebar main"/)
-  assert.match(desktop, /grid-template-columns: 368px minmax\(0, 1fr\)/)
-  assert.match(desktop, /max-width: 920px/)
-  assert.match(desktop, /\.radar-header \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: radial-gradient\([^;]*var\(--radar-bg\)/)
-  assert.match(desktop, /\.radar-sidebar\[data-sticky="true"\] \{ position: sticky; z-index: 1; top: var\(--radar-sidebar-top\); \}/)
-  assert.doesNotMatch(desktop, /\.radar-sidebar \{[^}]*position: sticky/)
-  assert.match(desktop, /\.radar-sidebar \{[^}]*align-self: start;/)
-  assert.match(desktop, /\.radar-sidebar > \* \{ flex-shrink: 0; \}/)
-  assert.match(desktop, /\.toolbar \{ top: var\(--radar-sticky-offset\); \}/)
-  assert.match(panelSource, /const sidebarTop = wide && !detailVisible \? sidebarStickyTop\(/)
-  assert.match(panelSource, /elements\.sidebar\.dataset\.sticky = String\(sidebarTop !== null\)/)
-  assert.match(panelSource, /root\.style\.removeProperty\('--radar-sidebar-top'\)/)
-  assert.doesNotMatch(panelSource, /addEventListener\(\s*['"]scroll['"]/, 'sidebar layout must not track scroll events')
-  const headerZIndex = Number(desktop.match(/\.radar-header \{[^}]*z-index:\s*(\d+)/)?.[1])
-  const sidebarZIndex = Number(desktop.match(/\.radar-sidebar\[data-sticky="true"\] \{[^}]*z-index:\s*(\d+)/)?.[1])
-  assert.ok(headerZIndex > sidebarZIndex, 'the header must layer above the sticky sidebar')
-  assert.doesNotMatch(desktop, /\boverflow-y\s*:|\bmax-height\s*:/)
+  const narrowTabs = styles.match(/@media \(max-width: 300px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  assert.match(markup, /<header class="radar-header">[\s\S]*<div id="radar-tabs" class="radar-tabs" role="tablist"/)
+  assert.doesNotMatch(markup + styles, /radar-sticky-header/)
+  const headerRule = styles.match(/\.radar-header \{([^}]*)\}/)?.[1] ?? ''
+  const tabListRule = styles.match(/\.radar-tabs \{([^}]*)\}/)?.[1] ?? ''
+  const scrollMarginRules = [...styles.matchAll(/([^{}]+)\{([^{}]*scroll-margin-top[^{}]*)\}/g)]
+  assert.doesNotMatch(headerRule, /position:\s*sticky/)
+  assert.match(tabListRule, /position:\s*sticky/)
+  assert.match(tabListRule, /top:\s*0/)
+  assert.match(tabListRule, /z-index:\s*6/)
+  assert.match(tabListRule, /background:\s*var\(--radar-bg\)/)
+  assert.match(tabListRule, /border-bottom:\s*1px solid/)
+  assert.match(panelSource, /new ResizeObserver\(updateStickyMeasurements\)/)
+  assert.match(panelSource, /stickyLayoutObserver\?\.observe\(elements\.tabList\)/)
+  assert.doesNotMatch(panelSource, /stickyHeader/)
+  assert.match(panelSource, /--radar-sticky-offset', `\$\{elements\.tabList\.getBoundingClientRect\(\)\.height\}px`/)
+  assert.ok(scrollMarginRules.length > 0, 'scroll targets declare sticky-aware margins')
+  for (const [, selector, declarations] of scrollMarginRules) {
+    assert.match(declarations, /var\(--radar-sticky-offset\)/, `${selector.trim()} uses the tablist offset`)
+  }
+  assert.match(styles, /\.toolbar \{[^}]*top: var\(--radar-sticky-offset\);/)
+  assert.match(styles, /\.radar-tab\[aria-selected="true"\] \{[^}]*border-bottom-color: var\(--radar-accent\);[^}]*font-weight: 600;/)
+  assert.match(styles, /\.radar-tab\[aria-selected="true"\] \{ border-bottom-color: Highlight; color: CanvasText; font-weight: 700; \}/)
+  assert.match(narrowTabs, /\.radar-tab-count \{ display: none; \}/)
+  assert.match(desktop, /width: min\(100%, 760px\)/)
+  assert.doesNotMatch(desktop, /grid-template-areas|grid-template-columns: 368px/)
+  assert.doesNotMatch(markup + styles + panelSource, /radar-sidebar|sidebarStickyTop|applySidebarLayout|--radar-sidebar-top|data-sticky/)
   assert.doesNotMatch(styles, /overflow-y:\s*(?:auto|scroll)\b/)
-  assert.doesNotMatch(styles, /\.radar-sidebar[^}]*max-height\s*:/)
-  assert.doesNotMatch(styles, /\.radar-sidebar[^}]*scrollbar-(?:width|color)\s*:/)
-  assert.doesNotMatch(styles, /(?:^|\n)\s*\.radar-sidebar\s*\{[^}]*overflow-y\s*:/)
-  const layoutRules = [
-    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*\.radar-shell(?:\.change-detail)?\s*\{([^}]*)\}/g), match => match[1]),
-    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*main\.radar-shell\s*\{([^}]*)\}/g), match => match[1]),
-    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*\.radar-sidebar(?:\[data-sticky="true"\])?\s*\{([^}]*)\}/g), match => match[1]),
-    ...Array.from(styles.matchAll(/(?:^|\n)[ \t]*\.updates-region\s*(?:,\s*\.feed-content)?\s*\{([^}]*)\}/g), match => match[1]),
-  ]
-  for (const declarations of layoutRules) assert.doesNotMatch(declarations, /\b(?:height|max-height)\s*:/)
-  assert.match(styles, /\.updates-region \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-gap-3\)\); \}/)
-  assert.match(styles, /\.update-list > \* \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-toolbar-sticky-height\) \+ var\(--radar-gap-3\)\); \}/)
-  assert.match(styles, /\.radar-shell\.change-detail \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-toolbar-sticky-height\) \+ var\(--radar-gap-3\)\); \}/)
-  assert.match(styles, /\.detail-bar \{[^}]*position: sticky;[^}]*top: 0;/)
-  assert.match(desktop, /\.change-detail \{ width: min\(100%, 760px\); \}/)
-  assert.match(desktop, /\.radar-sidebar \.heat-section \{[^}]*border-radius/)
-  const narrowHeatmap = styles.match(/@media \(max-width: 300px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  assert.match(styles, /\.heat-months \{ min-height: 15px; overflow: clip;/)
-  assert.match(narrowHeatmap, /--heat-cell-size: clamp\(6px, 2\.4vw, 7px\)/)
-  assert.match(narrowHeatmap, /\.heat-layout \{ grid-template-columns: 14px minmax\(0, 1fr\); gap: 2px; \}/)
-  assert.match(narrowHeatmap, /\.heat-grid \{ gap: 1px; \}/)
-  assert.match(styles, /\.toolbar input,\s*\.toolbar select \{[^}]*min-height: 36px;/)
-  assert.match(styles, /\.filter-toggle,\s*\.time-mode \{[^}]*min-height: 36px;/)
-  assert.match(styles, /\.update-list button:not\(\.heat-cell-button\) \{ min-height: 36px; \}/)
-  assert.match(panelSource, /new ResizeObserver\(scheduleSidebarLayout\)/)
-  assert.match(panelSource, /document\.fonts\?\.ready\?\.then\(scheduleSidebarLayout\)/)
-  assert.match(panelSource, /elements\.statusPanel\.addEventListener\('toggle', scheduleSidebarLayout\)/)
+  assert.match(styles, /\.update-list \{ scroll-margin-top: calc\(var\(--radar-sticky-offset\) \+ var\(--radar-toolbar-sticky-height\) \+ var\(--radar-gap-3\)\); \}/)
+  assert.match(styles, /\.detail-bar \{[^}]*position: sticky;[^}]*top: var\(--radar-sticky-offset\);/)
+  assert.match(panelFunctionSource('renderChangeDetail'), /elements\.tabList\.hidden = true/)
+  assert.match(panelFunctionSource('renderChangeDetail'), /for \(const panel of Object\.values\(elements\.panels\)\) panel\.hidden = true/)
+  assert.match(panelFunctionSource('closeChangeDetail'), /elements\.tabList\.hidden = false/)
+  assert.match(panelSource, /tab\.setAttribute\('aria-selected', String\(selected\)\)[\s\S]*tab\.tabIndex = selected \? 0 : -1/)
+  assert.match(panelSource, /document\.fonts\?\.ready\?\.then\(updateStickyMeasurements\)/)
 })
 
 const deprecationMarkdown = `
