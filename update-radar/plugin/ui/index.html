@@ -11,9 +11,7 @@
     <main class="radar-shell">
       <header class="radar-header">
         <div class="heading-copy">
-          <p class="eyebrow">AI 公開更新</p>
           <h1>AI 更新雷達</h1>
-          <p class="intro">追蹤 OpenAI、Anthropic、Claude Code、Tibo 與 Codex 重設公告。</p>
         </div>
         <div class="header-actions">
           <button id="theme-toggle" class="theme-toggle" type="button" data-mode="light" aria-label="切換為深色" title="切換為深色">
@@ -45,15 +43,12 @@
           <ul id="overview-alerts" class="overview-alerts" aria-label="更新警示" hidden></ul>
           <section id="summary-grid" class="summary-grid" aria-label="更新摘要" aria-busy="true">
             <button id="overview-count-button" class="summary-card summary-info" type="button" aria-label="前往更新動態並清除所有篩選">
-              <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 9 4.5-9 4.5-9-4.5L12 3ZM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5" /></svg></span>
               <div class="summary-copy"><strong id="count">0</strong><span>目前更新</span></div>
             </button>
             <button id="overview-attention-button" class="summary-card summary-attention" type="button" aria-label="前往更新動態並只看需留意">
-              <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3ZM12 9v5m0 3v.1" /></svg></span>
               <div class="summary-copy"><strong id="attention-count">0</strong><span title="只計官方更新">需留意</span></div>
             </button>
             <button id="overview-sources-button" class="summary-card summary-healthy" type="button" aria-label="展開並捲到來源狀態">
-              <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM7.5 12.2l3 3 6-6" /></svg></span>
               <div class="summary-copy"><strong id="healthy-count">0/7</strong><span>來源正常</span></div>
             </button>
           </section>
@@ -81,7 +76,7 @@
       <section id="panel-updates" class="tab-panel updates-panel" role="tabpanel" aria-labelledby="tab-updates" tabindex="0" hidden>
         <section class="updates-region" aria-label="更新動態">
           <div class="feed-content">
-            <h2 class="feed-heading visually-hidden"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 1.8h7.2L14 4.6v9.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1ZM11 2v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3.5" /></svg><span>更新動態</span></h2>
+            <h2 class="feed-heading visually-hidden">更新動態</h2>
             <div class="toolbar" aria-label="更新篩選">
               <div class="toolbar-main">
                 <label class="search-field">
@@ -188,7 +183,7 @@
       <section id="panel-reset" class="tab-panel reset-panel" role="tabpanel" aria-labelledby="tab-reset" tabindex="0" hidden>
         <section class="spotlight-section" aria-labelledby="reset-spotlight-heading">
           <div class="section-heading">
-            <h2 id="reset-spotlight-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5.2 3-4 5 4 5M10.8 3l4 5-4 5M9.2 2.2 6.8 13.8" /></svg><span>Codex 重設</span></h2>
+            <h2 id="reset-spotlight-heading">Codex 重設</h2>
             <span class="pixel-loader section-pixel-loader spotlight-loader" aria-hidden="true" hidden></span>
           </div>
           <div id="spotlight-reset" class="spotlight-content" aria-busy="true"></div>

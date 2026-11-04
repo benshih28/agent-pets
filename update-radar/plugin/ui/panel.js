@@ -224,7 +224,6 @@ function createDisclosure({
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const ICON_PATHS = Object.freeze({
-  history: ['M13.2 5.2A6.3 6.3 0 1 0 14.2 9', 'M13.4 2.5v3.2h-3.2', 'M8 4.6v3.7l2.3 1.4'],
   attention: ['M8 1.5 14.5 14h-13L8 1.5Z', 'M8 5v4', 'M8 11.5v.1'],
   chevron: ['m5.5 6.5 2.5 2.5 2.5-2.5'],
   arrow: ['M2.5 8h10', 'm8.5 4 4 4-4 4'],
@@ -257,13 +256,18 @@ function createIcon(name, className = '') {
 function appendHighlightedNumbers(parent, value) {
   const text = String(value ?? '')
   let offset = 0
-  for (const match of text.matchAll(/\d+/gu)) {
+  for (const match of text.matchAll(/\d+\s*(?:天|小時|時|分|秒)?/gu)) {
     const start = match.index ?? 0
     if (start > offset) parent.append(document.createTextNode(text.slice(offset, start)))
+    const group = document.createElement('span')
+    group.className = 'codex-reset-value-group'
     const number = document.createElement('span')
     number.className = 'codex-reset-number'
-    number.textContent = match[0]
-    parent.append(number)
+    const valueMatch = match[0].match(/^(\d+)([\s\S]*)$/u)
+    number.textContent = valueMatch?.[1] ?? match[0]
+    group.append(number)
+    if (valueMatch?.[2]) group.append(document.createTextNode(valueMatch[2]))
+    parent.append(group)
     offset = start + match[0].length
   }
   if (offset < text.length) parent.append(document.createTextNode(text.slice(offset)))
@@ -277,13 +281,6 @@ function populatePixelLoader(loader) {
     pixel.style.animationDelay = `${(index % 3) * 0.12}s`
     loader.append(pixel)
   }
-  return loader
-}
-
-function createPixelLoader(className = 'pixel-loader') {
-  const loader = document.createElement('span')
-  loader.className = className
-  populatePixelLoader(loader)
   return loader
 }
 
@@ -554,10 +551,6 @@ function updateTimestamp(update) {
   return updateDate(update)?.getTime() ?? 0
 }
 
-function providerClass(update) {
-  return ['openai', 'anthropic', 'x'].includes(update?.provider) ? update.provider : 'other'
-}
-
 function isTiboUpdate(update) {
   return update?.provider === 'x' || update?.sourceId === 'tibo-x'
 }
@@ -761,16 +754,9 @@ function renderTiboUpdate(update) {
   return article
 }
 
-function officialRecordTone(update) {
-  if (update.provider === 'openai') return 'record-openai'
-  if (update.product === 'claude-code') return 'record-claude-code'
-  if (update.provider === 'anthropic') return 'record-anthropic'
-  return 'record-other'
-}
-
 function renderOfficialUpdate(update, unitKey) {
   const article = document.createElement('article')
-  article.className = `update-item official-record ${officialRecordTone(update)} provider-${providerClass(update)}`
+  article.className = 'update-item official-record'
   article.classList.toggle('is-expanded', state.expanded.has(unitKey))
   const meta = document.createElement('div')
   meta.className = 'update-card-meta'
@@ -970,7 +956,7 @@ function renderChangeGroup(changes, matches, unitKey) {
   const key = groupKey(first)
   const isRelease = key?.startsWith('release:')
   const article = document.createElement('article')
-  article.className = `update-item official-record change-group ${officialRecordTone(first)} provider-${providerClass(first)}`
+  article.className = 'update-item official-record change-group'
   const meta = document.createElement('div')
   meta.className = 'update-card-meta'
   appendText(meta, 'span', 'update-source', sourceLabel(first))
@@ -1091,11 +1077,11 @@ function renderChangeDetail() {
   elements.detailView.append(bar)
 
   const article = document.createElement('article')
-  article.className = `official-record change-detail-body ${officialRecordTone(first)}`
+  article.className = 'official-record change-detail-body'
   const meta = document.createElement('div')
   meta.className = 'official-meta'
-  appendText(meta, 'span', 'official-meta-tag official-source-label', sourceLabel(first))
-  const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatDate(first.publishedAt))
+  appendText(meta, 'span', 'official-source-label', sourceLabel(first))
+  const time = appendText(meta, 'time', 'official-time-chip', formatDate(first.publishedAt))
   time.dateTime = first.publishedAt ?? ''
   article.append(meta)
   const title = appendText(article, 'h2', 'change-detail-title', isRelease ? `${sourceLabel(first)} ${first.version}` : `${sourceLabel(first)} · ${formatDate(first.publishedAt)}`)
@@ -1146,7 +1132,7 @@ function appendRetirementRow(list, row, showDate) {
 function renderRetirement(update, unitKey) {
   const rows = update.retirements
   const article = document.createElement('article')
-  article.className = `update-item official-record retirement-record ${officialRecordTone(update)} provider-${providerClass(update)}`
+  article.className = 'update-item official-record retirement-record'
   const meta = document.createElement('div')
   meta.className = 'update-card-meta'
   appendText(meta, 'span', 'update-source', sourceLabel(update))
@@ -1158,7 +1144,9 @@ function renderRetirement(update, unitKey) {
   const flags = document.createElement('div')
   flags.className = 'update-card-flags'
   const status = retirementStatus(rows)
-  appendText(flags, 'span', `retirement-status retirement-${status.tone}`, status.text)
+  const retirement = appendText(flags, 'span', `retirement-status retirement-${status.tone}`, '')
+  appendText(retirement, 'span', 'retirement-status-dot', '').setAttribute('aria-hidden', 'true')
+  appendText(retirement, 'span', '', status.text)
   if (unitNeedsAttention([update])) {
     const signal = attentionSignal(update)
     const attention = appendText(flags, 'span', `update-attention attention-${signal.tone}`, '')
@@ -1263,19 +1251,6 @@ function tickCodexCountdown() {
   syncTabLifecycles()
 }
 
-function appendCodexSourceAttribution(parent) {
-  const sourceUrl = safeSourceUrl('https://codex-resets.com/')
-  if (!sourceUrl) return
-  const row = document.createElement('p')
-  row.className = 'codex-source-attribution'
-  const link = appendText(row, 'a', 'codex-source-link', '資料來源：codex-resets.com')
-  link.prepend(createIcon('link'))
-  link.href = '#codex-resets-source'
-  const note = appendText(row, 'span', 'codex-source-note', '')
-  bindExternalLink(link, sourceUrl, note)
-  parent.append(row)
-}
-
 function appendAnnouncementAction(parent, latestReset) {
   const sourceUrl = safeSourceUrl(latestReset.sourceUrl)
   if (!sourceUrl) return
@@ -1338,11 +1313,7 @@ function renderSpotlight(target) {
   dot.className = 'spotlight-flag-dot'
   dot.setAttribute('aria-hidden', 'true')
   flag.append(dot, document.createTextNode(hasScheduledReset ? '已排定重設' : '最新狀態'))
-  const history = document.createElement('span')
-  history.className = 'reset-history-emblem'
-  history.setAttribute('aria-hidden', 'true')
-  history.append(createIcon('history'))
-  cardHead.append(flag, history)
+  cardHead.append(flag)
   card.append(cardHead)
 
   if (hasScheduledReset) {
@@ -1426,6 +1397,7 @@ function appendCodexSourceDisclosure(parent, source) {
   const meta = failed ? '讀取失敗' : source?.status === 'ok' ? `正常${readAt ? ` · ${readAt}` : ''}`
     : source?.status === 'loading' ? '正在讀取' : '尚未讀取'
   const id = 'codex-reset-source'
+  let metaNode = null
   const disclosure = createDisclosure({
     id,
     title: '資料來源',
@@ -1435,12 +1407,22 @@ function appendCodexSourceDisclosure(parent, source) {
     rootClass: 'disclosure-root codex-reset-disclosure-root',
     buttonClass: 'disclosure-button codex-reset-disclosure-button',
     regionClass: 'disclosure-region codex-reset-disclosure-region',
+    onToggle(expanded) {
+      state.disclosures.set(id, expanded)
+      if (metaNode) metaNode.hidden = expanded
+    },
   })
-  if (failed) disclosure.root.querySelector('.disclosure-meta')?.prepend(createIcon('attention', 'disclosure-meta-icon'))
+  metaNode = disclosure.root.querySelector('.disclosure-meta')
+  if (failed && metaNode) {
+    const dot = document.createElement('span')
+    dot.className = 'disclosure-meta-dot'
+    dot.setAttribute('aria-hidden', 'true')
+    metaNode.prepend(dot)
+  }
+  if (disclosure.button.getAttribute('aria-expanded') === 'true' && metaNode) metaNode.hidden = true
   const sourceGrid = appendText(disclosure.region, 'div', 'source-grid codex-reset-source-grid', '')
   elements.resetSources = sourceGrid
   renderSources(sourceGrid, source ? [source] : [])
-  appendCodexSourceAttribution(disclosure.region)
   parent.append(disclosure.root)
   return disclosure
 }
@@ -1812,6 +1794,7 @@ function renderHeatmap() {
 function renderSources(target = elements.sources, sourceList = currentSources()) {
   if (!target) return
   const sources = Array.isArray(sourceList) ? sourceList : []
+  const codexFlat = target === elements.resetSources
   target.replaceChildren(...sources.map((source) => {
     const row = document.createElement('article')
     row.dataset.sourceId = source.id
@@ -1819,13 +1802,25 @@ function renderSources(target = elements.sources, sourceList = currentSources())
     const status = ['idle', 'loading', 'ok', 'stale', 'error'].includes(source.status) ? source.status : 'idle'
     const pendingRetry = syncTracker.isPending(source.id)
     const displayStatus = pendingRetry && status !== 'loading' ? 'loading' : status
-    row.className = `source-row source-${displayStatus}`
+    row.className = `source-row source-${displayStatus}${codexFlat ? ' codex-source-row' : ''}`
     setBusy(row, status === 'loading' || pendingRetry)
     const copy = document.createElement('div')
     copy.className = 'source-copy'
     appendText(copy, 'strong', '', source.label ?? labels.source[source.id] ?? '公開來源')
     const lastRead = formatDateTime(source.fetchedAt)
-    const detail = displayStatus === 'loading'
+    if (codexFlat) {
+      const sourceUrl = safeSourceUrl('https://codex-resets.com/')
+      if (sourceUrl) {
+        const link = appendText(copy, 'a', 'codex-source-link', 'codex-resets.com')
+        link.prepend(createIcon('link'))
+        link.href = '#codex-resets-source'
+        const note = appendText(copy, 'span', 'codex-source-note', '')
+        bindExternalLink(link, sourceUrl, note)
+      }
+    }
+    const detail = codexFlat
+      ? lastRead ? `上次讀取 ${lastRead}` : '尚未讀取'
+      : displayStatus === 'loading'
         ? (source.id === 'codex-resets' && source.fetchedAt ? `正在讀取 · 上次讀取 ${lastRead}` : '正在讀取公開來源…')
         : status === 'ok'
         ? `${source.itemCount} 筆 · ${lastRead}`
@@ -1836,15 +1831,17 @@ function renderSources(target = elements.sources, sourceList = currentSources())
     row.append(copy)
     const actions = document.createElement('div')
     actions.className = 'source-actions'
-    if (displayStatus === 'loading') actions.append(createPixelLoader('pixel-loader source-pixel-loader'))
-    appendText(actions, 'span', `status-pill status-${displayStatus}`, labels.status[displayStatus] ?? '未知')
+    if (!pendingRetry || !['stale', 'error'].includes(status)) {
+      const statusText = appendText(actions, 'span', `source-status-text status-${displayStatus}`, '')
+      appendText(statusText, 'span', 'source-status-dot', '').setAttribute('aria-hidden', 'true')
+      appendText(statusText, 'span', '', labels.status[displayStatus] ?? '未知')
+    }
     if (['stale', 'error'].includes(status)) {
       const retry = appendText(actions, 'button', 'retry-button', pendingRetry ? '同步中' : '立即重試')
       retry.type = 'button'
       retry.disabled = pendingRetry
-      if (pendingRetry) retry.append(createPixelLoader('pixel-loader retry-pixel-loader'))
       retry.addEventListener('click', async () => {
-        setGlobalStatus(`正在重新同步${source.label ?? labels.source[source.id] ?? '來源'}…`, 0)
+        setGlobalStatus(`正在重新同步 ${source.label ?? labels.source[source.id] ?? '來源'}…`, 0)
         const delivered = await dispatchSyncRequest(
           syncTracker,
           message => api.ui.postMessage(message),
@@ -2003,7 +2000,7 @@ function renderOverviewHighlights(units, now, limit) {
     if (attention) {
       const marker = document.createElement('span')
       marker.className = 'overview-highlight-attention'
-      marker.append(createIcon('attention', 'overview-highlight-attention-icon'))
+      appendText(marker, 'span', 'overview-highlight-dot', '').setAttribute('aria-hidden', 'true')
       appendText(marker, 'span', '', '需留意')
       right.append(marker)
     }
@@ -2063,7 +2060,15 @@ function renderOverview() {
     open: state.disclosures.get('source-status-disclosure') === true,
     tone: failedCount ? 'danger' : 'neutral',
   })
-  if (failedCount) disclosure.root.querySelector('.disclosure-meta')?.prepend(createIcon('attention', 'disclosure-meta-icon'))
+  if (failedCount) {
+    const meta = disclosure.root.querySelector('.disclosure-meta')
+    if (meta) {
+      const dot = document.createElement('span')
+      dot.className = 'disclosure-meta-dot'
+      dot.setAttribute('aria-hidden', 'true')
+      meta.prepend(dot)
+    }
+  }
   const sourceMessage = appendText(disclosure.region, 'p', 'source-status-message', '失敗的來源會自動重試，已有資料會保留。')
   sourceMessage.setAttribute('aria-live', 'off')
   elements.sources = appendText(disclosure.region, 'div', 'source-grid', '')

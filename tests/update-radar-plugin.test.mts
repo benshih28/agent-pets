@@ -288,7 +288,7 @@ test('Update Radar complete manifest passes validation with least-privilege host
   assert.doesNotMatch(panelSource, /window\.open|location\s*=|innerHTML/)
   assert.doesNotMatch(workerSource, /timeZone\s*:\s*['"]Asia\/Taipei['"]/)
   assert.match(workerSource, /https:\/\/codex-resets\.com\/api\/v1\/status/)
-  assert.match(panelSource, /資料來源：codex-resets\.com/)
+  assert.match(panelSource, /appendText\(copy, 'a', 'codex-source-link', 'codex-resets\.com'\)/)
   assert.match(panelSource, /codex-resets\.com\//)
   assert.match(fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8'), /codex-source-link:focus-visible/)
 })
@@ -388,10 +388,11 @@ test('Update Radar renders full Tibo text and unified official disclosures', () 
   assert.match(styles, /\.update-card-title \{[^}]*-webkit-line-clamp: 2/)
   assert.match(styles, /\.official-preview \{[^}]*-webkit-line-clamp: 1/)
   assert.match(panelSource, /const attention = units\.filter\(unitNeedsAttention\)\.length/)
-  assert.match(styles, /\.official-record\.record-openai/)
-  assert.match(styles, /\.official-record\.record-anthropic/)
-  assert.match(styles, /\.official-record\.record-claude-code/)
-  assert.match(styles, /\.official-record \{[^}]*border-left: 4px solid/s)
+  assert.match(styles, /\.official-record \{[^}]*border: 1px solid var\(--radar-border-soft\);[^}]*border-radius: 8px/s)
+  assert.doesNotMatch(styles, /\.official-record\.record-(?:openai|anthropic|claude-code)|border-left:\s*4px/)
+  assert.match(styles, /\.update-thread \{[^}]*border: 1px solid var\(--radar-border-soft\)[^}]*border-radius: 8px/s)
+  assert.match(styles, /\.thread-timeline \{[^}]*border-left: 1px solid var\(--radar-border-soft\)/)
+  assert.match(styles, /\.thread-item \+ \.thread-item \{ border-top: 1px solid var\(--radar-border-soft\); \}/)
   assert.match(styles, /@media \(forced-colors: active\)/)
   assert.match(markup, /aria-label="更新摘要"/)
 })
@@ -711,7 +712,7 @@ test('Update Radar uses its own palette in both themes and keeps hex colors in t
   const systemDark = styles.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([^}]*)\}/)?.[1] ?? ''
   const tokens = (block: string) => JSON.stringify(Array.from(block.matchAll(/(--[\w-]+):\s*([^;]+);/g), ([, name, value]) => [name, value.trim()]))
   assert.equal(tokens(dark), tokens(systemDark), 'manual dark and system dark use identical tokens')
-  for (const token of ['--radar-bg', '--radar-surface', '--radar-text', '--radar-accent', '--provider-openai', '--provider-anthropic', '--provider-claude-code', '--heat-level-4']) {
+  for (const token of ['--radar-bg', '--radar-surface', '--radar-text', '--radar-accent', '--provider-claude-code', '--provider-x', '--heat-level-4']) {
     assert.match(dark, new RegExp(`${token}:`), `dark theme defines ${token}`)
   }
   const outsideTokens = styles.split('\n').filter(line => /#[0-9a-f]{3,8}\b/i.test(line) && !/^\s*--[a-z0-9-]+:/.test(line))
@@ -730,7 +731,16 @@ test('Update Radar visual polish uses accessible SVG icons and preserves reset c
   assert.match(iconHelper, /path\.setAttribute\('d', pathData\)/)
   assert.doesNotMatch(iconHelper, /document\.createElement\(|innerHTML|insertAdjacentHTML|\beval\s*\(/)
   assert.match(panelSource, /const ICON_PATHS = Object\.freeze\(/)
-  assert.match(markup, /<p class="eyebrow">AI 公開更新<\/p>/)
+  const iconPaths = panelSource.match(/const ICON_PATHS = Object\.freeze\(\{([\s\S]*?)\n\}\)/)?.[1] ?? ''
+  for (const [, name] of iconPaths.matchAll(/^\s{2}([a-z][a-z-]*):/gm)) {
+    if (name === 'external' || name === 'x') continue // These paths are selected together for update links.
+    assert.match(panelSource, new RegExp(`createIcon\\('${name}'`), `ICON_PATHS entry ${name} is used`)
+  }
+  assert.match(panelSource, /createIcon\(isTiboUpdate\(update\) \? 'x' : 'external'\)/)
+  assert.doesNotMatch(markup, /class="(?:eyebrow|intro)"|AI 公開更新/)
+  assert.match(markup, /<header class="radar-header">/)
+  assert.match(styles, /\.radar-header \{[^}]*height: 48px;[^}]*max-height: 48px/)
+  assert.match(styles, /h1 \{[^}]*font-size: 16px;[^}]*font-weight: 600/)
   assert.match(markup, /<button id="refresh"[^>]*>[\s\S]*?<svg class="refresh-icon"[^>]*aria-hidden="true"[\s\S]*?<span>重新整理<\/span>/)
   assert.match(markup, /id="time-mode-label">相對時間<\/span>/)
   assert.match(panelSource, /elements\.timeModeLabel\.textContent = state\.absoluteTime \? '絕對時間' : '相對時間'/)
@@ -740,12 +750,13 @@ test('Update Radar visual polish uses accessible SVG icons and preserves reset c
   assert.match(styles, /\.summary-info \{ --summary-tone: var\(--radar-accent\); \}/)
   assert.match(styles, /\.summary-attention \{ --summary-tone: var\(--radar-warning\); \}/)
   assert.match(styles, /\.summary-healthy \{ --summary-tone: var\(--radar-success\); \}/)
-  assert.match(styles, /color-mix\(in srgb, var\(--radar-surface\) 92%, var\(--summary-tone\)\)/)
+  assert.doesNotMatch(markup, /summary-icon/)
+  assert.doesNotMatch(styles, /\.summary-card[^}]*background:\s*color-mix|\.summary-icon/)
   assert.match(panelSource, /appendHighlightedNumbers\(countdown, countdownText\)/)
   assert.match(panelSource, /appendHighlightedNumbers\(countdown, formatTimeSinceReset\(reset\.stats\.lastResetAt\)\)/)
   assert.match(panelSource, /countdown\.setAttribute\('aria-label', `距預定重設時間 \$\{countdown\.textContent\}`\)/)
   const iconTags = markup.match(/<svg\b[^>]*>/g) ?? []
-  assert.ok(iconTags.length >= 9)
+  assert.ok(iconTags.length >= 4, 'functional theme, refresh, and search icons remain')
   for (const iconTag of iconTags) {
     assert.match(iconTag, /aria-hidden="true"/)
     assert.match(iconTag, /focusable="false"/)
@@ -753,15 +764,145 @@ test('Update Radar visual polish uses accessible SVG icons and preserves reset c
 
   const appendHighlightedNumbers = runInNewContext(`(${panelFunctionSource('appendHighlightedNumbers')})`, {
     document: {
-      createTextNode: (text: string) => ({ textContent: text }),
-      createElement: (tagName: string) => ({ tagName, className: '', textContent: '' }),
+      createTextNode: (text: string) => ({ textContent: text, children: [] }),
+      createElement: (tagName: string) => ({
+        tagName, className: '', children: [], ownText: '',
+        set textContent(value: string) { this.ownText = value },
+        get textContent() { return this.ownText + this.children.map((node: any) => node.textContent).join('') },
+        append(...nodes: any[]) { this.children.push(...nodes) },
+      }),
     },
   }) as (parent: { append: (...nodes: Array<{ textContent: string, className?: string }>) => void }, value: string) => void
-  const appended: Array<{ textContent: string, className?: string }> = []
+  const appended: Array<{ textContent: string, className?: string, children?: Array<{ textContent: string, className?: string }> }> = []
   const originalCopy = '距上次重設 27 小時'
   appendHighlightedNumbers({ append: (...nodes) => appended.push(...nodes) }, originalCopy)
   assert.equal(appended.map(node => node.textContent).join(''), originalCopy)
-  assert.deepEqual(appended.filter(node => node.className === 'codex-reset-number').map(node => node.textContent), ['27'])
+  assert.deepEqual(appended.flatMap(node => node.children ?? []).filter(node => node.className === 'codex-reset-number').map(node => node.textContent), ['27'])
+  assert.deepEqual(appended.filter(node => node.className === 'codex-reset-value-group').map(node => node.textContent), ['27 小時'])
+  assert.match(styles, /\.codex-reset-value-group \{ white-space: nowrap; \}/)
+})
+
+test('Update Radar Phase 5 applies the compact type, color, and surface rules', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.doesNotMatch(styles, /box-shadow|gradient\s*\(|backdrop-filter/i)
+  assert.doesNotMatch(markup + styles, /eyebrow|class="intro"/)
+  for (const [, rawSize] of styles.matchAll(/font-size\s*:\s*([^;]+);/g)) {
+    const size = rawSize.trim().replace(/\s*!important$/, '')
+    assert.ok(/^\d+(?:\.\d+)?px$/.test(size)
+      ? ['12px', '13px', '14px', '16px', '24px'].includes(size)
+      : /^var\(--radar-font-(?:small|body|heading)\)$/.test(size), `unsupported font size: ${rawSize}`)
+  }
+  for (const [, rawWeight] of styles.matchAll(/font-weight\s*:\s*([^;]+);/g)) {
+    const weight = rawWeight.trim().replace(/\s*!important$/, '')
+    assert.ok(['400', '500', '600'].includes(weight), `unsupported font weight: ${rawWeight}`)
+  }
+  assert.match(styles, /--radar-gap-1:\s*4px;[\s\S]*--radar-gap-2:\s*8px;[\s\S]*--radar-gap-3:\s*12px;[\s\S]*--radar-gap-4:\s*16px;/)
+  assert.match(styles, /--radar-border-soft:\s*rgba\(/)
+  assert.match(styles, /font-variant-numeric:\s*tabular-nums/)
+  assert.match(styles, /\.radar-header \{[^}]*height: 48px;[^}]*max-height: 48px/)
+  assert.match(styles, /h1 \{[^}]*font-size: 16px;[^}]*font-weight: 600/)
+  assert.match(styles, /\.radar-tab \{[^}]*min-height: 40px/)
+  assert.match(styles, /\.radar-tab\[aria-selected="true"\] \{[^}]*border-bottom-color: var\(--radar-accent\);[^}]*font-weight: 600/)
+  assert.doesNotMatch(`${markup}${styles}${panelSource}`, /sidebarStickyTop|applySidebarLayout|--radar-sidebar-top|radar-sidebar/)
+
+  const contrast = (foreground: string, background: string) => {
+    const luminance = (hex: string) => {
+      const channels = hex.match(/[\da-f]{2}/gi)!.map(value => parseInt(value, 16) / 255)
+      const linear = channels.map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+    }
+    const pair = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+    return (pair[0] + 0.05) / (pair[1] + 0.05)
+  }
+  const token = (block: string, name: string) => block.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim() ?? ''
+  const light = styles.match(/:root \{([^}]+)\}/)?.[1] ?? ''
+  const dark = styles.match(/:root\[data-theme="dark"\] \{([^}]+)\}/)?.[1] ?? ''
+  for (const block of [light, dark]) {
+    const muted = token(block, '--radar-muted') === 'var(--radar-secondary)' ? token(block, '--radar-secondary') : token(block, '--radar-muted')
+    assert.ok(contrast(muted, token(block, '--radar-bg')) >= 4.5, 'muted text meets 4.5:1 contrast')
+  }
+})
+
+test('Phase 5a important update metadata has no decorative trailing separator', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const renderHighlights = panelFunctionSource('renderOverviewHighlights')
+  assert.doesNotMatch(styles, /\.overview-highlight-source::after/)
+  assert.match(renderHighlights, /appendText\(button, 'span', 'overview-highlight-source', sourceLabel\(first\)\)/)
+})
+
+test('Phase 5b summary statistics stay in one row and retain full labels', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  assert.match(styles, /\.summary-grid \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/)
+  assert.match(styles, /\.summary-card \{[^}]*flex-direction: column;[^}]*min-height: 56px/)
+  assert.match(styles, /\.summary-copy strong \{[^}]*overflow: visible[^}]*white-space: nowrap/)
+  assert.doesNotMatch(markup + styles, /summary-icon|grid-template-columns:\s*minmax\(0, 1fr\);[^}]*summary-grid/)
+})
+
+test('Phase 5c narrow update toolbar gives search a full row within the sticky height budget', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(styles, /@media \(max-width: 390px\)[\s\S]*?grid-template-areas: "search search" "filter time"/)
+  assert.match(styles, /\.toolbar-main \.search-field \{ grid-area: search; width: 100%; \}/)
+  assert.match(styles, /\.filter-toggle \{ grid-area: filter;/)
+  assert.match(styles, /\.time-mode \{ grid-area: time;/)
+  const tabDeclarations = styles.match(/\.radar-tabs \{([^}]*)\}/)?.[1] ?? ''
+  const toolbarDeclarations = styles.match(/\.toolbar \{([^}]*)\}/)?.[1] ?? ''
+  const inputDeclarations = styles.match(/\.toolbar input,\s*\.toolbar select \{([^}]*)\}/)?.[1] ?? ''
+  const controlsDeclarations = styles.match(/\.filter-toggle,\s*\.time-mode \{([^}]*)\}/)?.[1] ?? ''
+  const mobileRowGap = styles.match(/@media \(max-width: 390px\)[\s\S]*?\.toolbar-main\s*\{[^}]*gap:\s*(\d+)px/)
+  const gapToken = Number(styles.match(/--radar-gap-2:\s*(\d+)px/)?.[1] ?? 0)
+  const tabHeight = Number(tabDeclarations.match(/min-height:\s*(\d+)px/)?.[1] ?? 0)
+  const toolbarPadding = toolbarDeclarations.includes('padding: var(--radar-gap-2)') ? gapToken : 0
+  const toolbarBorder = Number(toolbarDeclarations.match(/border:\s*(\d+)px/)?.[1] ?? 0)
+  const searchHeight = Number(inputDeclarations.match(/min-height:\s*(\d+)px/)?.[1] ?? 0)
+  const controlsHeight = Number(controlsDeclarations.match(/min-height:\s*(\d+)px/)?.[1] ?? 0)
+  const rowGap = Number(mobileRowGap?.[1] ?? 0)
+  const stickyHeightAt278px = tabHeight + (toolbarPadding * 2) + (toolbarBorder * 2) + searchHeight + rowGap + controlsHeight
+  assert.ok(stickyHeightAt278px <= 140, `tablist and toolbar total ${stickyHeightAt278px}px`)
+})
+
+test('Phase 5d Codex countdown keeps each number with its Chinese unit', () => {
+  class TextNode {
+    className = ''
+    children: TextNode[] = []
+    private ownText = ''
+    constructor(text = '') { this.ownText = text }
+    get textContent() { return this.ownText + this.children.map(child => child.textContent).join('') }
+    set textContent(value: string) { this.ownText = value; this.children = [] }
+    append(...nodes: TextNode[]) { this.children.push(...nodes) }
+  }
+  const appendHighlightedNumbers = runInNewContext(`(${panelFunctionSource('appendHighlightedNumbers')})`, {
+    document: { createTextNode: (text: string) => new TextNode(text), createElement: () => new TextNode() },
+  }) as (parent: TextNode, value: string) => void
+  const countdown = new TextNode()
+  appendHighlightedNumbers(countdown, '8 小時 2 天')
+  assert.equal(countdown.textContent, '8 小時 2 天')
+  assert.deepEqual(countdown.children.filter(child => child.className === 'codex-reset-value-group').map(child => child.textContent), ['8 小時', '2 天'])
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  assert.match(styles, /\.codex-reset-value-group \{ white-space: nowrap; \}/)
+})
+
+test('Phase 5e Codex source disclosure uses one flat row and one visible status', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const renderSources = panelFunctionSource('renderSources')
+  const sourceDisclosure = panelFunctionSource('appendCodexSourceDisclosure')
+  assert.match(renderSources, /const codexFlat = target === elements\.resetSources/)
+  assert.match(renderSources, /source-row source-\$\{displayStatus\}\$\{codexFlat \? ' codex-source-row' : ''\}/)
+  assert.match(renderSources, /if \(!pendingRetry \|\| !\['stale', 'error'\]\.includes\(status\)\)/)
+  assert.match(renderSources, /pendingRetry \? '同步中' : '立即重試'/)
+  assert.match(sourceDisclosure, /metaNode\.hidden = expanded/)
+  assert.match(styles, /\.source-row \{[^}]*border: 0;[^}]*background: transparent/s)
+  assert.doesNotMatch(styles, /\.codex-reset-source-grid[^}]*\{[^}]*border:|\.codex-source-row[^}]*\{[^}]*background:\s*var\(--radar-surface\)/)
+  assert.doesNotMatch(panelSource, /appendCodexSourceAttribution/)
+})
+
+test('Phase 5f global retry status separates English names from Chinese text', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  assert.match(panelFunctionSource('renderSources'), /正在重新同步 \$\{source\.label/)
+  assert.doesNotMatch(panelSource, /正在重新同步(?:Codex|Anthropic|OpenAI|來源)/)
 })
 
 test('panel theme keeps light or dark, otherwise follows the system, and applies data-theme', () => {
@@ -971,9 +1112,10 @@ test('Update Radar desktop summary numbers and labels remain untruncated', () =>
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.match(styles, /\.summary-copy strong\s*\{[^}]*overflow:\s*visible[^}]*text-overflow:\s*clip[^}]*white-space:\s*nowrap/s)
   assert.match(styles, /\.summary-copy > span\s*\{[^}]*overflow:\s*visible[^}]*text-overflow:\s*clip[^}]*white-space:\s*nowrap/s)
-  const desktopOverview = styles.match(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  assert.match(desktopOverview, /\.summary-card\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/)
-  assert.match(desktopOverview, /\.summary-icon\s*\{\s*display:\s*none;\s*\}/)
+  assert.match(styles, /\.summary-grid \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/)
+  assert.match(styles, /\.summary-card \{[^}]*min-height: 56px/)
+  assert.doesNotMatch(styles, /@media[^{}]*\{[^}]*\.summary-grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s)
+  assert.doesNotMatch(styles, /\.summary-icon/)
 })
 
 test('Update Radar disclosure chevron is SVG only and legacy details rules are removed', () => {
@@ -984,15 +1126,15 @@ test('Update Radar disclosure chevron is SVG only and legacy details rules are r
   assert.doesNotMatch(styles, /\.disclosure-chevron\s*\{[^}]*border-(?:right|bottom)/s)
   assert.doesNotMatch(styles, /\.status-summary|\.status-panel\[open\].*disclosure-chevron|::-webkit-details-marker/)
   assert.match(styles, /\.disclosure-button \.disclosure-chevron\s*\{[^}]*transition:\s*transform\s+0\.15s\s+ease/)
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.disclosure-button \.disclosure-chevron\s*\{\s*transition:\s*none;/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*transition:\s*none !important;/)
 })
 
 test('Update Radar compact overview highlights put metadata and title on separate lines', () => {
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
-  const compactOverview = styles.match(/@media \(max-width: 430px\), \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  const compactOverview = styles.match(/@media \(max-width: 430px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
   assert.match(compactOverview, /\.overview-highlight-row\s*\{[^}]*grid-template-areas:[\s\S]*?"source right"\s*"title title"/)
-  assert.match(compactOverview, /\.overview-highlight-source::after\s*\{\s*content:\s*" ·";/)
+  assert.doesNotMatch(styles, /\.overview-highlight-source::after/)
   assert.match(styles, /\.overview-highlight-version\s*\{[^}]*text-overflow:\s*clip[^}]*white-space:\s*nowrap/)
   assert.match(panelSource, /appendText\(right, 'time', 'overview-highlight-time'/)
 })
@@ -1081,6 +1223,8 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
     private ownText = ''
     href = ''
     dateTime = ''
+    disabled = false
+    type = ''
     get textContent() { return this.ownText + this.children.map(child => child.textContent).join('') }
     set textContent(value: string) { this.ownText = String(value ?? ''); this.children = [] }
     append(...children: MockNode[]) {
@@ -1120,6 +1264,17 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
       }
       return null
     }
+    querySelectorAll(selector: string): MockNode[] {
+      const className = selector.startsWith('.') ? selector.slice(1) : ''
+      const matches: MockNode[] = []
+      const queue = [...this.children]
+      while (queue.length) {
+        const node = queue.shift()!
+        if (className && String(node.className ?? '').split(/\s+/u).includes(className)) matches.push(node)
+        queue.push(...(node.children ?? []))
+      }
+      return matches
+    }
   }
   const context: Record<string, any> = {
     document: {
@@ -1138,11 +1293,32 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
     renderSources: (target: MockNode, sources: Array<{ status: string }>) => {
       target.replaceChildren(...sources.map(source => {
         const row = new MockNode()
-        row.className = 'source-row'
+        row.className = 'source-row codex-source-row'
+        const copy = new MockNode()
+        copy.className = 'source-copy'
+        const sourceName = new MockNode()
+        sourceName.className = 'source-name'
+        sourceName.textContent = 'Codex 重設'
+        const sourceLink = new MockNode()
+        sourceLink.className = 'codex-source-link'
+        sourceLink.textContent = 'codex-resets.com'
+        const lastRead = new MockNode()
+        lastRead.textContent = '上次讀取 11/4 02:20'
+        copy.append(sourceName, sourceLink, lastRead)
+        const actions = new MockNode()
+        actions.className = 'source-actions'
+        const status = new MockNode()
+        status.className = `source-status-text status-${source.status}`
+        const dot = new MockNode()
+        dot.className = 'source-status-dot'
+        status.append(dot)
+        status.append(new MockNode())
+        actions.append(status)
         const retry = new MockNode()
         retry.className = 'retry-button'
         retry.textContent = ['error', 'stale'].includes(source.status) ? '立即重試' : ''
-        row.append(retry)
+        actions.append(retry)
+        row.append(copy, actions)
         return row
       }))
     },
@@ -1151,7 +1327,6 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   context.createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context)
   context.safeSourceUrl = runInNewContext(`(${panelFunctionSource('safeSourceUrl')})`, context)
   context.appendAnnouncementAction = runInNewContext(`(${panelFunctionSource('appendAnnouncementAction')})`, context)
-  context.appendCodexSourceAttribution = runInNewContext(`(${panelFunctionSource('appendCodexSourceAttribution')})`, context)
   const appendAnnouncement = runInNewContext(`(${panelFunctionSource('appendCodexAnnouncementDisclosure')})`, context) as (parent: MockNode, latest: any) => any
   const appendSource = runInNewContext(`(${panelFunctionSource('appendCodexSourceDisclosure')})`, context) as (parent: MockNode, source: any) => any
 
@@ -1187,12 +1362,16 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   })
   const failureMeta = source.button.querySelector('.disclosure-meta')
   assert.equal(failureMeta?.textContent, '讀取失敗')
-  assert.ok(failureMeta?.querySelector('.disclosure-meta-icon'), 'collapsed failure metadata includes an icon')
+  assert.ok(failureMeta?.querySelector('.disclosure-meta-dot'), 'collapsed failure metadata includes a status dot')
   assert.equal(source.region.hidden, true)
   assert.equal(source.region.contains(failureMeta!), false, 'the failure metadata is outside the collapsed region')
   assert.equal(source.button.contains(source.region.querySelector('.source-row')!), false, 'the failure metadata stays in the title row, outside its region')
   assert.ok(source.region.querySelector('.retry-button'), 'the Codex source row keeps the existing retry control')
   assert.match(source.region.textContent, /codex-resets\.com/)
+  assert.equal(source.region.querySelectorAll('.source-status-text').length, 1, 'the expanded flat row displays only one source status')
+  source.button.listeners.get('click')?.()
+  assert.equal(failureMeta?.hidden, true, 'the collapsed status is hidden while the row status is visible')
+  assert.equal(source.region.querySelectorAll('.source-status-text').length, 1)
   context.state.disclosures.set('codex-reset-source', false)
   const healthySource = appendSource(new MockNode(), {
     id: 'codex-resets', status: 'ok', itemCount: 1, fetchedAt: '2026-11-04T02:20:00.000Z', label: 'Codex 重設',
@@ -1215,6 +1394,14 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   assert.match(panelFunctionSource('appendCodexAnnouncementDisclosure'), /text\.slice\(0, 280\)/)
   assert.match(panelFunctionSource('appendText'), /element\.textContent = String\(text \?\? ''\)/)
   assert.match(panelFunctionSource('appendCodexSourceDisclosure'), /renderSources\(sourceGrid, source \? \[source\] : \[\]\)/)
+  const renderSources = panelFunctionSource('renderSources')
+  assert.match(renderSources, /const codexFlat = target === elements\.resetSources/)
+  assert.match(renderSources, /source-row source-\$\{displayStatus\}\$\{codexFlat \? ' codex-source-row' : ''\}/)
+  assert.match(renderSources, /if \(!pendingRetry \|\| !\['stale', 'error'\]\.includes\(status\)\)/)
+  assert.match(renderSources, /pendingRetry \? '同步中' : '立即重試'/)
+  assert.match(styles, /\.source-row \{[^}]*border: 0;[^}]*background: transparent/s)
+  assert.match(styles, /\.codex-reset-source-grid \{ grid-template-columns: minmax\(0, 1fr\); margin-top: 0; \}/)
+  assert.doesNotMatch(styles, /\.codex-reset-source-grid[^}]*\{[^}]*border:|\.codex-source-row[^}]*\{[^}]*background:\s*var\(--radar-surface\)/)
   assert.match(panelFunctionSource('renderSources'), /dispatchSyncRequest\([\s\S]*?source\.id,[\s\S]*?type: 'radar:retry-source'/)
   assert.match(styles, /\.codex-announcement-text\s*\{[^}]*white-space:\s*pre-wrap/)
   assert.match(styles, /\.codex-reset-countdown\s*\{[^}]*font-size:\s*24px/)
@@ -1369,7 +1556,10 @@ test('Update Radar uses sticky single-column tabs and removes sidebar layout cod
   }
   assert.match(styles, /\.toolbar \{[^}]*top: var\(--radar-sticky-offset\);/)
   assert.match(styles, /\.radar-tab\[aria-selected="true"\] \{[^}]*border-bottom-color: var\(--radar-accent\);[^}]*font-weight: 600;/)
-  assert.match(styles, /\.radar-tab\[aria-selected="true"\] \{ border-bottom-color: Highlight; color: CanvasText; font-weight: 700; \}/)
+  const forcedColorsTab = styles.match(/\.radar-tab\[aria-selected="true"\] \{([^}]*)\}/g)?.at(-1) ?? ''
+  assert.match(forcedColorsTab, /border-bottom: 2px solid Highlight/)
+  assert.match(forcedColorsTab, /outline: 2px solid Highlight/)
+  assert.match(forcedColorsTab, /font-weight: 600/)
   assert.match(narrowTabs, /\.radar-tab-count \{ display: none; \}/)
   assert.match(desktop, /width: min\(100%, 760px\)/)
   assert.doesNotMatch(desktop, /grid-template-columns: 368px/)
