@@ -298,8 +298,8 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.match(markup, /近 26 週官方 AI 更新/)
-  assert.match(markup, /每天的官方更新則數，Claude Code 每個版本、Claude Platform 每天各算一則，不含 Tibo 貼文/)
-  assert.match(markup, /官方需留意/)
+  assert.match(markup, /每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo/)
+  assert.match(markup, /需留意/)
   assert.match(markup, /id="tibo-summary"[^>]*type="button"/)
   assert.match(panelSource, /function isTiboUpdate\(update\)/)
   assert.match(panelSource, /const officialUpdates = updates\.filter\(update => !isTiboUpdate\(update\)\)/)
@@ -309,6 +309,14 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   assert.match(panelSource, /elements\.provider\.value = 'x'/)
   assert.match(panelSource, /scrollIntoView/)
   assert.match(styles, /\.tibo-summary:focus-visible/)
+})
+
+test('Update Radar panel copy avoids internal terms and longer labels', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const internalCopy = /背景插件|退避|自我回文|快速判讀|需要留意/
+  assert.doesNotMatch(markup, internalCopy)
+  assert.doesNotMatch(panelSource, internalCopy)
 })
 
 test('Update Radar official previews drop a leading copy of the title', () => {
@@ -356,8 +364,8 @@ test('Update Radar renders Tibo as a bubble and official updates as source-accen
   const officialRender = panelSource.slice(panelSource.indexOf('function renderOfficialUpdate'), panelSource.indexOf('function resetTypeLabel'))
   assert.match(tiboRender, /time-chip/)
   assert.match(tiboRender, /Tibo \/ X/)
-  assert.match(tiboRender, /原始貼文/)
-  assert.match(tiboRender, /自我回文/)
+  assert.match(tiboRender, /'貼文'/)
+  assert.match(tiboRender, /'續文'/)
   assert.doesNotMatch(tiboRender, /change-label|category-label|attention-chip|appendQuickRead/)
   assert.match(panelFunctionSource('appendDetails'), /appendQuickRead\(content, update\)/)
   assert.match(officialRender, /official-record/)
@@ -366,7 +374,7 @@ test('Update Radar renders Tibo as a bubble and official updates as source-accen
   assert.match(panelSource, /preview\.scrollHeight > preview\.clientHeight \+ 1/)
   assert.match(panelSource, /new ResizeObserver/)
   assert.match(panelSource, /window\.addEventListener\('resize'/)
-  assert.match(panelSource, /展開快速判讀/)
+  assert.match(panelSource, /展開重點/)
   // 展開是撐開原本的預覽，不再另外印一份全文。
   assert.doesNotMatch(panelSource, /full-copy|展開完整原文|展開原文/)
   assert.match(tiboRender, /appendExpandToggle\(bubble, preview\)/)
@@ -380,7 +388,7 @@ test('Update Radar renders Tibo as a bubble and official updates as source-accen
   assert.match(styles, /\.official-record\.record-claude-code/)
   assert.match(styles, /\.official-record \{[^}]*border-left: 4px solid/s)
   assert.match(styles, /@media \(forced-colors: active\)/)
-  assert.match(markup, /需要留意數僅計官方更新/)
+  assert.match(markup, /aria-label="更新摘要"/)
 })
 
 test('Update Radar initial skeletons cover no state and an empty all-loading state, then clear busy on data', () => {

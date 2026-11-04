@@ -429,7 +429,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
       const key = entries.map(entry => (entry.kind === 'release' ? `claude-code-${entry.version}` : (entry.updates ?? [entry.update])[0].id)).join('-')
       await notify({
         title: `AI 更新雷達有 ${entries.length} 則新內容`,
-        body: '開啟更新雷達查看來源、變更類型與版本差異。',
+        body: '打開更新雷達查看詳情。',
         link: updates[0].sourceUrl,
         priority: updates.some(isCritical) ? 'high' : 'normal',
         dedupeKey: `update-radar-batch-${key.slice(0, 95)}`,
@@ -462,7 +462,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
       const { update } = entry
       const definition = SOURCE_BY_ID.get(update.sourceId)
       const title = update.sourceId === 'tibo-x'
-        ? (update.postKind === 'self-reply' ? 'Tibo 有新的自我回文' : 'Tibo 有新的原始貼文')
+        ? (update.postKind === 'self-reply' ? 'Tibo 發了新續文' : 'Tibo 發了新貼文')
         : `${definition?.label ?? 'AI'} 有新更新`
       await notify({
         title,

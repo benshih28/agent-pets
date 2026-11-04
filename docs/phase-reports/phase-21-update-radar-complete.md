@@ -52,9 +52,9 @@ Update Radar 插件版本：`0.1.0`（未變更）
 ### 完整面板
 
 - 頂部顯示更新總數、需留意數量與正常來源數。
-- 來源區顯示六個來源的筆數、最近同步、快取／失敗狀態、下次重試與「立即重試」。
+- 來源區顯示六個來源的筆數、最近同步、快取／失敗狀態、下次再試與「立即再試」。
 - 工具列可搜尋並依來源、更新類型與變更類型篩選；Tibo 任一回文符合篩選時仍保留整串上下文。
-- 官方卡片顯示快速判讀、可展開原文、版本差異、生效日期與受控來源按鈕。
+- 官方卡片顯示重點、可展開原文、版本差異、生效日期與受控來源按鈕。
 - 依 Liquid Glass 規則，只有黏附式工具列使用單層 functional glass；長列表與卡片維持 content layer，不使用 glass-on-glass。CSS 有 `focus-visible`、`prefers-reduced-motion`、`prefers-contrast` 與 `prefers-reduced-transparency` fallback。
 
 ## 信任邊界與安全檢查
@@ -99,7 +99,7 @@ Update Radar 插件版本：`0.1.0`（未變更）
 - 第一次啟用曾出現與 Phase 20 相同的隔離環境瞬時 `host_unavailable`；同一隔離環境重新啟用後成功，未再重現。
 - 真實插件面板同步 160 筆，來源為 OpenAI API 48、OpenAI deprecations 14、Claude Platform 48、Claude Models 2、Claude Code 48、Tibo 0，健康度 6/6。Tibo 0 表示驗收當天當下沒有符合的公開貼文，不是來源失敗。
 - 面板 viewport 為 423×455，document/client width 同為 408，沒有水平溢位；實際 Claude Code 資料顯示 `v2.1.311 → v2.1.312`。
-- 以真實 DOM 點擊第一個「查看官方來源」後，fake shell 只記錄一筆 `https://github.com/anthropics/claude-code/releases/tag/v2.1.312`；按鈕狀態顯示「已交給系統瀏覽器」。
+- 以真實 DOM 點擊第一個「查看官方來源」後，fake shell 只記錄一筆 `https://github.com/anthropics/claude-code/releases/tag/v2.1.312`；按鈕狀態顯示「已在瀏覽器開啟」。
 - fake safeStorage 起始／結束皆為 `{ isEncryptionAvailable: 0, encryptString: 0, decryptString: 0 }`；外開由 fake shell 攔截，未碰觸真實 Keychain 或瀏覽器。
 
 ## 殘餘風險
@@ -148,13 +148,13 @@ Update Radar 插件版本：`0.1.0`（未變更）
 
 ## 後續：Update Radar `0.2.3`（2026-11-02）
 
-- **淺色／深色切換**：頁首「全部重新整理」上方新增膠囊開關（☀︎ 淺色／☾ 深色，`role="radiogroup"`，方向鍵可切換）。未選擇前跟隨系統且開關同步顯示系統模式；選擇後存在插件 storage 的 `panel-theme`，以 `data-theme` 套用，手動深色與系統深色共用完全相同的 token（測試比對）。讀取設定不阻塞面板啟動，讀到前使用者已選擇則以選擇為準；滑塊只在使用者切換時才有動畫，開啟面板還原已存選擇時直接到位。先前三段式（含「系統」）與「讀到前先隱藏內容」的做法已捨棄。
+- **淺色／深色切換**：頁首「重新整理」上方新增膠囊開關（☀︎ 淺色／☾ 深色，`role="radiogroup"`，方向鍵可切換）。未選擇前跟隨系統且開關同步顯示系統模式；選擇後存在插件 storage 的 `panel-theme`，以 `data-theme` 套用，手動深色與系統深色共用完全相同的 token（測試比對）。讀取設定不阻塞面板啟動，讀到前使用者已選擇則以選擇為準；滑塊只在使用者切換時才有動畫，開啟面板還原已存選擇時直接到位。先前三段式（含「系統」）與「讀到前先隱藏內容」的做法已捨棄。
 - **電腦版雙欄**：插件區寬度 ≥ 820px（拉寬控制面板或日後 host 放大）時，Codex 重設、摘要、熱度圖與來源狀態移到 368px 的固定側欄（內容超出時側欄自行捲動、細捲軸），右欄為更新列表與篩選列；頁首回到單列並以分隔線區隔，熱度圖在側欄包成卡片。窄於 820px 時側欄容器為 `display: contents`，單欄版面不變。詳情頁最寬 760px 置中。
 - 驗證：Update Radar 測試 40/40、update-radar 套件 32/32、全部單元測試 514/514、`vue-tsc` 通過。隔離 Electron 以真實點擊與按鍵確認切換、記憶與重開後視窗位置不變；460／840／960 寬淺深色截圖無水平溢出、側欄捲動後固定。另以 screenshot-workflow（Playwright，固定 fixture、注入唯讀的 `agentPetsPlugin` stub）擷取窄版／電腦版淺深色、外觀開關、版本卡、停用卡與詳情頁 8 張，原尺寸與 2 倍逐張審查後核准。權限、網域與 manifest（除版本外）未變更。
 
 ## 後續：Update Radar `0.2.4`（2026-11-03）
 
-- **單一深淺色按鈕**：0.2.3 的兩段式開關改為「全部重新整理」左側的圓形圖示按鈕；圖示顯示按下後的模式（淺色時月亮、深色時太陽），`aria-label`／`title` 為「切換為深色」或「切換為淺色」。未選擇前跟隨系統，選擇後記住。
+- **單一深淺色按鈕**：0.2.3 的兩段式開關改為「重新整理」左側的圓形圖示按鈕；圖示顯示按下後的模式（淺色時月亮、深色時太陽），`aria-label`／`title` 為「切換為深色」或「切換為淺色」。未選擇前跟隨系統，選擇後記住。
 - **單一捲軸**：移除側欄自己的 `max-height`／`overflow-y`，整個面板只有 document 一條垂直捲軸；任何版面容器都不再自行捲動。
 - **電腦版（≥ 900px）**：頁首 sticky 且不透明，高度寫入 `--radar-sticky-offset`；篩選列固定在頁首下方。側欄一律 sticky，`sidebarStickyTop()` 依高度選擇對齊：放得下時停在頁首下方，放不下時 `top` 為負值，先隨頁面捲動、底部貼齊可視區後停住，消除右側列表很長時左側的大片空白。不監聽 scroll；回捲時維持底部對齊直到接近頁首，是刻意的簡化。所有 `scrollIntoView` 目標加上 `scroll-margin-top`，熱度圖選日期後第一張卡片不會被篩選列遮住。
 - **窄版**：維持單欄、不啟用左右 sticky；插件區最窄約 278px 時熱度圖不再水平溢出。搜尋、篩選、時間切換與卡片按鈕的觸控高度至少 36px。

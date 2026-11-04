@@ -135,7 +135,7 @@ async function selectPanelTheme(value) {
   try {
     await api.storage.set('panel-theme', panelTheme)
   } catch {
-    elements.status.textContent = '無法儲存外觀設定，變更只套用於目前面板。'
+    elements.status.textContent = '外觀設定未儲存，只在這次有效。'
   }
 }
 
@@ -258,8 +258,8 @@ const syncTracker = createPendingSyncTracker({
     if (outcome === 'timeout') {
       const source = currentSources().find(item => item.id === key)
       elements.status.textContent = key === 'all'
-        ? '等待來源同步逾時，請查看來源狀態後再試。'
-        : `等待${source?.label ?? labels.source[key] ?? '來源'}同步逾時，請稍後重試。`
+        ? '同步逾時，請查看來源狀態。'
+        : `${source?.label ?? labels.source[key] ?? '來源'} 同步逾時，請稍後再試。`
     }
   },
 })
@@ -381,7 +381,7 @@ function renderUpdateListSkeleton() {
   }
   elements.updates.replaceChildren(...cards)
   elements.empty.hidden = true
-  elements.resultStatus.textContent = '正在同步更新資料…'
+  elements.resultStatus.textContent = '正在同步…'
   setBusy(elements.updates, true)
 }
 
@@ -500,7 +500,7 @@ function appendQuickRead(parent, update) {
   const attention = attentionSignal(update)
   const section = document.createElement('section')
   section.className = 'quick-read'
-  section.setAttribute('aria-label', '快速判讀')
+  section.setAttribute('aria-label', '重點')
   appendInsight(section, '變更', labels.changeType[update.changeType] ?? '更新')
   appendInsight(section, '影響範圍', `${labels.product[update.product] ?? '其他'} · ${labels.category[update.category] ?? '其他更新'}`)
   appendInsight(section, '注意事項', attention.label, `attention-${attention.tone}`)
@@ -528,10 +528,10 @@ function bindExternalButton(button, sourceUrl, note) {
     if (note) note.textContent = '正在開啟…'
     try {
       await api.links.openExternal(sourceUrl)
-      if (note) note.textContent = '已交給系統瀏覽器'
+      if (note) note.textContent = '已在瀏覽器開啟'
     } catch (error) {
       const code = error && typeof error === 'object' ? (error.code ?? error.message ?? '') : ''
-      if (note) note.textContent = code === 'rate_limited' ? '操作太頻繁，請稍後再試' : code === 'denied' ? '請直接點擊按鈕後再試' : '無法開啟來源'
+      if (note) note.textContent = code === 'rate_limited' ? '操作太頻繁，請稍後再試' : code === 'denied' ? '請再點一次' : '無法開啟連結'
       button.disabled = false
     }
   })
@@ -547,10 +547,10 @@ function bindExternalLink(link, sourceUrl, note) {
     if (note) note.textContent = '正在開啟…'
     try {
       await api.links.openExternal(sourceUrl)
-      if (note) note.textContent = '已交給系統瀏覽器'
+      if (note) note.textContent = '已在瀏覽器開啟'
     } catch (error) {
       const code = error && typeof error === 'object' ? (error.code ?? error.message ?? '') : ''
-      if (note) note.textContent = code === 'rate_limited' ? '操作太頻繁，請稍後再試' : code === 'denied' ? '請直接點擊連結後再試' : '無法開啟來源'
+      if (note) note.textContent = code === 'rate_limited' ? '操作太頻繁，請稍後再試' : code === 'denied' ? '請再點一次' : '無法開啟連結'
     } finally {
       opening = false
       link.removeAttribute('aria-busy')
@@ -561,7 +561,7 @@ function bindExternalLink(link, sourceUrl, note) {
 function appendSourceAction(parent, update) {
   const sourceUrl = safeSourceUrl(update.sourceUrl)
   if (!sourceUrl) {
-    return appendText(parent, 'p', 'source-unavailable', '來源連結無法安全驗證。')
+    return appendText(parent, 'p', 'source-unavailable', '無法驗證這個連結。')
   }
   const row = document.createElement('div')
   row.className = 'source-action'
@@ -576,7 +576,7 @@ function appendSourceAction(parent, update) {
 function appendDetails(parent, update) {
   const details = document.createElement('details')
   details.className = 'update-details'
-  appendText(details, 'summary', '', '展開快速判讀')
+  appendText(details, 'summary', '', '展開重點')
   const content = document.createElement('div')
   content.className = 'details-content'
   appendQuickRead(content, update)
@@ -667,8 +667,8 @@ function renderTiboBubble(update, role = '') {
   const time = appendText(meta, 'time', 'time-chip', formatUpdateTime(update))
   time.dateTime = dateTime
   appendText(meta, 'span', 'provider-label provider-x', 'Tibo / X')
-  if (role === 'root') appendText(meta, 'span', 'post-kind post-kind-root', '原始貼文')
-  if (role === 'self-reply') appendText(meta, 'span', 'post-kind post-kind-self-reply', '自我回文')
+  if (role === 'root') appendText(meta, 'span', 'post-kind post-kind-root', '貼文')
+  if (role === 'self-reply') appendText(meta, 'span', 'post-kind post-kind-self-reply', '續文')
   bubble.append(meta)
 
   const preview = appendText(bubble, 'p', 'message-preview', update.summary || update.title || '原文內容未提供。')
@@ -705,7 +705,7 @@ function renderOfficialUpdate(update) {
   appendText(meta, 'span', `official-meta-tag change-label change-${update.changeType}`, labels.changeType[update.changeType] ?? '更新')
   appendText(meta, 'span', 'official-meta-tag category-label', labels.category[update.category] ?? '其他更新')
   const signal = attentionSignal(update)
-  if (signal.tone !== 'neutral') appendText(meta, 'span', `official-meta-tag attention-chip attention-${signal.tone}`, `需要留意 · ${signal.label}`)
+  if (signal.tone !== 'neutral') appendText(meta, 'span', `official-meta-tag attention-chip attention-${signal.tone}`, `需留意 · ${signal.label}`)
   article.append(meta)
   const { headline, previewText } = officialHeadline(update)
   if (previewText) {
@@ -862,7 +862,7 @@ function renderChangeGroup(changes, matches) {
   const time = appendText(meta, 'time', 'official-meta-tag official-time-chip', formatUpdateTime(first))
   time.dateTime = first.publishedAtTime ?? first.publishedAt ?? ''
   appendText(meta, 'span', 'official-meta-tag category-label', isRelease ? '版本更新' : '當日更新')
-  if (changes.some(isCriticalChange)) appendText(meta, 'span', 'official-meta-tag attention-chip attention-critical', '需要留意 · 有移除或棄用')
+  if (changes.some(isCriticalChange)) appendText(meta, 'span', 'official-meta-tag attention-chip attention-critical', '需留意 · 含移除或棄用')
   article.append(meta)
 
   const heading = document.createElement('div')
@@ -881,7 +881,7 @@ function renderChangeGroup(changes, matches) {
   }
   article.append(counts)
   if (matches.length < changes.length) {
-    appendText(article, 'p', 'change-filter-note', `符合篩選 ${matches.length} 項，共 ${changes.length} 項`)
+    appendText(article, 'p', 'change-filter-note', `符合 ${matches.length} 項，共 ${changes.length} 項`)
   }
 
   // 少量變更直接完整列出，不需要再展開。
@@ -992,7 +992,7 @@ function renderChangeDetail() {
   const title = appendText(article, 'h2', 'change-detail-title', isRelease ? `${sourceLabel(first)} ${first.version}` : `${sourceLabel(first)} · ${formatDate(first.publishedAt)}`)
   title.id = 'change-detail-title'
   if (isRelease && first.previousVersion) appendText(article, 'p', 'change-group-subtitle', `上一版 ${first.previousVersion}`)
-  if (shown.length < changes.length) appendText(article, 'p', 'change-filter-note', `符合篩選 ${shown.length} 項，共 ${changes.length} 項`)
+  if (shown.length < changes.length) appendText(article, 'p', 'change-filter-note', `符合 ${shown.length} 項，共 ${changes.length} 項`)
   appendChangeBrowser(article, shown, state.detail.type, (type) => { if (state.detail) state.detail.type = type })
   appendSourceAction(article, first)
   elements.detailView.append(article)
@@ -1086,7 +1086,7 @@ function formatAbsoluteResetTime(value) {
 
 function formatTimeSinceReset(value) {
   const timestamp = Date.parse(value)
-  if (!Number.isFinite(timestamp)) return '距上次重設時間未提供'
+  if (!Number.isFinite(timestamp)) return '上次重設時間不明'
   const elapsedHours = Math.max(0, Math.floor((Date.now() - timestamp) / 3600000))
   if (elapsedHours > 48) return `距上次重設 ${Math.floor(elapsedHours / 24)} 天 ${elapsedHours % 24} 小時`
   if (elapsedHours === 0) return '距上次重設不到 1 小時'
@@ -1148,8 +1148,8 @@ function renderSpotlight() {
       return
     }
     const statusText = ['error', 'stale'].includes(source?.status)
-      ? '目前無法讀取 Codex 重設資料，請稍後重試。'
-      : '尚無 Codex 重設資料，正在等待來源同步。'
+      ? '無法讀取 Codex 重設資料，請稍後再試。'
+      : '尚無 Codex 重設資料，同步中…'
     appendText(card, 'p', 'codex-reset-status', statusText).setAttribute('role', 'status')
     appendCodexSourceAttribution(card)
     elements.spotlight.replaceChildren(card)
@@ -1160,7 +1160,7 @@ function renderSpotlight() {
 
   appendText(card, 'span', 'spotlight-flag attention-neutral', hasFutureSchedule ? '已排定重設' : '最新狀態')
   if (['stale', 'error'].includes(source?.status)) {
-    appendText(card, 'p', 'codex-reset-status', '來源讀取失敗，以下顯示上次成功資料。').setAttribute('role', 'status')
+    appendText(card, 'p', 'codex-reset-status', '讀取失敗，顯示上次的資料。').setAttribute('role', 'status')
   }
 
   if (hasFutureSchedule) {
@@ -1300,8 +1300,8 @@ function renderUpdates() {
   }))
   elements.empty.hidden = groups.length > 0
   elements.resultStatus.textContent = groups.length > 0
-    ? `顯示 ${groups.length} 個區塊、${visibleCount} 則內容。Claude Code 依版本、Claude Platform 依日期合併，Tibo 對話會保留整串上下文。`
-    : '目前的篩選條件沒有結果。'
+    ? `${groups.length} 組 · ${visibleCount} 則`
+    : '沒有符合篩選的更新。'
   renderDayFilter(groups.length)
 }
 
@@ -1344,7 +1344,7 @@ function appliedFilterCount() {
 function renderFilterControls() {
   const count = appliedFilterCount()
   elements.filterToggleLabel.textContent = count ? `篩選 · ${count}` : '篩選'
-  elements.filterCountStatus.textContent = count ? `已套用 ${count} 項篩選條件` : '目前沒有篩選條件'
+  elements.filterCountStatus.textContent = count ? `已套用 ${count} 個篩選` : '未套用篩選'
   elements.clearFilters.disabled = count === 0
 }
 
@@ -1401,7 +1401,7 @@ function renderHeatmapSkeleton() {
   }
   elements.heatmap.replaceChildren(...cells)
   elements.heatMonths.replaceChildren(...months)
-  elements.heatmap.setAttribute('aria-label', '官方 AI 更新熱度圖正在同步')
+  elements.heatmap.setAttribute('aria-label', '熱度圖同步中')
   setBusy(elements.heatmap, true)
   elements.heatLoader.hidden = true
 }
@@ -1430,7 +1430,7 @@ function renderHeatmap() {
   const originalPosts = todayTibo.filter(update => update.postKind === 'root').length
   const selfReplies = todayTibo.filter(update => update.postKind === 'self-reply').length
   elements.tiboSummaryText.textContent = todayTibo.length
-    ? `今天 Tibo 貼文 ${todayTibo.length} 則（原貼 ${originalPosts}、自我回文 ${selfReplies}）`
+    ? `今天 Tibo 貼文 ${todayTibo.length} 則（貼文 ${originalPosts}、續文 ${selfReplies}）`
     : '今天 Tibo 尚無新貼文'
   const currentSunday = new Date(today)
   currentSunday.setDate(today.getDate() - today.getDay())
@@ -1479,7 +1479,7 @@ function renderHeatmap() {
         button.className = 'heat-cell-button'
         button.dataset.day = key
         button.setAttribute('aria-pressed', String(state.day === key))
-        button.setAttribute('aria-label', `${description}，顯示當天卡片`)
+        button.setAttribute('aria-label', `${description}，點擊只看這天`)
         button.append(dot)
         cell.append(button)
       } else {
@@ -1531,7 +1531,7 @@ function renderSources() {
           { type: 'radar:retry-source', sourceId: source.id },
         )
         if (!delivered) {
-          elements.status.textContent = '背景插件目前無法使用，請確認插件已啟用。'
+          elements.status.textContent = '插件沒有回應，請確認已啟用。'
         }
       })
     }
@@ -1545,7 +1545,7 @@ function renderTimeMode() {
   const nextLabel = state.absoluteTime ? '相對時間' : '絕對時間'
   elements.timeModeLabel.textContent = state.absoluteTime ? '絕對' : '相對'
   elements.timeMode.setAttribute('aria-pressed', String(state.absoluteTime))
-  elements.timeMode.setAttribute('aria-label', `目前顯示${label}，切換為${nextLabel}`)
+  elements.timeMode.setAttribute('aria-label', `切換為${nextLabel}`)
 }
 
 function render(radar) {
@@ -1566,8 +1566,8 @@ function render(radar) {
   renderRefreshControl()
   elements.status.textContent = loading
     ? '正在檢查公開來源…'
-    : syncTracker.isPending('all') ? '正在等待背景插件重新整理全部來源…'
-    : `上次檢查：${formatDateTime(radar?.lastCheckedAt)}。失敗來源會自動退避重試，快取不會被清除。`
+    : syncTracker.isPending('all') ? '正在重新整理所有來源…'
+    : `上次檢查：${formatDateTime(radar?.lastCheckedAt)}。失敗的來源會自動重試，已有資料會保留。`
   renderSources()
   renderSpotlight()
   renderHeatmap()
@@ -1663,10 +1663,10 @@ elements.timeMode.addEventListener('click', () => {
 
 elements.refresh.addEventListener('click', async () => {
   if (syncTracker.isPending('all')) return
-  elements.status.textContent = '正在要求背景插件重新整理全部來源…'
+  elements.status.textContent = '正在重新整理所有來源…'
   const delivered = await dispatchSyncRequest(syncTracker, message => api.ui.postMessage(message), 'all', { type: 'radar:refresh' })
   if (!delivered) {
-    elements.status.textContent = '背景插件目前無法使用，請確認插件已啟用。'
+    elements.status.textContent = '插件沒有回應，請確認已啟用。'
   }
 })
 
@@ -1678,12 +1678,12 @@ try {
   const stored = await api.storage.get('radar-state')
   if (stored.found) render(stored.value)
 } catch {
-  elements.status.textContent = '無法讀取已保存資料，正在詢問背景插件。'
+  elements.status.textContent = '讀不到已保存的資料，正在重新取得…'
 }
 
 try {
   const result = await api.ui.postMessage({ type: 'radar:get-state' })
-  if (!result.delivered) elements.status.textContent = '背景插件目前無法使用，請確認插件已啟用。'
+  if (!result.delivered) elements.status.textContent = '插件沒有回應，請確認已啟用。'
 } catch {
-  elements.status.textContent = '背景插件目前無法使用，請確認插件已啟用。'
+  elements.status.textContent = '插件沒有回應，請確認已啟用。'
 }

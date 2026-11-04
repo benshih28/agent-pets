@@ -21,7 +21,7 @@
             <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.8" /><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1" /></svg>
           </button>
           <button id="refresh" class="primary-action" type="button">
-            <span>全部重新整理</span>
+            <span>重新整理</span>
             <span id="refresh-loader" class="pixel-loader" aria-hidden="true" hidden></span>
           </button>
         </div>
@@ -37,14 +37,14 @@
         <div id="spotlight" class="spotlight-content" aria-busy="true"></div>
       </section>
 
-      <section id="summary-grid" class="summary-grid" aria-label="更新摘要；需要留意數僅計官方更新" aria-busy="true">
+      <section id="summary-grid" class="summary-grid" aria-label="更新摘要" aria-busy="true">
         <div class="summary-card">
           <strong id="count">0</strong>
           <span>目前更新</span>
         </div>
         <div class="summary-card summary-attention">
           <strong id="attention-count">0</strong>
-          <span title="只計官方更新">官方需留意</span>
+          <span title="只計官方更新">需留意</span>
         </div>
         <div class="summary-card summary-healthy">
             <strong id="healthy-count">0/7</strong>
@@ -56,7 +56,7 @@
         <div class="heat-heading">
           <div>
             <h2 id="heat-heading">近 26 週官方 AI 更新</h2>
-            <p>每天的官方更新則數，Claude Code 每個版本、Claude Platform 每天各算一則，不含 Tibo 貼文</p>
+            <p>每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo</p>
           </div>
           <span id="heat-loader" class="pixel-loader section-pixel-loader" aria-hidden="true" hidden></span>
         </div>
@@ -110,7 +110,7 @@
                 <span id="filter-toggle-label">篩選</span>
                 <span class="filter-chevron" aria-hidden="true"></span>
               </button>
-              <button id="time-mode" class="time-mode" type="button" aria-pressed="false" aria-label="目前顯示相對時間，切換為絕對時間">
+              <button id="time-mode" class="time-mode" type="button" aria-pressed="false" aria-label="切換為絕對時間">
                 <span id="time-mode-label">相對</span>
                 <span class="switch-track" aria-hidden="true"><span></span></span>
               </button>
@@ -149,7 +149,7 @@
                 </label>
               </div>
               <div class="filter-actions">
-                <span id="filter-count-status">目前沒有篩選條件</span>
+                <span id="filter-count-status">未套用篩選</span>
                 <button id="clear-filters" class="clear-filters" type="button" disabled>清除篩選</button>
               </div>
             </div>
@@ -162,16 +162,16 @@
           <section id="updates" class="update-list" aria-label="AI 更新" aria-busy="true"></section>
           <section id="empty" class="empty-state" hidden>
             <h2>目前沒有符合條件的更新</h2>
-            <p>可調整篩選條件，或稍後重新整理。來源失敗時仍會保留上次成功的資料。</p>
+            <p>試著放寬篩選，或稍後重新整理。</p>
           </section>
           <footer>
-            <p>內容保留官方原文，不使用付費 AI 摘要。外部連結只會由你的點擊交給系統瀏覽器開啟。</p>
+            <p>內容為官方原文，未經 AI 摘要；連結會在系統瀏覽器開啟。</p>
           </footer>
         </div>
       </section>
     </main>
     <section id="change-detail" class="radar-shell change-detail" hidden>
-      <button id="change-detail-back" class="detail-back" type="button">← 返回更新雷達</button>
+      <button id="change-detail-back" class="detail-back" type="button">← 返回</button>
     </section>
     <script type="module" src="./panel.js"></script>
   </body>
