@@ -709,6 +709,52 @@ test('Update Radar uses its own palette in both themes and keeps hex colors in t
   assert.deepEqual(outsideTokens, [])
 })
 
+test('Update Radar visual polish uses accessible SVG icons and preserves reset copy', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const iconHelper = panelFunctionSource('createIcon')
+  assert.match(iconHelper, /document\.createElementNS\(SVG_NS, 'svg'\)/)
+  assert.match(iconHelper, /document\.createElementNS\(SVG_NS, 'path'\)/)
+  assert.match(iconHelper, /svg\.setAttribute\('aria-hidden', 'true'\)/)
+  assert.match(iconHelper, /svg\.setAttribute\('focusable', 'false'\)/)
+  assert.match(iconHelper, /path\.setAttribute\('d', pathData\)/)
+  assert.doesNotMatch(iconHelper, /document\.createElement\(|innerHTML|insertAdjacentHTML|\beval\s*\(/)
+  assert.match(panelSource, /const ICON_PATHS = Object\.freeze\(/)
+  assert.match(markup, /<p class="eyebrow">AI 公開更新<\/p>/)
+  assert.match(markup, /<button id="refresh"[^>]*>[\s\S]*?<svg class="refresh-icon"[^>]*aria-hidden="true"[\s\S]*?<span>重新整理<\/span>/)
+  assert.match(markup, /id="time-mode-label">相對時間<\/span>/)
+  assert.match(panelSource, /elements\.timeModeLabel\.textContent = state\.absoluteTime \? '絕對時間' : '相對時間'/)
+  assert.match(markup, /class="summary-card summary-info"/)
+  assert.match(markup, /class="summary-card summary-attention"/)
+  assert.match(markup, /class="summary-card summary-healthy"/)
+  assert.match(styles, /\.summary-info \{ --summary-tone: var\(--radar-accent\); \}/)
+  assert.match(styles, /\.summary-attention \{ --summary-tone: var\(--radar-warning\); \}/)
+  assert.match(styles, /\.summary-healthy \{ --summary-tone: var\(--radar-success\); \}/)
+  assert.match(styles, /color-mix\(in srgb, var\(--radar-surface\) 92%, var\(--summary-tone\)\)/)
+  assert.match(panelSource, /appendHighlightedNumbers\(countdown, countdownText\)/)
+  assert.match(panelSource, /appendHighlightedNumbers\(countdown, formatTimeSinceReset\(reset\.stats\.lastResetAt\)\)/)
+  assert.match(panelSource, /countdown\.setAttribute\('aria-label', `距預定重設時間 \$\{countdown\.textContent\}`\)/)
+  const iconTags = markup.match(/<svg\b[^>]*>/g) ?? []
+  assert.ok(iconTags.length >= 9)
+  for (const iconTag of iconTags) {
+    assert.match(iconTag, /aria-hidden="true"/)
+    assert.match(iconTag, /focusable="false"/)
+  }
+
+  const appendHighlightedNumbers = runInNewContext(`(${panelFunctionSource('appendHighlightedNumbers')})`, {
+    document: {
+      createTextNode: (text: string) => ({ textContent: text }),
+      createElement: (tagName: string) => ({ tagName, className: '', textContent: '' }),
+    },
+  }) as (parent: { append: (...nodes: Array<{ textContent: string, className?: string }>) => void }, value: string) => void
+  const appended: Array<{ textContent: string, className?: string }> = []
+  const originalCopy = '距上次重設 27 小時'
+  appendHighlightedNumbers({ append: (...nodes) => appended.push(...nodes) }, originalCopy)
+  assert.equal(appended.map(node => node.textContent).join(''), originalCopy)
+  assert.deepEqual(appended.filter(node => node.className === 'codex-reset-number').map(node => node.textContent), ['27'])
+})
+
 test('panel theme keeps light or dark, otherwise follows the system, and applies data-theme', () => {
   const source = ['normalizePanelTheme', 'effectivePanelTheme', 'applyPanelTheme'].map(panelFunctionSource).join('\n')
   const theme = runInNewContext(`(() => { ${source}; return { normalizePanelTheme, effectivePanelTheme, applyPanelTheme } })()`) as any
@@ -815,7 +861,7 @@ test('wide panels use one document scroller with responsive sticky navigation', 
   assert.match(desktop, /grid-template-areas: "header header" "sidebar main"/)
   assert.match(desktop, /grid-template-columns: 368px minmax\(0, 1fr\)/)
   assert.match(desktop, /max-width: 920px/)
-  assert.match(desktop, /\.radar-header \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: var\(--radar-bg\)/)
+  assert.match(desktop, /\.radar-header \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: radial-gradient\([^;]*var\(--radar-bg\)/)
   assert.match(desktop, /\.radar-sidebar\[data-sticky="true"\] \{ position: sticky; z-index: 1; top: var\(--radar-sidebar-top\); \}/)
   assert.doesNotMatch(desktop, /\.radar-sidebar \{[^}]*position: sticky/)
   assert.match(desktop, /\.radar-sidebar \{[^}]*align-self: start;/)

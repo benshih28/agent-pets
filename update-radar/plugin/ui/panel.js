@@ -180,6 +180,50 @@ function appendText(parent, tagName, className, text) {
   return element
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const ICON_PATHS = Object.freeze({
+  history: ['M13.2 5.2A6.3 6.3 0 1 0 14.2 9', 'M13.4 2.5v3.2h-3.2', 'M8 4.6v3.7l2.3 1.4'],
+  megaphone: ['M2 6.2h3l7-3v9.6l-7-3H2z', 'M5 9.8l1.4 4h2.1l-1.5-3.4', 'M14 6.2a2.3 2.3 0 0 1 0 3.6'],
+  external: ['M9 3h4v4M13 3 7.5 8.5', 'M11.5 8.5v3.8H4V4.8h3.8'],
+  link: ['M6.4 9.6 9.6 6.4M5.2 11.8l-1 1a2.7 2.7 0 0 1-3.8-3.8l3-3a2.7 2.7 0 0 1 3.8 0', 'M10.8 4.2l1-1a2.7 2.7 0 0 1 3.8 3.8l-3 3a2.7 2.7 0 0 1-3.8 0'],
+  // X 標誌是一條粗斜帶加一條細反斜線；兩條等寬線條會被看成「關閉」按鈕。
+  x: ['M2.5 2.5h3l8 11h-3z', 'M13.2 2.5 9.3 6.9M6.7 9.1 2.8 13.5'],
+})
+
+function createIcon(name, className = '') {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 16 16')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('stroke', 'currentColor')
+  svg.setAttribute('stroke-width', '1.5')
+  svg.setAttribute('stroke-linecap', 'round')
+  svg.setAttribute('stroke-linejoin', 'round')
+  if (className) svg.setAttribute('class', className)
+  for (const pathData of ICON_PATHS[name] ?? []) {
+    const path = document.createElementNS(SVG_NS, 'path')
+    path.setAttribute('d', pathData)
+    svg.append(path)
+  }
+  return svg
+}
+
+function appendHighlightedNumbers(parent, value) {
+  const text = String(value ?? '')
+  let offset = 0
+  for (const match of text.matchAll(/\d+/gu)) {
+    const start = match.index ?? 0
+    if (start > offset) parent.append(document.createTextNode(text.slice(offset, start)))
+    const number = document.createElement('span')
+    number.className = 'codex-reset-number'
+    number.textContent = match[0]
+    parent.append(number)
+    offset = start + match[0].length
+  }
+  if (offset < text.length) parent.append(document.createTextNode(text.slice(offset)))
+}
+
 function populatePixelLoader(loader) {
   loader.setAttribute('aria-hidden', 'true')
   for (let index = 0; index < 9; index += 1) {
@@ -336,7 +380,7 @@ function renderSummaryLoading(show) {
     if (show) {
       value.classList.add('skeleton-value')
       value.setAttribute('aria-hidden', 'true')
-      if (!existingHint) appendText(card, 'span', 'loading-copy summary-sync-copy', '正在同步…')
+      if (!existingHint) appendText(value.parentElement ?? card, 'span', 'loading-copy summary-sync-copy', '正在同步…')
     } else {
       value.classList.remove('skeleton-value')
       value.removeAttribute('aria-hidden')
@@ -566,8 +610,10 @@ function appendSourceAction(parent, update) {
   const row = document.createElement('div')
   row.className = 'source-action'
   const button = appendText(row, 'button', 'source-button', isTiboUpdate(update) ? '查看 X 原文' : '查看官方來源')
+  button.prepend(createIcon(isTiboUpdate(update) ? 'x' : 'external'))
   button.type = 'button'
   const note = appendText(row, 'span', 'source-note', '使用系統瀏覽器開啟')
+  note.prepend(createIcon('external'))
   bindExternalButton(button, sourceUrl, note)
   parent.append(row)
   return row
@@ -1110,6 +1156,7 @@ function appendCodexSourceAttribution(parent) {
   const row = document.createElement('p')
   row.className = 'codex-source-attribution'
   const link = appendText(row, 'a', 'codex-source-link', '資料來源：codex-resets.com')
+  link.prepend(createIcon('link'))
   link.href = '#codex-resets-source'
   const note = appendText(row, 'span', 'codex-source-note', '')
   bindExternalLink(link, sourceUrl, note)
@@ -1122,8 +1169,10 @@ function appendAnnouncementAction(parent, latestReset) {
   const row = document.createElement('div')
   row.className = 'codex-reset-actions'
   const button = appendText(row, 'button', 'source-button', '查看公告')
+  button.prepend(createIcon('megaphone'))
   button.type = 'button'
   const note = appendText(row, 'span', 'source-note', '使用系統瀏覽器開啟')
+  note.prepend(createIcon('external'))
   bindExternalButton(button, sourceUrl, note)
   parent.append(row)
 }
@@ -1158,26 +1207,44 @@ function renderSpotlight() {
   }
   setBusy(elements.spotlight, sourceLoading)
 
-  appendText(card, 'span', 'spotlight-flag attention-neutral', hasFutureSchedule ? '已排定重設' : '最新狀態')
+  const cardHead = document.createElement('div')
+  cardHead.className = 'codex-reset-card-head'
+  const flag = document.createElement('span')
+  flag.className = 'spotlight-flag attention-neutral'
+  const dot = document.createElement('span')
+  dot.className = 'spotlight-flag-dot'
+  dot.setAttribute('aria-hidden', 'true')
+  flag.append(dot, document.createTextNode(hasFutureSchedule ? '已排定重設' : '最新狀態'))
+  const history = document.createElement('span')
+  history.className = 'reset-history-emblem'
+  history.setAttribute('aria-hidden', 'true')
+  history.append(createIcon('history'))
+  cardHead.append(flag, history)
+  card.append(cardHead)
   if (['stale', 'error'].includes(source?.status)) {
     appendText(card, 'p', 'codex-reset-status', '讀取失敗，顯示上次的資料。').setAttribute('role', 'status')
   }
 
   if (hasFutureSchedule) {
-    const countdown = appendText(card, 'p', 'codex-reset-countdown', formatScheduledCountdown(scheduledAt))
+    const countdownText = formatScheduledCountdown(scheduledAt)
+    const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
+    appendHighlightedNumbers(countdown, countdownText)
     countdown.setAttribute('aria-live', 'off')
     countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
     const scheduledTime = appendText(card, 'time', 'codex-reset-scheduled-time', `預定時間：${formatAbsoluteResetTime(scheduledAt)}`)
     scheduledTime.dateTime = scheduledAt
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     const updateCountdown = () => {
-      countdown.textContent = formatScheduledCountdown(scheduledAt)
+      const nextCountdownText = formatScheduledCountdown(scheduledAt)
+      countdown.replaceChildren()
+      appendHighlightedNumbers(countdown, nextCountdownText)
       countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
       codexResetCountdownTimer = setTimeout(updateCountdown, reducedMotion ? 60_000 : 1_000)
     }
     codexResetCountdownTimer = setTimeout(updateCountdown, reducedMotion ? 60_000 : 1_000)
   } else {
-    appendText(card, 'p', 'codex-reset-countdown', formatTimeSinceReset(reset.stats.lastResetAt))
+    const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
+    appendHighlightedNumbers(countdown, formatTimeSinceReset(reset.stats.lastResetAt))
   }
 
   const facts = document.createElement('dl')
@@ -1191,7 +1258,9 @@ function renderSpotlight() {
     const row = document.createElement('div')
     row.className = 'codex-reset-fact'
     appendText(row, 'dt', '', label)
-    appendText(row, 'dd', '', value)
+    const factValue = appendText(row, 'dd', '', '')
+    if (label === '重設類型') appendText(factValue, 'span', 'reset-type-chip', value)
+    else factValue.textContent = value
     facts.append(row)
   }
   card.append(facts)
@@ -1541,9 +1610,8 @@ function renderSources() {
 }
 
 function renderTimeMode() {
-  const label = state.absoluteTime ? '絕對時間' : '相對時間'
   const nextLabel = state.absoluteTime ? '相對時間' : '絕對時間'
-  elements.timeModeLabel.textContent = state.absoluteTime ? '絕對' : '相對'
+  elements.timeModeLabel.textContent = state.absoluteTime ? '絕對時間' : '相對時間'
   elements.timeMode.setAttribute('aria-pressed', String(state.absoluteTime))
   elements.timeMode.setAttribute('aria-label', `切換為${nextLabel}`)
 }

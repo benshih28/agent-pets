@@ -21,6 +21,7 @@
             <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.8" /><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1" /></svg>
           </button>
           <button id="refresh" class="primary-action" type="button">
+            <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M5.7 9A7 7 0 0 1 18 6.2L20 8M4 16l2-1.8A7 7 0 0 0 18.3 15" /></svg>
             <span>重新整理</span>
             <span id="refresh-loader" class="pixel-loader" aria-hidden="true" hidden></span>
           </button>
@@ -30,25 +31,25 @@
       <div class="radar-sidebar">
       <section class="spotlight-section" aria-labelledby="spotlight-heading">
         <div class="section-heading">
-          <h2 id="spotlight-heading">Codex 重設</h2>
+          <h2 id="spotlight-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5.2 3-4 5 4 5M10.8 3l4 5-4 5M9.2 2.2 6.8 13.8" /></svg><span>Codex 重設</span></h2>
           <span id="spotlight-loader" class="pixel-loader section-pixel-loader" aria-hidden="true" hidden></span>
-          <span class="section-note">最新狀態與排定時間</span>
+          <span class="section-note">最新狀態與排定時間<svg class="section-note-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m6 3 5 5-5 5" /></svg></span>
         </div>
         <div id="spotlight" class="spotlight-content" aria-busy="true"></div>
       </section>
 
       <section id="summary-grid" class="summary-grid" aria-label="更新摘要" aria-busy="true">
-        <div class="summary-card">
-          <strong id="count">0</strong>
-          <span>目前更新</span>
+        <div class="summary-card summary-info">
+          <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3 9 4.5-9 4.5-9-4.5L12 3ZM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5" /></svg></span>
+          <div class="summary-copy"><strong id="count">0</strong><span>目前更新</span></div>
         </div>
         <div class="summary-card summary-attention">
-          <strong id="attention-count">0</strong>
-          <span title="只計官方更新">需留意</span>
+          <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3ZM12 9v5m0 3v.1" /></svg></span>
+          <div class="summary-copy"><strong id="attention-count">0</strong><span title="只計官方更新">需留意</span></div>
         </div>
         <div class="summary-card summary-healthy">
-            <strong id="healthy-count">0/7</strong>
-          <span>來源正常</span>
+          <span class="summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM7.5 12.2l3 3 6-6" /></svg></span>
+          <div class="summary-copy"><strong id="healthy-count">0/7</strong><span>來源正常</span></div>
         </div>
       </section>
 
@@ -99,11 +100,12 @@
 
       <section class="updates-region" aria-label="更新動態">
         <div class="feed-content">
-          <h2 class="feed-heading">更新動態</h2>
+          <h2 class="feed-heading"><svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 1.8h7.2L14 4.6v9.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1ZM11 2v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3.5" /></svg><span>更新動態</span></h2>
           <div class="toolbar" aria-label="更新篩選">
             <div class="toolbar-main">
               <label class="search-field">
                 <span class="visually-hidden">搜尋更新內容</span>
+                <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M7 2.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6ZM10.5 10.5 14 14" /></svg>
                 <input id="search" type="search" placeholder="模型、API、Codex…" autocomplete="off">
               </label>
               <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filter-panel">
@@ -111,7 +113,7 @@
                 <span class="filter-chevron" aria-hidden="true"></span>
               </button>
               <button id="time-mode" class="time-mode" type="button" aria-pressed="false" aria-label="切換為絕對時間">
-                <span id="time-mode-label">相對</span>
+                <span id="time-mode-label">相對時間</span>
                 <span class="switch-track" aria-hidden="true"><span></span></span>
               </button>
             </div>
