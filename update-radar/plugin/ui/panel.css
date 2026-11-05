@@ -752,21 +752,17 @@ h1 { overflow: hidden; margin: 0; font-size: 16px; font-weight: 600; line-height
 .change-counts li + li::before { margin-inline-end: var(--radar-gap-2); color: var(--radar-muted); content: '·'; }
 .change-filter-note { margin: 4px 0 0; color: var(--radar-secondary); font-size: 12px; }
 .change-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.change-preview { margin-top: var(--radar-gap-2); padding-top: var(--radar-gap-2); border-top: 1px solid var(--radar-border-soft); }
-/* 類型用文字標籤表示，不只靠顏色；預覽每條最多兩行，完整內容在展開後。 */
 .change-item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: var(--radar-gap-2); font-size: 14px; line-height: 1.5; }
 .change-item-type { min-width: 2.6em; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .change-item-body { min-width: 0; }
 .change-item-text { margin: 0; color: var(--radar-text); overflow-wrap: anywhere; }
 .change-item-detail { margin: 4px 0 0; color: var(--radar-secondary); overflow-wrap: anywhere; }
-.change-preview .change-item-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .change-section { display: grid; gap: 8px; }
 .change-section + .change-section { padding-top: var(--radar-gap-2); border-top: 1px solid var(--radar-border-soft); }
 .change-section-title { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
 .change-section .change-item-type { display: none; }
 .change-section .change-item { grid-template-columns: minmax(0, 1fr); padding-left: var(--radar-gap-2); border-left: 1px solid var(--radar-border-soft); }
 .change-group-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
-.change-group-actions .card-disclosure-button { width: auto; max-width: 100%; min-width: 0; flex: 0 1 auto; padding-inline: 12px; border: 1px solid var(--radar-border-soft); border-radius: var(--radar-radius-pill); background: var(--radar-surface); white-space: nowrap; }
 .change-group-actions .change-detail-open { width: auto; max-width: 100%; min-width: 0; min-height: 36px; flex: 0 1 auto; margin: 0; padding-inline: 12px; border: 1px solid var(--radar-border-soft); border-radius: var(--radar-radius-pill); color: var(--radar-accent); background: var(--radar-surface); font-size: 12px; overflow-wrap: anywhere; }
 .type-chips { display: flex; flex-wrap: wrap; gap: var(--radar-gap-1); }
 .type-chip { min-height: 36px; padding: 0 var(--radar-gap-3); border-color: var(--radar-border-soft); border-radius: var(--radar-radius-pill); color: var(--radar-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -943,7 +939,7 @@ footer p { margin: 0; }
   .detail-bar { color: CanvasText; border-color: CanvasText; background: Canvas; }
   .radar-header { color: CanvasText; border-color: CanvasText; background: Canvas; }
   .type-chip[aria-pressed="true"] { border-color: Highlight; outline: 2px solid Highlight; }
-  .change-preview, .change-section + .change-section, .change-section .change-item, .retirement-list { border-color: CanvasText; }
+  .change-section + .change-section, .change-section .change-item, .retirement-list { border-color: CanvasText; }
   .loading-copy { color: CanvasText; }
   .loading-update-card, .loading-skeleton .spotlight-card { color: CanvasText; border-color: CanvasText; background: Canvas; }
   .skeleton-block, .heat-month-skeleton { border: 1px solid CanvasText; background: Canvas; }

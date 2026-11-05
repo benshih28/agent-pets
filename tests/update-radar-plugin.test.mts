@@ -707,27 +707,16 @@ test('Update Radar needs attention only within the 14-day publication or lifecyc
   assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: '2026-11-31', effectiveAt: '2026-11-31', retirements: [{ date: '2026-11-31' }] }), invalidDateNow), false, 'unparseable and normalized-invalid dates do not satisfy the time window')
 })
 
-test('grouped cards keep the details action visible while collapsed and return focus to it', () => {
-  const source = ['byPosition', 'previewChanges'].map(panelFunctionSource).join('\n')
-  const previewChanges = runInNewContext(`(() => { const CHANGE_PREVIEW_ORDER = ['removed', 'deprecated', 'added', 'improved', 'fixed']; const CHANGE_PREVIEW_COUNT = 5
-${source}
-return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
-  const change = (id: string, changeType: string, position: number) => ({ id, changeType, position })
-  const ids = (changes: unknown[]) => previewChanges(changes).map(update => update.id).join('')
-  assert.equal(ids([change('a1', 'added', 0), change('a2', 'added', 1), change('i', 'improved', 2), change('f', 'fixed', 3)]), 'a1ifa2')
-  assert.equal(ids([change('f1', 'fixed', 0), change('f2', 'fixed', 1), change('f3', 'fixed', 2), change('f4', 'fixed', 3)]), 'f1f2f3f4')
-  assert.equal(ids([change('a', 'added', 0), change('f', 'fixed', 1), change('r', 'removed', 2)]), 'raf')
-
+test('grouped cards route large change sets to details and return focus to the details action', () => {
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  assert.match(panelSource, /const CHANGE_PREVIEW_COUNT = 5/)
   assert.match(panelSource, /const CHANGE_INLINE_EXPAND_MAX = 20/)
   assert.match(panelFunctionSource('renderChangeGroup'), /matches\.length > CHANGE_INLINE_EXPAND_MAX/)
-  assert.match(panelFunctionSource('renderChangeGroup'), /previewChanges\(matches\)/)
+  assert.doesNotMatch(panelSource, /CHANGE_PREVIEW|previewChanges|change-preview/)
   assert.match(panelFunctionSource('renderChangeGroup'), /appendText\(actions, 'button', 'change-detail-open', `查看全部 \$\{matches\.length\} 項變更`\)/)
-  assert.match(panelFunctionSource('renderChangeGroup'), /disclosure\.root\.replaceChildren\(actions, disclosure\.region\)/)
-  assert.match(panelFunctionSource('renderChangeGroup'), /appendSourceAction\(disclosure\.region, first\)/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /article\.append\(actions\)[\s\S]*return article/)
+  assert.doesNotMatch(panelFunctionSource('renderChangeGroup').slice(0, panelFunctionSource('renderChangeGroup').indexOf('const disclosure')), /createDisclosure/)
   assert.match(panelFunctionSource('renderChangeGroup'), /appendChangeBrowser\(disclosure\.region, matches\)/)
   assert.match(panelSource, /button\.setAttribute\('aria-pressed', String\(button\.dataset\.type === selected\)\)/)
   assert.match(panelSource, /event\.key === 'Escape' && state\.detail/)
@@ -736,11 +725,12 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
   assert.match(markup, /id="change-detail" class="change-detail" hidden/)
   assert.match(markup, /id="change-detail-back"[^>]*type="button"/)
   assert.match(styles, /\.change-group-actions \{[^}]*flex-wrap: wrap/)
-  assert.match(styles, /\.change-group-actions \.card-disclosure-button \{[^}]*border-radius: var\(--radar-radius-pill\)/)
+  assert.doesNotMatch(styles, /\.change-group-actions \.card-disclosure-button/)
   assert.match(styles, /\.change-group-actions \.change-detail-open \{[^}]*min-height: 36px[^}]*border-radius: var\(--radar-radius-pill\)/)
 
   class PanelMockElement {
     id = ''
+    tagName = ''
     type = ''
     className = ''
     hidden = false
@@ -782,6 +772,8 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
       while (queue.length) {
         const node = queue.shift()!
         if (selector === '[role="region"]' && node.getAttribute('role') === 'region') matches.push(node)
+        else if (selector === 'button[aria-expanded]' && node.tagName === 'BUTTON' && node.getAttribute('aria-expanded') !== null) matches.push(node)
+        else if (selector === 'button' && node.tagName === 'BUTTON') matches.push(node)
         else if (selector.startsWith('.') && node.className.split(/\s+/u).includes(selector.slice(1))) matches.push(node)
         else if (attributeMatch && node.dataset.detailKey === attributeMatch[1]) matches.push(node)
         queue.push(...node.children)
@@ -791,8 +783,11 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
   }
 
   const context: Record<string, any> = {
-    document: { createElement: () => new PanelMockElement(), createElementNS: () => new PanelMockElement() },
-    state: { expanded: new Set<string>(), disclosures: new Map<string, boolean>(), activeTab: 'updates', detail: null },
+    document: {
+      createElement: (tagName: string) => Object.assign(new PanelMockElement(), { tagName: tagName.toUpperCase() }),
+      createElementNS: (_namespace: string, tagName: string) => Object.assign(new PanelMockElement(), { tagName: tagName.toUpperCase() }),
+    },
+    state: { expanded: new Set<string>(['release:v2.1.316']), disclosures: new Map<string, boolean>(), activeTab: 'updates', detail: null },
     labels: { changeType: { added: '新增', improved: '改善', fixed: '修正', deprecated: '棄用', removed: '移除' } },
     CHANGE_INLINE_EXPAND_MAX: 20,
     CHANGE_SECTION_ORDER: ['added', 'improved', 'fixed', 'deprecated', 'removed'],
@@ -803,9 +798,9 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
     updateTimestamp: (update: any) => update.position,
     groupKey: (update: any) => `release:${update.version}`,
     changeGroupTitle: (update: any) => update.version,
-    previewChanges: (updates: any[]) => updates.slice(0, 5),
     appendText: (parent: PanelMockElement, tagName: string, className: string, text: string) => {
       const node = new PanelMockElement()
+      node.tagName = tagName.toUpperCase()
       node.className = className
       node.textContent = text
       parent.append(node)
@@ -814,13 +809,10 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
     createIcon: () => new PanelMockElement(),
     appendGroupedChange: (parent: PanelMockElement, update: any) => {
       const item = new PanelMockElement()
+      item.tagName = 'LI'
+      item.className = 'change-item'
       item.textContent = update.id
       parent.append(item)
-    },
-    appendChangeBrowser: (parent: PanelMockElement) => {
-      const browser = new PanelMockElement()
-      browser.className = 'type-chips'
-      parent.append(browser)
     },
     appendSourceAction: (parent: PanelMockElement) => {
       const source = new PanelMockElement()
@@ -828,8 +820,10 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
       source.textContent = '查看官方來源'
       parent.append(source)
     },
-    openChangeDetail: () => {},
+    openChangeDetail: (key: string) => { context.openedDetailKey = key },
   }
+  context.appendChangeSections = runInNewContext(`(${panelFunctionSource('appendChangeSections')})`, context)
+  context.appendChangeBrowser = runInNewContext(`(${panelFunctionSource('appendChangeBrowser')})`, context)
   context.createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context)
   const renderChangeGroup = runInNewContext(`(${panelFunctionSource('renderChangeGroup')})`, context) as
     (changes: any[], matches: any[], unitKey: string) => PanelMockElement
@@ -839,24 +833,29 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
   }))
   const largeCard = renderChangeGroup(largeChanges, largeChanges, 'release:v2.1.316')
   const largeDetailButton = largeCard.querySelector('.change-detail-open')
-  const regions = largeCard.querySelectorAll('[role="region"]')
-  assert.equal(regions.length, 1)
-  assert.equal(regions[0].hidden, true, 'the large card starts collapsed')
+  assert.equal(largeCard.querySelectorAll('button[aria-expanded]').length, 0, 'large cards have no disclosure button')
+  assert.equal(largeCard.querySelectorAll('[role="region"]').length, 0, 'large cards have no disclosure region')
+  assert.equal(largeCard.querySelectorAll('button').length, 1, 'the large card has only its details button')
   assert.equal(largeCard.querySelectorAll('.change-detail-open').length, 1, 'the card has exactly one details action')
   assert.equal(largeDetailButton?.textContent, '查看全部 21 項變更')
-  assert.equal(largeDetailButton?.parent, largeCard.querySelector('.card-disclosure-button')?.parent, 'details and expand controls share the action row')
-  let ancestor = largeDetailButton?.parent ?? null
-  while (ancestor && ancestor !== largeCard) {
-    assert.notEqual(ancestor.getAttribute('role'), 'region', 'details action stays outside every disclosure region')
-    ancestor = ancestor.parent
-  }
-  assert.equal(regions[0].children[0].className, 'change-list change-preview')
-  assert.equal(regions[0].children[0].children.length, 5, 'the expanded preview contains five changes')
-  assert.equal(regions[0].children[1].textContent, '查看官方來源')
-  assert.doesNotMatch(regions[0].textContent, /查看全部/)
+  assert.equal(largeCard.querySelectorAll('.change-preview').length, 0, 'large cards have no inline preview')
+  assert.equal(largeCard.querySelectorAll('.source-button').length, 0, 'the source action remains on the details page')
+  assert.ok(largeCard.children.indexOf(largeCard.querySelector('.change-counts')!) < largeCard.children.indexOf(largeDetailButton!.parent!), 'the details action follows the type counts')
+  assert.equal(context.state.expanded.has('release:v2.1.316'), true, 'a stale expanded key is harmless and remains untouched')
+  largeDetailButton?.listeners.get('click')?.()
+  assert.equal(context.openedDetailKey, 'release:v2.1.316', 'the details action opens its matching detail page')
 
-  const smallCard = renderChangeGroup(largeChanges.slice(0, 20), largeChanges.slice(0, 20), 'release:v2.1.316')
+  const smallCard = renderChangeGroup(largeChanges.slice(0, 20), largeChanges.slice(0, 20), 'release:v2.1.315')
+  const smallDisclosureButton = smallCard.querySelector('button[aria-expanded]')
+  const smallRegion = smallCard.querySelector('[role="region"]')
+  assert.equal(smallCard.querySelectorAll('button[aria-expanded]').length, 1, 'cards with 20 or fewer changes retain one disclosure button')
+  assert.equal(smallDisclosureButton?.getAttribute('aria-expanded'), 'false', 'the small card starts collapsed')
+  assert.equal(smallRegion?.hidden, true)
   assert.equal(smallCard.querySelectorAll('.change-detail-open').length, 0, 'cards with 20 or fewer changes have no details action')
+  smallDisclosureButton?.listeners.get('click')?.()
+  assert.equal(smallDisclosureButton?.getAttribute('aria-expanded'), 'true')
+  assert.equal(smallRegion?.hidden, false)
+  assert.equal(smallCard.querySelectorAll('.change-item').length, 20, 'expanding a small card shows the complete grouped list')
 
   const updates = new PanelMockElement()
   updates.append(largeCard)

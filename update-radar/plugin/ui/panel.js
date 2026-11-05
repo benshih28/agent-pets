@@ -840,9 +840,6 @@ function renderOfficialUpdate(update, unitKey, now = Date.now()) {
 // Claude Code 一個版本常有上百條變更、Claude Platform 同一天常公布好幾項；面板依版本／日期合併成一張卡，
 // 儲存仍保留逐條資料，篩選與搜尋照常作用在每一條。
 const CHANGE_SECTION_ORDER = Object.freeze(['added', 'improved', 'fixed', 'deprecated', 'removed'])
-// 預覽先放可能影響既有用法的移除／棄用，再放新增與改善；修正通常最多，排最後。
-const CHANGE_PREVIEW_ORDER = Object.freeze(['removed', 'deprecated', 'added', 'improved', 'fixed'])
-const CHANGE_PREVIEW_COUNT = 5
 
 function groupKey(update) {
   if (update?.sourceId === 'claude-code' && update.version) return `release:${update.version}`
@@ -954,16 +951,8 @@ function unitNeedsAttention(unit, now = Date.now()) {
     || (Array.isArray(update.retirements) && update.retirements.some(row => isUpcomingDate(row?.date))))
 }
 
-// 卡片內直接列出、原地展開、或切換到詳情頁的門檻；面板高度有限，上百條不在列表中展開。
+// 卡片內完整展開的上限；更多變更改由詳情頁顯示。
 const CHANGE_INLINE_EXPAND_MAX = 20
-
-// 預覽盡量涵蓋不同類型：先放移除／棄用，再各取一條新增、改善、修正，不足時依原順序補滿。
-function previewChanges(changes) {
-  const ordered = [...changes].sort(byPosition)
-  const picked = CHANGE_PREVIEW_ORDER.map(type => ordered.find(update => update.changeType === type)).filter(Boolean)
-  const pickedIds = new Set(picked.map(update => update.id))
-  return [...picked, ...ordered.filter(update => !pickedIds.has(update.id))].slice(0, CHANGE_PREVIEW_COUNT)
-}
 
 function appendGroupedChange(list, update, withDetail) {
   const { headline, previewText } = officialHeadline(update)
@@ -1071,6 +1060,17 @@ function renderChangeGroup(changes, matches, unitKey, now = Date.now()) {
     appendText(article, 'p', 'change-filter-note', `符合 ${matches.length} 項，共 ${changes.length} 項`)
   }
 
+  if (matches.length > CHANGE_INLINE_EXPAND_MAX) {
+    const actions = document.createElement('div')
+    actions.className = 'change-group-actions'
+    const open = appendText(actions, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
+    open.type = 'button'
+    open.dataset.detailKey = key
+    open.addEventListener('click', () => openChangeDetail(key))
+    article.append(actions)
+    return article
+  }
+
   const disclosure = createDisclosure({
     id: `update-${encodeURIComponent(unitKey)}`,
     title: isRelease ? first.version : formatDate(first.publishedAt),
@@ -1088,25 +1088,8 @@ function renderChangeGroup(changes, matches, unitKey, now = Date.now()) {
     },
   })
 
-  if (matches.length > CHANGE_INLINE_EXPAND_MAX) {
-    const actions = document.createElement('div')
-    actions.className = 'change-group-actions'
-    actions.append(disclosure.button)
-    const open = appendText(actions, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
-    open.type = 'button'
-    open.dataset.detailKey = key
-    open.addEventListener('click', () => openChangeDetail(key))
-    disclosure.root.replaceChildren(actions, disclosure.region)
-
-    const preview = document.createElement('ul')
-    preview.className = 'change-list change-preview'
-    for (const update of previewChanges(matches)) appendGroupedChange(preview, update, false)
-    disclosure.region.append(preview)
-    appendSourceAction(disclosure.region, first)
-  } else {
-    appendChangeBrowser(disclosure.region, matches)
-    appendSourceAction(disclosure.region, first)
-  }
+  appendChangeBrowser(disclosure.region, matches)
+  appendSourceAction(disclosure.region, first)
   article.append(disclosure.root)
   return article
 }
