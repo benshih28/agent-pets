@@ -765,7 +765,9 @@ h1 { overflow: hidden; margin: 0; font-size: 16px; font-weight: 600; line-height
 .change-section-title { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
 .change-section .change-item-type { display: none; }
 .change-section .change-item { grid-template-columns: minmax(0, 1fr); padding-left: var(--radar-gap-2); border-left: 1px solid var(--radar-border-soft); }
-.change-detail-open { width: 100%; min-height: 36px; margin-top: 8px; color: var(--radar-accent); font-size: 12px; }
+.change-group-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.change-group-actions .card-disclosure-button { width: auto; max-width: 100%; min-width: 0; flex: 0 1 auto; padding-inline: 12px; border: 1px solid var(--radar-border-soft); border-radius: var(--radar-radius-pill); background: var(--radar-surface); white-space: nowrap; }
+.change-group-actions .change-detail-open { width: auto; max-width: 100%; min-width: 0; min-height: 36px; flex: 0 1 auto; margin: 0; padding-inline: 12px; border: 1px solid var(--radar-border-soft); border-radius: var(--radar-radius-pill); color: var(--radar-accent); background: var(--radar-surface); font-size: 12px; overflow-wrap: anywhere; }
 .type-chips { display: flex; flex-wrap: wrap; gap: var(--radar-gap-1); }
 .type-chip { min-height: 36px; padding: 0 var(--radar-gap-3); border-color: var(--radar-border-soft); border-radius: var(--radar-radius-pill); color: var(--radar-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
 /* 選取狀態同時改變底色、邊框與字重，不只靠顏色辨識。 */

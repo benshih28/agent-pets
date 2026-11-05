@@ -707,7 +707,7 @@ test('Update Radar needs attention only within the 14-day publication or lifecyc
   assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: '2026-11-31', effectiveAt: '2026-11-31', retirements: [{ date: '2026-11-31' }] }), invalidDateNow), false, 'unparseable and normalized-invalid dates do not satisfy the time window')
 })
 
-test('grouped cards preview five mixed changes and disclose full lists or the details page', () => {
+test('grouped cards keep the details action visible while collapsed and return focus to it', () => {
   const source = ['byPosition', 'previewChanges'].map(panelFunctionSource).join('\n')
   const previewChanges = runInNewContext(`(() => { const CHANGE_PREVIEW_ORDER = ['removed', 'deprecated', 'added', 'improved', 'fixed']; const CHANGE_PREVIEW_COUNT = 5
 ${source}
@@ -720,17 +720,164 @@ return previewChanges })()`) as (changes: unknown[]) => Array<{ id: string }>
 
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.match(panelSource, /const CHANGE_PREVIEW_COUNT = 5/)
   assert.match(panelSource, /const CHANGE_INLINE_EXPAND_MAX = 20/)
   assert.match(panelFunctionSource('renderChangeGroup'), /matches\.length > CHANGE_INLINE_EXPAND_MAX/)
   assert.match(panelFunctionSource('renderChangeGroup'), /previewChanges\(matches\)/)
-  assert.match(panelFunctionSource('renderChangeGroup'), /查看全部 \$\{matches\.length\} 項變更/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /appendText\(actions, 'button', 'change-detail-open', `查看全部 \$\{matches\.length\} 項變更`\)/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /disclosure\.root\.replaceChildren\(actions, disclosure\.region\)/)
+  assert.match(panelFunctionSource('renderChangeGroup'), /appendSourceAction\(disclosure\.region, first\)/)
   assert.match(panelFunctionSource('renderChangeGroup'), /appendChangeBrowser\(disclosure\.region, matches\)/)
   assert.match(panelSource, /button\.setAttribute\('aria-pressed', String\(button\.dataset\.type === selected\)\)/)
   assert.match(panelSource, /event\.key === 'Escape' && state\.detail/)
   assert.match(panelSource, /window\.scrollTo\(0, detail\.scrollY\)/)
+  assert.match(panelFunctionSource('closeChangeDetail'), /const returnTarget = elements\.updates\.querySelector\(`\[data-detail-key="\$\{CSS\.escape\(detail\.key\)\}"\]`\)[\s\S]*returnTarget\?\.focus\(\{ preventScroll: true \}\)/)
   assert.match(markup, /id="change-detail" class="change-detail" hidden/)
   assert.match(markup, /id="change-detail-back"[^>]*type="button"/)
+  assert.match(styles, /\.change-group-actions \{[^}]*flex-wrap: wrap/)
+  assert.match(styles, /\.change-group-actions \.card-disclosure-button \{[^}]*border-radius: var\(--radar-radius-pill\)/)
+  assert.match(styles, /\.change-group-actions \.change-detail-open \{[^}]*min-height: 36px[^}]*border-radius: var\(--radar-radius-pill\)/)
+
+  class PanelMockElement {
+    id = ''
+    type = ''
+    className = ''
+    hidden = false
+    dateTime = ''
+    focused = false
+    parent: PanelMockElement | null = null
+    children: PanelMockElement[] = []
+    attributes = new Map<string, string>()
+    listeners = new Map<string, (...args: any[]) => void>()
+    dataset: Record<string, string> = {}
+    private ownText = ''
+    get textContent() { return this.ownText + this.children.map(child => child.textContent).join('') }
+    set textContent(value: string) { this.replaceChildren(); this.ownText = String(value ?? '') }
+    append(...children: PanelMockElement[]) {
+      this.ownText = ''
+      for (const child of children) {
+        const oldIndex = child.parent?.children.indexOf(child) ?? -1
+        if (oldIndex >= 0) child.parent!.children.splice(oldIndex, 1)
+        child.parent = this
+        this.children.push(child)
+      }
+    }
+    replaceChildren(...children: PanelMockElement[]) {
+      for (const child of this.children) child.parent = null
+      this.children = []
+      this.ownText = ''
+      this.append(...children)
+    }
+    setAttribute(name: string, value: string) { this.attributes.set(name, value) }
+    getAttribute(name: string) { return this.attributes.get(name) ?? null }
+    addEventListener(name: string, listener: (...args: any[]) => void) { this.listeners.set(name, listener) }
+    focus() { this.focused = true }
+    scrollIntoView(options: unknown) { (this as any).scrollOptions = options }
+    querySelector(selector: string): PanelMockElement | null { return this.querySelectorAll(selector)[0] ?? null }
+    querySelectorAll(selector: string): PanelMockElement[] {
+      const attributeMatch = /^\[data-detail-key="([^"]+)"\]$/.exec(selector)
+      const matches: PanelMockElement[] = []
+      const queue = [...this.children]
+      while (queue.length) {
+        const node = queue.shift()!
+        if (selector === '[role="region"]' && node.getAttribute('role') === 'region') matches.push(node)
+        else if (selector.startsWith('.') && node.className.split(/\s+/u).includes(selector.slice(1))) matches.push(node)
+        else if (attributeMatch && node.dataset.detailKey === attributeMatch[1]) matches.push(node)
+        queue.push(...node.children)
+      }
+      return matches
+    }
+  }
+
+  const context: Record<string, any> = {
+    document: { createElement: () => new PanelMockElement(), createElementNS: () => new PanelMockElement() },
+    state: { expanded: new Set<string>(), disclosures: new Map<string, boolean>(), activeTab: 'updates', detail: null },
+    labels: { changeType: { added: '新增', improved: '改善', fixed: '修正', deprecated: '棄用', removed: '移除' } },
+    CHANGE_INLINE_EXPAND_MAX: 20,
+    CHANGE_SECTION_ORDER: ['added', 'improved', 'fixed', 'deprecated', 'removed'],
+    byPosition: (a: any, b: any) => a.position - b.position,
+    sourceLabel: () => 'Claude Code',
+    unitNeedsAttention: () => false,
+    formatUpdateTime: () => '現在',
+    updateTimestamp: (update: any) => update.position,
+    groupKey: (update: any) => `release:${update.version}`,
+    changeGroupTitle: (update: any) => update.version,
+    previewChanges: (updates: any[]) => updates.slice(0, 5),
+    appendText: (parent: PanelMockElement, tagName: string, className: string, text: string) => {
+      const node = new PanelMockElement()
+      node.className = className
+      node.textContent = text
+      parent.append(node)
+      return node
+    },
+    createIcon: () => new PanelMockElement(),
+    appendGroupedChange: (parent: PanelMockElement, update: any) => {
+      const item = new PanelMockElement()
+      item.textContent = update.id
+      parent.append(item)
+    },
+    appendChangeBrowser: (parent: PanelMockElement) => {
+      const browser = new PanelMockElement()
+      browser.className = 'type-chips'
+      parent.append(browser)
+    },
+    appendSourceAction: (parent: PanelMockElement) => {
+      const source = new PanelMockElement()
+      source.className = 'source-button'
+      source.textContent = '查看官方來源'
+      parent.append(source)
+    },
+    openChangeDetail: () => {},
+  }
+  context.createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context)
+  const renderChangeGroup = runInNewContext(`(${panelFunctionSource('renderChangeGroup')})`, context) as
+    (changes: any[], matches: any[], unitKey: string) => PanelMockElement
+  const largeChanges = Array.from({ length: 21 }, (_, position) => ({
+    id: `change-${position}`, sourceId: 'claude-code', version: 'v2.1.316', previousVersion: 'v2.1.315',
+    changeType: 'added', position, publishedAt: '2026-11-04',
+  }))
+  const largeCard = renderChangeGroup(largeChanges, largeChanges, 'release:v2.1.316')
+  const largeDetailButton = largeCard.querySelector('.change-detail-open')
+  const regions = largeCard.querySelectorAll('[role="region"]')
+  assert.equal(regions.length, 1)
+  assert.equal(regions[0].hidden, true, 'the large card starts collapsed')
+  assert.equal(largeCard.querySelectorAll('.change-detail-open').length, 1, 'the card has exactly one details action')
+  assert.equal(largeDetailButton?.textContent, '查看全部 21 項變更')
+  assert.equal(largeDetailButton?.parent, largeCard.querySelector('.card-disclosure-button')?.parent, 'details and expand controls share the action row')
+  let ancestor = largeDetailButton?.parent ?? null
+  while (ancestor && ancestor !== largeCard) {
+    assert.notEqual(ancestor.getAttribute('role'), 'region', 'details action stays outside every disclosure region')
+    ancestor = ancestor.parent
+  }
+  assert.equal(regions[0].children[0].className, 'change-list change-preview')
+  assert.equal(regions[0].children[0].children.length, 5, 'the expanded preview contains five changes')
+  assert.equal(regions[0].children[1].textContent, '查看官方來源')
+  assert.doesNotMatch(regions[0].textContent, /查看全部/)
+
+  const smallCard = renderChangeGroup(largeChanges.slice(0, 20), largeChanges.slice(0, 20), 'release:v2.1.316')
+  assert.equal(smallCard.querySelectorAll('.change-detail-open').length, 0, 'cards with 20 or fewer changes have no details action')
+
+  const updates = new PanelMockElement()
+  updates.append(largeCard)
+  const detailView = new PanelMockElement()
+  const tabList = new PanelMockElement()
+  context.elements = {
+    detailView,
+    tabList,
+    panels: { overview: new PanelMockElement(), updates: new PanelMockElement(), reset: new PanelMockElement() },
+    updates,
+  }
+  context.tabController = { renderIfStale() {} }
+  context.syncTabLifecycles = () => {}
+  context.updateStickyMeasurements = () => {}
+  context.CSS = { escape: (value: string) => value }
+  context.window = { scrollTo() {} }
+  context.state.detail = { key: 'release:v2.1.316', scrollY: 120 }
+  const closeChangeDetail = runInNewContext(`(${panelFunctionSource('closeChangeDetail')})`, context) as () => void
+  closeChangeDetail()
+  assert.equal(largeDetailButton?.focused, true, 'return from the details page restores focus to the moved action button')
+  assert.equal((largeDetailButton as any)?.scrollOptions?.block, 'nearest')
 })
 
 test('Update Radar uses its own palette in both themes and keeps hex colors in tokens only', () => {

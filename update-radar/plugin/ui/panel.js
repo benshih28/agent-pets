@@ -1089,14 +1089,20 @@ function renderChangeGroup(changes, matches, unitKey, now = Date.now()) {
   })
 
   if (matches.length > CHANGE_INLINE_EXPAND_MAX) {
+    const actions = document.createElement('div')
+    actions.className = 'change-group-actions'
+    actions.append(disclosure.button)
+    const open = appendText(actions, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
+    open.type = 'button'
+    open.dataset.detailKey = key
+    open.addEventListener('click', () => openChangeDetail(key))
+    disclosure.root.replaceChildren(actions, disclosure.region)
+
     const preview = document.createElement('ul')
     preview.className = 'change-list change-preview'
     for (const update of previewChanges(matches)) appendGroupedChange(preview, update, false)
     disclosure.region.append(preview)
-    const open = appendText(disclosure.region, 'button', 'change-detail-open', `查看全部 ${matches.length} 項變更`)
-    open.type = 'button'
-    open.dataset.detailKey = key
-    open.addEventListener('click', () => openChangeDetail(key))
+    appendSourceAction(disclosure.region, first)
   } else {
     appendChangeBrowser(disclosure.region, matches)
     appendSourceAction(disclosure.region, first)
