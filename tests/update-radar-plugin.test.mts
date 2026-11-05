@@ -944,7 +944,7 @@ test('Phase 5e Codex source disclosure uses one flat row and one visible status'
   assert.match(sourceDisclosure, /metaNode\.hidden = expanded/)
   assert.match(styles, /\.source-row \{[^}]*border: 0;[^}]*background: transparent/s)
   assert.doesNotMatch(styles, /\.codex-reset-source-grid[^}]*\{[^}]*border:|\.codex-source-row[^}]*\{[^}]*background:\s*var\(--radar-surface\)/)
-  assert.doesNotMatch(panelSource, /appendCodexSourceAttribution/)
+  assert.match(panelSource, /appendCodexSourceAttribution\(disclosure\.region, latestReset, resetPost\)/)
 })
 
 test('Phase 5f global retry status separates English names from Chinese text', () => {
@@ -1297,7 +1297,7 @@ test('Update Radar disclosure keeps aria state, region links, and native button 
   assert.ok(renderOverview.indexOf("disclosure.root.querySelector('.disclosure-meta')") < renderOverview.indexOf("appendText(disclosure.region, 'p'"))
 })
 
-test('Update Radar Phase 4 Codex announcement and source disclosures stay collapsed and expose source failures', () => {
+test('Update Radar Codex reset binds the Tibo post by default and keeps source failures visible', () => {
   class MockNode {
     id = ''
     type = ''
@@ -1311,6 +1311,8 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
     href = ''
     dateTime = ''
     disabled = false
+    boundUrl = ''
+    focused = false
     type = ''
     get textContent() { return this.ownText + this.children.map(child => child.textContent).join('') }
     set textContent(value: string) { this.ownText = String(value ?? ''); this.children = [] }
@@ -1340,6 +1342,7 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
     getAttribute(name: string) { return this.attributes.get(name) ?? null }
     removeAttribute(name: string) { this.attributes.delete(name) }
     addEventListener(name: string, listener: (...args: any[]) => void) { this.listeners.set(name, listener) }
+    focus() { this.focused = true }
     contains(node: MockNode): boolean { return this === node || this.children.some(child => child.contains(node)) }
     querySelector(selector: string): MockNode | null {
       const className = selector.startsWith('.') ? selector.slice(1) : ''
@@ -1363,6 +1366,7 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
       return matches
     }
   }
+  const activated: Array<{ id: string, options: any }> = []
   const context: Record<string, any> = {
     document: {
       createElement: () => new MockNode(),
@@ -1372,11 +1376,13 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
     Intl,
     Date,
     Map,
-    state: { disclosures: new Map<string, boolean>() },
+    state: { disclosures: new Map<string, boolean>(), radar: { codexReset: { latestReset: { resetType: 'regular' } } } },
     elements: { resetSources: null },
     createIcon: (_name: string, className: string) => { const icon = new MockNode(); icon.className = className; return icon },
     bindExternalButton: () => {},
-    bindExternalLink: () => {},
+    bindExternalLink: (link: MockNode, url: string) => { link.boundUrl = url },
+    formatUpdateTime: () => '11/4 10:00',
+    activateTab: (id: string, options: any) => { activated.push({ id, options }) },
     renderSources: (target: MockNode, sources: Array<{ status: string }>) => {
       target.replaceChildren(...sources.map(source => {
         const row = new MockNode()
@@ -1389,6 +1395,7 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
         const sourceLink = new MockNode()
         sourceLink.className = 'codex-source-link'
         sourceLink.textContent = 'codex-resets.com'
+        sourceLink.boundUrl = 'https://codex-resets.com/'
         const lastRead = new MockNode()
         lastRead.textContent = '上次讀取 11/4 02:20'
         copy.append(sourceName, sourceLink, lastRead)
@@ -1410,43 +1417,72 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
       }))
     },
   }
+  const focusTarget = new MockNode()
+  focusTarget.id = 'reset-spotlight-heading'
+  context.document.querySelector = () => focusTarget
   context.appendText = runInNewContext(`(${panelFunctionSource('appendText')})`, context)
   context.createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context)
   context.safeSourceUrl = runInNewContext(`(${panelFunctionSource('safeSourceUrl')})`, context)
-  context.appendAnnouncementAction = runInNewContext(`(${panelFunctionSource('appendAnnouncementAction')})`, context)
-  const appendAnnouncement = runInNewContext(`(${panelFunctionSource('appendCodexAnnouncementDisclosure')})`, context) as (parent: MockNode, latest: any) => any
-  const appendSource = runInNewContext(`(${panelFunctionSource('appendCodexSourceDisclosure')})`, context) as (parent: MockNode, source: any) => any
+  context.isTiboUpdate = runInNewContext(`(${panelFunctionSource('isTiboUpdate')})`, context)
+  context.resetTypeLabel = runInNewContext(`(${panelFunctionSource('resetTypeLabel')})`, context)
+  context.appendSourceAction = runInNewContext(`(${panelFunctionSource('appendSourceAction')})`, context)
+  context.renderTiboBubble = runInNewContext(`(${panelFunctionSource('renderTiboBubble')})`, context)
+  context.appendCodexSourceAttribution = runInNewContext(`(${panelFunctionSource('appendCodexSourceAttribution')})`, context)
+  const renderResetPost = runInNewContext(`(${panelFunctionSource('renderCodexResetPost')})`, context) as (parent: MockNode, latest: any, update?: any) => MockNode
+  const appendSource = runInNewContext(`(${panelFunctionSource('appendCodexSourceDisclosure')})`, context) as (parent: MockNode, source: any, latest?: any, update?: any) => any
 
-  const emptyParent = new MockNode()
-  assert.equal(appendAnnouncement(emptyParent, { text: '', sourceUrl: undefined }), null)
-  assert.equal(emptyParent.children.length, 0, 'no announcement section is created without text or a source URL')
+  const resetUrl = 'https://x.com/thsottiaux/status/123'
+  const longText = `${'重設'.repeat(139)}A😀<script>`
+  const resetPost = renderResetPost(new MockNode(), { id: '123', resetType: 'regular', text: longText, sourceUrl: resetUrl })
+  const resetBubble = resetPost.querySelector('.message-row')
+  assert.ok(resetBubble, 'the reset post bubble is rendered immediately without an expand action')
+  assert.equal(resetPost.querySelector('.codex-reset-post-heading')?.textContent, 'Tibo 重設貼文')
+  assert.equal(resetBubble?.querySelector('.message-source-label')?.textContent, 'Tibo / X')
+  assert.equal(resetBubble?.querySelector('.message-type-chip')?.textContent, 'Codex 重設 · 定期重設')
+  assert.equal(resetBubble?.querySelector('.message-time')?.textContent, '11/4 10:00')
+  assert.equal(Array.from(resetBubble?.querySelector('.message-text')?.textContent ?? '').length, 280, 'fallback text is limited to 280 Unicode characters')
+  assert.ok(resetBubble?.querySelector('.message-text')?.textContent.endsWith('😀'), 'the 280-character bound does not split a surrogate pair')
+  assert.equal(resetBubble?.querySelector('.message-text')?.querySelector('script'), null, 'post text is inserted as text, not markup')
+  assert.equal(resetBubble?.querySelector('.source-button')?.textContent, '查看 X 原文')
+  const resetMessageBubble = resetBubble?.querySelector('.message-bubble')
+  const resetPreview = resetMessageBubble?.querySelector('.message-preview')
+  const resetSourceActions = resetMessageBubble?.querySelector('.message-source-actions')
+  assert.equal(resetMessageBubble?.querySelector('.message-meta')?.querySelector('.source-button'), null, 'the source action is outside the author row')
+  assert.ok(resetMessageBubble && resetPreview && resetSourceActions && resetMessageBubble.children.indexOf(resetSourceActions) > resetMessageBubble.children.indexOf(resetPreview), 'the X source action follows the post text')
+  assert.equal(resetBubble?.querySelector('.message-reset-action'), null, 'the Codex page does not show a self-navigation action')
 
-  const longText = '公告'.repeat(141)
-  const announcementParent = new MockNode()
-  const announcement = appendAnnouncement(announcementParent, { text: longText, sourceUrl: 'https://x.com/thsottiaux/status/123' })
-  assert.equal(announcement.region.hidden, true)
-  assert.equal(announcement.region.textContent, '', 'announcement content is absent from the DOM until expanded')
-  assert.equal(announcement.button.getAttribute('aria-expanded'), 'false')
-  announcement.button.listeners.get('click')?.()
-  const announcementText = announcement.region.querySelector('.codex-announcement-text')
-  assert.equal(announcement.region.hidden, false)
-  assert.equal(announcementText?.textContent.length, 280, 'announcement text has a 280 character cap')
-  assert.equal(announcement.region.querySelector('.source-button')?.textContent, '查看公告')
-  assert.equal(context.state.disclosures.get('codex-reset-announcement'), true)
+  const matchedPost = renderResetPost(new MockNode(), { id: '123', text: '偵測來源備用文字', sourceUrl: resetUrl }, {
+    id: 'x-123', provider: 'x', sourceId: 'tibo-x', postKind: 'root', summary: 'Tibo 卡片全文優先',
+    publishedAtTime: '2026-11-04T02:00:00.000Z', sourceUrl: resetUrl,
+  })
+  assert.equal(matchedPost.querySelector('.message-text')?.textContent, 'Tibo 卡片全文優先', 'the matched update card supplies the preferred text')
 
-  context.state.disclosures.set('codex-reset-announcement', false)
-  const linkedOnly = appendAnnouncement(new MockNode(), { text: '', sourceUrl: 'https://x.com/thsottiaux/status/124' })
-  assert.ok(linkedOnly, 'a source URL alone creates the announcement disclosure')
-  assert.equal(linkedOnly.region.children.length, 0, 'a source-only announcement starts empty')
-  linkedOnly.button.listeners.get('click')?.()
-  assert.equal(linkedOnly.region.querySelector('.codex-announcement-text'), null)
-  assert.equal(linkedOnly.region.querySelector('.source-button')?.textContent, '查看公告')
+  const emptyPost = renderResetPost(new MockNode(), { id: 'observed-123', resetType: 'observed' })
+  assert.equal(emptyPost.querySelector('.codex-reset-post-empty')?.textContent, '這次重設沒有對應的 Tibo 貼文')
+
+  const feedBubble = context.renderTiboBubble({
+    id: 'x-123', provider: 'x', sourceId: 'tibo-x', postKind: 'self-reply', summary: '串中的重設貼文', sourceUrl: resetUrl,
+  }, 'self-reply', { isResetPost: true }) as MockNode
+  assert.equal(feedBubble.querySelector('.message-type-chip')?.textContent, 'Codex 重設 · 定期重設')
+  const feedMessageBubble = feedBubble.querySelector('.message-bubble')
+  const feedPreview = feedMessageBubble?.querySelector('.message-preview')
+  const feedSourceActions = feedMessageBubble?.querySelector('.message-source-actions')
+  assert.ok(feedMessageBubble && feedPreview && feedSourceActions && feedMessageBubble.children.indexOf(feedSourceActions) > feedMessageBubble.children.indexOf(feedPreview), 'single posts and thread replies put the X action after their text')
+  const resetAction = feedBubble.querySelector('.message-reset-action')
+  assert.equal(resetAction?.textContent, '查看 Codex 重設')
+  resetAction?.listeners.get('click')?.()
+  assert.equal(activated[0]?.id, 'reset')
+  activated[0]?.options.afterRestore()
+  assert.equal(focusTarget.focused, true, 'the Codex tab action focuses its section heading after switching')
+  const regularBubble = context.renderTiboBubble({ id: 'x-456', provider: 'x', sourceId: 'tibo-x', summary: '一般貼文', sourceUrl: resetUrl }, 'root') as MockNode
+  assert.equal(regularBubble.querySelector('.message-type-chip')?.textContent, '貼文')
+  assert.equal(regularBubble.querySelector('.message-reset-action'), null, 'other Tibo cards keep their existing presentation')
 
   const sourceParent = new MockNode()
   const source = appendSource(sourceParent, {
     id: 'codex-resets', status: 'error', itemCount: 1, fetchedAt: '2026-11-04T02:20:00.000Z',
     label: 'Codex 重設',
-  })
+  }, { id: '123', sourceUrl: resetUrl }, { id: 'x-123', sourceUrl: resetUrl })
   const failureMeta = source.button.querySelector('.disclosure-meta')
   assert.equal(failureMeta?.textContent, '讀取失敗')
   assert.ok(failureMeta?.querySelector('.disclosure-meta-dot'), 'collapsed failure metadata includes a status dot')
@@ -1455,6 +1491,10 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   assert.equal(source.button.contains(source.region.querySelector('.source-row')!), false, 'the failure metadata stays in the title row, outside its region')
   assert.ok(source.region.querySelector('.retry-button'), 'the Codex source row keeps the existing retry control')
   assert.match(source.region.textContent, /codex-resets\.com/)
+  assert.match(source.region.textContent, /由 codex-resets\.com 偵測 Tibo 的重設貼文/)
+  const originalPostLink = source.region.querySelector('.codex-source-post-row')?.querySelector('.codex-source-link')
+  assert.equal(originalPostLink?.textContent, '查看 X 原文')
+  assert.equal(originalPostLink?.boundUrl, resetUrl, 'the original post uses the existing external-link flow')
   assert.equal(source.region.querySelectorAll('.source-status-text').length, 1, 'the expanded flat row displays only one source status')
   source.button.listeners.get('click')?.()
   assert.equal(failureMeta?.hidden, true, 'the collapsed status is hidden while the row status is visible')
@@ -1468,8 +1508,8 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  assert.match(panelFunctionSource('renderSpotlight'), /appendCodexAnnouncementDisclosure\(card, reset\.latestReset\)/)
-  assert.match(panelFunctionSource('renderSpotlight'), /appendCodexSourceDisclosure\(card, source\)/)
+  assert.match(panelFunctionSource('renderSpotlight'), /renderCodexResetPost\(card, latestReset, resetPost\)/)
+  assert.match(panelFunctionSource('renderSpotlight'), /appendCodexSourceDisclosure\(card, source, latestReset, resetPost\)/)
   assert.match(panelFunctionSource('renderSpotlight'), /target\.replaceChildren\(\.\.\.\(staleWarning \? \[staleWarning, card\] : \[card\]\)\)/)
   assert.match(panelFunctionSource('renderSpotlight'), /讀取失敗，顯示上次的資料。/)
   assert.match(panelFunctionSource('renderSpotlight'), /無法讀取 Codex 重設資料，請稍後再試。/)
@@ -1478,9 +1518,12 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   assert.doesNotMatch(panelFunctionSource('renderSpotlightSkeleton'), /skeleton-action/)
   assert.doesNotMatch(markup, /最新狀態與排定時間[\s\S]{0,100}(?:chevron|section-note-arrow)/, 'the false section-link affordance is removed')
   assert.doesNotMatch(`${markup}${panelSource}`, /歷史/u, 'no history copy or empty history section is rendered')
-  assert.match(panelFunctionSource('appendCodexAnnouncementDisclosure'), /text\.slice\(0, 280\)/)
+  assert.doesNotMatch(panelSource, /function appendCodexAnnouncementDisclosure|function appendAnnouncementAction/)
+  assert.doesNotMatch(panelFunctionSource('renderSpotlight'), /公告/)
   assert.match(panelFunctionSource('appendText'), /element\.textContent = String\(text \?\? ''\)/)
   assert.match(panelFunctionSource('appendCodexSourceDisclosure'), /renderSources\(sourceGrid, source \? \[source\] : \[\]\)/)
+  assert.match(panelFunctionSource('appendCodexSourceDisclosure'), /appendCodexSourceAttribution\(disclosure\.region, latestReset, resetPost\)/)
+  assert.match(panelFunctionSource('appendCodexSourceAttribution'), /由 codex-resets\.com 偵測 Tibo 的重設貼文/)
   const renderSources = panelFunctionSource('renderSources')
   assert.match(renderSources, /const codexFlat = target === elements\.resetSources/)
   assert.match(renderSources, /source-row source-\$\{displayStatus\}\$\{codexFlat \? ' codex-source-row' : ''\}/)
@@ -1490,8 +1533,151 @@ test('Update Radar Phase 4 Codex announcement and source disclosures stay collap
   assert.match(styles, /\.codex-reset-source-grid \{ grid-template-columns: minmax\(0, 1fr\); margin-top: 0; \}/)
   assert.doesNotMatch(styles, /\.codex-reset-source-grid[^}]*\{[^}]*border:|\.codex-source-row[^}]*\{[^}]*background:\s*var\(--radar-surface\)/)
   assert.match(panelFunctionSource('renderSources'), /dispatchSyncRequest\([\s\S]*?source\.id,[\s\S]*?type: 'radar:retry-source'/)
-  assert.match(styles, /\.codex-announcement-text\s*\{[^}]*white-space:\s*pre-wrap/)
+  assert.match(styles, /\.message-preview \{[^}]*white-space: pre-wrap/)
+  assert.match(styles, /\.codex-reset-post-empty \{[^}]*font-size: 13px/)
   assert.match(styles, /\.codex-reset-countdown\s*\{[^}]*font-size:\s*24px/)
+})
+
+test('findResetPost links the Codex reset id or source URL and safely handles missing posts', () => {
+  const findResetPost = runInNewContext(`(${panelFunctionSource('findResetPost')})`) as (updates: unknown, latestReset: unknown) => any
+  const statusId = '2117035794678546764'
+  const idPost = { id: `x-${statusId}`, sourceUrl: `https://x.com/thsottiaux/status/${statusId}`, title: 'Day 28/ Banked 2/2' }
+  assert.equal(findResetPost([idPost], { id: statusId }), idPost, 'the x-<latestReset.id> card is matched')
+
+  const urlPost = { id: 'x-different', sourceUrl: 'https://x.com/thsottiaux/status/2117035794678546764', title: 'matched by URL' }
+  assert.equal(findResetPost([urlPost], { id: 'other-id', sourceUrl: urlPost.sourceUrl }), urlPost, 'a matching source URL is a fallback')
+  assert.equal(findResetPost([idPost], { id: 'observed-2117035794678546764' }), null, 'observed resets without a post do not match')
+  assert.equal(findResetPost([{ id: 'x-other', sourceUrl: 'https://x.com/thsottiaux/status/9' }], { id: statusId }), null, 'an unrelated update returns null')
+  assert.equal(findResetPost([idPost], null), null, 'a missing latestReset returns null')
+})
+
+test('Codex reset links across update cards and overview without changing tab fetch behavior', () => {
+  const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const codexGroupStart = markup.indexOf('<section class="overview-codex-group"')
+  const codexGroupEnd = markup.indexOf('<section class="overview-highlights"', codexGroupStart)
+  const codexGroup = markup.slice(codexGroupStart, codexGroupEnd)
+  assert.match(codexGroup, /Codex 重設 · Tibo/)
+  assert.match(codexGroup, /id="codex-overview-status"/)
+  assert.match(codexGroup, /id="tibo-summary"/)
+  assert.ok(codexGroup.indexOf('id="codex-overview-status"') < codexGroup.indexOf('id="tibo-summary"'), 'both clickable rows stay inside the titled Codex/Tibo group in order')
+  assert.match(panelFunctionSource('renderOverview'), /findResetPost\(updates, state\.radar\?\.codexReset\?\.latestReset\)/)
+  assert.match(panelFunctionSource('renderOverview'), /resetPostIsToday \? ' · Codex 重設' : ''/)
+
+  const renderUpdates = panelFunctionSource('renderUpdates')
+  assert.match(renderUpdates, /const resetPost = findResetPost\(allUpdates, state\.radar\?\.codexReset\?\.latestReset\)/)
+  assert.match(renderUpdates, /renderThread\(group, unitKey, resetPost\?\.id \?\? null\)/)
+  assert.match(renderUpdates, /renderTiboUpdate\(update, update\.id === resetPost\?\.id\)/)
+  assert.match(panelFunctionSource('renderThread'), /isResetPost: update\.id === resetPostId/)
+  assert.match(panelFunctionSource('renderTiboBubble'), /Codex 重設\$\{resetType \? ` · \$\{resetTypeLabel\(resetType\)\}` : ''\}/)
+  assert.match(panelFunctionSource('renderTiboBubble'), /'查看 Codex 重設'/)
+  assert.match(panelFunctionSource('renderTiboBubble'), /activateTab\('reset', \{/)
+  assert.match(panelFunctionSource('renderTiboBubble'), /bubble\.append\(preview\)[\s\S]*?const sourceActions = appendText\(bubble, 'div', 'message-source-actions', ''\)[\s\S]*?appendSourceAction\(sourceActions, update, \{ inline: true \}\)/)
+  assert.match(styles, /\.message-source-actions \.source-button \{[^}]*min-height: 36px;/)
+  assert.match(styles, /@container tibo-row \(min-width: 330px\)[\s\S]*?grid-template-areas: "meta actions" "preview preview";[\s\S]*?\.message-source-actions \{ grid-area: actions;/)
+  assert.doesNotMatch(panelFunctionSource('activateTab'), /postMessage|storage\.get/)
+  assert.match(panelSource, /elements\.codexOverviewStatus\.addEventListener\('click', \(\) => activateTab\('reset'\)\)/)
+  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{[\s\S]*?elements\.provider\.value = 'x'[\s\S]*?activateTab\('updates'/)
+  const renderOverviewCodexStatus = panelFunctionSource('renderOverviewCodexStatus')
+  assert.match(renderOverviewCodexStatus, /text = `\$\{distance\} · 共 \$\{reset\.stats\?\.total \?\? 0\} 次`/)
+  assert.doesNotMatch(renderOverviewCodexStatus, /Codex 重設 ·/)
+  assert.match(renderOverviewCodexStatus, /setAttribute\('aria-label', `前往 Codex 重設頁；\$\{text\}`\)/)
+  assert.doesNotMatch(panelFunctionSource('tickCodexCountdown'), /Codex 重設 ·/)
+  const renderSpotlight = panelFunctionSource('renderSpotlight')
+  const resetCardRendering = renderSpotlight.slice(renderSpotlight.indexOf('card.append(facts)'), renderSpotlight.lastIndexOf('target.replaceChildren'))
+  assert.ok(resetCardRendering.indexOf('renderCodexResetPost(card, latestReset, resetPost)') < resetCardRendering.indexOf('appendCodexSourceDisclosure(card, source, latestReset, resetPost)'), 'the Tibo post precedes the source disclosure')
+  assert.doesNotMatch(panelSource, /appendCodexAnnouncementDisclosure|title: '公告'/)
+
+  const desktopCss = styles.match(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  const mobileGrid = styles.match(/\.overview-grid \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  const compactOverview = styles.match(/@media \(max-width: 430px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+  const compactHighlightRow = compactOverview.match(/\.overview-highlight-row \{([^}]*)\}/)?.[1] ?? ''
+  assert.match(desktopCss, /\.overview-codex-group \{ grid-area: codex; \}/)
+  assert.match(desktopCss, /"codex highlights"/)
+  assert.match(mobileGrid, /"alerts" "summary" "codex" "highlights" "sources"/)
+  assert.match(styles, /\.overview-codex-group \{ display: grid; grid-area: codex;/)
+  assert.match(styles, /\.overview-codex-group \{[^}]*border: 1px solid var\(--radar-border-soft\);[^}]*background: var\(--radar-surface\);/)
+  assert.match(styles, /\.overview-codex-group-heading \{[^}]*font-size: 13px/)
+  assert.match(styles, /\.tibo-summary-section \{ display: grid; gap: var\(--radar-gap-1\);/)
+  assert.match(styles, /\.tibo-summary-section \{[^}]*border-top: 1px solid var\(--radar-border-soft\);/)
+  assert.match(styles, /\.codex-overview-status \{[^}]*min-height: 36px;/)
+  assert.match(styles, /\.tibo-summary \{[^}]*min-height: 36px;/)
+  assert.doesNotMatch(styles, /@media \(max-width: 899px\)[\s\S]*?display: contents/)
+
+  const cssBlock = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return styles.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+  }
+  const px = (selector: string, property: string) => Number(cssBlock(selector).match(new RegExp(`${property}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
+  const unitPx = (name: string) => Number(styles.match(new RegExp(`${name}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
+  const lineHeight = (selector: string) => Number(cssBlock(selector).match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+  const rootLineHeight = Number(cssBlock(':root').match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+  const compactPx = (property: string) => Number(compactHighlightRow.match(new RegExp(`${property}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
+  const shellGap = unitPx('--radar-gap-3')
+  const gridGap = px('.overview-grid', 'gap')
+  const overviewTop = shellGap + px('.radar-header', 'height') + shellGap + px('.radar-tabs', 'min-height') + shellGap
+  const twoAlerts = 2 * px('.overview-alert-action', 'min-height') + px('.overview-alerts', 'gap')
+  const headingPadding = styles.match(/\.overview-codex-group-heading \{[^}]*padding:\s*(\d+(?:\.\d+)?)px\s+\d+(?:\.\d+)?px\s+(\d+(?:\.\d+)?)px/s)
+  assert.ok(headingPadding, 'the grouped heading keeps explicit vertical padding for the 423px calculation')
+  const groupTop = overviewTop + twoAlerts + gridGap + px('.summary-card', 'min-height') + gridGap
+  const codexGroupHeight = px('.overview-codex-group-heading', 'font-size') * lineHeight('.overview-codex-group-heading')
+    + Number(headingPadding?.[1] ?? 0) + Number(headingPadding?.[2] ?? 0)
+    + 2 * px('.overview-codex-group', 'border')
+    + px('.codex-overview-status', 'min-height')
+    + px('.tibo-summary', 'min-height')
+    + px('.tibo-summary-section', 'border-top')
+  const codexRowBottom = Math.ceil(groupTop + px('.overview-codex-group', 'border')
+    + px('.overview-codex-group-heading', 'font-size') * lineHeight('.overview-codex-group-heading')
+    + Number(headingPadding?.[1] ?? 0) + Number(headingPadding?.[2] ?? 0)
+    + px('.codex-overview-status', 'min-height'))
+  const compactRowContentHeight = Math.max(px('.overview-highlight-source', 'font-size'), px('.overview-highlight-time', 'font-size')) * rootLineHeight
+    + compactPx('row-gap')
+    + px('.overview-highlight-row', 'font-size') * rootLineHeight
+  const compactHighlightRowHeight = Math.max(px('.overview-highlight-row', 'min-height'), compactRowContentHeight
+    + 2 * compactPx('padding-block') + 2 * px('.overview-highlight-row', 'border'))
+  const firstHighlightHeight = px('.overview-highlights h2', 'font-size') * lineHeight('.overview-highlights h2')
+    + px('.overview-highlights', 'gap')
+    + compactHighlightRowHeight
+  const firstHighlightBottom = Math.ceil(overviewTop + twoAlerts + gridGap + px('.summary-card', 'min-height') + gridGap + codexGroupHeight + gridGap + firstHighlightHeight)
+  assert.equal(codexRowBottom, 347, 'the Codex status row remains 36px high inside the shared frame')
+  assert.equal(firstHighlightBottom, 489, '423px layout calculation includes one failed-source alert, one attention alert, the shared Codex/Tibo group, and both rows of the first compact important update')
+  assert.ok(firstHighlightBottom <= 535, `V1 first important update ends at ${firstHighlightBottom}px`)
+})
+
+test('Codex reset keeps the first Tibo text line visible before the source disclosure in the 423x535 viewport', () => {
+  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
+  const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const cssBlock = (selector: string) => styles.match(new RegExp(`(?:^|\\n)\\s*${escaped(selector)}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+  const px = (selector: string, property: string) => Number(cssBlock(selector).match(new RegExp(`${property}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
+  const lineHeight = (selector: string) => Number(cssBlock(selector).match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+  const tokenPx = (name: string) => Number(styles.match(new RegExp(`${name}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
+  const rootLineHeight = Number(cssBlock(':root').match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+  const panelTop = tokenPx('--radar-gap-3') * 3 + px('.radar-header', 'height') + px('.radar-tabs', 'min-height')
+  const sectionHeading = tokenPx('--radar-font-heading') * lineHeight('.section-heading h2') + tokenPx('--radar-gap-2')
+  const cardTop = panelTop + sectionHeading
+  const cardInset = px('.codex-reset-card', 'padding') + px('.spotlight-card', 'border')
+  const cardGap = tokenPx('--radar-gap-2')
+  const flagHeight = tokenPx('--radar-font-small') * rootLineHeight
+  const countdownHeight = px('.codex-reset-countdown', 'font-size') * lineHeight('.codex-reset-countdown')
+  const factHeight = 4 * px('.codex-reset-fact', 'font-size') * rootLineHeight
+    + 3 * tokenPx('--radar-gap-1')
+    + tokenPx('--radar-gap-1')
+    + Math.max(0, px('.reset-type-chip', 'min-height') - px('.codex-reset-fact', 'font-size') * rootLineHeight)
+  const factBottom = cardTop + cardInset + flagHeight + cardGap + countdownHeight + cardGap + factHeight
+  const chipHeight = px('.message-type-chip', 'font-size') * lineHeight('.message-type-chip')
+    + 2 * px('.message-type-chip', 'padding')
+    + 2 * px('.message-type-chip', 'border')
+  const firstPostLineBottom = factBottom + cardGap
+    + px('.codex-reset-post-heading', 'font-size') * lineHeight('.codex-reset-post-heading')
+    + px('.codex-reset-post', 'gap')
+    + chipHeight
+    + px('.message-preview', 'margin')
+    + px('.message-preview', 'font-size') * lineHeight('.message-preview')
+  const staleWarningHeight = tokenPx('--radar-font-small') * lineHeight('.codex-reset-status')
+  const conservativeBottom = Math.ceil(firstPostLineBottom + staleWarningHeight)
+  assert.equal(conservativeBottom, 431, 'four facts, a stale warning, a 16px section heading, and the post-first order keep the first Tibo line visible')
+  assert.ok(conservativeBottom <= 535, `Tibo author and first text line end at ${conservativeBottom}px`)
 })
 
 test('Update Radar Phase 3 cards use one disclosure and retain accessible unit identity', () => {
@@ -1955,7 +2141,7 @@ test('updates density keeps accessible heading, co-locates counts, and preserves
   assert.match(panelFunctionSource('renderUpdates'), /heatMeta\.textContent = \[selectedDay, elements\.resultStatus\.textContent\]/)
   assert.match(styles, /\.heat-disclosure-button \{ min-height: 36px;/)
   assert.match(styles, /\.result-status\.visually-hidden \{[\s\S]*?height: 20px;[\s\S]*?line-height: 20px;/)
-  assert.match(panelFunctionSource('renderTiboBubble'), /appendSourceAction\(meta, update, \{ inline: true \}\)/)
+  assert.match(panelFunctionSource('renderTiboBubble'), /bubble\.append\(preview\)[\s\S]*?const sourceActions = appendText\(bubble, 'div', 'message-source-actions', ''\)[\s\S]*?appendSourceAction\(sourceActions, update, \{ inline: true \}\)/)
   assert.match(styles, /\.message-meta \.source-button \{ min-height: 36px;/)
   assert.match(styles, /\.card-disclosure \{ margin-top: 4px; border-top: 0; \}/)
   assert.match(styles, /\.card-disclosure-button \{ min-height: 36px;/)

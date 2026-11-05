@@ -53,20 +53,21 @@
             </button>
           </section>
 
-          <button id="codex-overview-status" class="codex-overview-status" type="button" aria-label="前往 Codex 重設頁" aria-busy="true">Codex 重設 · 正在同步…</button>
+          <section class="overview-codex-group" aria-labelledby="overview-codex-group-heading">
+            <h2 id="overview-codex-group-heading" class="overview-codex-group-heading">Codex 重設 · Tibo</h2>
+            <button id="codex-overview-status" class="codex-overview-status" type="button" aria-label="前往 Codex 重設頁" aria-busy="true">正在同步…</button>
+            <section class="tibo-summary-section" aria-label="Tibo 今日">
+              <button id="tibo-summary" class="tibo-summary" type="button">
+                <span class="tibo-summary-marker" aria-hidden="true"></span>
+                <span id="tibo-summary-text">今天 Tibo 尚無新貼文</span>
+              </button>
+            </section>
+          </section>
 
           <section class="overview-highlights" aria-labelledby="overview-highlights-heading">
             <h2 id="overview-highlights-heading">重要更新</h2>
             <ol id="overview-highlights-list" class="overview-highlights-list" aria-busy="true"></ol>
             <button id="overview-all-updates" class="overview-all-updates" type="button">查看全部更新 →</button>
-          </section>
-
-          <section class="tibo-summary-section" aria-labelledby="tibo-summary-heading">
-            <h2 id="tibo-summary-heading">Tibo 今日</h2>
-            <button id="tibo-summary" class="tibo-summary" type="button">
-              <span class="tibo-summary-marker" aria-hidden="true"></span>
-              <span id="tibo-summary-text">今天 Tibo 尚無新貼文</span>
-            </button>
           </section>
 
           <section id="source-status" class="source-status"></section>
@@ -183,7 +184,7 @@
       <section id="panel-reset" class="tab-panel reset-panel" role="tabpanel" aria-labelledby="tab-reset" tabindex="0" hidden>
         <section class="spotlight-section" aria-labelledby="reset-spotlight-heading">
           <div class="section-heading">
-            <h2 id="reset-spotlight-heading">Codex 重設</h2>
+            <h2 id="reset-spotlight-heading" tabindex="-1">Codex 重設</h2>
             <span class="pixel-loader section-pixel-loader spotlight-loader" aria-hidden="true" hidden></span>
           </div>
           <div id="spotlight-reset" class="spotlight-content" aria-busy="true"></div>

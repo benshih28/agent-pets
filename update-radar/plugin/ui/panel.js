@@ -227,7 +227,6 @@ const ICON_PATHS = Object.freeze({
   attention: ['M8 1.5 14.5 14h-13L8 1.5Z', 'M8 5v4', 'M8 11.5v.1'],
   chevron: ['m5.5 6.5 2.5 2.5 2.5-2.5'],
   arrow: ['M2.5 8h10', 'm8.5 4 4 4-4 4'],
-  megaphone: ['M2 6.2h3l7-3v9.6l-7-3H2z', 'M5 9.8l1.4 4h2.1l-1.5-3.4', 'M14 6.2a2.3 2.3 0 0 1 0 3.6'],
   external: ['M9 3h4v4M13 3 7.5 8.5', 'M11.5 8.5v3.8H4V4.8h3.8'],
   link: ['M6.4 9.6 9.6 6.4M5.2 11.8l-1 1a2.7 2.7 0 0 1-3.8-3.8l3-3a2.7 2.7 0 0 1 3.8 0', 'M10.8 4.2l1-1a2.7 2.7 0 0 1 3.8 3.8l-3 3a2.7 2.7 0 0 1-3.8 0'],
   // X 標誌是一條粗斜帶加一條細反斜線；兩條等寬線條會被看成「關閉」按鈕。
@@ -663,7 +662,7 @@ function bindExternalLink(link, sourceUrl, note) {
 function appendSourceAction(parent, update, { inline = false } = {}) {
   const sourceUrl = safeSourceUrl(update.sourceUrl)
   if (!sourceUrl) {
-    return appendText(parent, 'p', 'source-unavailable', '無法驗證這個連結。')
+    return appendText(parent, inline ? 'span' : 'p', 'source-unavailable', '無法驗證這個連結。')
   }
   const row = inline ? parent : document.createElement('div')
   if (!inline) row.className = 'source-action'
@@ -723,34 +722,64 @@ function syncTabLifecycles() {
   }
 }
 
-function renderTiboBubble(update, role = '') {
+function findResetPost(updates, latestReset) {
+  if (!latestReset || typeof latestReset !== 'object') return null
+  const rows = Array.isArray(updates) ? updates : []
+  const expectedId = latestReset.id === undefined || latestReset.id === null ? '' : `x-${latestReset.id}`
+  if (expectedId) {
+    const idMatch = rows.find(update => update?.id === expectedId)
+    if (idMatch) return idMatch
+  }
+  if (typeof latestReset.sourceUrl !== 'string' || !latestReset.sourceUrl) return null
+  return rows.find(update => update?.sourceUrl === latestReset.sourceUrl) ?? null
+}
+
+function renderTiboBubble(update, role = '', { isResetPost = false, showResetAction = true, showUnavailableLink = true } = {}) {
   const row = document.createElement('div')
   row.className = `message-row provider-x${role ? ` message-${role}` : ''}`
   const avatar = appendText(row, 'span', 'source-avatar', 'T')
   avatar.setAttribute('aria-hidden', 'true')
   const bubble = document.createElement('div')
-  bubble.className = 'message-bubble'
+  bubble.className = `message-bubble${isResetPost ? ' is-reset-post' : ''}${state.absoluteTime ? ' is-absolute-time' : ''}`
 
   const meta = document.createElement('div')
   meta.className = 'message-meta'
   const dateTime = update.publishedAtTime ?? update.publishedAt ?? ''
+  const resetType = isResetPost ? state.radar?.codexReset?.latestReset?.resetType : ''
+  const typeLabel = isResetPost
+    ? `Codex 重設${resetType ? ` · ${resetTypeLabel(resetType)}` : ''}`
+    : role === 'self-reply' ? '續文' : '貼文'
   appendText(meta, 'span', 'message-source-label', 'Tibo / X')
-  appendText(meta, 'span', 'message-type-chip', role === 'self-reply' ? '續文' : '貼文')
+  appendText(meta, 'span', 'message-type-chip', typeLabel)
   const time = appendText(meta, 'time', 'message-time', formatUpdateTime(update))
   time.dateTime = dateTime
   bubble.append(meta)
 
-  appendText(bubble, 'p', 'message-preview message-full', update.summary || update.title || '原文內容未提供。')
-  appendSourceAction(meta, update, { inline: true })
+  const preview = document.createElement('p')
+  preview.className = 'message-preview message-full'
+  appendText(preview, 'span', 'message-text', update.summary || update.title || '原文內容未提供。')
+  bubble.append(preview)
+  if (safeSourceUrl(update.sourceUrl) || showUnavailableLink) {
+    const sourceActions = appendText(bubble, 'div', 'message-source-actions', '')
+    appendSourceAction(sourceActions, update, { inline: true })
+  }
+  if (isResetPost && showResetAction) {
+    const actions = appendText(bubble, 'div', 'message-reset-actions', '')
+    const button = appendText(actions, 'button', 'message-reset-action', '查看 Codex 重設')
+    button.type = 'button'
+    button.addEventListener('click', () => activateTab('reset', {
+      afterRestore: () => document.querySelector('#reset-spotlight-heading')?.focus({ preventScroll: true }),
+    }))
+  }
   row.append(bubble)
   return row
 }
 
-function renderTiboUpdate(update) {
+function renderTiboUpdate(update, isResetPost = false) {
   const article = document.createElement('article')
   article.className = 'update-item provider-x'
   const role = update.postKind === 'self-reply' ? 'self-reply' : 'root'
-  article.append(renderTiboBubble(update, role))
+  article.append(renderTiboBubble(update, role, { isResetPost }))
   return article
 }
 
@@ -1290,7 +1319,8 @@ function tickCodexCountdown() {
     const shortCountdown = countdownText.match(/^\d+ 天 \d+ 時/u)?.[0]
     elements.codexOverviewStatus.textContent = countdownText === '預定時間已到，等待狀態更新'
       ? countdownText
-      : `Codex 重設 · ${shortCountdown ?? countdownText} 後重設`
+      : `${shortCountdown ?? countdownText} 後重設`
+    elements.codexOverviewStatus.setAttribute('aria-label', `前往 Codex 重設頁；${elements.codexOverviewStatus.textContent}`)
   } else if (state.activeTab === 'reset') {
     const countdown = elements.resetSpotlight.querySelector('.codex-reset-countdown')
     if (countdown) {
@@ -1304,20 +1334,6 @@ function tickCodexCountdown() {
   syncTabLifecycles()
 }
 
-function appendAnnouncementAction(parent, latestReset) {
-  const sourceUrl = safeSourceUrl(latestReset.sourceUrl)
-  if (!sourceUrl) return
-  const row = document.createElement('div')
-  row.className = 'codex-reset-actions'
-  const button = appendText(row, 'button', 'source-button', '查看公告')
-  button.prepend(createIcon('megaphone'))
-  button.type = 'button'
-  button.title = '使用系統瀏覽器開啟'
-  const note = appendText(row, 'span', 'source-note', '')
-  bindExternalButton(button, sourceUrl, note)
-  parent.append(row)
-}
-
 function renderSpotlight(target) {
   target ??= elements.resetSpotlight
   elements.resetSources = null
@@ -1327,6 +1343,9 @@ function renderSpotlight(target) {
   codexResetCountdownTimer = null
   codexResetCountdownTick = null
   const reset = state.radar?.codexReset
+  const latestReset = reset?.latestReset ?? null
+  const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+  const resetPost = findResetPost(updates, latestReset)
   const sources = currentSources()
   const source = sources.find(item => item.id === 'codex-resets')
   const allSourcesFailed = sources.length > 0 && sources.every(item => ['stale', 'error'].includes(item.status))
@@ -1345,7 +1364,7 @@ function renderSpotlight(target) {
       return
     }
     appendText(card, 'p', 'codex-reset-status', '無法讀取 Codex 重設資料，請稍後再試。').setAttribute('role', 'status')
-    appendCodexSourceDisclosure(card, source)
+    appendCodexSourceDisclosure(card, source, latestReset, resetPost)
     target.replaceChildren(card)
     setBusy(target, false)
     return
@@ -1385,7 +1404,7 @@ function renderSpotlight(target) {
   facts.className = 'codex-reset-facts'
   const factRows = [
     ['上次重設時間', formatAbsoluteResetTime(reset.stats.lastResetAt)],
-    ['重設類型', resetTypeLabel(reset.latestReset.resetType)],
+    ['重設類型', latestReset?.resetType ? resetTypeLabel(latestReset.resetType) : '重設'],
     ['累計次數', `${reset.stats.total} 次`],
   ]
   if (hasScheduledReset) factRows.push(['預定時間', formatAbsoluteResetTime(scheduledAt), scheduledAt])
@@ -1402,42 +1421,62 @@ function renderSpotlight(target) {
     facts.append(row)
   }
   card.append(facts)
-  appendCodexAnnouncementDisclosure(card, reset.latestReset)
-  appendCodexSourceDisclosure(card, source)
+  renderCodexResetPost(card, latestReset, resetPost)
+  appendCodexSourceDisclosure(card, source, latestReset, resetPost)
   target.replaceChildren(...(staleWarning ? [staleWarning, card] : [card]))
 }
 
-function appendCodexAnnouncementDisclosure(parent, latestReset) {
-  const text = typeof latestReset?.text === 'string' ? latestReset.text : ''
-  const sourceUrl = safeSourceUrl(latestReset?.sourceUrl)
-  if (!text.trim() && !sourceUrl) return null
-  const id = 'codex-reset-announcement'
-  const disclosure = createDisclosure({
-    id,
-    title: '公告',
-    meta: '',
-    open: state.disclosures.get(id) === true,
-    onToggle(expanded) {
-      state.disclosures.set(id, expanded)
-      if (expanded) appendAnnouncement()
-    },
-    rootClass: 'disclosure-root codex-reset-disclosure-root',
-    buttonClass: 'disclosure-button codex-reset-disclosure-button',
-    regionClass: 'disclosure-region codex-reset-disclosure-region',
-  })
-  let populated = false
-  function appendAnnouncement() {
-    if (populated) return
-    populated = true
-    if (text.trim()) appendText(disclosure.region, 'p', 'codex-announcement-text', text.slice(0, 280))
-    if (sourceUrl) appendAnnouncementAction(disclosure.region, latestReset)
+function renderCodexResetPost(parent, latestReset, update) {
+  const section = document.createElement('section')
+  section.className = 'codex-reset-post'
+  section.setAttribute('aria-label', 'Tibo 重設貼文')
+  appendText(section, 'h3', 'codex-reset-post-heading', 'Tibo 重設貼文')
+
+  const fallbackText = typeof latestReset?.text === 'string' ? Array.from(latestReset.text).slice(0, 280).join('') : ''
+  const resetUrl = safeSourceUrl(latestReset?.sourceUrl)
+  const updateUrl = safeSourceUrl(update?.sourceUrl)
+  if (!update && !fallbackText.trim() && !resetUrl) {
+    appendText(section, 'p', 'codex-reset-post-empty', '這次重設沒有對應的 Tibo 貼文')
+    parent.append(section)
+    return section
   }
-  if (state.disclosures.get(id) === true) appendAnnouncement()
-  parent.append(disclosure.root)
-  return disclosure
+
+  const post = update
+    ? {
+        ...update,
+        summary: update.summary || update.title || fallbackText,
+        sourceUrl: updateUrl ?? resetUrl ?? update.sourceUrl,
+      }
+    : {
+        provider: 'x',
+        sourceId: 'tibo-x',
+        postKind: 'root',
+        title: '',
+        summary: fallbackText,
+        publishedAtTime: latestReset?.announcedAt ?? '',
+        sourceUrl: resetUrl ?? '',
+      }
+  section.append(renderTiboBubble(post, post.postKind === 'self-reply' ? 'self-reply' : 'root', {
+    isResetPost: true,
+    showResetAction: false,
+    showUnavailableLink: false,
+  }))
+  parent.append(section)
+  return section
 }
 
-function appendCodexSourceDisclosure(parent, source) {
+function appendCodexSourceAttribution(parent, latestReset, resetPost) {
+  appendText(parent, 'p', 'codex-source-attribution', '由 codex-resets.com 偵測 Tibo 的重設貼文')
+  const sourceUrl = safeSourceUrl(latestReset?.sourceUrl) ?? safeSourceUrl(resetPost?.sourceUrl)
+  if (!sourceUrl) return
+  const row = appendText(parent, 'div', 'codex-source-post-row', '')
+  const link = appendText(row, 'a', 'codex-source-link', '查看 X 原文')
+  link.href = '#codex-reset-original-post'
+  const note = appendText(row, 'span', 'codex-source-note', '')
+  bindExternalLink(link, sourceUrl, note)
+}
+
+function appendCodexSourceDisclosure(parent, source, latestReset = null, resetPost = null) {
   const failed = ['stale', 'error'].includes(source?.status)
   let readAt = ''
   const timestamp = Date.parse(source?.fetchedAt ?? '')
@@ -1473,6 +1512,7 @@ function appendCodexSourceDisclosure(parent, source) {
     metaNode.prepend(dot)
   }
   if (disclosure.button.getAttribute('aria-expanded') === 'true' && metaNode) metaNode.hidden = true
+  appendCodexSourceAttribution(disclosure.region, latestReset, resetPost)
   const sourceGrid = appendText(disclosure.region, 'div', 'source-grid codex-reset-source-grid', '')
   elements.resetSources = sourceGrid
   renderSources(sourceGrid, source ? [source] : [])
@@ -1525,12 +1565,12 @@ function groupUpdates(updates) {
   return groups
 }
 
-function renderThread(group, unitKey) {
+function renderThread(group, unitKey, resetPostId = null) {
   const article = document.createElement('article')
   article.className = 'update-thread provider-x'
   article.setAttribute('aria-label', `Tibo 對話串，共 ${group.updates.length} 則`)
   const root = group.updates.find(update => update.postKind === 'root') ?? group.updates[0]
-  article.append(renderTiboBubble(root, 'root'))
+  article.append(renderTiboBubble(root, 'root', { isResetPost: root.id === resetPostId }))
   const replies = group.updates.filter(update => update.id !== root.id)
   if (replies.length === 0) return article
 
@@ -1555,7 +1595,7 @@ function renderThread(group, unitKey) {
   for (const update of replies) {
     const item = document.createElement('li')
     item.className = 'thread-item thread-self-reply'
-    item.append(renderTiboBubble(update, 'self-reply'))
+    item.append(renderTiboBubble(update, 'self-reply', { isResetPost: update.id === resetPostId }))
     timeline.append(item)
   }
   disclosure.region.append(timeline)
@@ -1580,6 +1620,7 @@ function matchesFilters(update, unit = [update], now = Date.now()) {
 function renderUpdates() {
   const now = Date.now()
   const allUpdates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+  const resetPost = findResetPost(allUpdates, state.radar?.codexReset?.latestReset)
   const updateLoading = isUpdateSourceLoading()
   if (allUpdates.length === 0 && !hasKnownUpdateSnapshot() && (state.radar === null || updateLoading || isInitialDataSyncing())) {
     renderUpdateListSkeleton()
@@ -1594,11 +1635,11 @@ function renderUpdates() {
     const first = group.updates[0]
     const unitKey = groupKey(first) ?? `update:${first.id}`
     let card
-    if (group.kind === 'thread') card = renderThread(group, unitKey)
+    if (group.kind === 'thread') card = renderThread(group, unitKey, resetPost?.id ?? null)
     else if (group.kind === 'changes') card = renderChangeGroup(group.updates, matchingUpdates(group), unitKey, now)
     else {
       const update = first
-      if (isTiboUpdate(update)) card = renderTiboUpdate(update)
+      if (isTiboUpdate(update)) card = renderTiboUpdate(update, update.id === resetPost?.id)
       else card = Array.isArray(update.retirements) && update.retirements.length ? renderRetirement(update, unitKey, now) : renderOfficialUpdate(update, unitKey, now)
     }
     card.dataset.unitKey = unitKey
@@ -1983,35 +2024,35 @@ function renderOverviewCodexStatus() {
   let text
 
   if (!reset) {
-    if (['error', 'stale'].includes(source?.status)) text = '無法讀取 Codex 重設資料，請稍後再試。'
+    if (['error', 'stale'].includes(source?.status)) text = '無法讀取資料，請稍後再試。'
     else if (!state.radar || source?.status === 'loading' || isInitialDataSyncing()) {
       elements.codexOverviewStatus.replaceChildren()
-      appendText(elements.codexOverviewStatus, 'span', 'codex-overview-prefix', 'Codex 重設 ·')
       const skeleton = makeSkeletonBlock(elements.codexOverviewStatus, 'codex-overview-skeleton', '52%')
       skeleton.classList.add('loading-skeleton')
       elements.codexOverviewStatus.classList.add('is-loading')
       setBusy(elements.codexOverviewStatus, true)
       return
-    } else text = '尚無 Codex 重設資料，同步中…'
+    } else text = '尚無資料，同步中…'
   } else if (futureSchedule) {
     const countdown = formatScheduledCountdown(scheduledAt)
     const shortCountdown = countdown.match(/^\d+ 天 \d+ 時/u)?.[0]
-    text = `Codex 重設 · ${shortCountdown ?? countdown} 後重設`
+    text = `${shortCountdown ?? countdown} 後重設`
     codexResetCountdownTick = tickCodexCountdown
   } else if (validSchedule) {
     const countdown = formatScheduledCountdown(scheduledAt)
     text = countdown === '預定時間已到，等待狀態更新'
       ? countdown
-      : `Codex 重設 · ${countdown}`
+      : countdown
   } else {
     const elapsedText = formatTimeSinceReset(reset.stats?.lastResetAt)
     const elapsed = elapsedText.replace(/^距上次重設\s*/u, '')
     const distance = elapsedText === '上次重設時間不明' ? elapsedText : `距上次 ${elapsed}`
-    text = `Codex 重設 · ${distance} · 共 ${reset.stats?.total ?? 0} 次`
+    text = `${distance} · 共 ${reset.stats?.total ?? 0} 次`
   }
 
   elements.codexOverviewStatus.classList.remove('is-loading')
   elements.codexOverviewStatus.textContent = text
+  elements.codexOverviewStatus.setAttribute('aria-label', `前往 Codex 重設頁；${text}`)
   setBusy(elements.codexOverviewStatus, !reset && (source?.status === 'loading' || isInitialDataSyncing()))
 }
 
@@ -2138,11 +2179,15 @@ function renderOverview() {
   today.setHours(12, 0, 0, 0)
   const todayKey = localDateKey(today)
   const todayTibo = updates.filter(update => isTiboUpdate(update) && heatDateKey(update) === todayKey)
+  const resetPost = findResetPost(updates, state.radar?.codexReset?.latestReset)
+  const resetPostIsToday = Boolean(resetPost && todayTibo.some(update => update.id === resetPost.id))
   const originalPosts = todayTibo.filter(update => update.postKind === 'root').length
   const selfReplies = todayTibo.filter(update => update.postKind === 'self-reply').length
-  elements.tiboSummaryText.textContent = todayTibo.length
+  const summary = todayTibo.length
     ? `今天 Tibo 貼文 ${todayTibo.length} 則（貼文 ${originalPosts}、續文 ${selfReplies}）`
     : '今天 Tibo 尚無新貼文'
+  elements.tiboSummaryText.textContent = `${summary}${resetPostIsToday ? ' · Codex 重設' : ''}`
+  elements.tiboSummary.classList.toggle('is-reset-post', resetPostIsToday)
 }
 
 function renderUpdatesTab() {

@@ -200,6 +200,14 @@ activateTab(id) ─▶ 若 tabRenderedVersion[id] !== state.dataVersion 才 rend
 1. **公告**：`latestReset.text`（純文字，`white-space: pre-wrap`，最多 280 字），下方放 `查看公告` 按鈕（有 `sourceUrl` 才顯示）。沒有內文也沒有連結時不顯示這個區塊。
 2. **資料來源**：`codex-resets.com` 連結、此來源的狀態與上次讀取時間（取自 `sources` 中 `id === 'codex-resets'`），以及失敗時的「立即重試」。標題列在失敗時顯示 danger 文字「讀取失敗」，收合時也看得到。
 
+#### 2.3.1 Codex 重設與 Tibo 貼文綁定（2026-11-04 使用者決策：「codex重設是跟tibo貼文綁定的不是分開的」）
+
+資料事實：`latestReset.id` 就是 Tibo 貼文的 X status id（worker 只接受 `x.com/thsottiaux/status/<id>` 作為 `sourceUrl`），更新列表中的對應卡片 id 為 `x-<id>`。codex-resets.com 只負責偵測與統計；重設本身是 Tibo 的貼文。來源類型為 `observed`（沒有貼文）時沒有對應卡片。純前端以 `findResetPost(updates, latestReset)` 關聯（id 相符，或 `sourceUrl` 相符），不改 worker 與資料格式。
+
+- **Codex 重設頁**：原「公告」收合改成不收合的「Tibo 重設貼文」：用 Tibo 卡片的呈現（頭像、`Tibo / X`、時間、全文、`查看 X 原文`），內文優先取對應 Tibo 卡，沒有對應卡時用 `latestReset.text`。沒有貼文（observed、沒有 text 也沒有 sourceUrl）時顯示一行 muted「這次重設沒有對應的 Tibo 貼文」。「資料來源」收合列 meta 與內容說明「由 codex-resets.com 偵測 Tibo 貼文」，兩個連結都列出。
+- **更新動態**：對應的 Tibo 卡片類型標籤改成「Codex 重設」（加重設類型，例如 `Codex 重設 · 存入`），卡片加一個「查看 Codex 重設」按鈕切到 Codex 重設頁。其他 Tibo 卡不變。
+- **總覽**：「Tibo 今日」緊接在 Codex 狀態列下方，成為同一組（標題「Codex 重設 · Tibo」或 Codex 列與 Tibo 列放在同一個框內）；今天的 Tibo 貼文若就是重設貼文，標示「Codex 重設」。V1 不得退步。
+
 **歷史紀錄**：依使用者決策暫不實作，不修改 worker 或資料格式，也不留空殼或「即將推出」文字。
 
 ### 2.4 重用清單（不新增 UI 依賴）
