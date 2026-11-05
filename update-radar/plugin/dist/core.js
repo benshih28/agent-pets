@@ -25,8 +25,8 @@ export const SOURCE_DEFINITIONS = Object.freeze([
     publicUrl: 'https://github.com/anthropics/claude-code/releases', maxItems: 150, intervalSec: 3600,
   },
   {
-    id: 'tibo-x', label: 'Tibo / X', provider: 'x', product: 'social', kind: 'x-public-profile', username: 'thsottiaux',
-    url: 'https://x.com/thsottiaux', publicUrl: 'https://x.com/thsottiaux', maxItems: 20, intervalSec: 600,
+    id: 'x-ajambrosino', label: '@ajambrosino', provider: 'x', product: 'social', kind: 'x-public-profile', username: 'ajambrosino',
+    url: 'https://x.com/ajambrosino', publicUrl: 'https://x.com/ajambrosino', maxItems: 20, intervalSec: 600,
   },
   {
     id: 'codex-resets', label: 'Codex 重設', provider: 'codex', product: 'quota', kind: 'codex-reset-status',
@@ -39,7 +39,6 @@ const MONTHS = Object.freeze({
   jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
   oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
 })
-const PROFILE_POST_PATTERN_SOURCE = String.raw`data-href="\/thsottiaux\/status\/(\d{1,19})"`
 const POST_TEXT_PATTERN = /<div[^>]*class="[^"]*whitespace-pre-wrap[^"]*wrap-break-word[^"]*"[^>]*>([\s\S]*?)<\/div>/
 const POST_TIMESTAMP_PATTERN = /"timestamp":(\d{13})/
 const EMBEDDED_VALUE_PATTERN = /value:("(?:\\.|[^"\\])*")/g
@@ -326,8 +325,17 @@ export function localDateKey(value, timeZone) {
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
-function normalizedTiboUpdate({ id, text, createdAt, timeZone, postKind, replyToId = null }) {
-  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'tibo-x')
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function profilePostPattern(username) {
+  const escapedUsername = escapeRegExp(username)
+  return new RegExp(String.raw`data-href="\/${escapedUsername}\/status\/(\d{1,19})"`, 'g')
+}
+
+function normalizedXUpdate({ id, text, createdAt, timeZone, postKind, replyToId = null }) {
+  const definition = SOURCE_DEFINITIONS.find(source => source.kind === 'x-public-profile')
   const update = normalizeUpdate(definition, {
     body: text, headingTitle: '', publishedAt: localDateKey(createdAt, timeZone),
     sourceUrl: `https://x.com/${definition.username}/status/${id}`,
@@ -338,12 +346,13 @@ function normalizedTiboUpdate({ id, text, createdAt, timeZone, postKind, replyTo
   } : null
 }
 
-export function parseTiboPublicProfile(html, options = {}) {
-  if (typeof html !== 'string' || !html.includes('@thsottiaux')) throw new Error('x_profile_invalid')
+export function parseXProfile(html, options = {}) {
+  const definition = SOURCE_DEFINITIONS.find(source => source.kind === 'x-public-profile')
+  if (!definition || typeof html !== 'string' || !html.includes(`@${definition.username}`)) throw new Error('x_profile_invalid')
   const now = options.now instanceof Date ? options.now : new Date(options.now ?? Date.now())
   if (!Number.isFinite(now.getTime())) throw new Error('x_profile_invalid')
   const today = localDateKey(now, options.timeZone)
-  const matches = [...html.matchAll(new RegExp(PROFILE_POST_PATTERN_SOURCE, 'g'))]
+  const matches = [...html.matchAll(profilePostPattern(definition.username))]
   if (matches.length === 0) throw new Error('x_profile_format_changed')
   const updates = []
   const seen = new Set()
@@ -359,7 +368,7 @@ export function parseTiboPublicProfile(html, options = {}) {
     if (!Number.isFinite(timestamp) || !textMatch) continue
     const createdAt = new Date(timestamp)
     if (createdAt.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS || localDateKey(createdAt, options.timeZone) !== today) continue
-    const update = normalizedTiboUpdate({ id, text: decodeHtmlText(textMatch[1]), createdAt, timeZone: options.timeZone, postKind: 'root' })
+    const update = normalizedXUpdate({ id, text: decodeHtmlText(textMatch[1]), createdAt, timeZone: options.timeZone, postKind: 'root' })
     if (update) updates.push(update)
   }
   return updates
@@ -396,13 +405,14 @@ function timelineTweetResults(payload) {
   return results
 }
 
-export function parseTiboSelfReplies(html, options = {}) {
+export function parseXSelfReplies(html, options = {}) {
+  const definition = SOURCE_DEFINITIONS.find(source => source.kind === 'x-public-profile')
   const rootId = String(options.rootId ?? '')
   if (typeof html !== 'string' || !/^\d{1,19}$/.test(rootId) || !html.includes(rootId)) throw new Error('x_conversation_invalid')
   const now = options.now instanceof Date ? options.now : new Date(options.now ?? Date.now())
   const today = localDateKey(now, options.timeZone)
   const payloads = conversationPayloads(html)
-  if (!Number.isFinite(now.getTime()) || payloads.length === 0) throw new Error('x_conversation_format_changed')
+  if (!definition || !Number.isFinite(now.getTime()) || payloads.length === 0) throw new Error('x_conversation_format_changed')
   const candidates = new Map()
   for (const payload of payloads) {
     for (const tweetResult of timelineTweetResults(payload)) {
@@ -410,8 +420,8 @@ export function parseTiboSelfReplies(html, options = {}) {
       const id = String(tweetResult?.rest_id ?? tweet?.rest_id ?? '')
       const replyToId = String(tweet?.reply_to_results?.rest_id ?? '')
       if (!/^\d{1,19}$/.test(id) || candidates.has(id)
-        || tweet?.core?.user_results?.result?.core?.screen_name !== 'thsottiaux'
-        || tweet?.reply_to_user_results?.result?.core?.screen_name !== 'thsottiaux'
+        || tweet?.core?.user_results?.result?.core?.screen_name !== definition.username
+        || tweet?.reply_to_user_results?.result?.core?.screen_name !== definition.username
         || !/^\d{1,19}$/.test(replyToId)) continue
       candidates.set(id, { id, replyToId, tweet })
     }
@@ -430,7 +440,7 @@ export function parseTiboSelfReplies(html, options = {}) {
       const createdAt = new Date(timestamp)
       if (!Number.isFinite(timestamp) || !text || createdAt.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS
         || localDateKey(createdAt, options.timeZone) !== today) continue
-      const update = normalizedTiboUpdate({ id: candidate.id, text, createdAt, timeZone: options.timeZone, postKind: 'self-reply', replyToId: candidate.replyToId })
+      const update = normalizedXUpdate({ id: candidate.id, text, createdAt, timeZone: options.timeZone, postKind: 'self-reply', replyToId: candidate.replyToId })
       if (update) { updates.push(update); parents.add(candidate.id); accepted = true }
     }
     if (!accepted) break

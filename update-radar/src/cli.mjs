@@ -2,7 +2,7 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { collectFeed } from './collector.mjs'
-import { DEFAULT_PORT, SOURCE_DEFINITIONS, TIBO_X_SOURCE } from './config.mjs'
+import { DEFAULT_PORT, SOURCE_DEFINITIONS, X_PROFILE_SOURCE } from './config.mjs'
 import {
   createFeedScheduler,
   REFRESH_INTERVAL_MS,
@@ -72,8 +72,8 @@ async function runServe(args, options = {}) {
 
     schedulers.push(createFeedScheduler({
       feedPath,
-      collect: queuedCollect([TIBO_X_SOURCE.id]),
-      healthSourceIds: [TIBO_X_SOURCE.id],
+      collect: queuedCollect([X_PROFILE_SOURCE.id]),
+      healthSourceIds: [X_PROFILE_SOURCE.id],
       intervalMs: X_REFRESH_INTERVAL_MS,
       jitterMs: X_REFRESH_JITTER_MS,
       retryDelaysMs: X_RETRY_DELAYS_MS,
@@ -89,7 +89,7 @@ async function runServe(args, options = {}) {
 
   if (schedulers.length > 0) {
     console.log(`自動更新已啟用；正常間隔 ${REFRESH_INTERVAL_MS / 60_000} 分鐘。`)
-    console.log(`Tibo X 當日貼文與 self-reply 檢查間隔 ${X_REFRESH_INTERVAL_MS / 60_000} 分鐘。`)
+    console.log(`@ajambrosino X 當日貼文與 self-reply 檢查間隔 ${X_REFRESH_INTERVAL_MS / 60_000} 分鐘。`)
     for (const scheduler of schedulers) await scheduler.start()
   }
 }

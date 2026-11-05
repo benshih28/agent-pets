@@ -45,8 +45,8 @@ test('collector keeps the previous source entries when one source becomes unavai
   })
   const original = first.updates.filter(update => update.sourceId === 'openai-api')
   assert.equal(original.length, 1)
-  assert.equal(first.sources.find(source => source.id === 'tibo-x').status, 'ok')
-  assert.equal(first.sources.find(source => source.id === 'tibo-x').mode, 'public-page')
+  assert.equal(first.sources.find(source => source.id === 'x-ajambrosino').status, 'ok')
+  assert.equal(first.sources.find(source => source.id === 'x-ajambrosino').mode, 'public-page')
 
   const second = await collectFeed({
     feedPath,
@@ -63,7 +63,7 @@ test('collector keeps the previous source entries when one source becomes unavai
   assert.deepEqual(second.updates.filter(update => update.sourceId === 'openai-api'), original)
 })
 
-test('a Tibo-only refresh preserves official sources and merges original X posts', async () => {
+test('a @ajambrosino-only refresh preserves official sources and merges original X posts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'update-radar-x-collector-'))
   const feedPath = join(directory, 'feed.json')
   const first = await collectFeed({
@@ -72,16 +72,16 @@ test('a Tibo-only refresh preserves official sources and merges original X posts
     fetchImpl: async url => successResponse(String(url)),
     publicXFetcher: async () => [],
   })
-  const officialUpdates = first.updates.filter(update => update.sourceId !== 'tibo-x')
+  const officialUpdates = first.updates.filter(update => update.sourceId !== 'x-ajambrosino')
 
   const second = await collectFeed({
     feedPath,
     now: () => new Date('2026-10-22T00:05:00Z'),
-    sourceIds: ['tibo-x'],
+    sourceIds: ['x-ajambrosino'],
     timeZone: 'UTC',
     publicXFetcher: async () => [{
       id: 'x-999999999',
-      sourceId: 'tibo-x',
+      sourceId: 'x-ajambrosino',
       provider: 'x',
       product: 'social',
       category: 'developer-tool',
@@ -90,21 +90,21 @@ test('a Tibo-only refresh preserves official sources and merges original X posts
       summary: 'A new original AI tooling update.',
       publishedAt: '2026-10-22',
       publishedAtTime: '2026-10-22T00:04:00.000Z',
-      sourceUrl: 'https://x.com/thsottiaux/status/999999999',
+      sourceUrl: 'https://x.com/ajambrosino/status/999999999',
     }],
   })
 
-  assert.deepEqual(second.updates.filter(update => update.sourceId !== 'tibo-x'), officialUpdates)
-  assert.equal(second.sources.find(source => source.id === 'tibo-x').status, 'ok')
-  assert.equal(second.updates.find(update => update.sourceId === 'tibo-x').id, 'x-999999999')
+  assert.deepEqual(second.updates.filter(update => update.sourceId !== 'x-ajambrosino'), officialUpdates)
+  assert.equal(second.sources.find(source => source.id === 'x-ajambrosino').status, 'ok')
+  assert.equal(second.updates.find(update => update.sourceId === 'x-ajambrosino').id, 'x-999999999')
 })
 
-test('Tibo cached posts expire when the local calendar day changes', async () => {
+test('@ajambrosino cached posts expire when the local calendar day changes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'update-radar-x-day-'))
   const feedPath = join(directory, 'feed.json')
   const yesterdayPost = {
     id: 'x-999999998',
-    sourceId: 'tibo-x',
+    sourceId: 'x-ajambrosino',
     provider: 'x',
     product: 'social',
     category: 'feature',
@@ -113,12 +113,12 @@ test('Tibo cached posts expire when the local calendar day changes', async () =>
     summary: 'Yesterday',
     publishedAt: '2026-10-21',
     publishedAtTime: '2026-10-21T12:00:00.000Z',
-    sourceUrl: 'https://x.com/thsottiaux/status/999999998',
+    sourceUrl: 'https://x.com/ajambrosino/status/999999998',
   }
   await collectFeed({
     feedPath,
     now: () => new Date('2026-10-21T13:00:00Z'),
-    sourceIds: ['tibo-x'],
+    sourceIds: ['x-ajambrosino'],
     timeZone: 'UTC',
     publicXFetcher: async () => [yesterdayPost],
   })
@@ -131,5 +131,5 @@ test('Tibo cached posts expire when the local calendar day changes', async () =>
     publicXFetcher: async () => [],
   })
   assert.equal(today.updates.some(update => update.id === yesterdayPost.id), false)
-  assert.equal(today.sources.find(source => source.id === 'tibo-x').itemCount, 0)
+  assert.equal(today.sources.find(source => source.id === 'x-ajambrosino').itemCount, 0)
 })

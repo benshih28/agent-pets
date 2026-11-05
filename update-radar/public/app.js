@@ -26,7 +26,7 @@ const labels = Object.freeze({
 const providerLabels = Object.freeze({
   openai: 'OpenAI',
   anthropic: 'Anthropic',
-  x: 'Tibo / X',
+  x: '@ajambrosino',
 })
 
 const allowedLinkRules = Object.freeze([
@@ -36,9 +36,11 @@ const allowedLinkRules = Object.freeze([
 ])
 
 const FEED_POLL_INTERVAL_MS = 60 * 1000
-const TIBO_SOURCE_ID = 'tibo-x'
-const TIBO_SEEN_STORAGE_KEY = 'agent-pets-radar:tibo-seen-v1'
-const MAX_SEEN_TIBO_POSTS = 100
+const X_PROFILE_USERNAME = 'ajambrosino'
+const X_PROFILE_SOURCE_ID = 'x-ajambrosino'
+// 換追蹤帳號時改 key，舊帳號的已讀 id 不會讓新帳號的貼文被當成已通知。
+const X_SEEN_STORAGE_KEY = 'agent-pets-radar:x-ajambrosino-seen-v1'
+const MAX_SEEN_X_POSTS = 100
 const state = { feed: null, loading: false }
 const elements = {
   search: document.querySelector('#search'),
@@ -60,7 +62,7 @@ function notificationPermission() {
 function updateNotificationButton() {
   const permission = notificationPermission()
   if (permission === 'granted') {
-    elements.notifications.textContent = 'Tibo 通知已開啟'
+    elements.notifications.textContent = '@ajambrosino 通知已開啟'
     elements.notifications.disabled = true
   } else if (permission === 'denied') {
     elements.notifications.textContent = '通知已封鎖'
@@ -69,32 +71,32 @@ function updateNotificationButton() {
     elements.notifications.textContent = '瀏覽器不支援通知'
     elements.notifications.disabled = true
   } else {
-    elements.notifications.textContent = '開啟 Tibo 通知'
+    elements.notifications.textContent = '開啟 @ajambrosino 通知'
     elements.notifications.disabled = false
   }
 }
 
-function readSeenTiboPostIds() {
+function readSeenXPostIds() {
   try {
-    const raw = localStorage.getItem(TIBO_SEEN_STORAGE_KEY)
+    const raw = localStorage.getItem(X_SEEN_STORAGE_KEY)
     if (raw === null) return null
     const ids = JSON.parse(raw)
-    return Array.isArray(ids) ? ids.filter(id => /^x-\d{1,19}$/.test(id)).slice(0, MAX_SEEN_TIBO_POSTS) : []
+    return Array.isArray(ids) ? ids.filter(id => /^x-\d{1,19}$/.test(id)).slice(0, MAX_SEEN_X_POSTS) : []
   } catch {
     return []
   }
 }
 
-function writeSeenTiboPostIds(ids) {
+function writeSeenXPostIds(ids) {
   try {
-    localStorage.setItem(TIBO_SEEN_STORAGE_KEY, JSON.stringify([...new Set(ids)].slice(0, MAX_SEEN_TIBO_POSTS)))
+    localStorage.setItem(X_SEEN_STORAGE_KEY, JSON.stringify([...new Set(ids)].slice(0, MAX_SEEN_X_POSTS)))
   } catch {
     // Notifications still work for the current page even when storage is unavailable.
   }
 }
 
-function showTiboNotification(update) {
-  const notification = new Notification('Tibo 今天有新貼文', {
+function showXNotification(update) {
+  const notification = new Notification('@ajambrosino 今天有新貼文', {
     body: String(update.summary ?? update.title ?? '').slice(0, 180),
     tag: update.id,
   })
@@ -108,27 +110,27 @@ function showTiboNotification(update) {
   }
 }
 
-function notifyTiboUpdates(updates) {
+function notifyXUpdates(updates) {
   if (updates.length > 3) {
-    new Notification(`Tibo 今天有 ${updates.length} 則貼文`, {
+    new Notification(`@ajambrosino 今天有 ${updates.length} 則貼文`, {
       body: '開啟 AI Update Radar 查看今天的內容。',
-      tag: 'tibo-new-posts',
+      tag: 'x-profile-new-posts',
     })
   } else {
-    for (const update of updates) showTiboNotification(update)
+    for (const update of updates) showXNotification(update)
   }
 }
 
-function processTiboNotifications(feed) {
-  const source = feed.sources.find(item => item?.id === TIBO_SOURCE_ID)
+function processXNotifications(feed) {
+  const source = feed.sources.find(item => item?.id === X_PROFILE_SOURCE_ID)
   if (source?.status !== 'ok') return
-  const updates = feed.updates.filter(update => update?.sourceId === TIBO_SOURCE_ID && /^x-\d{1,19}$/.test(update.id))
+  const updates = feed.updates.filter(update => update?.sourceId === X_PROFILE_SOURCE_ID && /^x-\d{1,19}$/.test(update.id))
   const currentIds = updates.map(update => update.id)
-  const seenIds = readSeenTiboPostIds()
+  const seenIds = readSeenXPostIds()
   if (seenIds === null) {
     if (notificationPermission() === 'granted') {
-      notifyTiboUpdates(updates)
-      writeSeenTiboPostIds(currentIds)
+      notifyXUpdates(updates)
+      writeSeenXPostIds(currentIds)
     }
     return
   }
@@ -136,8 +138,8 @@ function processTiboNotifications(feed) {
   const seen = new Set(seenIds)
   const unseen = updates.filter(update => !seen.has(update.id))
   if (notificationPermission() === 'granted') {
-    notifyTiboUpdates(unseen)
-    writeSeenTiboPostIds([...currentIds, ...seenIds])
+    notifyXUpdates(unseen)
+    writeSeenXPostIds([...currentIds, ...seenIds])
   }
 }
 
@@ -146,7 +148,8 @@ function safeSourceUrl(value) {
     const url = new URL(value)
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return null
     if (url.hostname === 'x.com') {
-      return /^\/thsottiaux\/status\/\d{1,19}$/.test(url.pathname) ? url.toString() : null
+      const escapedUsername = X_PROFILE_USERNAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return !url.port && new RegExp(`^/${escapedUsername}/status/\\d{1,19}$`).test(url.pathname) ? url.toString() : null
     }
     return allowedLinkRules.some(([host, prefix]) => url.hostname === host && url.pathname.startsWith(prefix))
       ? url.toString()
@@ -201,7 +204,7 @@ function appendUpdateFooter(parent, update) {
   const detail = [update.version, update.effectiveAt ? `生效：${formatDate(update.effectiveAt)}` : '']
     .filter(Boolean)
     .join(' · ')
-  appendText(footer, 'span', 'version-label', detail || (update.provider === 'x' ? '@thsottiaux' : update.sourceId))
+  appendText(footer, 'span', 'version-label', detail || (update.provider === 'x' ? '@ajambrosino' : update.sourceId))
   appendSourceLink(footer, update)
   parent.append(footer)
 }
@@ -259,13 +262,13 @@ function renderSingleUpdate(update) {
 function renderThread(group) {
   const article = document.createElement('article')
   article.className = 'update-thread provider-x'
-  article.setAttribute('aria-label', `Tibo 對話串，共 ${group.updates.length} 則`)
+  article.setAttribute('aria-label', `@ajambrosino 對話串，共 ${group.updates.length} 則`)
 
   const header = document.createElement('header')
   header.className = 'thread-header'
   const heading = document.createElement('div')
   heading.className = 'thread-heading'
-  appendText(heading, 'span', 'provider-label', 'Tibo / X')
+  appendText(heading, 'span', 'provider-label', '@ajambrosino')
   appendText(heading, 'strong', '', '同一串對話')
   header.append(heading)
   appendText(header, 'span', 'thread-count', `${group.updates.length} 則內容`)
@@ -358,7 +361,7 @@ async function loadFeed(options = {}) {
       throw new Error('feed_invalid')
     }
     state.feed = feed
-    processTiboNotifications(feed)
+    processXNotifications(feed)
     renderUpdates()
     renderSourceHealth()
   } catch {
@@ -384,7 +387,7 @@ elements.notifications.addEventListener('click', async () => {
   if (notificationPermission() !== 'default') return updateNotificationButton()
   const permission = await Notification.requestPermission()
   updateNotificationButton()
-  if (permission === 'granted' && state.feed) processTiboNotifications(state.feed)
+  if (permission === 'granted' && state.feed) processXNotifications(state.feed)
 })
 updateNotificationButton()
 loadFeed()

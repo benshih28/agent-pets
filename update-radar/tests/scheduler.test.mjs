@@ -39,11 +39,11 @@ test('source-specific freshness uses source fetchedAt and ignores disabled optio
     generatedAt: '2026-10-22T01:59:00.000Z',
     sources: [
       { id: 'openai-api', status: 'ok', fetchedAt: '2026-10-22T00:00:00.000Z' },
-      { id: 'tibo-x', status: 'disabled', fetchedAt: '2026-10-22T01:59:00.000Z' },
+      { id: 'x-ajambrosino', status: 'disabled', fetchedAt: '2026-10-22T01:59:00.000Z' },
     ],
   }
   assert.equal(inspectFeedFreshness(feed, { nowMs, maxAgeMs: hour, sourceIds: ['openai-api'] }).reason, 'feed_expired')
-  assert.equal(inspectFeedFreshness(feed, { nowMs, maxAgeMs: hour, sourceIds: ['tibo-x'] }).reason, 'feed_fresh')
+  assert.equal(inspectFeedFreshness(feed, { nowMs, maxAgeMs: hour, sourceIds: ['x-ajambrosino'] }).reason, 'feed_fresh')
   assert.equal(inspectFeedFreshness(feed, { nowMs, sourceIds: ['missing'] }).reason, 'sources_missing')
 })
 
@@ -53,7 +53,7 @@ test('regular refresh delay applies bounded jitter', () => {
   assert.equal(regularRefreshDelay({ intervalMs: hour, jitterMs: 5 * minute, random: () => 1 }), 65 * minute)
 })
 
-test('Tibo public-page schedule uses the ten-minute low-load policy', () => {
+test('@ajambrosino public-page schedule uses the ten-minute low-load policy', () => {
   assert.equal(X_REFRESH_INTERVAL_MS, 10 * minute)
   assert.equal(X_REFRESH_JITTER_MS, minute)
   assert.deepEqual(X_RETRY_DELAYS_MS, [2 * minute, 5 * minute, 10 * minute])

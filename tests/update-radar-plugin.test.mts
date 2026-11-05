@@ -12,8 +12,8 @@ import {
   extractRetirements,
   parseDatedMarkdown,
   parseGithubReleases,
-  parseTiboPublicProfile,
-  parseTiboSelfReplies,
+  parseXProfile,
+  parseXSelfReplies,
   withVersionComparisons,
 } from '../update-radar/plugin/dist/core.js'
 import plugin, {
@@ -45,7 +45,7 @@ function codexResetPayload(options: {
   const id = options.id ?? '2115330127886463244'
   const announcedAt = options.announcedAt ?? '2026-10-28T06:29:38.000Z'
   const numericId = id.match(/\d+$/)?.[0] ?? '2115330127886463244'
-  const sourceUrl = options.sourceUrl ?? (id.startsWith('observed-') ? undefined : `https://x.com/thsottiaux/status/${numericId}`)
+  const sourceUrl = options.sourceUrl ?? (id.startsWith('observed-') ? undefined : `https://x.com/ajambrosino/status/${numericId}`)
   return {
     data: {
       latest_reset: {
@@ -53,7 +53,7 @@ function codexResetPayload(options: {
         reset_type: options.resetType ?? 'regular',
         announced_at: announcedAt,
         text: options.text ?? 'And it\'s done.',
-        source: { type: options.sourceType ?? (id.startsWith('observed-') ? 'observed' : 'x_post'), author: 'thsottiaux', ...(sourceUrl ? { url: sourceUrl } : {}) },
+        source: { type: options.sourceType ?? (id.startsWith('observed-') ? 'observed' : 'x_post'), author: 'ajambrosino', ...(sourceUrl ? { url: sourceUrl } : {}) },
       },
       scheduled_reset: options.scheduledReset ?? null,
       active_watch: null,
@@ -133,11 +133,11 @@ const githubReleases = JSON.stringify([
 ])
 
 function profilePost(id: string, timestamp: string, text: string) {
-  return `<div data-href="/thsottiaux/status/${id}"><span>@thsottiaux</span><script>"timestamp":${Date.parse(timestamp)}</script><div class="text-body whitespace-pre-wrap wrap-break-word">${text}</div></div>`
+  return `<div data-href="/ajambrosino/status/${id}"><span>@ajambrosino</span><script>"timestamp":${Date.parse(timestamp)}</script><div class="text-body whitespace-pre-wrap wrap-break-word">${text}</div></div>`
 }
 
 function profileHtml(posts: string[]) {
-  return `<html><main aria-label="@thsottiaux">${posts.join('')}</main></html>`
+  return `<html><main aria-label="@ajambrosino">${posts.join('')}</main></html>`
 }
 
 function conversationTweet({ id, timestamp, text, replyToId }: { id: string, timestamp: string, text: string, replyToId: string }) {
@@ -145,10 +145,10 @@ function conversationTweet({ id, timestamp, text, replyToId }: { id: string, tim
     rest_id: id,
     result: {
       rest_id: id,
-      core: { user_results: { result: { core: { screen_name: 'thsottiaux' } } } },
+      core: { user_results: { result: { core: { screen_name: 'ajambrosino' } } } },
       details: { created_at_ms: Date.parse(timestamp), full_text: text },
       reply_to_results: { rest_id: replyToId },
-      reply_to_user_results: { result: { core: { screen_name: 'thsottiaux' } } },
+      reply_to_user_results: { result: { core: { screen_name: 'ajambrosino' } } },
     },
   }
 }
@@ -173,6 +173,7 @@ function createApiFixture() {
   let openAiBody = baselineMarkdown
   let githubBody = githubReleases
   let codexStatus: unknown = codexResetPayload()
+  let xProfileBody = profileHtml([profilePost('2113000000000000000', '2026-10-27T08:00:00Z', 'Yesterday.')])
   let nowMs = FIXED_NOW
   let panelHandler: ((message: any) => Promise<void>) | null = null
   let scheduled: { seconds: number, callback: () => void } | null = null
@@ -199,8 +200,8 @@ function createApiFixture() {
         if (url.includes('model-deprecations.md')) return { status: 200, headers: {}, body: anthropicMarkdown }
         if (url.startsWith('https://api.github.com/')) return { status: 200, headers: {}, body: githubBody }
         if (url === 'https://codex-resets.com/api/v1/status') return { status: 200, headers: {}, body: JSON.stringify(codexStatus) }
-        if (url === 'https://x.com/thsottiaux') {
-          return { status: 200, headers: {}, body: profileHtml([profilePost('2113000000000000000', '2026-10-27T08:00:00Z', 'Yesterday.')]) }
+        if (url === 'https://x.com/ajambrosino') {
+          return { status: 200, headers: {}, body: xProfileBody }
         }
         throw new Error(`unexpected_url:${url}`)
       },
@@ -255,6 +256,7 @@ function createApiFixture() {
     setOpenAiBody: (value: string) => { openAiBody = value },
     setGithubBody: (value: string) => { githubBody = value },
     setCodexStatus: (value: unknown) => { codexStatus = structuredClone(value) },
+    setXProfileBody: (value: string) => { xProfileBody = value },
     pauseFetches() {
       let release!: () => void
       fetchGate = new Promise<void>(resolve => { release = resolve })
@@ -285,25 +287,27 @@ test('Update Radar complete manifest passes validation with least-privilege host
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const workerSource = fs.readFileSync(path.join(pluginRoot, 'dist/main.js'), 'utf8')
   assert.match(panelSource, /api\.links\.openExternal\(sourceUrl\)/)
+  assert.match(workerSource, /@ajambrosino 發了新貼文/)
+  assert.match(workerSource, /@ajambrosino 發了新續文/)
   assert.doesNotMatch(panelSource, /window\.open|location\s*=|innerHTML/)
   assert.doesNotMatch(workerSource, /timeZone\s*:\s*['"]Asia\/Taipei['"]/)
   assert.match(workerSource, /https:\/\/codex-resets\.com\/api\/v1\/status/)
-  assert.match(panelSource, /appendText\(copy, 'a', 'codex-source-link', 'codex-resets\.com'\)/)
+  assert.match(panelSource, /appendText\(row, 'a', 'codex-source-link', 'codex-resets\.com'\)/)
   assert.match(panelSource, /codex-resets\.com\//)
   assert.match(fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8'), /codex-source-link:focus-visible/)
 })
 
-test('Update Radar heatmap separates official activity from today’s Tibo posts', () => {
+test('Update Radar heatmap separates official activity from today’s @ajambrosino posts', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
   assert.match(markup, /id="heat-disclosure-host" class="heat-section"/)
-  assert.match(markup, /每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo/)
+  assert.match(markup, /每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 X 貼文/)
   assert.match(markup, /需留意/)
-  assert.match(markup, /id="tibo-summary"[^>]*type="button"/)
-  assert.match(panelSource, /function isTiboUpdate\(update\)/)
-  assert.match(panelSource, /const officialUpdates = updates\.filter\(update => !isTiboUpdate\(update\)\)/)
-  assert.match(panelSource, /isTiboUpdate\(update\) && heatDateKey\(update\) === todayKey/)
+  assert.match(markup, /id="x-summary"[^>]*type="button"/)
+  assert.match(panelSource, /function isXPost\(update\)/)
+  assert.match(panelSource, /const officialUpdates = updates\.filter\(update => !isXPost\(update\)\)/)
+  assert.match(panelSource, /isXPost\(update\) && heatDateKey\(update\) === todayKey/)
   assert.match(panelSource, /title: '每日更新熱度 · 近 26 週'/)
   assert.match(panelSource, /open: state\.disclosures\.get\(heatDisclosureId\) === true/)
   assert.match(panelSource, /meta: state\.day \? `已選 \$\{month\}\/\$\{day\}` : ''/)
@@ -311,7 +315,7 @@ test('Update Radar heatmap separates official activity from today’s Tibo posts
   assert.match(panelSource, /postKind === 'self-reply'/)
   assert.match(panelSource, /elements\.provider\.value = 'x'/)
   assert.match(panelSource, /scrollIntoView/)
-  assert.match(styles, /\.tibo-summary:focus-visible/)
+  assert.match(styles, /\.x-summary:focus-visible/)
 })
 
 test('Update Radar panel copy avoids internal terms and longer labels', () => {
@@ -350,35 +354,35 @@ test('Update Radar heatmap days filter the list to that day of official updates'
   assert.equal(dayLabel('2026-10-28'), '10/28（三）')
   assert.equal(dayLabel('2026-11-01'), '11/1（日）')
   // 日期篩選只留下官方更新，且只對有更新的格子提供按鈕。
-  assert.match(panelFunctionSource('matchesFilters'), /state\.day && \(isTiboUpdate\(update\) \|\| heatDateKey\(update\) !== state\.day\)/)
+  assert.match(panelFunctionSource('matchesFilters'), /state\.day && \(isXPost\(update\) \|\| heatDateKey\(update\) !== state\.day\)/)
   assert.match(panelFunctionSource('renderHeatmap'), /if \(count\) \{[^}]*heat-cell-button[^}]*aria-pressed/s)
   assert.match(panelFunctionSource('selectDay'), /state\.day = state\.day === key \? null : key/)
   assert.match(panelFunctionSource('appliedFilterCount'), /state\.day/)
-  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{[^}]*state\.day = null/s)
-  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{\s*state\.attentionOnly = false\s*elements\.provider\.value = 'x'\s*state\.day = null\s*activateTab\('updates', \{\s*force: true/s)
+  assert.match(panelSource, /elements\.xSummary\.addEventListener\('click', \(\) => \{[^}]*state\.day = null/s)
+  assert.match(panelSource, /elements\.xSummary\.addEventListener\('click', \(\) => \{\s*state\.attentionOnly = false\s*elements\.provider\.value = 'x'\s*state\.day = null\s*activateTab\('updates', \{\s*force: true/s)
   assert.match(panelSource, /elements\.updates\.scrollIntoView\?\.\(\{ block: 'start' \}\)/)
   assert.doesNotMatch(panelSource, /scrollToUpdates/)
   assert.match(markup, /id="day-filter" class="day-filter" hidden/)
   assert.match(markup, /id="day-filter-clear"[^>]*type="button"/)
 })
 
-test('Update Radar renders full Tibo text and unified official disclosures', () => {
+test('Update Radar renders full @ajambrosino text and unified official disclosures', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  const tiboRender = panelSource.slice(panelSource.indexOf('function renderTiboBubble'), panelSource.indexOf('function renderTiboUpdate'))
+  const xPostRender = panelSource.slice(panelSource.indexOf('function renderXPost'), panelSource.indexOf('function renderXUpdate'))
   const officialRender = panelSource.slice(panelSource.indexOf('function renderOfficialUpdate'), panelSource.indexOf('function resetTypeLabel'))
-  assert.match(tiboRender, /message-time/)
-  assert.match(tiboRender, /Tibo \/ X/)
-  assert.match(tiboRender, /'貼文'/)
-  assert.match(tiboRender, /'續文'/)
-  assert.doesNotMatch(tiboRender, /change-label|category-label|attention-chip|appendQuickRead|appendExpandToggle/)
+  assert.match(xPostRender, /message-time/)
+  assert.match(xPostRender, /message-source-label', '@ajambrosino'/)
+  assert.match(xPostRender, /'貼文'/)
+  assert.match(xPostRender, /'續文'/)
+  assert.doesNotMatch(xPostRender, /change-label|category-label|attention-chip|appendQuickRead|appendExpandToggle/)
   assert.match(panelFunctionSource('renderOfficialUpdate'), /appendQuickRead\(disclosure\.region, update\)/)
   assert.match(panelFunctionSource('renderOfficialUpdate'), /official-full-text/)
   assert.match(officialRender, /official-record/)
   assert.match(officialRender, /update-card-meta/)
   assert.match(officialRender, /update-time/)
-  assert.doesNotMatch(officialRender, /source-avatar|message-bubble|renderTiboBubble/)
+  assert.doesNotMatch(officialRender, /source-avatar|message-bubble|renderXPost/)
   assert.match(panelSource, /new ResizeObserver/)
   assert.match(panelSource, /window\.addEventListener\('resize'/)
   assert.match(officialRender, /buttonText: '展開'/)
@@ -657,7 +661,7 @@ test('state that would exceed the panel message limit drops the oldest updates f
 })
 
 test('panel groups a Claude Code version and a multi-item Platform day into one card each', () => {
-  const source = ['updateDate', 'isTiboUpdate', 'attentionSignal', 'findThreadRootId', 'groupKey', 'byPosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
+  const source = ['updateDate', 'isXPost', 'attentionSignal', 'findThreadRootId', 'groupKey', 'byPosition', 'groupUpdates', 'updateUnits', 'isCriticalChange', 'unitNeedsAttention']
     .map(panelFunctionSource).join('\n')
   const panel = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}
 return { groupUpdates, updateUnits, unitNeedsAttention } })()`) as any
@@ -683,7 +687,7 @@ test('Update Radar needs attention only within the 14-day publication or lifecyc
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   assert.match(panelSource, /const ATTENTION_WINDOW_DAYS = 14\s*\/\/[^\n]+/)
   const source = [
-    'updateDate', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal', 'unitNeedsAttention',
+    'updateDate', 'isXPost', 'groupKey', 'isCriticalChange', 'attentionSignal', 'unitNeedsAttention',
   ].map(panelFunctionSource).join('\n')
   const unitNeedsAttention = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}\nreturn unitNeedsAttention })()`, { Date }) as (unit: unknown[], now: number) => boolean
   const now = Date.parse('2026-11-04T12:00:00.000Z')
@@ -702,7 +706,7 @@ test('Update Radar needs attention only within the 14-day publication or lifecyc
   assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(30), retirements: [{ date: '2026-11-14' }] }), now), true, 'a retirement in 10 days remains current')
   assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(30), retirements: [{ date: '2026-10-15' }] }), now), false, 'a retirement date 20 days past does not extend attention')
   assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: daysAgo(30), effectiveAt: '2026-11-04' }), now), true, 'an effective date today is included')
-  assert.equal(unitNeedsAttention(attentionUnit({ provider: 'x', sourceId: 'tibo-x', publishedAtTime: daysAgo(1), effectiveAt: '2026-11-05' }), now), false, 'Tibo posts never need attention')
+  assert.equal(unitNeedsAttention(attentionUnit({ provider: 'x', sourceId: 'x-ajambrosino', publishedAtTime: daysAgo(1), effectiveAt: '2026-11-05' }), now), false, '@ajambrosino posts never need attention')
   const invalidDateNow = Date.parse('2026-11-20T12:00:00.000Z')
   assert.equal(unitNeedsAttention(attentionUnit({ publishedAtTime: '2026-11-31', effectiveAt: '2026-11-31', retirements: [{ date: '2026-11-31' }] }), invalidDateNow), false, 'unparseable and normalized-invalid dates do not satisfy the time window')
 })
@@ -911,7 +915,7 @@ test('Update Radar visual polish uses accessible SVG icons and preserves reset c
     if (name === 'external' || name === 'x') continue // These paths are selected together for update links.
     assert.match(panelSource, new RegExp(`createIcon\\('${name}'`), `ICON_PATHS entry ${name} is used`)
   }
-  assert.match(panelSource, /createIcon\(isTiboUpdate\(update\) \? 'x' : 'external'\)/)
+  assert.match(panelSource, /createIcon\(isXPost\(update\) \? 'x' : 'external'\)/)
   assert.doesNotMatch(markup, /class="(?:eyebrow|intro)"|AI 公開更新/)
   assert.match(markup, /<header class="radar-header">/)
   assert.match(styles, /\.radar-header \{[^}]*height: 48px;[^}]*max-height: 48px/)
@@ -1078,24 +1082,22 @@ test('Phase 5d Codex countdown keeps each number with its Chinese unit', () => {
   assert.match(styles, /\.codex-reset-value-group \{ white-space: nowrap; \}/)
 })
 
-test('Phase 5e Codex source disclosure uses one flat row and one visible status', () => {
+test('Codex data source and retry stay on one final row', () => {
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  const renderSources = panelFunctionSource('renderSources')
-  const sourceDisclosure = panelFunctionSource('appendCodexSourceDisclosure')
-  assert.match(renderSources, /const codexFlat = target === elements\.resetSources/)
-  assert.match(renderSources, /source-row source-\$\{displayStatus\}\$\{codexFlat \? ' codex-source-row' : ''\}/)
-  assert.match(renderSources, /if \(!pendingRetry \|\| !\['stale', 'error'\]\.includes\(status\)\)/)
-  assert.match(renderSources, /pendingRetry \? '同步中' : '立即重試'/)
-  assert.match(sourceDisclosure, /metaNode\.hidden = expanded/)
-  assert.match(styles, /\.source-row \{[^}]*border: 0;[^}]*background: transparent/s)
-  assert.doesNotMatch(styles, /\.codex-reset-source-grid[^}]*\{[^}]*border:|\.codex-source-row[^}]*\{[^}]*background:\s*var\(--radar-surface\)/)
-  assert.match(panelSource, /appendCodexSourceAttribution\(disclosure\.region, latestReset, resetPost\)/)
+  const sourceLine = panelFunctionSource('appendCodexSourceLine')
+  assert.match(sourceLine, /資料來源：/)
+  assert.match(sourceLine, /appendText\(row, 'a', 'codex-source-link', 'codex-resets\.com'\)/)
+  assert.match(sourceLine, /createSourceRetryButton\(row, source\)/)
+  assert.match(sourceLine, /codex-reset-source-error/)
+  assert.match(panelFunctionSource('createSourceRetryButton'), /立即重試/)
+  assert.match(styles, /\.codex-reset-source-line[^}]*font-size: 12px/)
+  assert.doesNotMatch(panelSource, /appendCodexSourceDisclosure|appendCodexSourceAttribution|resetSources/)
 })
 
 test('Phase 5f global retry status separates English names from Chinese text', () => {
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
-  assert.match(panelFunctionSource('renderSources'), /正在重新同步 \$\{source\.label/)
+  assert.match(panelFunctionSource('createSourceRetryButton'), /正在重新同步 \$\{source\.label/)
   assert.doesNotMatch(panelSource, /正在重新同步(?:Codex|Anthropic|OpenAI|來源)/)
 })
 
@@ -1224,7 +1226,7 @@ test('Update Radar tab controller defers stale panels and never reads storage or
 
 test('Update Radar overview highlights sort attention, near retirements, time, and position', () => {
   const source = [
-    'updateDate', 'updateTimestamp', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal',
+    'updateDate', 'updateTimestamp', 'isXPost', 'groupKey', 'isCriticalChange', 'attentionSignal',
     'unitNeedsAttention', 'overviewHighlights',
   ].map(panelFunctionSource).join('\n')
   const overviewHighlights = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}\nreturn overviewHighlights })()`, { Date, Math, Number }) as (units: unknown[][], now: number, limit?: number) => unknown[][]
@@ -1245,8 +1247,8 @@ test('Update Radar overview highlights sort attention, near retirements, time, a
   const retirementSoon = unit('retirement-soon', { publishedAtTime: '2026-10-01T00:00:00.000Z', position: 7, retirements: [{ date: at(10) }] })
   const fresh = unit('fresh', { publishedAtTime: '2026-11-03T00:00:00.000Z', position: 0 })
   const retirementFar = unit('retirement-far', { publishedAtTime: '2026-10-29T00:00:00.000Z', position: 2, retirements: [{ date: at(31) }] })
-  const tibo = unit('tibo', { provider: 'x', sourceId: 'tibo-x', publishedAtTime: '2026-11-04T11:00:00.000Z' })
-  const units = [fresh, tibo, retirementFar, attentionPositionLate, retirementSoon, attentionOlder, attentionPositionFirst]
+  const xPostUnit = unit('x-post', { provider: 'x', sourceId: 'x-ajambrosino', publishedAtTime: '2026-11-04T11:00:00.000Z' })
+  const units = [fresh, xPostUnit, retirementFar, attentionPositionLate, retirementSoon, attentionOlder, attentionPositionFirst]
 
   const ordered = overviewHighlights(units, now, 10).map(entries => entries[0].id)
   assert.deepEqual(ordered, [
@@ -1259,7 +1261,7 @@ test('Update Radar overview highlights sort attention, near retirements, time, a
 
 test('overview ranking and attention-only filtering share the same current-card decision', () => {
   const source = [
-    'updateDate', 'updateTimestamp', 'isTiboUpdate', 'groupKey', 'isCriticalChange', 'attentionSignal',
+    'updateDate', 'updateTimestamp', 'isXPost', 'groupKey', 'isCriticalChange', 'attentionSignal',
     'unitNeedsAttention', 'overviewHighlights',
   ].map(panelFunctionSource).join('\n')
   const helpers = runInNewContext(`(() => { const ATTENTION_WINDOW_DAYS = 14; ${source}\nreturn { unitNeedsAttention, overviewHighlights } })()`, { Date, Math, Number }) as {
@@ -1288,7 +1290,7 @@ test('overview ranking and attention-only filtering share the same current-card 
     elements: {
       provider: { value: '' }, category: { value: '' }, changeType: { value: '' }, search: { value: '' },
     },
-    isTiboUpdate: (item: any) => item.provider === 'x',
+    isXPost: (item: any) => item.provider === 'x',
     heatDateKey: () => '',
     unitNeedsAttention: helpers.unitNeedsAttention,
   }) as (item: unknown, unit: unknown[], now: number) => boolean
@@ -1315,7 +1317,7 @@ test('Update Radar attention-only is a counted, clearable card-level filter', ()
     elements: {
       provider: { value: '' }, category: { value: '' }, changeType: { value: '' }, search: { value: '' },
     },
-    isTiboUpdate: (update: any) => update.provider === 'x',
+    isXPost: (update: any) => update.provider === 'x',
     heatDateKey: () => '',
     unitNeedsAttention: (unit: any[]) => unit.some(update => ['removed', 'deprecated'].includes(update.changeType)),
   }) as (update: unknown, unit: unknown[]) => boolean
@@ -1443,387 +1445,70 @@ test('Update Radar disclosure keeps aria state, region links, and native button 
   assert.ok(renderOverview.indexOf("disclosure.root.querySelector('.disclosure-meta')") < renderOverview.indexOf("appendText(disclosure.region, 'p'"))
 })
 
-test('Update Radar Codex reset binds the Tibo post by default and keeps source failures visible', () => {
-  class MockNode {
-    id = ''
-    type = ''
-    className = ''
-    hidden = false
-    children: MockNode[] = []
-    attributes = new Map<string, string>()
-    listeners = new Map<string, (...args: any[]) => void>()
-    parent: MockNode | null = null
-    private ownText = ''
-    href = ''
-    dateTime = ''
-    disabled = false
-    boundUrl = ''
-    focused = false
-    type = ''
-    get textContent() { return this.ownText + this.children.map(child => child.textContent).join('') }
-    set textContent(value: string) { this.ownText = String(value ?? ''); this.children = [] }
-    append(...children: MockNode[]) {
-      if (this.ownText) {
-        const textNode = new MockNode()
-        textNode.textContent = this.ownText
-        textNode.parent = this
-        this.children.push(textNode)
-        this.ownText = ''
-      }
-      for (const child of children) { child.parent = this; this.children.push(child) }
-    }
-    prepend(child: MockNode) {
-      if (this.ownText) {
-        const textNode = new MockNode()
-        textNode.textContent = this.ownText
-        textNode.parent = this
-        this.children.unshift(textNode)
-        this.ownText = ''
-      }
-      child.parent = this
-      this.children.unshift(child)
-    }
-    replaceChildren(...children: MockNode[]) { this.ownText = ''; this.children = []; this.append(...children) }
-    setAttribute(name: string, value: string) { this.attributes.set(name, value) }
-    getAttribute(name: string) { return this.attributes.get(name) ?? null }
-    removeAttribute(name: string) { this.attributes.delete(name) }
-    addEventListener(name: string, listener: (...args: any[]) => void) { this.listeners.set(name, listener) }
-    focus() { this.focused = true }
-    contains(node: MockNode): boolean { return this === node || this.children.some(child => child.contains(node)) }
-    querySelector(selector: string): MockNode | null {
-      const className = selector.startsWith('.') ? selector.slice(1) : ''
-      const queue = [...this.children]
-      while (queue.length) {
-        const node = queue.shift()!
-        if (className && String(node.className ?? '').split(/\s+/u).includes(className)) return node
-        queue.push(...(node.children ?? []))
-      }
-      return null
-    }
-    querySelectorAll(selector: string): MockNode[] {
-      const className = selector.startsWith('.') ? selector.slice(1) : ''
-      const matches: MockNode[] = []
-      const queue = [...this.children]
-      while (queue.length) {
-        const node = queue.shift()!
-        if (className && String(node.className ?? '').split(/\s+/u).includes(className)) matches.push(node)
-        queue.push(...(node.children ?? []))
-      }
-      return matches
-    }
-  }
-  const activated: Array<{ id: string, options: any }> = []
-  const context: Record<string, any> = {
-    document: {
-      createElement: () => new MockNode(),
-      createTextNode: (text: string) => { const node = new MockNode(); node.textContent = text; return node },
-    },
-    URL,
-    Intl,
-    Date,
-    Map,
-    state: { disclosures: new Map<string, boolean>(), radar: { codexReset: { latestReset: { resetType: 'regular' } } } },
-    elements: { resetSources: null },
-    createIcon: (_name: string, className: string) => { const icon = new MockNode(); icon.className = className; return icon },
-    bindExternalButton: () => {},
-    bindExternalLink: (link: MockNode, url: string) => { link.boundUrl = url },
-    formatUpdateTime: () => '11/4 10:00',
-    activateTab: (id: string, options: any) => { activated.push({ id, options }) },
-    renderSources: (target: MockNode, sources: Array<{ status: string }>) => {
-      target.replaceChildren(...sources.map(source => {
-        const row = new MockNode()
-        row.className = 'source-row codex-source-row'
-        const copy = new MockNode()
-        copy.className = 'source-copy'
-        const sourceName = new MockNode()
-        sourceName.className = 'source-name'
-        sourceName.textContent = 'Codex 重設'
-        const sourceLink = new MockNode()
-        sourceLink.className = 'codex-source-link'
-        sourceLink.textContent = 'codex-resets.com'
-        sourceLink.boundUrl = 'https://codex-resets.com/'
-        const lastRead = new MockNode()
-        lastRead.textContent = '上次讀取 11/4 02:20'
-        copy.append(sourceName, sourceLink, lastRead)
-        const actions = new MockNode()
-        actions.className = 'source-actions'
-        const status = new MockNode()
-        status.className = `source-status-text status-${source.status}`
-        const dot = new MockNode()
-        dot.className = 'source-status-dot'
-        status.append(dot)
-        status.append(new MockNode())
-        actions.append(status)
-        const retry = new MockNode()
-        retry.className = 'retry-button'
-        retry.textContent = ['error', 'stale'].includes(source.status) ? '立即重試' : ''
-        actions.append(retry)
-        row.append(copy, actions)
-        return row
-      }))
-    },
-  }
-  const focusTarget = new MockNode()
-  focusTarget.id = 'reset-spotlight-heading'
-  context.document.querySelector = () => focusTarget
-  context.appendText = runInNewContext(`(${panelFunctionSource('appendText')})`, context)
-  context.createDisclosure = runInNewContext(`(${panelFunctionSource('createDisclosure')})`, context)
-  context.safeSourceUrl = runInNewContext(`(${panelFunctionSource('safeSourceUrl')})`, context)
-  context.isTiboUpdate = runInNewContext(`(${panelFunctionSource('isTiboUpdate')})`, context)
-  context.resetTypeLabel = runInNewContext(`(${panelFunctionSource('resetTypeLabel')})`, context)
-  context.appendSourceAction = runInNewContext(`(${panelFunctionSource('appendSourceAction')})`, context)
-  context.renderTiboBubble = runInNewContext(`(${panelFunctionSource('renderTiboBubble')})`, context)
-  context.appendCodexSourceAttribution = runInNewContext(`(${panelFunctionSource('appendCodexSourceAttribution')})`, context)
-  const renderResetPost = runInNewContext(`(${panelFunctionSource('renderCodexResetPost')})`, context) as (parent: MockNode, latest: any, update?: any) => MockNode
-  const appendSource = runInNewContext(`(${panelFunctionSource('appendCodexSourceDisclosure')})`, context) as (parent: MockNode, source: any, latest?: any, update?: any) => any
-
-  const resetUrl = 'https://x.com/thsottiaux/status/123'
-  const longText = `${'重設'.repeat(139)}A😀<script>`
-  const resetPost = renderResetPost(new MockNode(), { id: '123', resetType: 'regular', text: longText, sourceUrl: resetUrl })
-  const resetBubble = resetPost.querySelector('.message-row')
-  assert.ok(resetBubble, 'the reset post bubble is rendered immediately without an expand action')
-  assert.equal(resetPost.querySelector('.codex-reset-post-heading')?.textContent, 'Tibo 重設貼文')
-  assert.equal(resetBubble?.querySelector('.message-source-label')?.textContent, 'Tibo / X')
-  assert.equal(resetBubble?.querySelector('.message-type-chip')?.textContent, 'Codex 重設 · 定期重設')
-  assert.equal(resetBubble?.querySelector('.message-time')?.textContent, '11/4 10:00')
-  assert.equal(Array.from(resetBubble?.querySelector('.message-text')?.textContent ?? '').length, 280, 'fallback text is limited to 280 Unicode characters')
-  assert.ok(resetBubble?.querySelector('.message-text')?.textContent.endsWith('😀'), 'the 280-character bound does not split a surrogate pair')
-  assert.equal(resetBubble?.querySelector('.message-text')?.querySelector('script'), null, 'post text is inserted as text, not markup')
-  assert.equal(resetBubble?.querySelector('.source-button')?.textContent, '查看 X 原文')
-  const resetMessageBubble = resetBubble?.querySelector('.message-bubble')
-  const resetPreview = resetMessageBubble?.querySelector('.message-preview')
-  const resetSourceActions = resetMessageBubble?.querySelector('.message-source-actions')
-  assert.equal(resetMessageBubble?.querySelector('.message-meta')?.querySelector('.source-button'), null, 'the source action is outside the author row')
-  assert.ok(resetMessageBubble && resetPreview && resetSourceActions && resetMessageBubble.children.indexOf(resetSourceActions) > resetMessageBubble.children.indexOf(resetPreview), 'the X source action follows the post text')
-  assert.equal(resetBubble?.querySelector('.message-reset-action'), null, 'the Codex page does not show a self-navigation action')
-
-  const matchedPost = renderResetPost(new MockNode(), { id: '123', text: '偵測來源備用文字', sourceUrl: resetUrl }, {
-    id: 'x-123', provider: 'x', sourceId: 'tibo-x', postKind: 'root', summary: 'Tibo 卡片全文優先',
-    publishedAtTime: '2026-11-04T02:00:00.000Z', sourceUrl: resetUrl,
-  })
-  assert.equal(matchedPost.querySelector('.message-text')?.textContent, 'Tibo 卡片全文優先', 'the matched update card supplies the preferred text')
-
-  const emptyPost = renderResetPost(new MockNode(), { id: 'observed-123', resetType: 'observed' })
-  assert.equal(emptyPost.querySelector('.codex-reset-post-empty')?.textContent, '這次重設沒有對應的 Tibo 貼文')
-
-  const feedBubble = context.renderTiboBubble({
-    id: 'x-123', provider: 'x', sourceId: 'tibo-x', postKind: 'self-reply', summary: '串中的重設貼文', sourceUrl: resetUrl,
-  }, 'self-reply', { isResetPost: true }) as MockNode
-  assert.equal(feedBubble.querySelector('.message-type-chip')?.textContent, 'Codex 重設 · 定期重設')
-  const feedMessageBubble = feedBubble.querySelector('.message-bubble')
-  const feedPreview = feedMessageBubble?.querySelector('.message-preview')
-  const feedSourceActions = feedMessageBubble?.querySelector('.message-source-actions')
-  assert.ok(feedMessageBubble && feedPreview && feedSourceActions && feedMessageBubble.children.indexOf(feedSourceActions) > feedMessageBubble.children.indexOf(feedPreview), 'single posts and thread replies put the X action after their text')
-  const resetAction = feedBubble.querySelector('.message-reset-action')
-  assert.equal(resetAction?.textContent, '查看 Codex 重設')
-  resetAction?.listeners.get('click')?.()
-  assert.equal(activated[0]?.id, 'reset')
-  activated[0]?.options.afterRestore()
-  assert.equal(focusTarget.focused, true, 'the Codex tab action focuses its section heading after switching')
-  const regularBubble = context.renderTiboBubble({ id: 'x-456', provider: 'x', sourceId: 'tibo-x', summary: '一般貼文', sourceUrl: resetUrl }, 'root') as MockNode
-  assert.equal(regularBubble.querySelector('.message-type-chip')?.textContent, '貼文')
-  assert.equal(regularBubble.querySelector('.message-reset-action'), null, 'other Tibo cards keep their existing presentation')
-
-  const sourceParent = new MockNode()
-  const source = appendSource(sourceParent, {
-    id: 'codex-resets', status: 'error', itemCount: 1, fetchedAt: '2026-11-04T02:20:00.000Z',
-    label: 'Codex 重設',
-  }, { id: '123', sourceUrl: resetUrl }, { id: 'x-123', sourceUrl: resetUrl })
-  const failureMeta = source.button.querySelector('.disclosure-meta')
-  assert.equal(failureMeta?.textContent, '讀取失敗')
-  assert.ok(failureMeta?.querySelector('.disclosure-meta-dot'), 'collapsed failure metadata includes a status dot')
-  assert.equal(source.region.hidden, true)
-  assert.equal(source.region.contains(failureMeta!), false, 'the failure metadata is outside the collapsed region')
-  assert.equal(source.button.contains(source.region.querySelector('.source-row')!), false, 'the failure metadata stays in the title row, outside its region')
-  assert.ok(source.region.querySelector('.retry-button'), 'the Codex source row keeps the existing retry control')
-  assert.match(source.region.textContent, /codex-resets\.com/)
-  assert.match(source.region.textContent, /由 codex-resets\.com 偵測 Tibo 的重設貼文/)
-  const originalPostLink = source.region.querySelector('.codex-source-post-row')?.querySelector('.codex-source-link')
-  assert.equal(originalPostLink?.textContent, '查看 X 原文')
-  assert.equal(originalPostLink?.boundUrl, resetUrl, 'the original post uses the existing external-link flow')
-  assert.equal(source.region.querySelectorAll('.source-status-text').length, 1, 'the expanded flat row displays only one source status')
-  source.button.listeners.get('click')?.()
-  assert.equal(failureMeta?.hidden, true, 'the collapsed status is hidden while the row status is visible')
-  assert.equal(source.region.querySelectorAll('.source-status-text').length, 1)
-  context.state.disclosures.set('codex-reset-source', false)
-  const healthySource = appendSource(new MockNode(), {
-    id: 'codex-resets', status: 'ok', itemCount: 1, fetchedAt: '2026-11-04T02:20:00.000Z', label: 'Codex 重設',
-  })
-  assert.match(healthySource.button.querySelector('.disclosure-meta')?.textContent ?? '', /^正常 · 11\/4 \d{2}:\d{2}$/)
-
+test('Codex reset page shows reset facts and a single data source line', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  assert.match(panelFunctionSource('renderSpotlight'), /renderCodexResetPost\(card, latestReset, resetPost\)/)
-  assert.match(panelFunctionSource('renderSpotlight'), /appendCodexSourceDisclosure\(card, source, latestReset, resetPost\)/)
-  assert.match(panelFunctionSource('renderSpotlight'), /target\.replaceChildren\(\.\.\.\(staleWarning \? \[staleWarning, card\] : \[card\]\)\)/)
-  assert.match(panelFunctionSource('renderSpotlight'), /讀取失敗，顯示上次的資料。/)
-  assert.match(panelFunctionSource('renderSpotlight'), /無法讀取 Codex 重設資料，請稍後再試。/)
-  assert.match(panelFunctionSource('renderSpotlight'), /factRows\.push\(\['預定時間', formatAbsoluteResetTime\(scheduledAt\), scheduledAt\]\)/)
-  assert.match(panelFunctionSource('renderSpotlightSkeleton'), /for \(const width of \['78%', '54%', '36%'\]\)/)
-  assert.doesNotMatch(panelFunctionSource('renderSpotlightSkeleton'), /skeleton-action/)
-  assert.doesNotMatch(markup, /最新狀態與排定時間[\s\S]{0,100}(?:chevron|section-note-arrow)/, 'the false section-link affordance is removed')
-  assert.doesNotMatch(`${markup}${panelSource}`, /歷史/u, 'no history copy or empty history section is rendered')
-  assert.doesNotMatch(panelSource, /function appendCodexAnnouncementDisclosure|function appendAnnouncementAction/)
-  assert.doesNotMatch(panelFunctionSource('renderSpotlight'), /公告/)
-  assert.match(panelFunctionSource('appendText'), /element\.textContent = String\(text \?\? ''\)/)
-  assert.match(panelFunctionSource('appendCodexSourceDisclosure'), /renderSources\(sourceGrid, source \? \[source\] : \[\]\)/)
-  assert.match(panelFunctionSource('appendCodexSourceDisclosure'), /appendCodexSourceAttribution\(disclosure\.region, latestReset, resetPost\)/)
-  assert.match(panelFunctionSource('appendCodexSourceAttribution'), /由 codex-resets\.com 偵測 Tibo 的重設貼文/)
-  const renderSources = panelFunctionSource('renderSources')
-  assert.match(renderSources, /const codexFlat = target === elements\.resetSources/)
-  assert.match(renderSources, /source-row source-\$\{displayStatus\}\$\{codexFlat \? ' codex-source-row' : ''\}/)
-  assert.match(renderSources, /if \(!pendingRetry \|\| !\['stale', 'error'\]\.includes\(status\)\)/)
-  assert.match(renderSources, /pendingRetry \? '同步中' : '立即重試'/)
-  assert.match(styles, /\.source-row \{[^}]*border: 0;[^}]*background: transparent/s)
-  assert.match(styles, /\.codex-reset-source-grid \{ grid-template-columns: minmax\(0, 1fr\); margin-top: 0; \}/)
-  assert.doesNotMatch(styles, /\.codex-reset-source-grid[^}]*\{[^}]*border:|\.codex-source-row[^}]*\{[^}]*background:\s*var\(--radar-surface\)/)
-  assert.match(panelFunctionSource('renderSources'), /dispatchSyncRequest\([\s\S]*?source\.id,[\s\S]*?type: 'radar:retry-source'/)
-  assert.match(styles, /\.message-preview \{[^}]*white-space: pre-wrap/)
-  assert.match(styles, /\.codex-reset-post-empty \{[^}]*font-size: 13px/)
-  assert.match(styles, /\.codex-reset-countdown\s*\{[^}]*font-size:\s*24px/)
+  const spotlight = panelFunctionSource('renderSpotlight')
+  const sourceLine = panelFunctionSource('appendCodexSourceLine')
+  assert.match(markup, /id="reset-spotlight-heading"[^>]*>Codex 重設/)
+  assert.match(spotlight, /formatTimeSinceReset\(reset\.stats\.lastResetAt\)/)
+  assert.match(spotlight, /formatScheduledCountdown\(scheduledAt\)/)
+  assert.match(panelFunctionSource('formatScheduledCountdown'), /預定時間已到，等待狀態更新/)
+  assert.ok(spotlight.includes("['上次重設時間', formatAbsoluteResetTime(reset.stats.lastResetAt)]"))
+  assert.ok(spotlight.includes("['重設類型', latestReset?.resetType"))
+  assert.ok(spotlight.includes("['累計次數', `${reset.stats.total} 次`]"))
+  assert.match(spotlight, /factRows\.push\(\['預定時間'/)
+  assert.match(sourceLine, /資料來源：/)
+  assert.match(sourceLine, /codex-resets.com/)
+  assert.match(sourceLine, /createSourceRetryButton\(row, source\)/)
+  assert.match(sourceLine, /讀取失敗/)
+  assert.match(panelFunctionSource('createSourceRetryButton'), /dispatchSyncRequest\([\s\S]*?type: 'radar:retry-source'/)
+  assert.match(panelFunctionSource('renderSources'), /createSourceRetryButton\(actions, source\)/)
+  assert.match(spotlight, /讀取失敗，顯示上次的資料。/)
+  assert.match(spotlight, /無法讀取 Codex 重設資料，請稍後再試。/)
+  assert.ok(panelFunctionSource('renderSpotlightSkeleton').includes("for (const width of ['78%', '54%', '36%'])"))
+  assert.doesNotMatch(spotlight, /最新狀態|已排定重設|公告|renderXPost|findResetPost|disclosure/)
+  assert.doesNotMatch(panelSource, /findResetPost|renderCodexResetPost|appendCodexSourceDisclosure|查看 Codex 重設|message-reset-action/)
+  assert.doesNotMatch(styles, /spotlight-flag|codex-reset-post|codex-reset-disclosure|message-reset-action/)
+  assert.match(styles, /.codex-reset-source-line[^}]*font-size: 12px/)
+  assert.match(styles, /\.codex-reset-source-error[^}]*color: var\(--radar-danger\)/)
 })
 
-test('findResetPost links the Codex reset id or source URL and safely handles missing posts', () => {
-  const findResetPost = runInNewContext(`(${panelFunctionSource('findResetPost')})`) as (updates: unknown, latestReset: unknown) => any
-  const statusId = '2117035794678546764'
-  const idPost = { id: `x-${statusId}`, sourceUrl: `https://x.com/thsottiaux/status/${statusId}`, title: 'Day 28/ Banked 2/2' }
-  assert.equal(findResetPost([idPost], { id: statusId }), idPost, 'the x-<latestReset.id> card is matched')
-
-  const urlPost = { id: 'x-different', sourceUrl: 'https://x.com/thsottiaux/status/2117035794678546764', title: 'matched by URL' }
-  assert.equal(findResetPost([urlPost], { id: 'other-id', sourceUrl: urlPost.sourceUrl }), urlPost, 'a matching source URL is a fallback')
-  assert.equal(findResetPost([idPost], { id: 'observed-2117035794678546764' }), null, 'observed resets without a post do not match')
-  assert.equal(findResetPost([{ id: 'x-other', sourceUrl: 'https://x.com/thsottiaux/status/9' }], { id: statusId }), null, 'an unrelated update returns null')
-  assert.equal(findResetPost([idPost], null), null, 'a missing latestReset returns null')
-})
-
-test('Codex reset links across update cards and overview without changing tab fetch behavior', () => {
+test('Codex summary and @ajambrosino today are independent overview rows', () => {
   const markup = fs.readFileSync(path.join(pluginRoot, 'ui/index.html'), 'utf8')
   const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
   const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  const codexGroupStart = markup.indexOf('<section class="overview-codex-group"')
-  const codexGroupEnd = markup.indexOf('<section class="overview-highlights"', codexGroupStart)
-  const codexGroup = markup.slice(codexGroupStart, codexGroupEnd)
-  assert.match(codexGroup, /Codex 重設 · Tibo/)
-  assert.match(codexGroup, /id="codex-overview-status"/)
-  assert.match(codexGroup, /id="tibo-summary"/)
-  assert.ok(codexGroup.indexOf('id="codex-overview-status"') < codexGroup.indexOf('id="tibo-summary"'), 'both clickable rows stay inside the titled Codex/Tibo group in order')
-  assert.match(panelFunctionSource('renderOverview'), /findResetPost\(updates, state\.radar\?\.codexReset\?\.latestReset\)/)
-  assert.match(panelFunctionSource('renderOverview'), /resetPostIsToday \? ' · Codex 重設' : ''/)
-
-  const renderUpdates = panelFunctionSource('renderUpdates')
-  assert.match(renderUpdates, /const resetPost = findResetPost\(allUpdates, state\.radar\?\.codexReset\?\.latestReset\)/)
-  assert.match(renderUpdates, /renderThread\(group, unitKey, resetPost\?\.id \?\? null\)/)
-  assert.match(renderUpdates, /renderTiboUpdate\(update, update\.id === resetPost\?\.id\)/)
-  assert.match(panelFunctionSource('renderThread'), /isResetPost: update\.id === resetPostId/)
-  assert.match(panelFunctionSource('renderTiboBubble'), /Codex 重設\$\{resetType \? ` · \$\{resetTypeLabel\(resetType\)\}` : ''\}/)
-  assert.match(panelFunctionSource('renderTiboBubble'), /'查看 Codex 重設'/)
-  assert.match(panelFunctionSource('renderTiboBubble'), /activateTab\('reset', \{/)
-  assert.match(panelFunctionSource('renderTiboBubble'), /bubble\.append\(preview\)[\s\S]*?const sourceActions = appendText\(bubble, 'div', 'message-source-actions', ''\)[\s\S]*?appendSourceAction\(sourceActions, update, \{ inline: true \}\)/)
-  assert.match(styles, /\.message-source-actions \.source-button \{[^}]*min-height: 36px;/)
-  assert.match(styles, /@container tibo-row \(min-width: 330px\)[\s\S]*?grid-template-areas: "meta actions" "preview preview";[\s\S]*?\.message-source-actions \{ grid-area: actions;/)
-  assert.doesNotMatch(panelFunctionSource('activateTab'), /postMessage|storage\.get/)
-  assert.match(panelSource, /elements\.codexOverviewStatus\.addEventListener\('click', \(\) => activateTab\('reset'\)\)/)
-  assert.match(panelSource, /elements\.tiboSummary\.addEventListener\('click', \(\) => \{[\s\S]*?elements\.provider\.value = 'x'[\s\S]*?activateTab\('updates'/)
-  const renderOverviewCodexStatus = panelFunctionSource('renderOverviewCodexStatus')
-  assert.match(renderOverviewCodexStatus, /text = `\$\{distance\} · 共 \$\{reset\.stats\?\.total \?\? 0\} 次`/)
-  assert.doesNotMatch(renderOverviewCodexStatus, /Codex 重設 ·/)
-  assert.match(renderOverviewCodexStatus, /setAttribute\('aria-label', `前往 Codex 重設頁；\$\{text\}`\)/)
-  assert.doesNotMatch(panelFunctionSource('tickCodexCountdown'), /Codex 重設 ·/)
-  const renderSpotlight = panelFunctionSource('renderSpotlight')
-  const resetCardRendering = renderSpotlight.slice(renderSpotlight.indexOf('card.append(facts)'), renderSpotlight.lastIndexOf('target.replaceChildren'))
-  assert.ok(resetCardRendering.indexOf('renderCodexResetPost(card, latestReset, resetPost)') < resetCardRendering.indexOf('appendCodexSourceDisclosure(card, source, latestReset, resetPost)'), 'the Tibo post precedes the source disclosure')
-  assert.doesNotMatch(panelSource, /appendCodexAnnouncementDisclosure|title: '公告'/)
-
-  const desktopCss = styles.match(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  const mobileGrid = styles.match(/\.overview-grid \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  const compactOverview = styles.match(/@media \(max-width: 430px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
-  const compactHighlightRow = compactOverview.match(/\.overview-highlight-row \{([^}]*)\}/)?.[1] ?? ''
-  assert.match(desktopCss, /\.overview-codex-group \{ grid-area: codex; \}/)
-  assert.match(desktopCss, /"codex highlights"/)
-  assert.match(mobileGrid, /"alerts" "summary" "codex" "highlights" "sources"/)
-  assert.match(styles, /\.overview-codex-group \{ display: grid; grid-area: codex;/)
-  assert.match(styles, /\.overview-codex-group \{[^}]*border: 1px solid var\(--radar-border-soft\);[^}]*background: var\(--radar-surface\);/)
-  assert.match(styles, /\.overview-codex-group-heading \{[^}]*font-size: 13px/)
-  assert.match(styles, /\.tibo-summary-section \{ display: grid; gap: var\(--radar-gap-1\);/)
-  assert.match(styles, /\.tibo-summary-section \{[^}]*border-top: 1px solid var\(--radar-border-soft\);/)
-  assert.match(styles, /\.codex-overview-status \{[^}]*min-height: 36px;/)
-  assert.match(styles, /\.tibo-summary \{[^}]*min-height: 36px;/)
-  assert.doesNotMatch(styles, /@media \(max-width: 899px\)[\s\S]*?display: contents/)
-
-  const cssBlock = (selector: string) => {
-    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return styles.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
-  }
-  const px = (selector: string, property: string) => Number(cssBlock(selector).match(new RegExp(`${property}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
-  const unitPx = (name: string) => Number(styles.match(new RegExp(`${name}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
-  const lineHeight = (selector: string) => Number(cssBlock(selector).match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
-  const rootLineHeight = Number(cssBlock(':root').match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
-  const compactPx = (property: string) => Number(compactHighlightRow.match(new RegExp(`${property}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
-  const shellGap = unitPx('--radar-gap-3')
-  const gridGap = px('.overview-grid', 'gap')
-  const overviewTop = shellGap + px('.radar-header', 'height') + shellGap + px('.radar-tabs', 'min-height') + shellGap
-  const twoAlerts = 2 * px('.overview-alert-action', 'min-height') + px('.overview-alerts', 'gap')
-  const headingPadding = styles.match(/\.overview-codex-group-heading \{[^}]*padding:\s*(\d+(?:\.\d+)?)px\s+\d+(?:\.\d+)?px\s+(\d+(?:\.\d+)?)px/s)
-  assert.ok(headingPadding, 'the grouped heading keeps explicit vertical padding for the 423px calculation')
-  const groupTop = overviewTop + twoAlerts + gridGap + px('.summary-card', 'min-height') + gridGap
-  const codexGroupHeight = px('.overview-codex-group-heading', 'font-size') * lineHeight('.overview-codex-group-heading')
-    + Number(headingPadding?.[1] ?? 0) + Number(headingPadding?.[2] ?? 0)
-    + 2 * px('.overview-codex-group', 'border')
-    + px('.codex-overview-status', 'min-height')
-    + px('.tibo-summary', 'min-height')
-    + px('.tibo-summary-section', 'border-top')
-  const codexRowBottom = Math.ceil(groupTop + px('.overview-codex-group', 'border')
-    + px('.overview-codex-group-heading', 'font-size') * lineHeight('.overview-codex-group-heading')
-    + Number(headingPadding?.[1] ?? 0) + Number(headingPadding?.[2] ?? 0)
-    + px('.codex-overview-status', 'min-height'))
-  const compactRowContentHeight = Math.max(px('.overview-highlight-source', 'font-size'), px('.overview-highlight-time', 'font-size')) * rootLineHeight
-    + compactPx('row-gap')
-    + px('.overview-highlight-row', 'font-size') * rootLineHeight
-  const compactHighlightRowHeight = Math.max(px('.overview-highlight-row', 'min-height'), compactRowContentHeight
-    + 2 * compactPx('padding-block') + 2 * px('.overview-highlight-row', 'border'))
-  const firstHighlightHeight = px('.overview-highlights h2', 'font-size') * lineHeight('.overview-highlights h2')
-    + px('.overview-highlights', 'gap')
-    + compactHighlightRowHeight
-  const firstHighlightBottom = Math.ceil(overviewTop + twoAlerts + gridGap + px('.summary-card', 'min-height') + gridGap + codexGroupHeight + gridGap + firstHighlightHeight)
-  assert.equal(codexRowBottom, 347, 'the Codex status row remains 36px high inside the shared frame')
-  assert.equal(firstHighlightBottom, 489, '423px layout calculation includes one failed-source alert, one attention alert, the shared Codex/Tibo group, and both rows of the first compact important update')
-  assert.ok(firstHighlightBottom <= 535, `V1 first important update ends at ${firstHighlightBottom}px`)
+  const overviewStart = markup.indexOf('<section id="panel-overview"')
+  const updatesStart = markup.indexOf('<section id="panel-updates"')
+  const overview = markup.slice(overviewStart, updatesStart)
+  const codexIndex = overview.indexOf('id="codex-overview-status"')
+  const highlightsIndex = overview.indexOf('class="overview-highlights"')
+  const xSummaryIndex = overview.indexOf('class="x-summary-section"')
+  assert.ok(codexIndex >= 0 && highlightsIndex > codexIndex && xSummaryIndex > highlightsIndex)
+  assert.match(overview, /aria-label="@ajambrosino 今日"/)
+  assert.match(overview, /id="x-summary-text">今天 @ajambrosino 尚無新貼文/)
+  assert.doesNotMatch(overview, /overview-codex-group|Codex 重設 · @ajambrosino/)
+  assert.match(panelFunctionSource('renderOverviewCodexStatus'), /Codex 重設 · \$\{distance\} · 共 \$\{reset\.stats\?\.total \?\? 0\} 次/)
+  assert.match(panelFunctionSource('renderOverview'), /todayXPosts = updates\.filter\(update => isXPost\(update\) && heatDateKey\(update\) === todayKey\)/)
+  assert.doesNotMatch(panelFunctionSource('renderOverview'), /findResetPost|resetPostIsToday|Codex 重設.*@ajambrosino/)
+  assert.match(panelFunctionSource('renderOverviewCodexStatus'), /Codex 重設 ·/)
+  assert.doesNotMatch(panelFunctionSource('renderXPost'), /Codex 重設|resetType|查看 Codex 重設/)
+  assert.match(styles, /grid-template-areas: "alerts" "summary" "codex" "highlights" "x-summary" "sources"/)
+  assert.match(styles, /.overview-grid > #codex-overview-status { grid-area: codex; }/)
+  assert.match(styles, /.overview-grid > .x-summary-section { grid-area: x-summary; }/)
 })
 
-test('Codex reset keeps the first Tibo text line visible before the source disclosure in the 423x535 viewport', () => {
-  const styles = fs.readFileSync(path.join(pluginRoot, 'ui/panel.css'), 'utf8')
-  const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const cssBlock = (selector: string) => styles.match(new RegExp(`(?:^|\\n)\\s*${escaped(selector)}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
-  const px = (selector: string, property: string) => Number(cssBlock(selector).match(new RegExp(`${property}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
-  const lineHeight = (selector: string) => Number(cssBlock(selector).match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
-  const tokenPx = (name: string) => Number(styles.match(new RegExp(`${name}:\\s*(\\d+(?:\\.\\d+)?)px`))?.[1] ?? 0)
-  const rootLineHeight = Number(cssBlock(':root').match(/line-height:\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
-  const panelTop = tokenPx('--radar-gap-3') * 3 + px('.radar-header', 'height') + px('.radar-tabs', 'min-height')
-  const sectionHeading = tokenPx('--radar-font-heading') * lineHeight('.section-heading h2') + tokenPx('--radar-gap-2')
-  const cardTop = panelTop + sectionHeading
-  const cardInset = px('.codex-reset-card', 'padding') + px('.spotlight-card', 'border')
-  const cardGap = tokenPx('--radar-gap-2')
-  const flagHeight = tokenPx('--radar-font-small') * rootLineHeight
-  const countdownHeight = px('.codex-reset-countdown', 'font-size') * lineHeight('.codex-reset-countdown')
-  const factHeight = 4 * px('.codex-reset-fact', 'font-size') * rootLineHeight
-    + 3 * tokenPx('--radar-gap-1')
-    + tokenPx('--radar-gap-1')
-    + Math.max(0, px('.reset-type-chip', 'min-height') - px('.codex-reset-fact', 'font-size') * rootLineHeight)
-  const factBottom = cardTop + cardInset + flagHeight + cardGap + countdownHeight + cardGap + factHeight
-  const chipHeight = px('.message-type-chip', 'font-size') * lineHeight('.message-type-chip')
-    + 2 * px('.message-type-chip', 'padding')
-    + 2 * px('.message-type-chip', 'border')
-  const firstPostLineBottom = factBottom + cardGap
-    + px('.codex-reset-post-heading', 'font-size') * lineHeight('.codex-reset-post-heading')
-    + px('.codex-reset-post', 'gap')
-    + chipHeight
-    + px('.message-preview', 'margin')
-    + px('.message-preview', 'font-size') * lineHeight('.message-preview')
-  const staleWarningHeight = tokenPx('--radar-font-small') * lineHeight('.codex-reset-status')
-  const conservativeBottom = Math.ceil(firstPostLineBottom + staleWarningHeight)
-  assert.equal(conservativeBottom, 431, 'four facts, a stale warning, a 16px section heading, and the post-first order keep the first Tibo line visible')
-  assert.ok(conservativeBottom <= 535, `Tibo author and first text line end at ${conservativeBottom}px`)
+test('Codex reset source validation drops invalid source URLs without losing reset facts', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const reset = parseCodexResetsStatus(codexResetPayload({ sourceUrl: 'https://x.com/thsottiaux/status/2115330127886463244' }), FIXED_NOW)
+  assert.ok(reset)
+  assert.equal(reset?.latestReset.sourceUrl, undefined)
+  const accepted = parseCodexResetsStatus(codexResetPayload({ sourceUrl: 'https://x.com/ajambrosino/status/2115330127886463244' }), FIXED_NOW)
+  assert.equal(accepted?.latestReset.sourceUrl, 'https://x.com/ajambrosino/status/2115330127886463244')
+  assert.ok(panelSource.includes('function safeSourceUrl(value)'))
+  assert.match(panelFunctionSource('safeSourceUrl'), /X_PROFILE_USERNAME/)
+  assert.doesNotMatch(panelSource, /safeSourceUrl\(latestReset\?\.sourceUrl\)/)
 })
 
 test('Update Radar Phase 3 cards use one disclosure and retain accessible unit identity', () => {
@@ -1847,7 +1532,7 @@ test('Update Radar Phase 3 cards use one disclosure and retain accessible unit i
   assert.match(panelSource, /region\.setAttribute\('aria-labelledby', button\.id\)/)
   assert.doesNotMatch(panelSource, /document\.createElement\(['"]details['"]\)|document\.createElement\(['"]summary['"]\)/)
   assert.doesNotMatch(styles, /\.update-details|\.details-content|::-webkit-details-marker|(?:^|,\s*)summary:focus-visible/m)
-  assert.doesNotMatch(panelFunctionSource('renderTiboUpdate'), /createDisclosure\(/, 'a standalone Tibo post is shown without a disclosure')
+  assert.doesNotMatch(panelFunctionSource('renderXUpdate'), /createDisclosure\(/, 'a standalone @ajambrosino post is shown without a disclosure')
   assert.match(panelFunctionSource('renderThread'), /buttonText: `\$\{replies\.length\} 則續文`/)
   assert.match(panelFunctionSource('renderThread'), /thread-timeline/)
 })
@@ -1914,9 +1599,9 @@ test('Update Radar reset timers follow their visible tab and removed preview tog
   const syncLifecycleSource = panelFunctionSource('syncTabLifecycles')
   const overviewResetSource = panelFunctionSource('renderOverviewCodexStatus')
   const countdownTickSource = panelFunctionSource('tickCodexCountdown')
-  assert.match(syncLifecycleSource, /const countdownVisible = !state\.detail && \['overview', 'reset'\]\.includes\(state\.activeTab\)/)
-  assert.match(overviewResetSource, /text = countdown === '預定時間已到，等待狀態更新'\s*\? countdown\s*:/)
-  assert.match(countdownTickSource, /countdownText === '預定時間已到，等待狀態更新'\s*\? countdownText\s*:/)
+  assert.match(syncLifecycleSource, /const countdownVisible = !state\.detail && state\.activeTab === 'reset'/)
+  assert.match(overviewResetSource, /Codex 重設 · \$\{distance\} · 共 \$\{reset\.stats\?\.total \?\? 0\} 次/)
+  assert.match(countdownTickSource, /if \(state\.activeTab === 'reset'\)/)
   const cleared: number[] = []
   const timers: Array<{ id: number, callback: () => void }> = []
   let nextTimer = 1
@@ -1934,11 +1619,11 @@ test('Update Radar reset timers follow their visible tab and removed preview tog
   assert.equal(context.codexResetCountdownTimer, null)
   context.state.activeTab = 'overview'
   syncTabLifecycles()
-  assert.equal(timers.length, 1, 'the countdown is scheduled on an eligible tab')
+  assert.equal(timers.length, 0, 'the overview status does not run a countdown')
   context.state.activeTab = 'reset'
   context.codexResetCountdownTimer = null
   syncTabLifecycles()
-  assert.equal(timers.length, 2, 'the Codex reset tab also schedules the countdown')
+  assert.equal(timers.length, 1, 'the Codex reset tab schedules the countdown')
   context.state.detail = { key: 'detail' }
   context.codexResetCountdownTimer = 55
   syncTabLifecycles()
@@ -2038,13 +1723,13 @@ test('several new Claude Platform items on one date send one notification', () =
   assert.equal(JSON.stringify(entries.map((entry: any) => entry.kind === 'day' ? `day:${entry.updates.length}` : `update:${entry.update.id}`)), '["day:2","update:c"]')
 })
 
-test('Tibo parser keeps today roots and chained self replies in one safe data model', () => {
+test('@ajambrosino parser keeps today roots and chained self replies in one safe data model', () => {
   const rootId = '2113162277688070445'
   const replyId = '2113162413008884099'
-  const roots = parseTiboPublicProfile(profileHtml([
+  const roots = parseXProfile(profileHtml([
     profilePost(rootId, '2026-10-28T07:00:00Z', 'Root public post.'),
   ]), { now: new Date(FIXED_NOW), timeZone: 'UTC' })
-  const replies = parseTiboSelfReplies(conversationHtml(rootId, [
+  const replies = parseXSelfReplies(conversationHtml(rootId, [
     conversationTweet({ id: replyId, timestamp: '2026-10-28T07:01:00Z', text: 'First self reply.', replyToId: rootId }),
     conversationTweet({ id: '2113162537093267968', timestamp: '2026-10-28T07:02:00Z', text: 'Second-level reply.', replyToId: replyId }),
   ]), { rootId, now: new Date(FIXED_NOW), timeZone: 'UTC' })
@@ -2068,8 +1753,8 @@ test('Codex Resets parser validates the status, observed ids, source URL and sch
   })
 
   const official = parseCodexResetsStatus(codexResetPayload({ scheduledReset: { at: '2026-10-28T07:59:00.000Z' } }), FIXED_NOW)
-  assert.equal(official?.latestReset.sourceUrl, 'https://x.com/thsottiaux/status/2115330127886463244')
-  assert.equal(official?.scheduledReset, null)
+  assert.equal(official?.latestReset.sourceUrl, 'https://x.com/ajambrosino/status/2115330127886463244')
+  assert.deepEqual(official?.scheduledReset, { at: '2026-10-28T07:59:00.000Z' })
   assert.equal(parseCodexResetsStatus(codexResetPayload({ scheduledReset: { at: 'tomorrow' } }), FIXED_NOW)?.scheduledReset, null)
   assert.equal(parseCodexResetsStatus('{invalid', FIXED_NOW), null)
   for (const invalid of [
@@ -2105,6 +1790,50 @@ test('runtime establishes a quiet baseline and notifies only later new updates',
   assert.ok(fixture.panelMessages.some(message => message.type === 'radar:state'))
 })
 
+test('legacy tibo-x state is discarded and a new X source establishes a quiet baseline', async () => {
+  const fixture = createApiFixture()
+  const previousPostId = '2113000000000000001'
+  const newPostId = '2114000000000000001'
+  fixture.storage.set('radar-state', {
+    schemaVersion: 4,
+    sources: [
+      { id: 'openai-api', status: 'ok', itemCount: 0 },
+      { id: 'tibo-x', status: 'ok', itemCount: 1 },
+    ],
+    updates: [{
+      id: `x-${previousPostId}`, sourceId: 'tibo-x', provider: 'x', product: 'social',
+      category: 'developer-tool', changeType: 'added', title: 'Old profile post', summary: 'Legacy cached item.',
+      publishedAt: '2026-10-28', publishedAtTime: '2026-10-28T06:00:00.000Z',
+      sourceUrl: `https://x.com/thsottiaux/status/${previousPostId}`, postKind: 'root',
+    }],
+    knownIds: [`x-${previousPostId}`, 'openai-existing-id'],
+    baselineSourceIds: ['tibo-x'],
+    lastCheckedAt: null,
+    lastSuccessAt: null,
+  })
+  fixture.setXProfileBody(profileHtml([profilePost(newPostId, '2026-10-28T07:00:00Z', 'New source baseline.')]))
+  const releaseFetches = fixture.pauseFetches()
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  const startup = runtime.start()
+  await new Promise<void>(resolve => setImmediate(resolve))
+
+  const normalized = fixture.panelMessages.find(message => message.type === 'radar:state')?.state as any
+  assert.equal(normalized.schemaVersion, 4)
+  assert.equal(normalized.updates.some((update: any) => update.sourceId === 'tibo-x'), false)
+  assert.equal(normalized.knownIds.includes(`x-${previousPostId}`), false)
+  assert.equal(normalized.knownIds.includes('openai-existing-id'), true)
+  assert.equal(normalized.baselineSourceIds.includes('tibo-x'), false)
+  assert.equal(normalized.sources.some((source: any) => source.id === 'tibo-x'), false)
+  assert.equal(normalized.sources.some((source: any) => source.id === 'x-ajambrosino'), true)
+
+  releaseFetches()
+  await startup
+  assert.equal(runtime.getState().updates.some(update => update.id === `x-${newPostId}`), true)
+  assert.equal(runtime.getState().baselineSourceIds.includes('x-ajambrosino'), true)
+  assert.equal(runtime.getState().knownIds.includes(`x-${previousPostId}`), false)
+  assert.equal(fixture.notifications.length, 0)
+})
+
 test('a first Codex Resets status is a quiet baseline', async () => {
   const fixture = createApiFixture()
   const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
@@ -2130,7 +1859,7 @@ test('a new Codex reset notifies separately from a merged update burst and persi
   const resetNotification = fixture.notifications.find(item => item.title === 'Codex 用量已重設')
   assert.ok(resetNotification)
   assert.match(String(resetNotification?.body), /定期重設.*2026/)
-  assert.equal(resetNotification?.link, 'https://x.com/thsottiaux/status/2115330127886463245')
+  assert.equal(resetNotification?.link, 'https://x.com/ajambrosino/status/2115330127886463245')
   assert.equal(resetNotification?.dedupeKey, 'codex-reset-2115330127886463245')
   assert.ok(fixture.notifications.some(item => item.title === 'AI 更新雷達有 4 則新內容'))
   assert.deepEqual(runtime.getState().lastNotifiedCodexReset, { id: '2115330127886463245', announcedAt: '2026-10-28T08:01:00.000Z' })
@@ -2287,7 +2016,7 @@ test('updates density keeps accessible heading, co-locates counts, and preserves
   assert.match(panelFunctionSource('renderUpdates'), /heatMeta\.textContent = \[selectedDay, elements\.resultStatus\.textContent\]/)
   assert.match(styles, /\.heat-disclosure-button \{ min-height: 36px;/)
   assert.match(styles, /\.result-status\.visually-hidden \{[\s\S]*?height: 20px;[\s\S]*?line-height: 20px;/)
-  assert.match(panelFunctionSource('renderTiboBubble'), /bubble\.append\(preview\)[\s\S]*?const sourceActions = appendText\(bubble, 'div', 'message-source-actions', ''\)[\s\S]*?appendSourceAction\(sourceActions, update, \{ inline: true \}\)/)
+  assert.match(panelFunctionSource('renderXPost'), /bubble\.append\(preview\)[\s\S]*?const sourceActions = appendText\(bubble, 'div', 'message-source-actions', ''\)[\s\S]*?appendSourceAction\(sourceActions, update, \{ inline: true \}\)/)
   assert.match(styles, /\.message-meta \.source-button \{ min-height: 36px;/)
   assert.match(styles, /\.card-disclosure \{ margin-top: 4px; border-top: 0; \}/)
   assert.match(styles, /\.card-disclosure-button \{ min-height: 36px;/)

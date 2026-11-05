@@ -1,11 +1,11 @@
 const MAX_THREAD_DEPTH = 20
 
-function isTiboUpdate(update) {
-  return update?.sourceId === 'tibo-x' && update?.provider === 'x' && /^x-\d{1,19}$/.test(update?.id ?? '')
+function isXPost(update) {
+  return update?.sourceId === 'x-ajambrosino' && update?.provider === 'x' && /^x-\d{1,19}$/.test(update?.id ?? '')
 }
 
 function findThreadRootId(update, updatesById) {
-  if (!isTiboUpdate(update)) return null
+  if (!isXPost(update)) return null
   if (update.postKind === 'root') return update.id
 
   let current = update
@@ -14,7 +14,7 @@ function findThreadRootId(update, updatesById) {
     if (!/^x-\d{1,19}$/.test(current.replyToId ?? '') || visited.has(current.replyToId)) return null
     visited.add(current.replyToId)
     current = updatesById.get(current.replyToId)
-    if (!current || !isTiboUpdate(current)) return null
+    if (!current || !isXPost(current)) return null
     if (current.postKind === 'root') return current.id
   }
   return null

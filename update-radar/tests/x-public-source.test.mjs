@@ -1,17 +1,53 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { SOURCE_DEFINITIONS as PLUGIN_SOURCE_DEFINITIONS } from '../plugin/dist/core.js'
+import { isAllowedSourceUrl, X_PROFILE_SOURCE } from '../src/config.mjs'
 import {
-  fetchTiboPublicPosts,
+  fetchXPublicPosts,
   localDateKey,
-  parseTiboPublicProfile,
-  parseTiboSelfReplies,
+  parseXProfile,
+  parseXSelfReplies,
 } from '../src/x-public-source.mjs'
+
+test('collector and plugin share the configured X account and exact public URL paths', () => {
+  const pluginSource = PLUGIN_SOURCE_DEFINITIONS.find(source => source.kind === 'x-public-profile')
+  assert.deepEqual({
+    id: X_PROFILE_SOURCE.id,
+    username: X_PROFILE_SOURCE.username,
+    url: X_PROFILE_SOURCE.url,
+    publicUrl: X_PROFILE_SOURCE.publicUrl,
+    label: X_PROFILE_SOURCE.label,
+  }, {
+    id: 'x-ajambrosino',
+    username: 'ajambrosino',
+    url: 'https://x.com/ajambrosino',
+    publicUrl: 'https://x.com/ajambrosino',
+    label: '@ajambrosino',
+  })
+  assert.deepEqual({
+    id: pluginSource.id,
+    username: pluginSource.username,
+    url: pluginSource.url,
+    publicUrl: pluginSource.publicUrl,
+    label: pluginSource.label,
+  }, {
+    id: X_PROFILE_SOURCE.id,
+    username: X_PROFILE_SOURCE.username,
+    url: X_PROFILE_SOURCE.url,
+    publicUrl: X_PROFILE_SOURCE.publicUrl,
+    label: X_PROFILE_SOURCE.label,
+  })
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino'), true)
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino/status/1'), true)
+  assert.equal(isAllowedSourceUrl('https://x.com/thsottiaux/status/1'), false)
+  assert.equal(isAllowedSourceUrl('https://x.com/other/status/1'), false)
+})
 
 function profilePost({ id, timestamp, text }) {
   return `
     <li>
-      <div role="link" data-href="/thsottiaux/status/${id}">
-        <img alt="@thsottiaux">
+      <div role="link" data-href="/ajambrosino/status/${id}">
+        <img alt="@ajambrosino">
         <script>formatRelativePastTimestamp({"timestamp":${Date.parse(timestamp)}})</script>
         <div class="text-body whitespace-pre-wrap wrap-break-word" dir="auto"><span>${text}</span></div>
       </div>
@@ -20,10 +56,10 @@ function profilePost({ id, timestamp, text }) {
 }
 
 function profileHtml(posts) {
-  return `<html><body><main aria-label="@thsottiaux"><ul>${posts.join('')}</ul></main></body></html>`
+  return `<html><body><main aria-label="@ajambrosino"><ul>${posts.join('')}</ul></main></body></html>`
 }
 
-function conversationTweet({ id, timestamp, text, author = 'thsottiaux', replyToAuthor, replyToId }) {
+function conversationTweet({ id, timestamp, text, author = 'ajambrosino', replyToAuthor, replyToId }) {
   return {
     rest_id: id,
     result: {
@@ -48,7 +84,7 @@ function conversationHtml(rootId, tweets) {
       },
     },
   }
-  return `<html><link rel="canonical" href="https://x.com/thsottiaux/status/${rootId}"><script>value:${JSON.stringify(JSON.stringify(payload))}</script></html>`
+  return `<html><link rel="canonical" href="https://x.com/ajambrosino/status/${rootId}"><script>value:${JSON.stringify(JSON.stringify(payload))}</script></html>`
 }
 
 test('public profile parser keeps only posts from today in the local timezone', () => {
@@ -70,7 +106,7 @@ test('public profile parser keeps only posts from today in the local timezone', 
     }),
   ])
 
-  const updates = parseTiboPublicProfile(html, {
+  const updates = parseXProfile(html, {
     now: new Date('2026-10-22T03:00:00Z'),
     timeZone: 'Asia/Taipei',
   })
@@ -80,11 +116,11 @@ test('public profile parser keeps only posts from today in the local timezone', 
   assert.equal(updates[0].summary, 'Today & local Developer tool update.')
   assert.equal(updates[0].publishedAt, '2026-10-22')
   assert.equal(updates[0].publishedAtTime, '2026-10-21T16:30:00.000Z')
-  assert.equal(updates[0].sourceUrl, 'https://x.com/thsottiaux/status/2113029655095836957')
+  assert.equal(updates[0].sourceUrl, 'https://x.com/ajambrosino/status/2113029655095836957')
   assert.equal(updates[0].postKind, 'root')
 })
 
-test('conversation parser keeps only Tibo replies directed to Tibo', () => {
+test('conversation parser keeps only @ajambrosino replies directed to @ajambrosino', () => {
   const rootId = '2113162277688070445'
   const html = conversationHtml(rootId, [
     conversationTweet({
@@ -96,48 +132,48 @@ test('conversation parser keeps only Tibo replies directed to Tibo', () => {
       id: '2113162413008884099',
       timestamp: '2026-10-22T06:55:54Z',
       text: 'Lands tomorrow before 10am PST.',
-      replyToAuthor: 'thsottiaux',
+      replyToAuthor: 'ajambrosino',
       replyToId: rootId,
     }),
     conversationTweet({
       id: '2113162537093267965',
       timestamp: '2026-10-22T06:56:24Z',
-      text: 'Someone else replying to Tibo.',
+      text: 'Someone else replying to @ajambrosino.',
       author: 'someoneelse',
-      replyToAuthor: 'thsottiaux',
+      replyToAuthor: 'ajambrosino',
       replyToId: rootId,
     }),
     conversationTweet({
       id: '2113162537093267966',
       timestamp: '2026-10-22T06:56:25Z',
-      text: 'Tibo replying to someone else.',
+      text: '@ajambrosino replying to someone else.',
       replyToAuthor: 'someoneelse',
       replyToId: '2113162537093267965',
     }),
     conversationTweet({
       id: '2113162537093267967',
       timestamp: '2026-10-22T06:56:26Z',
-      text: 'Unrelated Tibo-to-Tibo reply injected from another thread.',
-      replyToAuthor: 'thsottiaux',
+      text: 'Unrelated @ajambrosino-to-@ajambrosino reply injected from another thread.',
+      replyToAuthor: 'ajambrosino',
       replyToId: '2112000000000000000',
     }),
     conversationTweet({
       id: '2113162537093267968',
       timestamp: '2026-10-22T06:56:27Z',
       text: 'A second-level self reply.',
-      replyToAuthor: 'thsottiaux',
+      replyToAuthor: 'ajambrosino',
       replyToId: '2113162413008884099',
     }),
     conversationTweet({
       id: '2113000000000000000',
       timestamp: '2026-10-21T06:56:25Z',
       text: 'Yesterday self reply.',
-      replyToAuthor: 'thsottiaux',
+      replyToAuthor: 'ajambrosino',
       replyToId: rootId,
     }),
   ])
 
-  const updates = parseTiboSelfReplies(html, {
+  const updates = parseXSelfReplies(html, {
     rootId,
     now: new Date('2026-10-22T07:00:00Z'),
     timeZone: 'UTC',
@@ -156,13 +192,14 @@ test('public profile parser deduplicates rendered post markers and rejects chang
     timestamp: '2026-10-22T01:00:00Z',
     text: 'One original post.',
   })
-  const updates = parseTiboPublicProfile(profileHtml([post, post]), {
+  const updates = parseXProfile(profileHtml([post, post]), {
     now: new Date('2026-10-22T02:00:00Z'),
     timeZone: 'UTC',
   })
   assert.equal(updates.length, 1)
-  assert.throws(() => parseTiboPublicProfile('<html>@thsottiaux</html>'), /x_profile_format_changed/)
-  assert.throws(() => parseTiboPublicProfile('<html>other profile</html>'), /x_profile_invalid/)
+  assert.throws(() => parseXProfile('<html>@ajambrosino</html>'), /x_profile_format_changed/)
+  assert.throws(() => parseXProfile('<html>other profile</html>'), /x_profile_invalid/)
+  assert.throws(() => parseXProfile('<html>@ajambrosino<div data-href="/thsottiaux/status/2113029655095836957"></div></html>'), /x_profile_format_changed/)
 })
 
 test('public profile fetch uses the fixed page without credentials or redirects', async () => {
@@ -170,7 +207,7 @@ test('public profile fetch uses the fixed page without credentials or redirects'
   const fetchImpl = async (url, options) => {
     const request = { url: String(url), options }
     requests.push(request)
-    if (request.url === 'https://x.com/thsottiaux') {
+    if (request.url === 'https://x.com/ajambrosino') {
       return new Response(profileHtml([profilePost({
         id: '2113029655095836957',
         timestamp: '2026-10-22T01:00:00Z',
@@ -181,19 +218,19 @@ test('public profile fetch uses the fixed page without credentials or redirects'
       id: '2113029655095836958',
       timestamp: '2026-10-22T01:01:00Z',
       text: 'A self reply.',
-      replyToAuthor: 'thsottiaux',
+      replyToAuthor: 'ajambrosino',
       replyToId: '2113029655095836957',
     })]), { status: 200, headers: { 'content-type': 'text/html' } })
   }
 
-  const updates = await fetchTiboPublicPosts({
+  const updates = await fetchXPublicPosts({
     fetchImpl,
     now: new Date('2026-10-22T02:00:00Z'),
     timeZone: 'UTC',
   })
   assert.deepEqual(requests.map(request => request.url), [
-    'https://x.com/thsottiaux',
-    'https://x.com/thsottiaux/status/2113029655095836957',
+    'https://x.com/ajambrosino',
+    'https://x.com/ajambrosino/status/2113029655095836957',
   ])
   for (const request of requests) {
     assert.equal(request.options.redirect, 'manual')
@@ -204,10 +241,10 @@ test('public profile fetch uses the fixed page without credentials or redirects'
 })
 
 test('public profile fetch keeps roots when a conversation lookup fails', async () => {
-  const updates = await fetchTiboPublicPosts({
+  const updates = await fetchXPublicPosts({
     now: new Date('2026-10-22T02:00:00Z'),
     timeZone: 'UTC',
-    fetchImpl: async (url) => String(url).endsWith('/thsottiaux')
+    fetchImpl: async (url) => String(url).endsWith('/ajambrosino')
       ? new Response(profileHtml([profilePost({
           id: '2113029655095836957',
           timestamp: '2026-10-22T01:00:00Z',

@@ -4,8 +4,8 @@ import { isValidPluginNetworkHost, parsePluginManifest } from '../electron/plugi
 
 function validManifest() {
   return {
-    id: 'tibo-watch',
-    name: { 'zh-TW': 'Tibo 推文提醒', 'en-US': 'Tibo Watch' },
+    id: 'ajambrosino-watch',
+    name: { 'zh-TW': '@ajambrosino 推文提醒', 'en-US': '@ajambrosino Watch' },
     version: '1.0.0',
     apiVersion: '1',
     author: 'Example Author',
@@ -30,7 +30,7 @@ function validManifest() {
       settings: {
         type: 'object',
         properties: {
-          username: { type: 'string', title: '追蹤帳號', maxLength: 32, default: 'tibo' },
+          username: { type: 'string', title: '追蹤帳號', maxLength: 32, default: 'ajambrosino' },
           xBearerToken: { type: 'string', title: { 'zh-TW': 'API Token', 'en-US': 'API Token' }, format: 'secret' },
           refresh: { type: 'number', minimum: 1, maximum: 5, enum: [1, 3, 5], default: 3 },
           enabled: { type: 'boolean', default: true },
@@ -121,10 +121,10 @@ test('localized manifest names require both supported locales and bounded nonemp
     manifest.name = { 'zh-TW': 'x'.repeat(49), 'en-US': 'Name' }
   }).ok, false)
   const normalized = withManifest(manifest => {
-    manifest.name = { 'zh-TW': '  Ｔｉｂｏ\n提醒 ', 'en-US': ' Tibo  Watch ' }
+    manifest.name = { 'zh-TW': '  ＠ａｊａｍｂｒｏｓｉｎｏ\n提醒 ', 'en-US': ' @ajambrosino  Watch ' }
   })
   assert.equal(normalized.ok, true)
-  if (normalized.ok) assert.deepEqual(normalized.manifest.name, { 'zh-TW': 'Tibo 提醒', 'en-US': 'Tibo Watch' })
+  if (normalized.ok) assert.deepEqual(normalized.manifest.name, { 'zh-TW': '@ajambrosino 提醒', 'en-US': '@ajambrosino Watch' })
   assert.equal(withManifest(manifest => { manifest.author = 'a'.repeat(65) }).ok, false)
 })
 

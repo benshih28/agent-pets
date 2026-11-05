@@ -5,13 +5,13 @@ import {
   MAX_FEED_BYTES,
   MAX_FEED_ITEMS,
   SOURCE_DEFINITIONS,
-  TIBO_X_SOURCE,
+  X_PROFILE_SOURCE,
 } from './config.mjs'
 import { fetchOfficialSource } from './fetch-source.mjs'
 import { parseDatedMarkdown, parseGithubReleases } from './normalize.mjs'
-import { fetchTiboPublicPosts, localDateKey } from './x-public-source.mjs'
+import { fetchXPublicPosts, localDateKey } from './x-public-source.mjs'
 
-const ALL_SOURCE_DEFINITIONS = Object.freeze([...SOURCE_DEFINITIONS, TIBO_X_SOURCE])
+const ALL_SOURCE_DEFINITIONS = Object.freeze([...SOURCE_DEFINITIONS, X_PROFILE_SOURCE])
 
 function sanitizedError(error) {
   const value = error instanceof Error ? error.message : 'source_unavailable'
@@ -141,7 +141,7 @@ export async function collectFeed(options) {
   const currentTime = new Date(generatedAt)
   const selectedSourceIds = options.sourceIds ? new Set(options.sourceIds) : null
   const timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
-  const publicXFetcher = options.publicXFetcher ?? fetchTiboPublicPosts
+  const publicXFetcher = options.publicXFetcher ?? fetchXPublicPosts
 
   const context = {
     currentTime,

@@ -6,14 +6,15 @@ export const FETCH_TIMEOUT_MS = 15_000
 export const MAX_REDIRECTS = 3
 export const MAX_FEED_ITEMS = 160
 
-export const TIBO_X_SOURCE = Object.freeze({
-  id: 'tibo-x',
+export const X_PROFILE_SOURCE = Object.freeze({
+  id: 'x-ajambrosino',
+  label: '@ajambrosino',
   provider: 'x',
   product: 'social',
   kind: 'x-public-profile',
-  username: 'thsottiaux',
-  url: 'https://x.com/thsottiaux',
-  publicUrl: 'https://x.com/thsottiaux',
+  username: 'ajambrosino',
+  url: 'https://x.com/ajambrosino',
+  publicUrl: 'https://x.com/ajambrosino',
   maxItems: 20,
 })
 
@@ -95,9 +96,10 @@ export function isAllowedSourceUrl(value) {
   }
 
   if (url.hostname === 'x.com') {
-    return url.search === '' && (
-      url.pathname === '/thsottiaux'
-      || /^\/thsottiaux\/status\/\d{1,19}$/.test(url.pathname)
+    const username = X_PROFILE_SOURCE.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return !url.port && url.search === '' && (
+      url.pathname === `/${X_PROFILE_SOURCE.username}`
+      || new RegExp(`^/${username}/status/\\d{1,19}$`).test(url.pathname)
     )
   }
 

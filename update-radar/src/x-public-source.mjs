@@ -1,8 +1,7 @@
-import { TIBO_X_SOURCE } from './config.mjs'
+import { X_PROFILE_SOURCE } from './config.mjs'
 import { fetchOfficialSource } from './fetch-source.mjs'
 import { normalizeUpdate } from './normalize.mjs'
 
-const PROFILE_POST_PATTERN_SOURCE = String.raw`data-href="\/thsottiaux\/status\/(\d{1,19})"`
 const POST_TEXT_PATTERN = /<div[^>]*class="[^"]*whitespace-pre-wrap[^"]*wrap-break-word[^"]*"[^>]*>([\s\S]*?)<\/div>/
 const POST_TIMESTAMP_PATTERN = /"timestamp":(\d{13})/
 const EMBEDDED_VALUE_PATTERN = /value:("(?:\\.|[^"\\])*")/g
@@ -14,6 +13,15 @@ const PROFILE_HEADERS = Object.freeze({
   accept: 'text/html,application/xhtml+xml;q=0.9',
   'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
 })
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function profilePostPattern(username) {
+  const escapedUsername = escapeRegExp(username)
+  return new RegExp(String.raw`data-href="\/${escapedUsername}\/status\/(\d{1,19})"`, 'g')
+}
 
 function decodeHtmlText(value) {
   const decodeCodePoint = (digits, radix) => {
@@ -51,25 +59,25 @@ export function localDateKey(value, timeZone) {
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
-function normalizedTiboUpdate({ id, text, createdAt, timeZone, postKind, replyToId = null }) {
+function normalizedXUpdate({ id, text, createdAt, timeZone, postKind, replyToId = null }) {
   const publishedAtTime = createdAt.toISOString()
-  const update = normalizeUpdate(TIBO_X_SOURCE, {
+  const update = normalizeUpdate(X_PROFILE_SOURCE, {
     body: text,
     headingTitle: '',
     publishedAt: localDateKey(createdAt, timeZone),
-    sourceUrl: `https://x.com/${TIBO_X_SOURCE.username}/status/${id}`,
+    sourceUrl: `https://x.com/${X_PROFILE_SOURCE.username}/status/${id}`,
   })
   return update
     ? { ...update, id: `x-${id}`, publishedAtTime, postKind, ...(replyToId ? { replyToId: `x-${replyToId}` } : {}) }
     : null
 }
 
-export function parseTiboPublicProfile(html, options = {}) {
-  if (typeof html !== 'string' || !html.includes('@thsottiaux')) throw new Error('x_profile_invalid')
+export function parseXProfile(html, options = {}) {
+  if (typeof html !== 'string' || !html.includes(`@${X_PROFILE_SOURCE.username}`)) throw new Error('x_profile_invalid')
   const now = options.now instanceof Date ? options.now : new Date(options.now ?? Date.now())
   if (!Number.isFinite(now.getTime())) throw new Error('x_profile_invalid')
   const today = localDateKey(now, options.timeZone)
-  const matches = [...html.matchAll(new RegExp(PROFILE_POST_PATTERN_SOURCE, 'g'))]
+  const matches = [...html.matchAll(profilePostPattern(X_PROFILE_SOURCE.username))]
   if (matches.length === 0) throw new Error('x_profile_format_changed')
 
   const updates = []
@@ -91,7 +99,7 @@ export function parseTiboPublicProfile(html, options = {}) {
     const text = decodeHtmlText(textMatch[1])
     if (!text) continue
 
-    const update = normalizedTiboUpdate({
+    const update = normalizedXUpdate({
       id,
       text,
       createdAt,
@@ -140,7 +148,7 @@ function timelineTweetResults(payload) {
   return results
 }
 
-export function parseTiboSelfReplies(html, options = {}) {
+export function parseXSelfReplies(html, options = {}) {
   const rootId = String(options.rootId ?? '')
   if (typeof html !== 'string' || !/^\d{1,19}$/.test(rootId) || !html.includes(rootId)) {
     throw new Error('x_conversation_invalid')
@@ -162,8 +170,8 @@ export function parseTiboSelfReplies(html, options = {}) {
       if (
         !/^\d{1,19}$/.test(id)
         || candidates.has(id)
-        || author !== TIBO_X_SOURCE.username
-        || replyToAuthor !== TIBO_X_SOURCE.username
+        || author !== X_PROFILE_SOURCE.username
+        || replyToAuthor !== X_PROFILE_SOURCE.username
         || !/^\d{1,19}$/.test(replyToId)
       ) continue
       candidates.set(id, { id, replyToId, tweet })
@@ -186,7 +194,7 @@ export function parseTiboSelfReplies(html, options = {}) {
       if (createdAt.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS) continue
       if (localDateKey(createdAt, options.timeZone) !== today) continue
 
-      const update = normalizedTiboUpdate({
+      const update = normalizedXUpdate({
         id,
         text,
         createdAt,
@@ -204,8 +212,8 @@ export function parseTiboSelfReplies(html, options = {}) {
   return updates
 }
 
-export async function fetchTiboPublicPosts(options = {}) {
-  const response = await fetchOfficialSource(TIBO_X_SOURCE.url, {
+export async function fetchXPublicPosts(options = {}) {
+  const response = await fetchOfficialSource(X_PROFILE_SOURCE.url, {
     fetchImpl: options.fetchImpl,
     maxRedirects: 0,
     headers: PROFILE_HEADERS,
@@ -214,16 +222,16 @@ export async function fetchTiboPublicPosts(options = {}) {
     now: options.now ?? new Date(),
     timeZone: options.timeZone,
   }
-  const roots = parseTiboPublicProfile(response.body, parseOptions)
+  const roots = parseXProfile(response.body, parseOptions)
   const conversationResults = await Promise.allSettled(
     roots.slice(0, MAX_CONVERSATION_LOOKUPS).map(async (root) => {
       const rootId = root.id.slice(2)
-      const detail = await fetchOfficialSource(`https://x.com/${TIBO_X_SOURCE.username}/status/${rootId}`, {
+      const detail = await fetchOfficialSource(`https://x.com/${X_PROFILE_SOURCE.username}/status/${rootId}`, {
         fetchImpl: options.fetchImpl,
         maxRedirects: 0,
         headers: PROFILE_HEADERS,
       })
-      return parseTiboSelfReplies(detail.body, { ...parseOptions, rootId })
+      return parseXSelfReplies(detail.body, { ...parseOptions, rootId })
     }),
   )
   const selfReplies = conversationResults

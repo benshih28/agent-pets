@@ -8,17 +8,19 @@ test('source allowlist accepts only fixed official HTTPS paths', () => {
   assert.equal(isAllowedSourceUrl('https://developers.openai.com/api/docs/changelog.md'), true)
   assert.equal(isAllowedSourceUrl('https://platform.claude.com/docs/en/release-notes/overview.md'), true)
   assert.equal(isAllowedSourceUrl('https://api.github.com/repos/anthropics/claude-code/releases?per_page=10'), true)
-  assert.equal(isAllowedSourceUrl('https://x.com/thsottiaux'), true)
-  assert.equal(isAllowedSourceUrl('https://x.com/thsottiaux/status/2113162277688070445'), true)
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino'), true)
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino/status/2113162277688070445'), true)
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino/status/12345678901234567890'), false)
   assert.equal(isAllowedSourceUrl('http://developers.openai.com/api/docs/changelog.md'), false)
   assert.equal(isAllowedSourceUrl('https://developers.openai.com.evil.example/api/docs/changelog.md'), false)
   assert.equal(isAllowedSourceUrl('https://api.github.com/repos/anthropics/claude-code/releases?per_page=100'), false)
   assert.equal(isAllowedSourceUrl('https://api.github.com/repos/other/repo/releases?per_page=10'), false)
   assert.equal(isAllowedSourceUrl('https://x.com/other'), false)
-  assert.equal(isAllowedSourceUrl('https://x.com/thsottiaux/status/not-a-number'), false)
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino/status/not-a-number'), false)
   assert.equal(isAllowedSourceUrl('https://x.com/other/status/2113162277688070445'), false)
-  assert.equal(isAllowedSourceUrl('https://x.com/thsottiaux?lang=en'), false)
-  assert.equal(isAllowedSourceUrl('https://x.com.evil.example/thsottiaux'), false)
+  assert.equal(isAllowedSourceUrl('https://x.com/thsottiaux/status/2113162277688070445'), false)
+  assert.equal(isAllowedSourceUrl('https://x.com/ajambrosino?lang=en'), false)
+  assert.equal(isAllowedSourceUrl('https://x.com.evil.example/ajambrosino'), false)
 })
 
 test('local server routing is read-only and exposes only fixed paths', () => {
@@ -65,7 +67,7 @@ test('public X profile requests reject redirects without a second request', asyn
     })
   }
   await assert.rejects(
-    fetchOfficialSource('https://x.com/thsottiaux', {
+    fetchOfficialSource('https://x.com/ajambrosino', {
       fetchImpl,
       maxRedirects: 0,
     }),

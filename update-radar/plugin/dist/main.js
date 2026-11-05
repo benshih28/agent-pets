@@ -2,8 +2,8 @@ import {
   SOURCE_DEFINITIONS,
   localDateKey,
   parseSource,
-  parseTiboPublicProfile,
-  parseTiboSelfReplies,
+  parseXProfile,
+  parseXSelfReplies,
   sortUpdates,
   truncate,
   withVersionComparisons,
@@ -60,8 +60,10 @@ function safeAnnouncementUrl(value) {
   if (typeof value !== 'string' || value.length > 256) return null
   try {
     const url = new URL(value)
+    const xProfile = SOURCE_DEFINITIONS.find(source => source.kind === 'x-public-profile')
+    const username = xProfile?.username?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     return url.protocol === 'https:' && url.hostname === 'x.com' && !url.port && !url.username && !url.password
-      && !url.search && !url.hash && /^\/thsottiaux\/status\/\d{1,19}$/.test(url.pathname)
+      && !url.search && !url.hash && username && new RegExp(`^/${username}/status/\\d{1,19}$`).test(url.pathname)
       ? url.href
       : null
   } catch {
@@ -93,11 +95,11 @@ function normalizeStoredCodexReset(value) {
   }
 }
 
-function scheduledResetFrom(value, now) {
+function scheduledResetFrom(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   for (const key of ['at', 'scheduled_at', 'reset_at', 'announced_at']) {
     const at = value[key]
-    if (isCodexResetIsoDateTime(at) && Date.parse(at) > now) return { at }
+    if (isCodexResetIsoDateTime(at)) return { at }
   }
   return null
 }
@@ -132,7 +134,7 @@ export function parseCodexResetsStatus(input, now = Date.now()) {
       text: latest.text.slice(0, 280),
       ...(sourceUrl ? { sourceUrl } : {}),
     },
-    scheduledReset: scheduledResetFrom(data.scheduled_reset, now),
+    scheduledReset: scheduledResetFrom(data.scheduled_reset),
     stats: { total: stats.total, lastResetAt: stats.last_reset_at },
   })
 }
@@ -158,7 +160,10 @@ function isSafeSourceUrl(definition, value) {
   try {
     const url = new URL(value)
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) return false
-    if (definition.id === 'tibo-x') return url.hostname === 'x.com' && /^\/thsottiaux\/status\/\d{1,19}$/.test(url.pathname) && !url.search
+    if (definition.kind === 'x-public-profile') {
+      const username = definition.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return url.hostname === 'x.com' && !url.port && new RegExp(`^/${username}/status/\\d{1,19}$`).test(url.pathname) && !url.search
+    }
     if (definition.id === 'claude-code') return url.hostname === 'github.com' && url.pathname.startsWith('/anthropics/claude-code/releases')
     const expected = new URL(definition.publicUrl)
     return url.hostname === expected.hostname && url.pathname.startsWith(expected.pathname)
@@ -240,14 +245,18 @@ function normalizeStoredState(value, now) {
   if (!value || typeof value !== 'object' || ![1, 2, 3, 4, 5].includes(value.schemaVersion)) return null
   const rawUpdates = Array.isArray(value.updates) ? value.updates.filter(isStoredUpdate) : []
   const today = localDateKey(new Date(now()), Intl.DateTimeFormat().resolvedOptions().timeZone)
-  const updates = withVersionComparisons(rawUpdates.filter(update => update.sourceId !== 'tibo-x' || update.publishedAt === today)).slice(0, MAX_UPDATES)
+  const xSourceId = SOURCE_DEFINITIONS.find(source => source.kind === 'x-public-profile')?.id
+  const acceptedUpdates = rawUpdates.filter(update => update.sourceId !== xSourceId || update.publishedAt === today)
+  const acceptedXIds = new Set(acceptedUpdates.filter(update => update.sourceId === xSourceId).map(update => update.id))
+  const updates = withVersionComparisons(acceptedUpdates).slice(0, MAX_UPDATES)
   const rawSources = value.schemaVersion === 1 ? [value.source] : value.sources
   const sources = SOURCE_DEFINITIONS.map((definition) => {
     const stored = Array.isArray(rawSources) ? rawSources.find(source => source?.id === definition.id) : null
     return normalizeSource(stored, definition, updates.filter(update => update.sourceId === definition.id).length)
   })
   const knownIds = Array.isArray(value.knownIds)
-    ? value.knownIds.filter(id => typeof id === 'string' && id.length <= 80).slice(0, MAX_KNOWN_IDS)
+    ? value.knownIds.filter(id => typeof id === 'string' && id.length <= 80
+      && (!/^x-\d{1,19}$/.test(id) || acceptedXIds.has(id))).slice(0, MAX_KNOWN_IDS)
     : []
   const baselineSourceIds = value.schemaVersion === 1
     ? (knownIds.length ? ['openai-api'] : [])
@@ -296,7 +305,7 @@ async function fetchSource(api, definition, now) {
 
   const currentTime = new Date(now())
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  const roots = parseTiboPublicProfile(response.body, { now: currentTime, timeZone })
+  const roots = parseXProfile(response.body, { now: currentTime, timeZone })
   const replies = []
   for (const root of roots.slice(0, MAX_CONVERSATION_LOOKUPS)) {
     try {
@@ -305,7 +314,7 @@ async function fetchSource(api, definition, now) {
         headers: { accept: 'text/html,application/xhtml+xml;q=0.9' },
       })
       if (detail.status >= 200 && detail.status < 300 && typeof detail.body === 'string') {
-        replies.push(...parseTiboSelfReplies(detail.body, { rootId, now: currentTime, timeZone }))
+        replies.push(...parseXSelfReplies(detail.body, { rootId, now: currentTime, timeZone }))
       }
     } catch {
       // A changed conversation page must not hide a valid profile post.
@@ -318,7 +327,7 @@ function stateBytes(state) {
   return new TextEncoder().encode(JSON.stringify({ type: 'radar:state', state })).byteLength
 }
 
-// 從最舊的項目開始捨棄，直到狀態放得進面板訊息；Tibo 只保留當天貼文，通常已在最前面。
+// 從最舊的項目開始捨棄，直到狀態放得進面板訊息；X 貼文只保留當天內容，通常已在最前面。
 export function fitStateToMessageBudget(state) {
   let updates = state.updates
   while (updates.length > 0 && stateBytes({ ...state, updates }) > STATE_MESSAGE_BUDGET_BYTES) {
@@ -461,12 +470,12 @@ export function createUpdateRadarRuntime(api, options = {}) {
       }
       const { update } = entry
       const definition = SOURCE_BY_ID.get(update.sourceId)
-      const title = update.sourceId === 'tibo-x'
-        ? (update.postKind === 'self-reply' ? 'Tibo 發了新續文' : 'Tibo 發了新貼文')
+      const title = update.sourceId === 'x-ajambrosino'
+        ? (update.postKind === 'self-reply' ? '@ajambrosino 發了新續文' : '@ajambrosino 發了新貼文')
         : `${definition?.label ?? 'AI'} 有新更新`
       await notify({
         title,
-        body: update.sourceId === 'tibo-x' ? truncate(update.summary || update.title, 240) : notificationBody(update),
+        body: update.sourceId === 'x-ajambrosino' ? truncate(update.summary || update.title, 240) : notificationBody(update),
         link: update.sourceUrl,
         priority: isCritical(update) ? 'high' : 'normal',
         dedupeKey: `update-radar-${update.id}`,

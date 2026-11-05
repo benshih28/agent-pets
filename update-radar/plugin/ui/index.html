@@ -53,21 +53,19 @@
             </button>
           </section>
 
-          <section class="overview-codex-group" aria-labelledby="overview-codex-group-heading">
-            <h2 id="overview-codex-group-heading" class="overview-codex-group-heading">Codex 重設 · Tibo</h2>
-            <button id="codex-overview-status" class="codex-overview-status" type="button" aria-label="前往 Codex 重設頁" aria-busy="true">正在同步…</button>
-            <section class="tibo-summary-section" aria-label="Tibo 今日">
-              <button id="tibo-summary" class="tibo-summary" type="button">
-                <span class="tibo-summary-marker" aria-hidden="true"></span>
-                <span id="tibo-summary-text">今天 Tibo 尚無新貼文</span>
-              </button>
-            </section>
-          </section>
+          <button id="codex-overview-status" class="codex-overview-status" type="button" aria-label="前往 Codex 重設頁" aria-busy="true">正在同步…</button>
 
           <section class="overview-highlights" aria-labelledby="overview-highlights-heading">
             <h2 id="overview-highlights-heading">重要更新</h2>
             <ol id="overview-highlights-list" class="overview-highlights-list" aria-busy="true"></ol>
             <button id="overview-all-updates" class="overview-all-updates" type="button">查看全部更新 →</button>
+          </section>
+
+          <section class="x-summary-section" aria-label="@ajambrosino 今日">
+            <button id="x-summary" class="x-summary" type="button">
+              <span class="x-summary-marker" aria-hidden="true"></span>
+              <span id="x-summary-text">今天 @ajambrosino 尚無新貼文</span>
+            </button>
           </section>
 
           <section id="source-status" class="source-status"></section>
@@ -102,7 +100,7 @@
                       <option value="">全部</option>
                       <option value="openai">OpenAI</option>
                       <option value="anthropic">Anthropic</option>
-                      <option value="x">Tibo / X</option>
+                      <option value="x">@ajambrosino</option>
                     </select>
                   </label>
                   <label>
@@ -145,7 +143,7 @@
             <section id="heat-disclosure-host" class="heat-section" aria-label="每日更新熱度">
               <div id="heat-content" class="heat-content">
                 <div class="heat-description-row">
-                  <p>每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 Tibo</p>
+                  <p>每格是當天官方更新數；Claude Code 每版、Platform 每天各算 1 則，不含 X 貼文</p>
                   <span class="pixel-loader section-pixel-loader heat-loader" aria-hidden="true" hidden></span>
                 </div>
                 <div class="heat-layout">
