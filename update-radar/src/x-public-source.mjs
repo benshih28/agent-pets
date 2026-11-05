@@ -2,7 +2,7 @@ import { X_PROFILE_SOURCE } from './config.mjs'
 import { fetchOfficialSource } from './fetch-source.mjs'
 import { normalizeUpdate } from './normalize.mjs'
 
-const POST_TEXT_PATTERN = /<div[^>]*class="[^"]*whitespace-pre-wrap[^"]*wrap-break-word[^"]*"[^>]*>([\s\S]*?)<\/div>/
+const POST_TEXT_PATTERN = /<div[^>]*class="[^"]*whitespace-pre-wrap[^"]*wrap-(?:break-word|anywhere)[^"]*"[^>]*>([\s\S]*?)<\/div>/
 const POST_TIMESTAMP_PATTERN = /"timestamp":(\d{13})/
 const EMBEDDED_VALUE_PATTERN = /value:("(?:\\.|[^"\\])*")/g
 const MAX_PROFILE_POSTS = 20

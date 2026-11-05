@@ -202,6 +202,23 @@ test('public profile parser deduplicates rendered post markers and rejects chang
   assert.throws(() => parseXProfile('<html>@ajambrosino<div data-href="/thsottiaux/status/2113029655095836957"></div></html>'), /x_profile_format_changed/)
 })
 
+test('public profile parser reads the 2026-11 wrap-anywhere text markup and keeps the post body over quoted posts', () => {
+  const html = profileHtml([`
+    <li>
+      <div role="link" data-href="/ajambrosino/status/2118113578893062361">
+        <img alt="@ajambrosino">
+        <script>formatRelativePastTimestamp({"timestamp":${Date.parse('2026-11-04T22:50:04Z')}})</script>
+        <div class="max-w-full text-body font-normal text-primary whitespace-pre-wrap wrap-anywhere" dir="auto"><span class="max-w-full">team is moving very, very quickly</span></div>
+        <div class="max-w-full text-body font-normal text-primary line-clamp-5 whitespace-pre-wrap wrap-anywhere"><span>quoted post text</span></div>
+      </div>
+    </li>
+  `])
+  const updates = parseXProfile(html, { now: new Date('2026-11-05T04:00:00Z'), timeZone: 'Asia/Taipei' })
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].id, 'x-2118113578893062361')
+  assert.equal(updates[0].title, 'team is moving very, very quickly')
+})
+
 test('public profile fetch uses the fixed page without credentials or redirects', async () => {
   const requests = []
   const fetchImpl = async (url, options) => {

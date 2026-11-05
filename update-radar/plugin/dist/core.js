@@ -39,7 +39,7 @@ const MONTHS = Object.freeze({
   jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
   oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
 })
-const POST_TEXT_PATTERN = /<div[^>]*class="[^"]*whitespace-pre-wrap[^"]*wrap-break-word[^"]*"[^>]*>([\s\S]*?)<\/div>/
+const POST_TEXT_PATTERN = /<div[^>]*class="[^"]*whitespace-pre-wrap[^"]*wrap-(?:break-word|anywhere)[^"]*"[^>]*>([\s\S]*?)<\/div>/
 const POST_TIMESTAMP_PATTERN = /"timestamp":(\d{13})/
 const EMBEDDED_VALUE_PATTERN = /value:("(?:\\.|[^"\\])*")/g
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000
