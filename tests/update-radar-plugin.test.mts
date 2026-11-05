@@ -358,12 +358,132 @@ test('Update Radar heatmap days filter the list to that day of official updates'
   assert.match(panelFunctionSource('renderHeatmap'), /if \(count\) \{[^}]*heat-cell-button[^}]*aria-pressed/s)
   assert.match(panelFunctionSource('selectDay'), /state\.day = state\.day === key \? null : key/)
   assert.match(panelFunctionSource('appliedFilterCount'), /state\.day/)
-  assert.match(panelSource, /elements\.xSummary\.addEventListener\('click', \(\) => \{[^}]*state\.day = null/s)
-  assert.match(panelSource, /elements\.xSummary\.addEventListener\('click', \(\) => \{\s*state\.attentionOnly = false\s*elements\.provider\.value = 'x'\s*state\.day = null\s*activateTab\('updates', \{\s*force: true/s)
+  assert.match(panelSource, /elements\.xSummary\.addEventListener\('click', \(\) => applyOverviewView\('x'\)\)/)
+  assert.match(panelFunctionSource('applyOverviewView'), /view === 'x'[\s\S]*elements\.provider\.value = 'x'/)
   assert.match(panelSource, /elements\.updates\.scrollIntoView\?\.\(\{ block: 'start' \}\)/)
   assert.doesNotMatch(panelSource, /scrollToUpdates/)
   assert.match(markup, /id="day-filter" class="day-filter" hidden/)
   assert.match(markup, /id="day-filter-clear"[^>]*type="button"/)
+})
+
+test('overview navigation applies independent filter views and reports cleared filters only when needed', () => {
+  const panelSource = fs.readFileSync(path.join(pluginRoot, 'ui/panel.js'), 'utf8')
+  const applySource = [
+    'appliedFilterCount', 'clearUpdateFilters', 'applyOverviewView',
+  ].map(panelFunctionSource).join('\n')
+  const createHarness = (filters: Record<string, string | boolean | null> = {}) => {
+    const state = { day: null as string | null, attentionOnly: false }
+    const scrolls: unknown[] = []
+    const statusCalls: unknown[][] = []
+    const activations: Array<{ id: string; force: boolean; hasAfterRestore: boolean }> = []
+    const elements = {
+      search: { value: '' },
+      provider: { value: '' },
+      category: { value: '' },
+      changeType: { value: '' },
+      updates: { scrollIntoView: (options: unknown) => scrolls.push(options) },
+    }
+    if (typeof filters.search === 'string') elements.search.value = filters.search
+    if (typeof filters.provider === 'string') elements.provider.value = filters.provider
+    if (typeof filters.category === 'string') elements.category.value = filters.category
+    if (typeof filters.changeType === 'string') elements.changeType.value = filters.changeType
+    if (typeof filters.day === 'string') state.day = filters.day
+    if (typeof filters.attentionOnly === 'boolean') state.attentionOnly = filters.attentionOnly
+    const apply = runInNewContext(`(() => { ${applySource}\nreturn applyOverviewView })()`, {
+      state,
+      elements,
+      setGlobalStatus: (...args: unknown[]) => statusCalls.push(args),
+      activateTab: (id: string, options: { force: boolean; afterRestore?: () => void }) => {
+        activations.push({ id, force: options.force, hasAfterRestore: typeof options.afterRestore === 'function' })
+        options.afterRestore?.()
+      },
+    }) as (view: 'attention' | 'x' | 'all') => void
+    return { state, elements, scrolls, statusCalls, activations, apply }
+  }
+
+  const attention = createHarness({
+    search: '@ajambrosino', provider: 'x', day: '2026-11-04', category: 'feature', changeType: 'deprecated',
+  })
+  attention.apply('attention')
+  assert.equal(attention.elements.search.value, '')
+  assert.equal(attention.elements.provider.value, '')
+  assert.equal(attention.elements.category.value, '')
+  assert.equal(attention.elements.changeType.value, '')
+  assert.equal(attention.state.day, null)
+  assert.equal(attention.state.attentionOnly, true)
+  assert.deepEqual(attention.statusCalls.map(call => call[0]), ['已清除先前的篩選'])
+  assert.deepEqual(attention.activations, [{ id: 'updates', force: true, hasAfterRestore: false }])
+
+  const x = createHarness({ search: 'Claude Code', provider: 'anthropic', day: '2026-11-04', category: 'feature', attentionOnly: true })
+  x.apply('x')
+  assert.equal(x.elements.search.value, '')
+  assert.equal(x.elements.provider.value, 'x')
+  assert.equal(x.elements.category.value, '')
+  assert.equal(x.elements.changeType.value, '')
+  assert.equal(x.state.day, null)
+  assert.equal(x.state.attentionOnly, false)
+  assert.equal(x.scrolls.length, 1)
+  assert.equal((x.scrolls[0] as { block: string }).block, 'start')
+  assert.deepEqual(x.statusCalls.map(call => call[0]), ['已清除先前的篩選'])
+  assert.deepEqual(x.activations, [{ id: 'updates', force: true, hasAfterRestore: true }])
+
+  for (const entryPoint of ['overviewCountButton', 'overviewAllUpdates']) {
+    const all = createHarness({
+      search: 'Tibo', provider: 'x', day: '2026-11-04', category: 'feature', changeType: 'added', attentionOnly: true,
+    })
+    all.apply('all')
+    assert.equal(all.elements.search.value, '', `${entryPoint} clears search`)
+    assert.equal(all.elements.provider.value, '', `${entryPoint} clears provider`)
+    assert.equal(all.elements.category.value, '', `${entryPoint} clears category`)
+    assert.equal(all.elements.changeType.value, '', `${entryPoint} clears change type`)
+    assert.equal(all.state.day, null, `${entryPoint} clears day`)
+    assert.equal(all.state.attentionOnly, false, `${entryPoint} clears attention-only`)
+    assert.deepEqual(all.statusCalls.map(call => call[0]), ['已清除先前的篩選'])
+  }
+
+  const unfiltered = createHarness()
+  unfiltered.apply('all')
+  assert.equal(unfiltered.statusCalls.length, 0, 'an empty starting view does not show a cleared-filter message')
+
+  assert.match(panelSource, /elements\.overviewCountButton\.addEventListener\('click', \(\) => applyOverviewView\('all'\)\)/)
+  assert.match(panelSource, /elements\.overviewAttentionButton\.addEventListener\('click', \(\) => applyOverviewView\('attention'\)\)/)
+  assert.match(panelSource, /elements\.overviewAllUpdates\.addEventListener\('click', \(\) => applyOverviewView\('all'\)\)/)
+  assert.match(panelSource, /elements\.xSummary\.addEventListener\('click', \(\) => applyOverviewView\('x'\)\)/)
+  assert.match(panelFunctionSource('renderOverviewAlerts'), /button\.addEventListener\('click', \(\) => \{\s*applyOverviewView\('attention'\)/)
+  assert.doesNotMatch(panelFunctionSource('applyOverviewView'), /postMessage|storage\.get/)
+  assert.match(panelFunctionSource('renderUpdatesTab'), /renderFilterControls\(\)[\s\S]*renderHeatmap\(\)[\s\S]*renderUpdates\(\)/)
+})
+
+test('overview highlight navigation keeps filters when they still show the target', () => {
+  const state = { day: '2026-11-04', attentionOnly: true }
+  const elements = {
+    search: { value: 'target' },
+    provider: { value: 'openai' },
+    category: { value: 'feature' },
+    changeType: { value: 'improved' },
+  }
+  const statusCalls: unknown[][] = []
+  const source = [
+    'clearUpdateFilters', 'goToOverviewHighlight',
+  ].map(panelFunctionSource).join('\n')
+  const navigate = runInNewContext(`(() => { ${source}\nreturn goToOverviewHighlight })()`, {
+    state,
+    elements,
+    Date,
+    matchesFilters: () => true,
+    groupKey: () => null,
+    byPosition: () => 0,
+    setGlobalStatus: (...args: unknown[]) => statusCalls.push(args),
+    activateTab: () => {},
+  }) as (unit: unknown[]) => void
+  navigate([{ id: 'target', position: 0 }])
+  assert.equal(elements.search.value, 'target')
+  assert.equal(elements.provider.value, 'openai')
+  assert.equal(elements.category.value, 'feature')
+  assert.equal(elements.changeType.value, 'improved')
+  assert.equal(state.day, '2026-11-04')
+  assert.equal(state.attentionOnly, true)
+  assert.equal(statusCalls.length, 0)
 })
 
 test('Update Radar renders full @ajambrosino text and unified official disclosures', () => {

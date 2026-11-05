@@ -1592,6 +1592,23 @@ function clearUpdateFilters() {
   state.attentionOnly = false
 }
 
+function applyOverviewView(view) {
+  const hadFilters = appliedFilterCount() > 0
+  clearUpdateFilters()
+  if (view === 'attention') state.attentionOnly = true
+  else if (view === 'x') elements.provider.value = 'x'
+  if (hadFilters) setGlobalStatus('已清除先前的篩選')
+
+  activateTab('updates', {
+    force: true,
+    ...(view === 'x' ? {
+      afterRestore() {
+        elements.updates.scrollIntoView?.({ block: 'start' })
+      },
+    } : {}),
+  })
+}
+
 function goToOverviewHighlight(unit) {
   const now = Date.now()
   const visible = unit.some(update => matchesFilters(update, unit, now))
@@ -1862,8 +1879,7 @@ function renderOverviewAlerts(sources, attentionUnits) {
     appendText(button, 'span', 'overview-alert-copy', message)
     button.append(createIcon('arrow', 'overview-alert-arrow'))
     button.addEventListener('click', () => {
-      state.attentionOnly = true
-      activateTab('updates', { force: true })
+      applyOverviewView('attention')
     })
     alerts.push(item)
   }
@@ -2222,15 +2238,9 @@ elements.attentionOnly.addEventListener('change', () => {
   renderUpdates()
 })
 
-elements.overviewCountButton.addEventListener('click', () => {
-  clearUpdateFilters()
-  activateTab('updates', { force: true })
-})
+elements.overviewCountButton.addEventListener('click', () => applyOverviewView('all'))
 
-elements.overviewAttentionButton.addEventListener('click', () => {
-  state.attentionOnly = true
-  activateTab('updates', { force: true })
-})
+elements.overviewAttentionButton.addEventListener('click', () => applyOverviewView('attention'))
 
 elements.overviewSourcesButton.addEventListener('click', () => {
   const disclosureButton = elements.sourceStatus.querySelector('.disclosure-button')
@@ -2239,7 +2249,7 @@ elements.overviewSourcesButton.addEventListener('click', () => {
 })
 
 elements.codexOverviewStatus.addEventListener('click', () => activateTab('reset'))
-elements.overviewAllUpdates.addEventListener('click', () => activateTab('updates', { force: true }))
+elements.overviewAllUpdates.addEventListener('click', () => applyOverviewView('all'))
 
 elements.heatmap.addEventListener('click', (event) => {
   const button = event.target.closest?.('.heat-cell-button')
@@ -2250,17 +2260,7 @@ elements.dayFilterClear.addEventListener('click', () => {
   if (state.day) selectDay(state.day)
 })
 
-elements.xSummary.addEventListener('click', () => {
-  state.attentionOnly = false
-  elements.provider.value = 'x'
-  state.day = null
-  activateTab('updates', {
-    force: true,
-    afterRestore() {
-      elements.updates.scrollIntoView?.({ block: 'start' })
-    },
-  })
-})
+elements.xSummary.addEventListener('click', () => applyOverviewView('x'))
 
 elements.detailBack.addEventListener('click', closeChangeDetail)
 
