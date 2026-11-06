@@ -36,9 +36,10 @@
   --radar-radius-sm: 4px;
   --radar-radius-md: 8px;
   --radar-radius-pill: 999px;
+  /* 宿主外框的圓角扣掉 1px 邊線，插件底部兩角才會貼齊外框。 */
+  --radar-panel-radius: calc(var(--organic-radius-md, 16px) - 1px);
   font-variant-numeric: tabular-nums;
   color: var(--radar-text);
-  background: var(--radar-bg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: var(--radar-font-body);
   line-height: 1.5;
@@ -102,8 +103,42 @@ body {
 
 body {
   color: var(--radar-text);
+}
+
+/* 宿主的插件 view 是蓋在外框上的原生 view，網頁的 overflow 裁不到它；
+   宿主把 view 底色設為透明後，底色改畫在固定於視窗的這一層，底部圓角外側就會露出宿主外框。 */
+body::before {
+  position: fixed;
+  z-index: -1;
+  top: 0;
+  left: 0;
+  /* 用 vw／vh 連捲軸那一欄一起蓋住，右下角的圓角才會落在 view 的真正邊緣。 */
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0 0 var(--radar-panel-radius) var(--radar-panel-radius);
+  background: var(--radar-bg);
+  content: "";
+  pointer-events: none;
+}
+
+/* 固定定位的底色層畫不進根捲軸那一欄，所以捲軸自己畫底色與右下圓角。
+   捲軸寬度等於圓角半徑，右下的弧線整段落在捲軸欄內，與底色層的左下角同一條外框；
+   頁面不需捲動時沒有捲軸欄，由底色層自己的右下圓角補上。軌道在底部讓出圓角高度，滑塊不會蓋進圓角。 */
+::-webkit-scrollbar {
+  width: var(--radar-panel-radius);
+  height: var(--radar-panel-radius);
+  border-bottom-right-radius: var(--radar-panel-radius);
   background: var(--radar-bg);
 }
+::-webkit-scrollbar-track { margin-bottom: var(--radar-panel-radius); background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border: 4px solid transparent;
+  border-radius: var(--radar-radius-pill);
+  background: var(--radar-border);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--radar-muted); background-clip: padding-box; }
 
 button,
 input,
@@ -893,8 +928,8 @@ footer p { margin: 0; }
 }
 
 @media (forced-colors: active) {
-  :root { color: CanvasText; background: Canvas; }
-  body, .radar-shell { color: CanvasText; background: Canvas; }
+  :root, body, .radar-shell { color: CanvasText; }
+  body::before { background: Canvas; }
   .radar-tabs { background: Canvas; }
   .radar-tab { color: ButtonText; background: Canvas; }
   .radar-tab[aria-selected="true"] {
