@@ -1,13 +1,14 @@
 .plugin-panel { display: flex; flex-direction: column; gap: var(--space-4); }
 .plugin-panel-view-frame { display: flex; min-width: 0; min-height: 0; height: 100%; flex: 1 1 auto; flex-direction: column; overflow: hidden; border: 1px solid var(--organic-border-soft, var(--border-subtle)); border-radius: var(--radius-md); background: var(--organic-bg, Canvas); color: var(--organic-text, CanvasText); }
+.plugin-panel-view-frame.is-maximized { position: fixed; z-index: 10000; inset: var(--organic-space-2, var(--space-2)); width: auto; height: auto; min-height: 0; flex: none; border-radius: var(--radius-md); }
 .plugin-panel-view-chrome { position: relative; z-index: 1; display: flex; min-height: 52px; flex: 0 0 52px; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--organic-border-soft, var(--border-subtle)); background: var(--organic-surface, Canvas); color: var(--organic-text, CanvasText); }
 .plugin-panel-view-chrome img, .plugin-panel-view-icon { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: var(--radius-sm); object-fit: contain; background: var(--organic-surface-2, Canvas); color: var(--organic-text-muted, CanvasText); }
 .plugin-panel-view-title { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; gap: 2px; }
 .plugin-panel-view-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plugin-panel-view-title span { color: var(--organic-text-muted, var(--text-muted)); font-size: var(--font-xs); }
-.plugin-panel-view-close { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--organic-text-secondary, var(--text-secondary)); cursor: pointer; font: inherit; font-size: 20px; }
-.plugin-panel-view-close:hover { background: var(--organic-surface-2, var(--surface-raised)); color: var(--organic-text, var(--text-primary)); }
-.plugin-panel-view-close:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.plugin-panel-view-chrome :deep(.plugin-panel-view-control.btn.icon-only) { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--organic-text-secondary, var(--text-secondary)); }
+.plugin-panel-view-chrome :deep(.plugin-panel-view-control.btn.icon-only:hover:not(:disabled)) { border-color: transparent; background: var(--organic-surface-2, var(--surface-raised)); color: var(--organic-text, var(--text-primary)); }
+.plugin-panel-view-chrome :deep(.plugin-panel-view-control.btn.icon-only:focus-visible) { outline: 2px solid var(--focus-ring-color, currentColor); outline-offset: 2px; }
 .plugin-panel-view-content { min-width: 0; min-height: 0; flex: 1 1 auto; background: var(--organic-bg, Canvas); }
 @media (prefers-color-scheme: dark) {
   .plugin-panel-view-frame {
@@ -29,11 +30,12 @@
   .plugin-panel-view-frame { border: 1px solid CanvasText; }
   .plugin-panel-view-chrome { border-bottom: 1px solid CanvasText; background: Canvas; color: CanvasText; }
   .plugin-panel-view-chrome img, .plugin-panel-view-icon { background: Canvas; color: CanvasText; }
-  .plugin-panel-view-close { color: ButtonText; }
-  .plugin-panel-view-close:hover { background: Highlight; color: HighlightText; }
+  .plugin-panel-view-chrome :deep(.plugin-panel-view-control) { color: ButtonText; }
+  .plugin-panel-view-chrome :deep(.plugin-panel-view-control:hover) { background: Highlight; color: HighlightText; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .plugin-panel-view-frame, .plugin-panel-view-chrome, .plugin-panel-view-close { animation: none; transition: none; }
+  .plugin-panel-view-frame, .plugin-panel-view-chrome { animation: none; transition: none; }
+  .plugin-panel-view-chrome :deep(.plugin-panel-view-control) { animation: none; transition: none; }
 }
 .plugin-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 .plugin-toolbar-actions { display: flex; gap: var(--space-2); }

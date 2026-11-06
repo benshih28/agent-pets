@@ -1,7 +1,12 @@
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { locale, t, type TranslationKey } from '@/i18n'
-import { isCurrentPluginPanelViewClose, pluginPanelViewCloseError } from '@/utils/plugin-panel-view'
+import {
+  isCurrentPluginPanelViewClose,
+  maximizedPluginPanelWindowSize,
+  pluginPanelViewCloseError,
+  shouldResetPluginPanelMaximized,
+} from '@/utils/plugin-panel-view'
 import { resolvePluginIconUrl } from '@/utils/plugin-icon'
 import type {
   PluginBrokerDiagnostic,
@@ -36,6 +41,7 @@ const panelViewPluginId = ref('')
 const panelViewOpenToken = ref(0)
 const panelViewFrame = ref<HTMLElement | null>(null)
 const panelViewContent = ref<HTMLElement | null>(null)
+const panelViewMaximized = ref(false)
 const busy = ref(false)
 const invokingCommandId = ref('')
 const loading = ref(false)
@@ -53,6 +59,9 @@ let removeNotificationsListener: (() => void) | null = null
 let removePanelClosedListener: (() => void) | null = null
 let panelViewBoundsObserver: ResizeObserver | null = null
 let panelViewRequestSequence = 0
+let panelViewScrollContainer: HTMLElement | null = null
+let panelViewScrollTop: number | null = null
+let panelViewWindowSizeBeforeMaximize: { width: number; height: number } | null = null
 
 const plugins = computed(() => snapshot.value?.plugins ?? [])
 const selectedPlugin = computed(() => plugins.value.find(plugin => plugin.id === selectedPluginId.value) ?? null)
@@ -139,6 +148,52 @@ function sendPluginPanelViewBounds(): void {
   )
 }
 
+// resizePanel 走主行程的程式化縮放路徑，不覆寫插件的手動尺寸；
+// 還原、Esc、關閉或切換插件時送回放大前的視窗尺寸。
+// 插件頁已被主行程關閉（隱藏、崩潰等）時主行程自己會還原尺寸，這裡不再調整。
+async function restorePluginPanelViewMaximized(restoreWindowSize = false): Promise<void> {
+  if (!panelViewMaximized.value) return
+  panelViewMaximized.value = false
+  const previousSize = panelViewWindowSizeBeforeMaximize
+  panelViewWindowSizeBeforeMaximize = null
+  if (restoreWindowSize && previousSize) window.electronAPI?.resizePanel(previousSize.height, previousSize.width)
+  const scrollContainer = panelViewScrollContainer
+  const scrollTop = panelViewScrollTop
+  panelViewScrollContainer = null
+  panelViewScrollTop = null
+  await nextTick()
+  if (scrollContainer?.isConnected && scrollTop !== null) scrollContainer.scrollTop = scrollTop
+  sendPluginPanelViewBounds()
+}
+
+function setPluginPanelViewMaximized(maximized: boolean): void {
+  if (!panelViewPluginId.value || panelViewMaximized.value === maximized) return
+  if (!maximized) {
+    void restorePluginPanelViewMaximized(true)
+    return
+  }
+  panelViewScrollContainer = panelViewFrame.value?.closest<HTMLElement>('.settings-content') ?? null
+  panelViewScrollTop = panelViewScrollContainer?.scrollTop ?? null
+  const current = { width: window.outerWidth, height: window.outerHeight }
+  const target = maximizedPluginPanelWindowSize(current, { width: window.screen.availWidth, height: window.screen.availHeight })
+  if (target.width !== current.width || target.height !== current.height) {
+    panelViewWindowSizeBeforeMaximize = current
+    window.electronAPI?.resizePanel(target.height, target.width)
+  }
+  panelViewMaximized.value = true
+  void nextTick(() => sendPluginPanelViewBounds())
+}
+
+function togglePluginPanelViewMaximized(): void {
+  setPluginPanelViewMaximized(!panelViewMaximized.value)
+}
+
+function onPluginPanelViewKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !panelViewMaximized.value) return
+  event.preventDefault()
+  void restorePluginPanelViewMaximized(true)
+}
+
 async function openPluginPanelView(pluginId: string): Promise<void> {
   const plugin = plugins.value.find(item => item.id === pluginId)
   if (!plugin?.manifest?.contributes.panelView || !plugin.preference.enabled || !enabledGlobally.value) {
@@ -149,6 +204,8 @@ async function openPluginPanelView(pluginId: string): Promise<void> {
   const previousOpenToken = panelViewOpenToken.value
   panelViewOpenToken.value = 0
   if (previousOpenToken) window.electronAPI?.closePluginPanelView(previousOpenToken)
+  if (panelViewMaximized.value) await restorePluginPanelViewMaximized(true)
+  if (requestSequence !== panelViewRequestSequence) return
   selectedPluginId.value = pluginId
   panelViewPluginId.value = pluginId
   errorMessage.value = ''
@@ -187,6 +244,7 @@ async function openPluginPanelView(pluginId: string): Promise<void> {
 
 function closePluginPanelView(): void {
   panelViewRequestSequence += 1
+  void restorePluginPanelViewMaximized(true)
   const openToken = panelViewOpenToken.value
   panelViewOpenToken.value = 0
   panelViewPluginId.value = ''
@@ -196,6 +254,7 @@ function closePluginPanelView(): void {
 function handlePluginPanelViewClosed(event: PluginPanelViewClosedEvent): void {
   if (!isCurrentPluginPanelViewClose(event, panelViewPluginId.value, panelViewOpenToken.value)) return
   panelViewRequestSequence += 1
+  void restorePluginPanelViewMaximized()
   panelViewOpenToken.value = 0
   panelViewPluginId.value = ''
   if (event.reason !== 'hidden') setError(pluginPanelViewCloseError(event.reason))
@@ -859,7 +918,10 @@ watch(selectedPluginId, pluginId => {
   void refreshPluginSettings(pluginId)
 })
 
-watch(panelViewPluginId, async pluginId => {
+watch(panelViewPluginId, async (pluginId, previousPluginId) => {
+  if (shouldResetPluginPanelMaximized(previousPluginId, pluginId)) {
+    await restorePluginPanelViewMaximized()
+  }
   panelViewBoundsObserver?.disconnect()
   panelViewBoundsObserver = null
   window.removeEventListener('resize', sendPluginPanelViewBounds)
@@ -877,6 +939,10 @@ watch(panelViewPluginId, async pluginId => {
   sendPluginPanelViewBounds()
 }, { flush: 'post' })
 
+watch(panelViewPlugin, plugin => {
+  if (!plugin) void restorePluginPanelViewMaximized()
+})
+
 watch(() => props.requestedPluginId, pluginId => {
   if (!pluginId && panelViewPluginId.value) closePluginPanelView()
   else if (pluginId && plugins.value.some(plugin => plugin.id === pluginId)) void openPluginPanelView(pluginId)
@@ -885,6 +951,7 @@ watch(() => props.requestedPluginId, pluginId => {
 onMounted(() => {
   void refreshPanel()
   void loadPetOptions()
+  window.addEventListener('keydown', onPluginPanelViewKeydown)
   removePanelClosedListener = window.electronAPI?.onPluginPanelViewClosed(handlePluginPanelViewClosed) ?? null
   removeNotificationsListener = window.electronAPI?.onPluginNotificationsChanged(() => {
     void refreshNotifications()
@@ -892,6 +959,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onPluginPanelViewKeydown)
   removeNotificationsListener?.()
   removePanelClosedListener?.()
   panelViewBoundsObserver?.disconnect()
@@ -915,6 +983,7 @@ onUnmounted(() => {
     panelViewOpenToken,
     panelViewFrame,
     panelViewContent,
+    panelViewMaximized,
     busy,
     invokingCommandId,
     loading,
@@ -954,6 +1023,7 @@ onUnmounted(() => {
     sendPluginPanelViewBounds,
     openPluginPanelView,
     closePluginPanelView,
+    togglePluginPanelViewMaximized,
     handlePluginPanelViewClosed,
     pluginStatusLabel,
     pluginStatusTone,

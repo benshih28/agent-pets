@@ -3,6 +3,7 @@ import { locale, t } from '@/i18n'
 import { DEFAULT_PLUGIN_CATALOG_URL, shouldShowCatalogPermissionCheck } from '@/types/plugin-catalog'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
+import Icon from '@/components/ui/Icon.vue'
 import Select from '@/components/ui/Select.vue'
 import ToggleRow from '@/components/ui/ToggleRow.vue'
 import PluginPanelDialogs from '@/components/plugin-panel/PluginPanelDialogs.vue'
@@ -11,14 +12,14 @@ import { usePluginPanelController } from '@/composables/usePluginPanelController
 const props = defineProps<{ requestedPluginId?: string }>()
 const {
   snapshot, notifications, logs, diagnostics, petOptions, pluginSettings, settingsDraft, secretDrafts,
-  selectedPluginId, panelViewPluginId, panelViewOpenToken, panelViewFrame, panelViewContent,
+  selectedPluginId, panelViewPluginId, panelViewOpenToken, panelViewFrame, panelViewContent, panelViewMaximized,
   busy, invokingCommandId, loading, errorMessage, statusMessage, pendingPlan, pendingRemove,
   pendingSecretConsentKey, catalogItems, catalogCheckComplete, catalogSearch, catalogUrlDraft, keepData,
   plugins, selectedPlugin, panelViewPlugin, enabledGlobally, onlineCatalogEnabled, dailyUpdateCheck,
   filteredCatalogItems, pendingPluginName, resourceFields, failedPluginIconIds, pendingPermissions,
   pendingAddedPermissions, pluginName, pluginIconUrl, hidePluginIcon, restoreCatalogUrl,
   displayFingerprint, readPluginPanelViewBounds, sendPluginPanelViewBounds, openPluginPanelView,
-  closePluginPanelView, handlePluginPanelViewClosed, pluginStatusLabel, pluginStatusTone, localizedError,
+  closePluginPanelView, togglePluginPanelViewMaximized, handlePluginPanelViewClosed, pluginStatusLabel, pluginStatusTone, localizedError,
   setError, refreshNotifications, refreshPanel, loadPetOptions, refreshDiagnostics, refreshPluginSettings,
   commandTitle, invokePluginCommand, settingTitle, settingValue, updateSetting, savePluginSettings,
   savePluginSecret, confirmSecretConsent, updateGlobalPreferences, saveCatalogUrl, loadPluginCatalog,
@@ -35,6 +36,7 @@ const {
     v-if="panelViewPlugin"
     ref="panelViewFrame"
     class="plugin-panel-view-frame"
+    :class="{ 'is-maximized': panelViewMaximized }"
     data-testid="plugin-panel-view-frame"
   >
     <header class="plugin-panel-view-chrome">
@@ -44,7 +46,27 @@ const {
         <strong>{{ pluginName(panelViewPlugin) }}</strong>
         <span>{{ t('pluginPanelContent') }}</span>
       </div>
-      <button class="plugin-panel-view-close" type="button" :aria-label="t('pluginPanelClose')" @click="closePluginPanelView">×</button>
+      <Button
+        variant="ghost"
+        icon-only
+        class="plugin-panel-view-control"
+        :aria-label="t(panelViewMaximized ? 'pluginPanelRestore' : 'pluginPanelMaximize')"
+        :title="t(panelViewMaximized ? 'pluginPanelRestore' : 'pluginPanelMaximize')"
+        :aria-pressed="panelViewMaximized"
+        @click="togglePluginPanelViewMaximized"
+      >
+        <Icon :name="panelViewMaximized ? 'restore' : 'maximize'" :size="18" />
+      </Button>
+      <Button
+        variant="ghost"
+        icon-only
+        class="plugin-panel-view-control plugin-panel-view-close"
+        :aria-label="t('pluginPanelClose')"
+        :title="t('pluginPanelClose')"
+        @click="closePluginPanelView"
+      >
+        <Icon name="close" :size="18" />
+      </Button>
     </header>
     <div ref="panelViewContent" class="plugin-panel-view-content" data-testid="plugin-panel-view-content" />
   </section>

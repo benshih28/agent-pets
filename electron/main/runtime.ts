@@ -53,7 +53,7 @@ import { PluginDeveloperModeWatcher } from '../plugin-developer-mode.ts'
 import { catalogFingerprintMatches, createPluginCatalogGateway, isPluginCatalogUrl, PLUGIN_CATALOG_ALLOWED_HOSTS, PLUGIN_CATALOG_MAX_PACKAGE_BYTES, selectLatestCompatiblePluginVersion } from '../plugin-catalog.ts'
 import { buildPluginCatalogPanelItems, PluginCatalogAutoCheckSchedule } from '../plugin-catalog-updates.ts'
 import { PluginPanelViewController, type PluginPanelNativeView, type PluginPanelViewSession } from '../plugin-panel-view.ts'
-import { validatePluginPanelViewBounds, type PluginPanelRect } from '../plugin-panel-window.ts'
+import { matchesProgrammaticPluginPanelSize, validatePluginPanelViewBounds, type PluginPanelRect } from '../plugin-panel-window.ts'
 import { isPluginPanelInstallConfirmation, isPluginPanelPluginId, isPluginPanelPreferencePatch, pluginPanelErrorCode } from '../plugin-panel-validation.ts'
 import { handlePluginProtocolRequest } from '../plugin-protocol'
 import { pluginHostAssets } from '../plugin-host-assets'
@@ -1791,7 +1791,7 @@ export function createPanelWindow() {
     if (!pluginId) return
     const [width, height] = mainState.panelWindow.getSize()
     if (mainState.programmaticPluginPanelSize) {
-      if (mainState.programmaticPluginPanelSize.width === width && mainState.programmaticPluginPanelSize.height === height) {
+      if (matchesProgrammaticPluginPanelSize(mainState.programmaticPluginPanelSize, { width, height })) {
         mainState.programmaticPluginPanelSize = null
         if (mainState.pluginPanelResizeResetTimer) clearTimeout(mainState.pluginPanelResizeResetTimer)
         mainState.pluginPanelResizeResetTimer = null

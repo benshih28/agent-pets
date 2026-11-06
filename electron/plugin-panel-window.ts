@@ -8,6 +8,11 @@ export interface PluginPanelWorkArea {
   height: number
 }
 
+/** Fractional display scaling can round a native resize by one DIP. */
+export function matchesProgrammaticPluginPanelSize(expected: PluginPanelSize, actual: PluginPanelSize): boolean {
+  return Math.abs(expected.width - actual.width) <= 1 && Math.abs(expected.height - actual.height) <= 1
+}
+
 export interface PluginPanelRect {
   x: number
   y: number

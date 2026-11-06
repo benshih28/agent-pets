@@ -331,6 +331,8 @@
   "pluginOpenPanel": "Open plugin panel",
   "pluginPanelContent": "Plugin content",
   "pluginPanelClose": "Close plugin panel",
+  "pluginPanelMaximize": "Maximize plugin panel",
+  "pluginPanelRestore": "Restore plugin panel",
   "pluginPanelUnavailable": "This plugin panel is not available right now.",
   "pluginPanelViewUnavailable": "The plugin panel frame is not ready. Reopen the panel.",
   "pluginPanelViewLoadFailed": "The plugin panel failed to load. Reopen it to try again.",

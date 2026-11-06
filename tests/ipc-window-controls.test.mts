@@ -18,7 +18,7 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
     isVisible: () => true,
     hide: () => calls.push('panel-hide'),
     getBounds: () => ({ x: 0, y: 0, width: 400, height: 500 }),
-    setBounds: (bounds: unknown) => calls.push(`panel-bounds:${JSON.stringify(bounds)}`),
+    setBounds: () => assert.fail('renderer resize must use the programmatic size path'),
   }
   let status: unknown = null
   registerWindowControlsIpc({
@@ -41,6 +41,7 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
     finiteNumber: value => typeof value === 'number' && Number.isFinite(value) ? value : null,
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     computePanelBounds: (height, width = 460) => ({ x: 1, y: 2, width, height }),
+    setPanelBounds: bounds => calls.push(`panel-bounds:${JSON.stringify(bounds)}`),
     panelMinWidth: 320,
     panelMaxWidth: 960,
     getDisplayWorkArea: () => ({ x: 0, y: 0, width: 1_000, height: 800 }),
@@ -60,6 +61,10 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
   assert.equal(handlers.size, 10)
   send(IPC_CHANNELS.petMousePassthrough, { ignore: true })
   send(IPC_CHANNELS.petHideRequest)
+  send(IPC_CHANNELS.panelResize, { width: 960, height: 800 })
+  send(IPC_CHANNELS.panelResize, { width: 460, height: 720 })
+  send(IPC_CHANNELS.panelResize, { width: 9_999, height: -1 })
+  send(IPC_CHANNELS.panelResize, { width: 460, height: Number.NaN })
   send(IPC_CHANNELS.panelHide)
   send(IPC_CHANNELS.petResize, { width: 2_000, height: 20 })
   send(IPC_CHANNELS.petContentHeight, { height: 1_800 })
@@ -69,6 +74,9 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
   assert.deepEqual(calls, [
     'passthrough:true',
     'hide-pet',
+    'panel-bounds:{"x":1,"y":2,"width":960,"height":800}',
+    'panel-bounds:{"x":1,"y":2,"width":460,"height":720}',
+    'panel-bounds:{"x":1,"y":2,"width":960,"height":160}',
     'panel-auto-hidden:false',
     'panel-hide',
     'pet-bounds:{"x":0,"y":120,"width":1600,"height":80}',

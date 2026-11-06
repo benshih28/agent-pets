@@ -331,6 +331,8 @@
   "pluginOpenPanel": "開啟插件面板",
   "pluginPanelContent": "插件內容",
   "pluginPanelClose": "關閉插件面板",
+  "pluginPanelMaximize": "放大插件面板",
+  "pluginPanelRestore": "還原插件面板",
   "pluginPanelUnavailable": "此插件面板目前無法開啟。",
   "pluginPanelViewUnavailable": "插件面板外框尚未就緒，請重新開啟面板。",
   "pluginPanelViewLoadFailed": "插件面板載入失敗，請重新開啟。",

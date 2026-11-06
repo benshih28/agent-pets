@@ -27,6 +27,7 @@ export interface WindowControlsIpcDependencies {
   finiteNumber(value: unknown): number | null
   clamp(value: number, min: number, max: number): number
   computePanelBounds(height: number, width?: number): Bounds
+  setPanelBounds(bounds: Bounds): void
   panelMinWidth: number
   panelMaxWidth: number
   getDisplayWorkArea(bounds: Bounds): Bounds
@@ -82,7 +83,7 @@ export function registerWindowControlsIpc(deps: WindowControlsIpcDependencies): 
     const width = requestedWidth === null
       ? panelWindow.getBounds().width
       : Math.round(deps.clamp(requestedWidth, deps.panelMinWidth, deps.panelMaxWidth))
-    panelWindow.setBounds(deps.computePanelBounds(Math.round(deps.clamp(height, 160, 900)), width))
+    deps.setPanelBounds(deps.computePanelBounds(Math.round(deps.clamp(height, 160, 900)), width))
   })
 
   deps.ipcMain.on(IPC_CHANNELS.panelHide, event => {

@@ -3,10 +3,20 @@ import test from 'node:test'
 import {
   clampPluginPanelSize,
   layoutPluginPanelView,
+  matchesProgrammaticPluginPanelSize,
   pluginPanelViewInsets,
   PluginPanelWindowSizer,
   validatePluginPanelViewBounds,
 } from '../electron/plugin-panel-window.ts'
+
+test('programmatic panel sizes tolerate fractional-DPI rounding without accepting manual resizes', () => {
+  const expected = { width: 640, height: 541 }
+  assert.equal(matchesProgrammaticPluginPanelSize(expected, { width: 640, height: 541 }), true)
+  assert.equal(matchesProgrammaticPluginPanelSize(expected, { width: 640, height: 542 }), true)
+  assert.equal(matchesProgrammaticPluginPanelSize(expected, { width: 639, height: 540 }), true)
+  assert.equal(matchesProgrammaticPluginPanelSize(expected, { width: 640, height: 543 }), false)
+  assert.equal(matchesProgrammaticPluginPanelSize(expected, { width: 642, height: 541 }), false)
+})
 
 test('plugin panel preferred and manual sizes stay within the display work area', () => {
   assert.deepEqual(clampPluginPanelSize({ width: 1200, height: 1000 }, { width: 900, height: 700 }), {
@@ -56,6 +66,12 @@ test('native content bounds are restricted to the host frame below the chrome he
     { x: 32, y: 176, width: 600, height: 332 },
     { width: 600, height: 600 },
   ), null)
+})
+
+test('maximized plugin content bounds fit a typical 460 by 720 panel below the host header', () => {
+  const frame = { x: 8, y: 8, width: 444, height: 704 }
+  const content = { x: 9, y: 61, width: 442, height: 650 }
+  assert.deepEqual(validatePluginPanelViewBounds(frame, content, { width: 460, height: 720 }), content)
 })
 
 test('plugin panel insets come from the renderer viewport and lay out against the live window size', () => {
