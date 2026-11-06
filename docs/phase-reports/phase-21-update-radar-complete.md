@@ -172,3 +172,12 @@ Update Radar 插件版本：`0.1.0`（未變更）
 - **X 來源改為 @ajambrosino**：來源 id `x-ajambrosino`；解析器與外連驗證只接受 `x.com/ajambrosino` 與其 status 頁，帳號不再寫死在正規表示式。舊 `tibo-x` 狀態載入時被丟棄，新來源首輪只建立基準不通知；schema 維持 v4。同時修正 X 網頁把內文 class 改為 `wrap-anywhere` 後所有貼文被略過的問題。
 - **視覺**：移除漸層、光暈、內容陰影與非標籤膠囊；字級 12／13／14／16／24、間距 4／8／12／16、1px 邊框；頁首單列 ≤ 48px；按鈕改膠囊形。
 - 驗證：Update Radar 測試 77/77、update-radar 套件 34/34、全部單元測試 551/551、`git diff --check` 通過。Playwright 驗收（278／423／940 寬、淺深色、forced-colors）：頁籤生命週期與鍵盤、總覽首屏、卡片收合與詳情頁返回、Codex 頁、總覽導向篩選、視覺規則 115 項全部通過，無水平溢出。實際 @ajambrosino 公開頁面解析出當天 4 則貼文。實作由 Codex（gpt-6-luna）完成，規劃、審查與驗證由 Claude 負責。權限、網域與 manifest（除版本外）未變更；仍需 Agent Pets `1.4.0` 以上。
+
+## 後續：Update Radar `0.3.1`（2026-11-06）
+
+升 patch：面板底部兩角改成與 Agent Pets 外框一致的圓角。
+
+- 底色不再畫在 `html`／`body`，改畫在固定於視窗的一層，底部圓角為 `--organic-radius-md` 減 1px 邊線；圓角外側透出宿主外框。
+- 根捲軸那一欄不會被固定層蓋到，因此捲軸寬度設為圓角半徑，自己畫底色與右下圓角；軌道底部讓出圓角高度，滑塊不會蓋進角落。頁面不需捲動時由底色層補上右下圓角。forced-colors 下底色層改用 `Canvas`。
+- 需要宿主把插件 view 的原生底色設為透明（Agent Pets PR「give plugin panel views a transparent native background」）；在尚未包含該修正的宿主上，圓角外側會露出 view 的預設底色。
+- 驗證：Update Radar 測試 77/77、update-radar 套件 34/34、全部單元測試 556/556、`git diff --check` 通過。Playwright 驗收全部通過（視覺規則 115 項）；開啟傳統捲軸後，淺深色 × 捲到頂／底／不需捲動共 6 種情況，右下角 3,111 個取樣點與 15px 弧線全部吻合。實機在一般、放大、淺深色與捲動中確認下方兩角貼齊外框。權限、網域與 manifest（除版本外）未變更。
