@@ -230,9 +230,10 @@ export class PluginPanelViewController {
         this.close('load_failed', openToken)
         return errorResult('panel_load_failed')
       }
-      if (view && !view.webContents.isDestroyed()) {
-        try { view.webContents.destroy() } catch {}
-      }
+      try {
+        const contents = view?.webContents
+        if (contents && !contents.isDestroyed()) contents.destroy()
+      } catch {}
       try { this.options.revokeToken(pluginId, token) } catch {}
       return errorResult('disabled')
     }

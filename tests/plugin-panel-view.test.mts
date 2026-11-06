@@ -225,6 +225,24 @@ test('plugin panel uses an ephemeral plugin-specific WebContentsView and a token
   assert.deepEqual(fake.closedEvents, [{ pluginId: 'sample-plugin', openToken: 1, reason: 'closed' }])
 })
 
+test('cancelled panel loads tolerate Electron clearing the destroyed view webContents', async () => {
+  let rejectLoad: (error: Error) => void = () => assert.fail('load was not started')
+  const fake = fakeController({
+    loadURL: () => new Promise<void>((_resolve, reject) => { rejectLoad = reject }),
+  })
+  const opening = fake.controller.open({ pluginId: 'sample-plugin', entry: 'ui/index.html', openToken: 1, bounds: initialBounds })
+  assert.equal(fake.views.length, 1)
+  fake.controller.close()
+  assert.equal(fake.destroyed, true)
+  // Electron can clear this getter after the native view is destroyed, before loadURL rejects.
+  Object.defineProperty(fake.views[0]!.view, 'webContents', { get: () => undefined })
+  rejectLoad(new Error('ERR_ABORTED'))
+  assert.deepEqual(await opening, { ok: false, error: 'disabled' })
+  assert.equal(fake.controller.activePluginId(), null)
+  assert.equal(fake.removeCount, 1)
+  assert.equal(fake.closedEvents.length, 1)
+})
+
 test('plugin panel refuses to attach a view without valid frame bounds', async () => {
   const fake = fakeController()
   const result = await fake.controller.open({

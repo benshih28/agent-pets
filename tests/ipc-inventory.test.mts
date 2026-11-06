@@ -68,6 +68,10 @@ test('renderer windows and plugin views explicitly retain Electron security defa
   assert.match(panelViewSource, /will-attach-webview/)
 })
 
+test('plugin panel views keep a transparent native background so plugins can round their own corners', () => {
+  assert.match(runtimeSource, /createView: options => \{\s+const view = new WebContentsView\(options\)[\s\S]{0,200}view\.setBackgroundColor\('#00000000'\)/)
+})
+
 test('every non-default Electron session rejects permission requests and checks', () => {
   const networkSessionStart = runtimeSource.indexOf("const pluginNetworkSession = session.fromPartition('plugin-network')")
   assert.notEqual(networkSessionStart, -1)

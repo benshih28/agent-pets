@@ -1167,7 +1167,13 @@ export async function createPluginServices(): Promise<void> {
     // Electron's concrete Session satisfies the narrower controller seam; keep the seam independently mockable in tests.
     createSession: partition => session.fromPartition(partition) as PluginPanelViewSession,
     // The structural controller seam intentionally omits Electron's full event surface; the factory always creates the native type.
-    createView: options => new WebContentsView(options) as unknown as PluginPanelNativeView,
+    createView: options => {
+      const view = new WebContentsView(options)
+      // 原生 view 不受網頁 overflow 裁切；底色透明，插件才能自己畫出與外框一致的圓角。
+      view.setBackgroundColor('#00000000')
+      // The structural controller seam intentionally omits Electron's full event surface; the factory always creates the native type.
+      return view as unknown as PluginPanelNativeView
+    },
     createToken: pluginId => {
       const root = enabledPluginRoot(pluginId)
       if (!root) throw new Error('Plugin is unavailable')
