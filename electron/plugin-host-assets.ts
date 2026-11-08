@@ -4,6 +4,7 @@ export const pluginHostAssets: PluginProtocolAssets = {
   'index.html': '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src agent-pets://plugin; worker-src agent-pets://plugin; connect-src \'none\'; img-src agent-pets://plugin; style-src agent-pets://plugin; frame-src \'none\'; object-src \'none\'; base-uri \'none\'; form-action \'none\'"></head><body><script type="module" src="agent-pets://plugin/_host/host.js"></script></body></html>',
   'host.js': String.raw`
 const workers = new Map()
+const terminateTimers = new Set()
 let portAccepted = false
 window.addEventListener('message', (event) => {
   if (portAccepted || event.source !== window || event.origin !== window.location.origin
@@ -66,7 +67,8 @@ window.addEventListener('message', (event) => {
         if (worker) {
           workers.delete(data.pluginId)
           worker.postMessage({ type: 'deactivate' })
-          setTimeout(() => worker.terminate(), 100)
+          const terminateTimer = setTimeout(() => { terminateTimers.delete(terminateTimer); worker.terminate() }, 100)
+          terminateTimers.add(terminateTimer)
         }
       } else if (data.type === 'rpc-result' && typeof data.pluginId === 'string') {
         workers.get(data.pluginId)?.postMessage({ type: 'rpc-result', result: data.result })
@@ -138,6 +140,27 @@ function rpc(method, args) {
     }
   })
 }
+// Plugin callbacks may be async. A rejected promise or a sync throw is
+// attributed to the plugin through its own log channel and never reaches the
+// worker's unhandled-rejection path or the shared host.
+function reportPluginError(label, error) {
+  let text = label
+  try { text += ': ' + String(error && error.message ? error.message : error).slice(0, 200) } catch {}
+  rpc('log.error', [[text]]).catch(() => {})
+}
+function callSafely(label, callback, argument) {
+  try {
+    const result = callback(argument)
+    if (result && typeof result.then === 'function') result.then(undefined, (error) => reportPluginError(label, error))
+  } catch (error) {
+    reportPluginError(label, error)
+  }
+}
+const MAX_SCHEDULES = 16
+scope.addEventListener('unhandledrejection', (event) => {
+  try { event.preventDefault() } catch {}
+  reportPluginError('unhandled rejection', event.reason)
+})
 function setScheduleMinInterval(value) {
   if (Number.isSafeInteger(value) && value >= 30 && value <= 3600) scheduleMinIntervalSec = value
 }
@@ -178,9 +201,26 @@ const api = Object.freeze({
       if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 2_147_483 || typeof callback !== 'function') {
         throw Object.assign(new Error('schedule_invalid'), { code: 'schedule_invalid' })
       }
+      if (schedules.size >= MAX_SCHEDULES) throw Object.assign(new Error('schedule_invalid'), { code: 'schedule_invalid' })
       const interval = Math.max(scheduleMinIntervalSec, Math.ceil(seconds)) * 1000
       const id = String(++scheduleSequence)
-      const timer = setInterval(() => { try { callback() } catch {} }, interval)
+      let running = false
+      const timer = setInterval(() => {
+        // Skip a tick while the previous async run is still going so a slow
+        // callback cannot stack up.
+        if (running) return
+        running = true
+        try {
+          const result = callback()
+          if (result && typeof result.then === 'function') {
+            result.then(undefined, (error) => reportPluginError('schedule', error)).finally(() => { running = false })
+            return
+          }
+        } catch (error) {
+          reportPluginError('schedule', error)
+        }
+        running = false
+      }, interval)
       schedules.set(id, timer)
       return () => { clearInterval(timer); schedules.delete(id) }
     },
@@ -235,15 +275,15 @@ scope.onmessage = async ({ data }) => {
       postToHost({ type: 'activation-error' })
     }
   } else if (data.type === 'settings-changed' && data.value && typeof data.value === 'object' && !Array.isArray(data.value)) {
-    for (const listener of settingsListeners) { try { listener(data.value) } catch {} }
+    for (const listener of settingsListeners) callSafely('settings.onChange', listener, data.value)
   } else if (data.type === 'status-changed' && Array.isArray(data.value)) {
     for (const item of data.value) {
-      for (const listener of statusListeners) { try { listener(item) } catch {} }
+      for (const listener of statusListeners) callSafely('pet.onStatusChange', listener, item)
     }
   } else if (data.type === 'command-invoke' && typeof data.commandId === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(data.commandId)) {
-    for (const listener of commandListeners) { try { listener(data.commandId) } catch {} }
+    for (const listener of commandListeners) callSafely('commands.onInvoke', listener, data.commandId)
   } else if (data.type === 'ui-message') {
-    for (const listener of uiListeners) { try { listener(data.value) } catch {} }
+    for (const listener of uiListeners) callSafely('ui.onMessage', listener, data.value)
   } else if (data.type === 'ping' && Number.isSafeInteger(data.at)) {
     postToHost({ type: 'pong', at: data.at })
   } else if (data.type === 'rpc-result' && data.result && typeof data.result === 'object') {

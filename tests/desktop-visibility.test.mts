@@ -26,3 +26,10 @@ test('platform capability projection is explicit about native Windows and macOS 
     false,
   )
 })
+
+test('macOS keeps windows visible over fullscreen Spaces while a permission request is pending', async () => {
+  const { macVisibleOnFullScreen } = await import('../electron/desktop-visibility.ts')
+  assert.equal(macVisibleOnFullScreen(false, false), true)
+  assert.equal(macVisibleOnFullScreen(true, false), false)
+  assert.equal(macVisibleOnFullScreen(true, true), true)
+})

@@ -1,36 +1,74 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { locale, t } from '@/i18n'
 import { useAgentStore } from '@/stores/agentStore'
-import { SOURCE_FAMILIES, SOURCE_LABELS, STATE_COLORS, STATE_LABELS, STATE_LABELS_SHORT } from '@/types/agent'
+import { SOURCE_FAMILIES, SOURCE_LABELS, STATE_LABELS } from '@/types/agent'
 import type { PluginEventSourceState, PluginEventSourceStatusView } from '@/types/plugin'
-import { formatProject, roundQuotaPercent } from '@/utils/format'
+import { useQuotaFormat } from '@/composables/useQuotaFormat'
+import {
+  countByBucket,
+  groupSessions,
+  projectLabels,
+  type SessionFilter,
+  type SessionSort,
+} from '@/utils/session-view'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import Icon from '@/components/ui/Icon.vue'
 import ProgressTrack from '@/components/ui/ProgressTrack.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import Select from '@/components/ui/Select.vue'
+import SessionRow from '@/components/status-panel/SessionRow.vue'
+import { formatTimeFull } from '@/utils/intl-format'
 
 const props = defineProps<{ nowTick: number; pluginEventSourceStatuses: PluginEventSourceStatusView[] }>()
+const emit = defineEmits<{ managePlugins: [] }>()
 const store = useAgentStore()
+const { quotaPercent, formatReset, quotaTone } = useQuotaFormat(() => props.nowTick)
+const QUOTA_STRIP_TONE = { healthy: 'success', warn: 'warn', critical: 'error' } as const
 const LIVE_STATES = new Set(['thinking', 'tool-running', 'waiting-permission', 'waiting-input'])
+
+const filter = ref<SessionFilter>('all')
+const sourceFamily = ref('all')
+const sort = ref<SessionSort>('priority')
 
 const activeSessionList = computed(() => store.sessionList.filter(session => session.state !== 'offline'))
 const offlineSessionList = computed(() => store.sessionList.filter(session => session.state === 'offline'))
 const hasOffline = computed(() => offlineSessionList.value.length > 0)
+const counts = computed(() => countByBucket(activeSessionList.value))
+const labels = computed(() => projectLabels(store.sessionList.map(session => session.project)))
+const groups = computed(() => groupSessions(store.sessionList, {
+  filter: filter.value,
+  sources: sourceFamily.value === 'all' ? null : SOURCE_FAMILIES.find(family => family.key === sourceFamily.value)?.sources ?? null,
+  sort: sort.value,
+}))
+const visibleGroups = computed(() => ([
+  { id: 'attention', title: t('panel.groupAttention'), sessions: groups.value.attention },
+  { id: 'running', title: t('panel.groupRunning'), sessions: groups.value.running },
+  { id: 'other', title: t('panel.groupOther'), sessions: groups.value.other },
+] as const).filter(group => group.sessions.length > 0))
+const filterOptions = computed(() => [
+  { value: 'all', label: t('panel.filterAll') },
+  { value: 'attention', label: t('panel.filterAttention'), badge: counts.value.attention },
+  { value: 'running', label: t('panel.filterRunning'), badge: counts.value.running },
+])
 const activeToolFamilyCount = computed(() => new Set(
   activeSessionList.value.map(session => SOURCE_FAMILIES.find(family => family.sources.includes(session.source))?.key ?? session.source),
 ).size)
+const noMatches = computed(() => visibleGroups.value.length === 0 && activeSessionList.value.length > 0)
 const quotaStripFamilies = computed(() => (
   (['codex', 'claude'] as const).flatMap((id) => {
     const quota = store.quotaByFamily[id]
     if (!quota) return []
-    return [{ id, ...quota, label: id === 'codex' ? 'Codex' : 'Claude' }]
+    // The label comes from the provider payload, so a new provider needs no edit here.
+    const name = store.quotaUsage?.providers.find(provider => provider.id === id)?.name ?? id
+    return [{ id, ...quota, label: name }]
   })
 ))
 
-function elapsedLabel(session: { state: string; lastSeenAt: number }): string | null {
-  if (!LIVE_STATES.has(session.state)) return null
-  const seconds = Math.max(0, (props.nowTick - session.lastSeenAt) / 1000)
-  return `${seconds.toFixed(1)}s`
+function projectLabel(project?: string): string {
+  return project ? labels.value.get(project) ?? '' : ''
 }
 
 function sessionDetail(session: (typeof store.sessionList)[number]): string {
@@ -55,106 +93,98 @@ function pluginEventSourceStateLabel(state: PluginEventSourceState): string {
 }
 
 function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(locale.value)
-}
-
-function formatReset(timestamp?: string): string {
-  if (!timestamp) return t('resetTimeUnavailable')
-  const reset = new Date(timestamp).getTime()
-  if (!Number.isFinite(reset)) return t('resetTimeUnavailable')
-  const deltaMinutes = Math.max(0, Math.round((reset - props.nowTick) / 60_000))
-  if (deltaMinutes < 1) return t('resetsNow')
-  if (deltaMinutes < 60) return t('resetsInMinutes', { minutes: deltaMinutes })
-  const hours = Math.floor(deltaMinutes / 60)
-  const minutes = deltaMinutes % 60
-  if (hours < 24) return t('resetsInHours', { hours, minutes })
-  const days = Math.floor(hours / 24)
-  return t('resetsInDays', { days, hours: hours % 24 })
-}
-
-function quotaPercent(value: number): string {
-  return `${roundQuotaPercent(value)}%`
+  return formatTimeFull(timestamp, locale.value)
 }
 
 </script>
 
 <template>
-  <div id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions" class="tab-panel">
+  <div id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions" class="dashboard-tab-panel">
+    <div v-if="activeSessionList.length > 0" class="session-filter-bar">
+      <SegmentedControl
+        v-model="filter"
+        :options="filterOptions"
+        :ariaLabel="t('panel.filterLabel')"
+        semantics="radio"
+        id-prefix="session-filter-"
+        size="sm"
+      />
+      <Select v-model="sourceFamily" size="sm" :aria-label="t('panel.sourceFilterLabel')">
+        <option value="all">{{ t('panel.sourceAll') }}</option>
+        <option v-for="family in SOURCE_FAMILIES" :key="family.key" :value="family.key">{{ family.label }}</option>
+      </Select>
+      <Select v-model="sort" size="sm" :aria-label="t('panel.sortLabel')">
+        <option value="priority">{{ t('panel.sortPriority') }}</option>
+        <option value="recent">{{ t('panel.sortRecent') }}</option>
+      </Select>
+    </div>
+
     <div class="session-scroll">
-      <div v-if="activeSessionList.length === 0 && offlineSessionList.length === 0 && pluginEventSourceStatuses.length === 0" class="panel-empty">
-        {{ t('noActiveSessions') }}
-      </div>
+      <EmptyState
+        v-if="activeSessionList.length === 0 && offlineSessionList.length === 0 && pluginEventSourceStatuses.length === 0"
+        icon="desktop"
+        :title="t('noActiveSessions')"
+        :description="t('panel.noSessionsHint')"
+      />
 
       <template v-else>
-        <section v-if="activeSessionList.length > 0" class="session-group">
+        <EmptyState v-if="noMatches" :title="t('panel.noMatchingSessions')" />
+
+        <section v-for="group in visibleGroups" :key="group.id" class="session-group">
           <div class="session-group-heading">
-            <span>{{ t('activeSessions') }}</span>
-            <small>{{ t('activeToolFamilies', { count: activeToolFamilyCount }) }}</small>
+            <span>{{ group.title }} ({{ group.sessions.length }})</span>
+            <small v-if="group.id === visibleGroups[0].id">{{ t('activeToolFamilies', { count: activeToolFamilyCount }) }}</small>
           </div>
           <Card class="session-card">
-            <div
-              v-for="(session, index) in activeSessionList"
+            <SessionRow
+              v-for="session in group.sessions"
               :key="session.key"
-              class="session-item"
-              :class="{ 'is-last': index === activeSessionList.length - 1 }"
-            >
-              <span
-                class="session-status-dot"
-                :class="{ live: LIVE_STATES.has(session.state) }"
-                :style="{ '--status-color': STATE_COLORS[session.state] }"
-                aria-hidden="true"
-              />
-              <div class="session-info">
-                <span class="session-title-line">
-                  {{ SOURCE_LABELS[session.source] }}<template v-if="session.project"> · {{ formatProject(session.project) }}</template>
-                </span>
-                <span class="session-detail">{{ sessionDetail(session) }}</span>
-              </div>
-              <div class="session-state-column">
-                <span
-                  class="state-chip"
-                  :class="[`state-${session.state}`, { live: LIVE_STATES.has(session.state) }]"
-                  :style="{ '--status-color': STATE_COLORS[session.state] }"
-                >
-                  {{ STATE_LABELS_SHORT[session.state] }}
-                </span>
-                <span class="session-time">{{ elapsedLabel(session) || formatTime(session.lastSeenAt) }}</span>
-              </div>
-            </div>
+              :session="session"
+              :project-label="projectLabel(session.project)"
+              :detail="sessionDetail(session)"
+              :live="LIVE_STATES.has(session.state)"
+            />
           </Card>
         </section>
 
         <section v-if="hasOffline" class="offline-group">
           <div class="session-group-heading offline-heading">
-            <span>{{ t('offlineSessions') }}</span>
+            <span>{{ t('offlineSessions') }} ({{ groups.offline.length }})</span>
             <Button variant="danger" size="sm" @click="store.clearOfflineSessions()">
               {{ t('clearShort') }}
             </Button>
           </div>
-          <div v-for="session in offlineSessionList" :key="session.key" class="offline-session-item">
+          <div v-for="session in groups.offline" :key="session.key" class="offline-session-item">
             <span class="session-status-dot" aria-hidden="true" />
-            <span class="session-title-line">{{ SOURCE_LABELS[session.source] }}<template v-if="session.project"> · {{ formatProject(session.project) }}</template></span>
+            <span class="session-title-line" :title="session.project || undefined">{{ SOURCE_LABELS[session.source] }}<template v-if="session.project"> · {{ projectLabel(session.project) }}</template></span>
             <span class="session-time">{{ formatTime(session.lastSeenAt) }}</span>
+            <Button variant="ghost" size="sm" icon-only :title="t('panel.removeSession')" :aria-label="`${t('panel.removeSession')} ${SOURCE_LABELS[session.source]} ${projectLabel(session.project)}`" @click="store.removeSession(session.key)">
+              <Icon name="close" :size="12" />
+            </Button>
           </div>
         </section>
 
         <section v-if="pluginEventSourceStatuses.length > 0" class="session-group plugin-event-source-group">
-          <div class="session-group-heading"><span>{{ t('pluginEventSourceHeading') }}</span></div>
+          <div class="session-group-heading">
+            <span>{{ t('pluginEventSourceHeading') }}</span>
+            <Button variant="ghost" size="sm" @click="emit('managePlugins')">{{ t('panel.managePlugins') }}</Button>
+          </div>
           <Card class="session-card">
             <div
-              v-for="(status, index) in pluginEventSourceStatuses"
+              v-for="status in pluginEventSourceStatuses"
               :key="status.key"
               class="session-item"
-              :class="{ 'is-last': index === pluginEventSourceStatuses.length - 1 }"
             >
-              <span class="session-status-dot" :class="{ live: status.state === 'thinking' || status.state === 'tool-running' }" aria-hidden="true" />
-              <div class="session-info">
-                <span class="session-title-line">{{ t('pluginEventSourceFromPlugin', { name: status.pluginName[locale] }) }}</span>
-                <span class="session-detail">{{ status.displayName[locale] }}</span>
-              </div>
-              <div class="session-state-column">
-                <span class="state-chip">{{ pluginEventSourceStateLabel(status.state) }}</span>
-                <span class="session-time">{{ formatTime(status.updatedAt) }}</span>
+              <div class="session-row">
+                <span class="session-status-dot" :class="{ live: status.state === 'thinking' || status.state === 'tool-running' }" aria-hidden="true" />
+                <div class="session-info">
+                  <span class="session-title-line">{{ t('pluginEventSourceFromPlugin', { name: status.pluginName[locale] }) }}</span>
+                  <span class="session-detail">{{ status.displayName[locale] }}</span>
+                </div>
+                <div class="session-state-column">
+                  <span class="state-chip">{{ pluginEventSourceStateLabel(status.state) }}</span>
+                  <span class="session-time">{{ formatTime(status.updatedAt) }}</span>
+                </div>
               </div>
             </div>
           </Card>
@@ -168,7 +198,7 @@ function quotaPercent(value: number): string {
           <span>{{ family.label }}</span>
           <strong>{{ quotaPercent(family.remainingPercent) }}</strong>
         </div>
-        <ProgressTrack :value="family.remainingPercent" tone="success" size="sm" decorative />
+        <ProgressTrack :value="family.remainingPercent" :tone="QUOTA_STRIP_TONE[quotaTone(family.remainingPercent)]" size="sm" decorative />
         <span class="quota-strip-reset">{{ formatReset(family.resetsAt) }}</span>
       </div>
     </div>

@@ -1,6 +1,8 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
-import { guardArchive } from '../archive-guard.ts'
 import type { SanitizedPetBehaviorManifest } from '../pet-behavior-manifest'
+import { t as translate } from '../../src/i18n.ts'
+import { PET_IMPORT_TOKEN_PATTERN, parsePetZip, type PetImportStaging } from '../pet-import.ts'
+import { SPRITE_ATLAS_WALK_ROW, detectSpriteAtlas, validateSpriteSheet } from '../pet-sprite-validation.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
 type OpenDialogResult = { canceled: boolean; filePaths: string[] }
@@ -27,7 +29,7 @@ export interface PetAssetIpcDependencies {
   writeFileEnsured(path: string, contents: string | Uint8Array): void | Promise<void>
   parsePetBehaviorManifest(value: unknown): SanitizedPetBehaviorManifest | undefined
   isSupportedRasterImage(data: Uint8Array): boolean
-  guardArchive: typeof guardArchive
+  petImport: Pick<PetImportStaging, 'stage' | 'commit' | 'cancel'>
   fs: FileSystemPort
   path: PathPort
   customPetDescription(): string
@@ -105,7 +107,10 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
     try {
       const stat = await deps.fs.lstat(spritePath)
       if (stat.isFile() && !stat.isSymbolicLink()) {
-      return `agent-pets://custom/${encodeURIComponent(safeId)}/spritesheet.webp`
+        // The modification time versions the URL so a re-import of the same id
+        // never serves the previously cached sheet.
+        const version = Number.isFinite(stat.mtimeMs) ? `?v=${Math.floor(stat.mtimeMs)}` : ''
+        return `agent-pets://custom/${encodeURIComponent(safeId)}/spritesheet.webp${version}`
       }
     } catch {}
     return null
@@ -114,18 +119,25 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
   // Accepts sprite kits from community sites like codex-pets.net: a .zip
   // containing pet.json + a spritesheet image, laid out on the same
   // 192x208-per-frame grid our own built-in pets use (see PetAnimation.vue).
-  deps.ipcMain.handle(IPC_CHANNELS.importPetZip, async (event) => {
+  // Import is two-step: prepare validates and stages the kit and returns a
+  // preview (plus any id conflict); commit installs it atomically once the
+  // user has seen the preview and chosen how to resolve a conflict.
+  deps.ipcMain.handle(IPC_CHANNELS.prepareImportPetZip, async (event) => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     const owner = deps.getPanelWindow() ?? deps.getPetWindow()
     if (!owner) return { ok: false, error: 'No window available' }
 
     deps.setDialogOpen(true)
-    const result = await deps.showOpenDialog(owner, {
-      title: '選擇寵物素材包（.codex-pet.zip）',
-      filters: [{ name: 'Pet sprite kit', extensions: ['zip'] }],
-      properties: ['openFile'],
-    })
-    deps.setDialogOpen(false)
+    let result: OpenDialogResult
+    try {
+      result = await deps.showOpenDialog(owner, {
+        title: translate('pet.importZipTitle'),
+        filters: [{ name: 'Pet sprite kit', extensions: ['zip'] }],
+        properties: ['openFile'],
+      })
+    } finally {
+      deps.setDialogOpen(false)
+    }
     if (result.canceled || result.filePaths.length === 0) return { ok: false, error: 'cancelled' }
 
     try {
@@ -135,87 +147,37 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
         return { ok: false, error: 'Zip must be a regular file no larger than 10 MB' }
       }
       const zipBuf = await deps.fs.readFile(zipPath)
-      if (zipBuf.length > deps.maxPetZipBytes) {
-        return { ok: false, error: 'Zip must be no larger than 10 MB' }
-      }
-
-      const guarded = deps.guardArchive(new Uint8Array(zipBuf), {
-        maxTotalBytes: deps.maxPetUncompressedBytes,
-        maxFileBytes: deps.maxPetUncompressedBytes,
-        maxFiles: deps.maxPetZipEntries,
-        allowedExtensions: ['.json', '.webp', '.png', '.jpg', '.jpeg'],
-        mode: 'compat',
-        includePath: relativePath => !relativePath.split('/').includes('__MACOSX')
-          && !deps.path.basename(relativePath).startsWith('._')
-          && (/(^|\/)pet\.json$/i.test(relativePath) || /\.(webp|png|jpe?g)$/i.test(relativePath)),
+      const parsed = parsePetZip(new Uint8Array(zipBuf.buffer, zipBuf.byteOffset, zipBuf.byteLength), {
+        limits: {
+          maxZipBytes: deps.maxPetZipBytes,
+          maxEntries: deps.maxPetZipEntries,
+          maxUncompressedBytes: deps.maxPetUncompressedBytes,
+          maxJsonBytes: deps.maxPetJsonBytes,
+          maxImageBytes: deps.maxPetImageBytes,
+        },
+        sanitizePetId: deps.sanitizePetId,
+        parsePetBehaviorManifest: deps.parsePetBehaviorManifest,
+        isSupportedRasterImage: deps.isSupportedRasterImage,
       })
-      if (!guarded.ok) {
-        const error = guarded.error === 'file_limit_exceeded'
-          ? 'Zip contains too many entries'
-          : guarded.error === 'total_size_exceeded' || guarded.error === 'file_size_exceeded'
-            ? 'Zip expands beyond the 25 MB safety limit'
-            : guarded.error === 'unsafe_path' || guarded.error === 'duplicate_path'
-              ? 'Zip contains an unsafe or duplicate path'
-              : 'Invalid zip archive'
-        return { ok: false, error }
-      }
-      const entries = guarded.files
-      const entryNames = [...entries.keys()]
-
-      const petJsonName = entryNames.find((name) => /(^|\/)pet\.json$/i.test(name))
-      if (!petJsonName) return { ok: false, error: 'No pet.json found in this zip' }
-      const petJsonBytes = entries.get(petJsonName)
-      if (!petJsonBytes || petJsonBytes.byteLength > deps.maxPetJsonBytes) {
-        return { ok: false, error: 'pet.json exceeds the 256 KB safety limit' }
-      }
-
-      const petData = JSON.parse(Buffer.from(petJsonBytes).toString('utf-8'))
-      const rawId = String(petData.id || petData.displayName || `imported-${Date.now()}`)
-      const safeId = deps.sanitizePetId(rawId) || deps.sanitizePetId(`pet-${Date.now()}`)
-      if (!safeId) return { ok: false, error: 'Could not derive a valid pet id' }
-
-      const imageExt = /\.(webp|png|jpe?g)$/i
-      const wantedBase = petData.spritesheetPath
-        ? deps.path.basename(String(petData.spritesheetPath)).toLowerCase()
-        : null
-      const spriteName =
-        entryNames.find((name) => deps.path.basename(name).toLowerCase() === wantedBase) ??
-        entryNames.find((name) => imageExt.test(name))
-      if (!spriteName) return { ok: false, error: 'No spritesheet image found in this zip' }
-      const spriteData = entries.get(spriteName)
-      if (!spriteData) return { ok: false, error: 'No spritesheet image found in this zip' }
-      if (spriteData.byteLength > deps.maxPetImageBytes) {
-        return { ok: false, error: 'Spritesheet exceeds the 20 MB safety limit' }
-      }
-      if (!deps.isSupportedRasterImage(spriteData)) {
-        return { ok: false, error: 'Spritesheet content is not a valid PNG, JPEG, or WebP image' }
-      }
-
-      const customDir = deps.safeJoin(deps.customPetsRoot(), 'custom', safeId)
-      if (!customDir) return { ok: false, error: 'Invalid destination path' }
-      await deps.ensureDir(customDir)
-      const behaviorManifest = deps.parsePetBehaviorManifest(petData.behaviorManifest)
-
-      // Renderer sniffs the actual image bytes rather than trusting the
-      // extension (see importPetSprite below), so normalizing to
-      // spritesheet.webp here is safe even for a source .png/.jpg.
-      await deps.writeFileEnsured(deps.path.join(customDir, 'spritesheet.webp'), Buffer.from(spriteData))
-
-      const petJson = {
-        id: safeId,
-        displayName: String(petData.displayName || rawId).slice(0, 64),
-        description: String(petData.description || 'Imported pet').slice(0, 500),
-        spritesheetPath: 'spritesheet.webp',
-        spriteVersionNumber: 2,
-        kind: petData.kind === 'animal' ? 'animal' : 'person',
-        ...(behaviorManifest ? { behaviorManifest } : {}),
-      }
-      await deps.writeFileEnsured(deps.path.join(customDir, 'pet.json'), JSON.stringify(petJson, null, 2))
-
-      return { ok: true, id: safeId, displayName: petJson.displayName }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      if (!parsed.ok) return parsed
+      return { ok: true, preview: await deps.petImport.stage(parsed.pet) }
+    } catch {
+      return { ok: false, error: 'Could not read this zip' }
     }
+  })
+
+  deps.ipcMain.handle(IPC_CHANNELS.commitImportPetZip, async (event, token: unknown, decision: unknown, expectedState: unknown) => {
+    deps.assertTrustedIpcSender(event, deps.getPanelWindow())
+    if (typeof token !== 'string' || !PET_IMPORT_TOKEN_PATTERN.test(token)) {
+      return { ok: false, code: 'E_IMPORT_EXPIRED', error: 'This import preview has expired. Choose the zip again.' }
+    }
+    return deps.petImport.commit(token, decision, typeof expectedState === 'string' ? expectedState.slice(0, 64) : null)
+  })
+
+  deps.ipcMain.handle(IPC_CHANNELS.cancelImportPetZip, async (event, token: unknown) => {
+    deps.assertTrustedIpcSender(event, deps.getPanelWindow())
+    if (typeof token !== 'string' || !PET_IMPORT_TOKEN_PATTERN.test(token)) return false
+    return deps.petImport.cancel(token)
   })
 
   deps.ipcMain.handle(IPC_CHANNELS.importPetSprite, async (event, petId: string, displayName: string) => {
@@ -225,7 +187,7 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
     if (!safeId || !owner) return null
     deps.setDialogOpen(true)
     const result = await deps.showOpenDialog(owner, {
-      title: '選擇 spritesheet（每格 192x208，.webp）',
+      title: translate('pet.importSpriteTitle'),
       filters: [{ name: 'Images', extensions: ['webp', 'png', 'jpg'] }],
       properties: ['openFile'],
     })
@@ -236,6 +198,9 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
     if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || sourceStat.size > deps.maxPetImageBytes) return null
     const sourceData = await deps.fs.readFile(src)
     if (sourceData.length > deps.maxPetImageBytes || !deps.isSupportedRasterImage(sourceData)) return null
+    const sheetCheck = validateSpriteSheet(sourceData)
+    if (!sheetCheck.ok) return null
+    const atlas = detectSpriteAtlas(sheetCheck.size)
     const customDir = deps.safeJoin(deps.customPetsRoot(), 'custom', safeId)
     if (!customDir) return null
     await deps.ensureDir(customDir)
@@ -246,8 +211,10 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
       displayName: String(displayName || safeId).slice(0, 64),
       description: deps.customPetDescription(),
       spritesheetPath: 'spritesheet.webp',
-      spriteVersionNumber: 2,
+      spriteVersionNumber: atlas.version,
       kind: 'person',
+      // Same atlas contract as zip import: v2 sheets walk on the running-right row.
+      ...(atlas.version === 2 ? { behaviorManifest: { walk: { row: SPRITE_ATLAS_WALK_ROW } } } : {}),
     }
     await deps.writeFileEnsured(deps.path.join(customDir, 'pet.json'), JSON.stringify(petJson, null, 2))
     return `agent-pets://custom/${encodeURIComponent(safeId)}/spritesheet.webp`

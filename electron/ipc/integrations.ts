@@ -24,7 +24,7 @@ export interface IntegrationIpcDependencies {
   sendIntegrationTestEvent(source: IntegrationTestSource, sessionId: string, state: 'thinking' | 'offline'): Promise<void>
   waitForIntegrationTestReceipt(sessionId: string): Promise<void>
   installIntegration(target?: IntegrationTarget): void
-  uninstallIntegration(target?: IntegrationTarget): void
+  uninstallIntegration(target?: IntegrationTarget | 'all'): void
   isIntegrationTarget(value: unknown): value is IntegrationTarget
 }
 
@@ -66,11 +66,12 @@ export function registerIntegrationIpc(deps: IntegrationIpcDependencies): void {
 
   deps.ipcMain.handle(IPC_CHANNELS.uninstallIntegrations, (event, target?: unknown) => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
-    if (target !== undefined && !deps.isIntegrationTarget(target)) {
+    // 'all' also removes tokens and bridge scripts (full cleanup before removing the app).
+    if (target !== undefined && target !== 'all' && !deps.isIntegrationTarget(target)) {
       return { ok: false, error: 'Unsupported integration target' }
     }
     try {
-      deps.uninstallIntegration(target as IntegrationTarget | undefined)
+      deps.uninstallIntegration(target as IntegrationTarget | 'all' | undefined)
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

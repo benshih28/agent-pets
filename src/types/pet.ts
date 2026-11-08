@@ -43,6 +43,10 @@ export interface ShimejiTick {
 
 export const SHIMEJI_MIN_TICK_MS = 1_500
 export const SHIMEJI_IDLE_DELAY_MS = 15_000
+export const SHIMEJI_IDLE_DELAY_MIN_MS = 8_000
+export const SHIMEJI_IDLE_DELAY_MAX_MS = 25_000
+/** While asleep the scheduler just re-checks at this pace. */
+export const SHIMEJI_SLEEP_RECHECK_MS = 15_000
 export const SHIMEJI_SLEEP_AFTER_MS = 90_000
 export const SHIMEJI_WALK_STEP_PX = 18
 export const SHIMEJI_WALK_STEP_DELAY_MS = 1_800
@@ -75,9 +79,15 @@ export function chooseAutonomousBehavior(context: ShimejiContext): PetAutonomous
 export class ShimejiScheduler {
   private walkRemaining = 0
   private walkDirection: -1 | 1 = 1
+  private sleeping = false
 
   reset(): void {
     this.walkRemaining = 0
+    this.sleeping = false
+  }
+
+  get isSleeping(): boolean {
+    return this.sleeping
   }
 
   next(context: ShimejiContext): ShimejiTick {
@@ -85,6 +95,13 @@ export class ShimejiScheduler {
       this.reset()
       return { behavior: 'idle', delayMs: SHIMEJI_IDLE_DELAY_MS }
     }
+
+    // Once asleep the pet stays asleep until something resets the scheduler
+    // (activity, the cursor arriving, a click) — it does not wake on its own.
+    if (this.sleeping && context.canSleep) {
+      return { behavior: 'sleep', delayMs: SHIMEJI_SLEEP_RECHECK_MS }
+    }
+    this.sleeping = false
 
     if (this.walkRemaining > 0 && context.canWalk) {
       this.walkRemaining -= 1
@@ -107,9 +124,17 @@ export class ShimejiScheduler {
       }
     }
 
+    if (behavior === 'sleep') {
+      this.sleeping = true
+      return { behavior, delayMs: SHIMEJI_SLEEP_RECHECK_MS }
+    }
+
+    // Vary the pause so idle gestures do not tick like a metronome.
+    const idleDelay = SHIMEJI_IDLE_DELAY_MIN_MS
+      + shimejiRoll(context.random) * (SHIMEJI_IDLE_DELAY_MAX_MS - SHIMEJI_IDLE_DELAY_MIN_MS)
     return {
       behavior,
-      delayMs: Math.max(SHIMEJI_MIN_TICK_MS, SHIMEJI_IDLE_DELAY_MS),
+      delayMs: Math.max(SHIMEJI_MIN_TICK_MS, Math.round(idleDelay)),
     }
   }
 }

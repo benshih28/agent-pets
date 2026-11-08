@@ -9,8 +9,12 @@ import type {
   AgentAdapterId,
   AgentAdapterDefinition,
   DiagnosticReport,
+  InstallOutcome,
+  InstallReport,
 } from '../src/types/agent-adapter'
+import type { AgentCapabilities } from '../src/types/capabilities'
 import { normalizeAgentStatusEvent } from './event-normalizer.ts'
+import { buildOutcome, failedOutcome } from './install-outcome.ts'
 import { AGENT_ADAPTER_REGISTRY } from '../src/types/agent-adapter.ts'
 
 const ADAPTER_VERSION = '1.0.0'
@@ -25,23 +29,30 @@ export interface AdapterInspection {
 
 export interface AgentAdapterOperations {
   inspect(id: AgentAdapterId): AdapterInspection
-  install(target: AdapterInstallTarget): void
+  /** Async preconditions (e.g. resolving Node.js) that must pass before install writes anything. */
+  prepare?(target: AdapterInstallTarget): Promise<void>
+  install(target: AdapterInstallTarget): InstallReport | void
   uninstall(target: AdapterInstallTarget): void
+  /**
+   * Runtime capability projection. Claude Code answers permissions only while the user has
+   * turned that on, so its reported capability follows the main-process preference.
+   */
+  capabilities?(id: AgentAdapterId, base: Readonly<AgentCapabilities>): Readonly<AgentCapabilities>
 }
 
 function check(id: string, status: 'pass' | 'warn' | 'fail', message: string) {
-  return { id, status, message }
+  return { id, status, code: `${id}.${status}`, message }
 }
 
 function inspectGenericHttp(): AdapterInspection {
   return {
     installed: true,
     health: 'ready',
-    message: '本機 /v1/events ingress 可透過已驗證的 receiver 使用。',
+    message: 'The local /v1/events ingress is available through the authenticated receiver.',
     checks: [
-      check('loopback', 'pass', 'Receiver 僅繫結 loopback。'),
-      check('token', 'pass', '請求需要安裝時產生的 bearer token。'),
-      check('permissions', 'pass', 'Generic HTTP 僅能 observe-only，無法回應 Permission。'),
+      check('loopback', 'pass', 'The receiver binds to loopback only.'),
+      check('token', 'pass', 'Requests need the token created at install time.'),
+      check('permissions', 'pass', 'Generic HTTP is observe-only and cannot answer Permission.'),
     ],
   }
 }
@@ -63,7 +74,7 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
         installed: inspection.installed,
         health: inspection.health,
         message: inspection.message,
-        capabilities: definition.capabilities,
+        capabilities: operations.capabilities?.(definition.id, definition.capabilities) ?? definition.capabilities,
         sources: definition.sources,
         sourceLabels: definition.sourceLabels,
         ...(definition.installTarget ? { installTarget: definition.installTarget } : {}),
@@ -72,8 +83,21 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
       }
     },
     install: async () => {
-      if (definition.installTarget) operations.install(definition.installTarget)
-      return (await createAdapter(definition, operations).detect(context()))
+      const self = createAdapter(definition, operations)
+      const before = (await self.detect(context())).health
+      let report: InstallReport = { changedFiles: [], backupPaths: [] }
+      try {
+        if (definition.installTarget) {
+          await operations.prepare?.(definition.installTarget)
+          report = operations.install(definition.installTarget) ?? report
+        }
+      } catch (error) {
+        // Keep the failure structured; the IPC layer turns this into a per-adapter result.
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+          installOutcome: failedOutcome(definition.id, error),
+        })
+      }
+      return { ...(await self.detect(context())), outcome: buildOutcome(definition.id, report, before) }
     },
     uninstall: async () => {
       if (definition.installTarget) operations.uninstall(definition.installTarget)
@@ -102,11 +126,23 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
   }
 }
 
+const CLAUDE_RESPOND_MODES = Object.freeze(['allow_once', 'deny'] as const)
+
+/** Claude Code's capability while answering from the pet is on; every other adapter is unchanged. */
+export function projectAdapterCapabilities(
+  id: AgentAdapterId,
+  base: Readonly<AgentCapabilities>,
+  claudePermissionRespondEnabled: boolean,
+): Readonly<AgentCapabilities> {
+  if (id !== 'claude-code' || !claudePermissionRespondEnabled) return base
+  return Object.freeze({ ...base, permissions: 'respond', permissionModes: CLAUDE_RESPOND_MODES })
+}
+
 export interface AgentAdapterRegistry {
   readonly adapters: ReadonlyArray<AgentAdapter>
   listStatuses(): Promise<ReadonlyArray<AdapterRuntimeStatus>>
   diagnose(id: AgentAdapterId): Promise<DiagnosticReport | null>
-  install(id: AgentAdapterId): Promise<AdapterDetection | null>
+  install(id: AgentAdapterId): Promise<(AdapterDetection & { outcome?: InstallOutcome }) | null>
   uninstall(id: AgentAdapterId): Promise<AdapterDetection | null>
   normalize(input: unknown, receivedAt?: number): Promise<AdapterNormalizeResult>
 }
@@ -119,10 +155,10 @@ const DEFAULT_OPERATIONS: AgentAdapterOperations = {
   inspect: id => ({
     installed: id === 'generic-http',
     health: id === 'generic-http' ? 'ready' : 'needs_install',
-    message: id === 'generic-http' ? '本機 /v1/events ingress 可使用。' : 'Adapter 尚未安裝。',
+    message: id === 'generic-http' ? 'The local /v1/events ingress is available.' : 'The adapter is not installed.',
     checks: id === 'generic-http'
       ? inspectGenericHttp().checks
-      : [check('runtime', 'warn', '此執行環境未提供 Setup operations。')],
+      : [check('runtime', 'warn', 'Setup operations are unavailable in this runtime.')],
   }),
   install: () => {},
   uninstall: () => {},

@@ -1,528 +1,228 @@
 # Agent Pets
 
-顯示 AI 編程助手即時狀態的桌面寵物。
+桌面寵物，即時顯示你的 AI 程式助理正在做什麼：思考中、執行工具、等你處理、完成或失敗。
 
 [English](README.md) | **繁體中文**
 
 ---
 
-## 功能
+## 安裝
 
-- **即時狀態** — 一眼看出目前哪個助手正在執行、思考中還是閒置。
-- **可拖曳寵物** — 拖到螢幕任意位置（重開 app 後位置會保留）。
-- **多助手支援** — OpenCode、Codex、Claude Code（CLI 與 Desktop）。
-- **自訂寵物** — 匯入自己的精靈圖，或是像 [codex-pets.net](https://codex-pets.net) 這類網站的 `.codex-pet.zip` 素材包。
-- **桌面控制** — 系統匣選單、原生等待／完成通知、勿擾模式、音效控制，以及可選的登入時啟動。
-- **Mini／Edge 模式** — Mini 可隨時切換；Edge Peek 需由使用者在 Settings 或 Tray 開啟，拖到螢幕邊緣停留片刻會顯示專用 Liquid Glass handle，不會裁切寵物本體，且會依螢幕與 DPI 變更重新定位。
-- **可選 Shimeji 行為** — 在 Settings → Desktop → 桌面行為開啟後，寵物會以低頻率在閒置時走動、休息並回應游標。預設關閉；工作中、Permission、勿擾、Reduced Motion、背景或省電時會暫停，且只會在目前螢幕 work area 內移動。
-- **桌面顯示控制** — 可選擇將寵物視窗排除在支援的擷取 API 外、在 macOS 其他 App 全螢幕 Space 或支援的 Windows 無框全螢幕顯示器中隱藏，或開啟右鍵隱藏。擷取保護只套用寵物；macOS 的擷取排除是最佳努力，而 Windows 偵測採保守規則，原生執行環境不可用時會停用。
-- **權限控制** — OpenCode 的 permission request 可直接在 Liquid Glass 寵物氣泡選擇只允許一次或拒絕；只有符合條件且顯示中的請求才會註冊全域快捷鍵。
-- **寵物成長** — 完成 session、受上限保護的觀察到的工作時間、每日首次完成與連續天數會產生持久 XP；Level 與 Evolution 由主行程 SQLite ledger 保存，重開後仍會恢復。
-- **成就圖鑑** — Growth chip 會顯示每隻寵物獨立的 10 個長期里程碑；成就只在主行程解鎖一次，完成時可播放獎勵動畫與一次性原生通知，也會標示 token 成就的精確／估算資料品質。可在 Growth 中獨立關閉追蹤，不會影響 XP、Permission 或事件接收。
-- **Presentation MCP** — 本機、僅展示用途的 MCP bridge 提供 `pet_status`、`pet_react`、`pet_say`；不會執行命令、開啟檔案、批准權限或修改 XP。
+到 [Releases](https://github.com/Ponpon55837/agent-pets/releases) 頁面下載最新版本。
 
----
+- **macOS** — `AgentPets-<version>-arm64.dmg`（Apple Silicon）或 `AgentPets-<version>-x64.dmg`（Intel）。開啟後把 App 拖進「應用程式」。
+- **Windows** — `AgentPets-<version>.exe`，免安裝的可攜版。
 
-## 支援的工具
+目前的版本沒有程式碼簽章，第一次開啟時系統會跳出警告：
 
-| 工具        | CLI | Desktop |
-| ----------- | --- | ------- |
-| OpenCode    | ✅  | ✅      |
-| Codex       | ✅  | ✅      |
-| Claude Code | ✅  | ✅      |
+- **macOS（Gatekeeper）** — 在「應用程式」中對 App 按右鍵，選擇**打開**並確認；或到**系統設定 → 隱私權與安全性**按**強制打開**。最後手段：`xattr -dr com.apple.quarantine "/Applications/Agent Pets.app"`。
+- **Windows（SmartScreen）** — 選擇**其他資訊 → 仍要執行**。
 
-**Generic HTTP** Adapter 可供本機整合透過經驗證的 `/v1/events` 使用；它永遠是 observe-only，不具備回覆權限的能力。
+## 第一次使用
 
----
+第一次啟動時會出現寵物，並自動開啟面板，先顯示簡短介紹（寵物會顯示什麼、何時需要你、如何成長），接著進入**設定精靈**：
 
-## 快速開始
+1. 在工具旁按**安裝**，或按**全部安裝**，寫入該工具的 hook。沒有你的點擊不會安裝任何東西；既有設定檔會先備份（`*.agent-pets-bak-*`，保留最近 5 份），而且只加入 Agent Pets 自己的項目。無法解析的檔案絕不覆寫。
+2. 重新啟動該工具。按**等待真實事件**（執行任何提示詞，最多等 30 秒，等工具自己送出事件）即可確認端對端連線。**測試接收器**只證明本 App 能收到本機事件，**診斷**則逐項列出檢查結果與修復提示。
+3. 之後啟動時，精靈只會在你尚未完成、也沒按**稍後再說**之前再次出現。隨時可從**設定 → 進階 → 設定精靈**重新開啟。
 
-### 安裝（Windows）
+要移除整合，可在精靈中對單一工具按**移除**（只移除該工具的項目），或在刪除 App 前按**完整清除…**（移除所有 hook、連線權杖，以及 `~/.desktop-pet` 底下的檔案；Windows 為 `%USERPROFILE%\.desktop-pet`）。
 
-從 [Releases](https://github.com/Ponpon55837/agent-pets/releases) 頁面下載並執行 `Agent Pets.exe`。不需要安裝——它是可攜式應用程式。
+## 支援的 Agent
 
-### 安裝（macOS）
+| Agent | CLI | Desktop | Permission | Quota | Token usage |
+|-------|-----|---------|------------|-------|-------------|
+| OpenCode | 支援 | 支援 | respond | — | estimated |
+| Codex | 支援 | 部分 | observe | provider | exact |
+| Claude Code | 支援 | 支援 | observe（開啟後 respond） | provider | exact |
 
-從 [Releases](https://github.com/Ponpon55837/agent-pets/releases) 頁面下載 `AgentPets-<版本>-arm64.dmg`（Apple Silicon）或 `AgentPets-<版本>-x64.dmg`（Intel），打開後把 app 拖到「應用程式」資料夾。
+- **respond** — 權限請求可直接在寵物氣泡上「允許一次」或「拒絕」。OpenCode 一律支援；Claude Code 需開啟**從寵物回覆 Claude Code 權限**（見[權限氣泡](#權限氣泡)）。
+- **observe** — 寵物會顯示「等待權限」，但必須回到工具本身核准（Codex 只會回報正在等待，沒有管道把決定送回去）。
+- Codex 不會回報「等待輸入」狀態。Codex Desktop 與 CLI 共用 `~/.codex`，且沒有獨立的安裝 API，所以只有在該版本執行相同 hook 時才有作用，請用**等待真實事件**確認。
+- **Token usage：exact** 表示逐則訊息讀取 Agent 自己的本機工作階段紀錄（`~/.codex/sessions`、`~/.claude/projects`）。**estimated** 表示數字來自 Agent 送來的事件，例如 OpenCode 與 Generic HTTP 整合；Codex 與 Claude Code 事件上的用量不計入，讓本機紀錄維持唯一來源。
+- **Generic HTTP** adapter 供本機整合透過需驗證的 `/v1/events` 端點使用（見[事件伺服器](#事件伺服器)），僅能觀察。
 
-### 第一次執行
+## 寵物
 
-1. 啟動 Agent Pets，螢幕上會出現一隻小寵物。
-2. 點擊寵物，然後 **⚙ → Setup Wizard**。它會偵測你機器上安裝了哪些 AI 工具。
-3. 點某個工具旁的 **Install**（或 **Install All**）來安裝對應的 hooks——精靈本身不會自動安裝，需要你手動點擊。
-4. Hooks 安裝完後，重新啟動你的編程工具；寵物的外觀就會開始反映你的助手狀態。
+| 操作 | 效果 |
+|------|------|
+| 點擊（或聚焦後按 Enter / Space） | 在寵物旁開啟控制面板 |
+| 連按兩下 | 摸摸寵物：小動作並增加 1 點心情（每天最多 5 次） |
+| 拖曳 | 移動寵物，位置重啟後會記住 |
+| 右鍵 | 選單：開啟面板、開啟設定、勿擾模式、Mini 模式、隱藏、離開（若開啟**右鍵隱藏**則直接隱藏） |
 
----
+- **狀態列** — 寵物下方最多 3 行，每個工具家族（Codex / Claude / OpenCode）一行，CLI 與 Desktop 合併成同一行。每行都是一條細的單行：工具名稱與簡短狀態（狀態詞不論介面語言都以英文顯示），有額度資料時再加上百分比與額度條，另有插件徽章時也在同一行，例如 `Claude · Working 71%`。狀態詞一律完整：寬度不夠時（多寵物小尺寸、徽章較多）依序拿掉徽章的 `+N`、徽章（由後往前），接著名稱以省略號縮短、再拿掉名稱，最後才是百分比（額度條保留）。被拿掉的徽章仍會出現在提示與螢幕閱讀器標籤中。同一家族有多個工作階段時，這一行會跟著最需要你處理的那一個（狀態優先度最高，其次是最近的）。完整名稱、CLI/Desktop、專案與介面語言的完整狀態放在滑過時的提示（有額度條時併入額度提示）與螢幕閱讀器的標籤中。沒有進行中的工作階段時只顯示一行 `Idle` 或 `Offline`，提示與螢幕閱讀器標籤也是同一個字。
+- **完成標記** — 超過 45 秒沒碰寵物時完成的結果，會在寵物旁累計成 `✓ N`（有失敗時為 `⚠ N`）；Mini 模式與邊緣收合也會顯示數量。點寵物或標記即清除。可在**設定 → 桌面 → 完成標記**關閉，關閉期間不會累計。
+- **氣泡** — 成功、失敗與等待提示會出現在寵物上方（**狀態泡泡**，預設開啟，數秒後自動關閉，點擊可開啟面板）。可另外開啟**工作中提示**，顯示目前使用的工具（預設關閉）。權限提示不會自動消失。氣泡有優先順序：權限最優先，其次是 Agent 提示、Presentation MCP 發言、工作中提示與插件通知。
+- **反應** — 狀態變化時的彈跳與等待權限時的晃動（**彈跳與晃動**，預設開啟），另有裝飾性的**待機小動作**（預設關閉）。使用 Presentation MCP 的 Agent 與插件也能觸發 `happy`、`curious`、`thinking`、`surprised`、`encouraging` 五種反應。
+- **心情與成長** — 見[成長](#成長)。
+- **Mini 模式** — 縮成 96 px 的精簡寵物並顯示狀態圖示。**邊緣收合**（獨立設定，預設關閉）：把寵物拖到螢幕左、右或上緣並停留約 650 毫秒，會收成液態玻璃把手；點擊或滑過即可展開。有待處理的權限請求時一律回到完整寵物。位置會在顯示器與 DPI 變更後還原。
+- **Shimeji 行為**（預設關閉）— 低頻率的閒置走動、睡覺與游標反應，限制在目前螢幕內。工作中、權限提示、勿擾、減少動態、背景與省電時會暫停。
+- **多寵物**（預設關閉）— 當有 2 個以上工具家族同時作用，每個家族顯示一隻小寵物，並可各自選擇寵物。
+- **專案寵物** — 在**設定 → 寵物**把專案資料夾綁定到專屬寵物。專案識別使用加鹽的本機雜湊，不儲存完整路徑。
+- **自訂寵物** — 見下方。
 
-## 使用方式
+### 自訂寵物
 
-### 與寵物互動
+在**設定 → 寵物**使用 **+ 匯入素材**（`.webp`、`.png` 或 `.jpg` 精靈圖）或 **+ 匯入 .zip**（`.codex-pet.zip` 套件，例如來自 [codex-pets.net](https://codex-pets.net)，直接讀取，不必先解壓縮）。匯入 .zip 時會先顯示預覽（待命動畫、每列第一格、圖集版本、單格尺寸與注意事項），確認後才安裝。圖集版本依圖片判定：9 列為 v1、11 列為 v2；v2 素材不需 `behaviorManifest` 就會以第 1 列（running-right）走路，第 9–10 列是視線方向列，所以除非素材另有宣告，睡覺仍沿用待命動畫。寵物 ID 已存在時可選擇**取代**或**保留兩者**（另存為 `<id>-2`），不會在未告知下覆蓋；安裝中斷也不會留下寫到一半的資料夾。寵物可重新命名（鉛筆圖示）與移除（內建寵物只會被隱藏；預設的 `aang-airbender` 無法移除）。匯入的寵物存放在 `~/.desktop-pet/custom/`。
 
-| 動作             | 效果                                                             |
-| ---------------- | ---------------------------------------------------------------- |
-| **左鍵點擊**寵物 | 打開控制面板（面板是獨立視窗，出現在寵物旁邊——寵物本身不會移動） |
-| **拖曳**寵物     | 移動到新位置（重開 app 後會保留）                                |
-| **右鍵點擊**     | 在 Settings 開啟後可隱藏寵物（Permission 控制項仍可互動）        |
+精靈圖規格（匯入時檢查）：
 
-系統匣選單可以顯示／隱藏寵物、開啟面板或 Settings、切換 Mini／Edge Peek 模式／勿擾模式／音效／通知、在打包版本設定登入時啟動、從 **插件** 子選單執行已啟用插件的指令、以系統匣圖示標示待處理狀態，以及結束 app。關閉或隱藏寵物視窗後，hooks 與背景狀態仍會運作，直到選擇 **Quit**。
+- 單格 **192 × 208 px**；圖片寬高必須是該尺寸的整數倍，且**至少 9 列**（第 0–8 列）。
+- 使用的列：0 閒置／離線、5 錯誤、6 等待權限／等待輸入、7 思考／執行工具、8 成功。
+- `pet.json` 可選擇性宣告 `behaviorManifest` 供 Shimeji 使用，例如 `{"behaviorManifest":{"walk":{"row":1},"sleep":{"row":5}}}`（列 0–10、最多 16 格、每格 60–3000 毫秒）。未宣告的行為會回到閒置。
 
-寵物下方有一個浮動狀態列，最多顯示 **3 行**，每行對應一個目前活躍的工具家族（Codex / Claude / OpenCode）。同一工具的 CLI 跟 Desktop 版本會合併成一行顯示（例如 `Claude (CLI+Desktop) · Thinking`）。當沒有任何工具在跑時，會顯示一行寵物整體的 idle/offline 狀態。
+## 控制面板
 
-### 控制面板
+點擊寵物或從系統匣開啟。標題列顯示寵物、等級與執行中／需處理的工作階段數，並由左至右提供 **⋮ 選單**（勿擾模式、保持開啟，以及可在跟隨系統／淺色／深色間循環的外觀快速切換；勿擾開啟時按鈕上會有小圓點）、設定（`Cmd/Ctrl+,`）與關閉。**Esc** 會一層層返回，最後隱藏面板。拖曳任一邊緣即可調整面板大小（最小 360×420，最大可到全螢幕），所有畫面共用同一個大小並會被記住；**設定 → 通用 → 重設面板大小**可回到預設。
 
-點擊寵物打開控制面板——一個獨立的、永遠置頂的視窗，有兩個畫面；主畫面包含 **Sessions** 與 **Usage** 分頁：
+- **Sessions** — 分成**需要處理**、**進行中**與**閒置與已完成**三組。可依全部／需要處理／進行中與工具篩選，並依緊急程度或最近時間排序。進行中的狀態會顯示經過時間；展開一列可看到路徑、工具、最後出現時間與 Session ID，以及「回到工作階段」動作：**顯示專案資料夾**（在 Finder／檔案總管中選取，不會開啟）、**複製專案路徑**，macOS 另有**切換到**該工作階段所在的終端機或 IDE（只會把 App 帶到最前面，不會指定視窗或分頁）。**清除離線項目**會把已結束的工作階段從畫面移除；超過 15 分鐘沒有訊號的工作階段會被視為過期。本機埠被占用時會顯示橫幅與**立即重試**。
+- **額度** — Codex 與 Claude Code 訂閱的剩餘額度（工作階段與每週視窗，重置時間以本地時間顯示）。Agent Pets 沒有帳號系統，也不會要求 Agent 的帳密：它沿用 CLI 在本機的登入狀態，由主行程向供應商查詢，只把百分比傳給介面。若 CLI 登入遺失或過期，請在該 CLI 重新登入。面板開啟時每 2 分鐘更新一次（**立即更新**有頻率限制）；更新失敗時仍保留最後一次成功的數值。該工具作用中時，寵物的狀態膠囊也會嵌入一條細額度條。供應商額度下方的**目前 5 小時區塊**是依本機紀錄算出的區塊（從休息滿 5 小時後的第一筆用量開始、向下取整到整點，持續 5 小時）：顯示目前 Token、已過與剩餘時間，以及每分鐘 Token。這是本機推算的時段，不是供應商自己的額度。
+- **歷史** — 顯示 **7、30 或 90 天**的完成／失敗工作階段、作業時間、Token 用量（新輸入加輸出，快取另列）、Agent 分布與各模型明細，可依專案篩選。**匯出 JSON** 或**匯出 CSV** 會把已去識別的每日摘要寫到你選擇的檔案。**清除歷史**只清除歷史與額度快照，不會動到 XP、等級或成就。歷史資料來自 hook 事件，加上對本機 Codex／Claude Code 工作階段紀錄的唯讀掃描；不儲存提示詞、工具參數與完整路徑。很長的紀錄會分幾次掃描讀完，不會因為檔案太大而略過。原始事件保留 90 天，每日彙總則長期保留。
+- **歷史 → 工作階段** — 依最後活動時間由新到舊列出過去的工作階段（按**載入更多**看更早的）：結果（完成、失敗、已取消、進行中、未完成）、Agent、專案、時長、工具執行次數、權限等待、Token 與主要模型。沿用上方的天數與專案篩選，另可依 Agent、結果、自訂日期篩選，或搜尋專案與 Agent 名稱。點選工作階段可看時間軸：每次狀態變化的時間與工具名稱（最近 500 筆）。只保存中繼資料：不含提示詞、對話內容或工具參數，專案也只記資料夾名稱。此功能加入前記錄的工作階段沒有工具統計與時間軸。JSON 匯出會附上這份清單，但不含專案名稱。
 
-#### Sessions 畫面（預設）
+- **插件分頁** — 每個已啟用的插件會在「歷史」之後多一個分頁（僅在插件功能開啟，且該插件已安裝、已啟用、沒有當機時才出現）。分頁顯示插件名稱、圖示與未讀徽章；插件很多時分頁列可左右捲動（滾輪、觸控板、‹ › 按鈕、方向鍵）。有面板頁的插件會把面板嵌在分頁內；其餘插件則顯示最近通知與指令，並連到它的設定與詳情。下次開啟會記住上次使用的分頁。
 
-顯示所有 session（包含剛離線不久的）目前的狀態：
+### 成長
 
-- **Idle** — 助手正在等待輸入
-- **Thinking** — 助手正在處理中
-- **Tool Running** — 助手正在執行工具
-- **Waiting Permission** — 助手正在等待你核准
-- **Success** — 任務完成
-- **Error** — 發生錯誤
-- **Offline** — Session 已結束或逾時失聯
+位於**設定 → 寵物 → 成長**：XP、等級、進化階段與連續天數、近期 XP 與成就。
 
-進行中的狀態（Thinking / Tool Running / Waiting）旁邊會顯示已耗時秒數。如果有離線的 session，列表下方會出現 **Clear offline** 按鈕，一鍵清除。
+- XP 只在主行程發放且具冪等性：每完成一個工作階段 +20、每個本地日的第一次完成 +10、每 30 分鐘的作業時間 +2（每個工作階段最多 +10）、連續使用每多一天 +5。失敗或取消的工作不給 XP。
+- **心情**每天從 10 開始：成功 +4、錯誤 −6，另有工具數與長時間工作的上限加成。**重設今日心情**會回到 10；**心情視覺效果**可關閉光環而不停止計算。
+- 共 14 個成就（其中一個隱藏），可依全部／進行中／已解鎖篩選。每個寵物的解鎖只記錄一次，並以系統通知提示。Token 成就計入 Codex 與 Claude Code 本機紀錄的精確用量（每則訊息只算一次，與歷史一樣由所有寵物共用），以及其他 Agent 事件回報的用量。關閉成就只會停止新的解鎖。
 
-#### Usage 分頁
+## 設定
 
-顯示 Codex 與 Claude Code 回報的訂閱剩餘用量，包含 session／weekly 額度、重置倒數，以及依使用者本地時區顯示的重置日期時間。Codex／Claude family 活動時，既有寵物狀態 pill 底部會內嵌一條 3px 額度條，不改變視窗高度；它會優先顯示短期 session，若供應商只回傳 weekly 則自動改用 weekly。將滑鼠移到狀態列即可查看百分比與完整重置時間。**Agent Pets 沒有帳號系統，也永遠不會要求輸入 Agent 帳號、密碼或 token。** 它只沿用 Codex CLI／Claude Code 原本已建立的本機訂閱 session，由 Electron 主行程向供應商的 quota API 查詢，UI 只會收到整理過的百分比。若該 CLI session 不存在或已失效，重新驗證會在原本的 CLI 內進行，不是在 Agent Pets。結果會快取一分鐘；相關 Agent 活動期間，細條每五分鐘更新一次，按 **Refresh** 則會立即為兩個視窗取得新資料。只使用 API key 的 Codex session 無法取得訂閱額度。
+從面板標題列或寵物右鍵選單開啟。設定分成五組，頂端有**搜尋**，可直接跳到對應設定：
 
-點標題列的 **⚙** 圖示切換到 Settings。
+| 群組 | 內容 |
+|------|------|
+| 通用 | 語言（繁體中文／English）、**外觀主題**（面板：跟隨系統／淺色／深色；寵物：預設深色、淺色或跟隨面板，可分開設定，例如深色系統搭配淺色寵物）、寵物大小、重設面板大小、彈跳與晃動、狀態泡泡、待機小動作、工作中提示 |
+| 寵物 | 寵物庫與匯入、多寵物、專案寵物、成長（心情、XP、成就） |
+| 桌面 | 通知、勿擾、音效；Mini 模式、邊緣收合、Shimeji、擷取排除、全螢幕自動隱藏、完成標記、右鍵隱藏、回到工作階段、權限氣泡、從寵物回覆 Claude Code 權限、Presentation MCP、開機啟動（打包版）、權限紀錄 |
+| 進階 | 設定精靈、專案 MCP、診斷、重新啟動、離開 |
+| 插件 | 安裝、啟用、權限、更新與插件通知（日常使用在主畫面的插件分頁） |
 
-#### Settings 畫面
-
-#### 語言與文字
-
-桌面 UI 與原生提示支援繁體中文與 English，包含設定、通知、Tray、Setup Wizard、權限提示與錯誤訊息。在 Settings 的 **語言** 分區即可切換；選擇會保存到本機，並同步寵物、面板、Tray 與原生通知。`Running`、`Thinking`、`Permission`、`Idle`、`Allow once`、`Deny`、Agent 名稱、MCP 工具名稱與 token 等技術詞會保留原文，避免和實際 API／狀態名稱不一致。
-
-面板使用可擴充的分區導覽：**語言**、**Appearance**、**Desktop**、**Pets**、**Growth** 與 **Advanced**。
-
-**Appearance 分區**
-
-- **Size** — S / M / L / XL / XXL 調整寵物大小。
-- **Bounce & shake** — 點擊／狀態切換時的彈跳、閒置搖擺、waiting-permission 抖動。**預設關閉。**
-- **Status bubble** — 一般成功／錯誤提示約 3 秒後自動關閉，並以進度條顯示剩餘時間；權限請求絕不會自動關閉。**預設關閉。**
-
-**Desktop 分區**
-
-- **Mini mode** — 將寵物縮成 96px 左右的小型視圖，隨時可恢復 Normal。
-- **Edge peek** — 獨立選項，**預設關閉**。開啟後拖到任一螢幕邊緣停留約 650ms，會顯示專用 42px 厚、96px 長的 Liquid Glass handle；按下或 hover 會展開回 Normal，不會留下寵物裁切區塊。待處理的權限請求會自動恢復完整可操作視圖。
-- **Shimeji 行為** — 在 **Settings → Desktop → 桌面行為** 開啟自主行為。整個寵物視窗共用一個低頻排程；自訂素材沒有 Walk／Sleep manifest 時會安全回到 Idle，不會在 Mini／Edge 模式移動，也不會跨螢幕。
-- **擷取排除** — 開啟後，將寵物視窗從支援的截圖／錄影 API 排除。Windows 使用系統擷取排除；macOS 使用有限的原生 sharing policy，較新的擷取工具可能忽略。控制面板不會被排除。
-- **全螢幕自動隱藏** — macOS 以原生 Spaces policy 讓寵物與面板離開其他 App 的全螢幕 Space。Windows 使用原生 Win32 event detector：只有其他程式擁有可見、頂層、無框，且覆蓋完整螢幕的視窗時，才隱藏位於該螢幕的 Agent Pets 視窗；一般最大化視窗會忽略。原生執行環境不可用時會 fail closed 並停用；這不是影片內容辨識。
-- **右鍵隱藏** — 開啟後，在寵物圖像或 Edge Peek handle 上按右鍵即可隱藏。Permission 卡片、狀態列、提示與其他互動控制項會排除；App 與 hooks 仍會繼續執行。
-- **Do Not Disturb** — 勿擾模式會抑制原生通知、寵物音效、額外動態效果與非必要氣泡，但不會停止事件接收。**預設關閉。**
-- **Notifications** — 等待核准、等待輸入、完成與錯誤的原生通知；同 session 的重複事件有冷卻時間，結束事件會批次合併。**預設開啟。**
-- **Sound** — 成功/失敗/等待核准時的短音效（用 Web Audio 即時合成，不需要音檔）。**預設關閉。**
-- **Launch at startup** — 登入系統時啟動 Agent Pets；此開關只在打包版本可用。
-- **顯示權限泡泡** — 與一般 Bubble 分開的 Liquid Glass 權限卡片開關。關閉只會隱藏 Allow once／Deny 卡片，不會允許或拒絕請求；待處理請求仍由 Broker 保留、繼續顯示在系統匣徽章，並可由 Agent 或終端機處理。**預設開啟。**
-- **Presentation MCP** — 本機 MCP 展示管道開關。開啟後 client 只能送出受限制的反應或純文字話語；勿擾模式與 waiting／error／permission 狀態優先。**預設開啟。**
-
-**Advanced 分區**
-
-- **Setup Wizard** — 重新偵測工具，或安裝/重新安裝 hooks。
-- **Restart Pet** — 寵物或動畫卡住時，完整重新啟動 Agent Pets。
-- **Quit** — 結束 Agent Pets。
-
-**Growth 分頁**
-
-- **Mood** — 每天從低基準 10 開始；任務成功 +4、失敗 -6。長任務每完成 2 個工具會再 +1（每個任務最多 +8），每持續工作 5 分鐘也會 +1（每個任務最多 +4），因此完成獎勵之前的進度分數最多 +12。心情成長時，會以目前寵物影格生成貼合自身輪廓的動態能量層，並在 90 以上進入完整爆氣效果。點 **Reset** 只會回到 10，不會額外加分。
-- **Mood visuals** — 可關閉 mood 對寵物 aura、色彩與能量層的視覺影響；數值仍會持續追蹤，之後重新開啟即可恢復。
-- **XP／Level** — Growth chip 會顯示目前選取寵物的持久 XP、Level、Evolution 階段與目前 streak。XP 使用有版本的去重 ledger：每個 canonical session 完成 +20、每日首次完成 +10、每觀察到 30 分鐘 active coding +2（每個 session 最多 +10），延續前一天 streak +5。失敗或取消不會扣永久 XP；token milestone 等待精確 token event contract。
-- **Achievements／成就** — 同一個 Growth chip 內的圖鑑會顯示 10 個成就（首次完成、session／活躍日門檻、Night Owl、不同 Agent、連續天數、Level 與 token milestone）。解鎖資料寫入獨立的 `achievements.sqlite`，每隻寵物與版本各自去重；啟用成就時，App 會在啟動與重新開啟追蹤時，把 History 保留且已驗證的不重複完成 session 安全回填到成就 ledger，重播回填不會重複解鎖或通知。關閉「啟用成就」只停止新的解鎖與回填，既有成就與 XP 不會被清除。
-
-**Pets 分頁**
-
-- **Pet** — 選擇要顯示哪隻寵物，點名字即可切換。
-- **+ Import Sprite** — 匯入自訂精靈圖（`.webp`/`.png`/`.jpg`，8 欄 × 11 列）。
-- **+ Import .zip** — 一鍵匯入 `.codex-pet.zip` 素材包（例如從 codex-pets.net 下載的），不用手動解壓縮。
-- **Multi-pet** — 同時有 2 個以上工具家族在跑時，改成每個家族各顯示一隻小寵物，而不是只顯示優先權最高的那隻。**預設關閉。** 開啟後，每個工具的寵物選擇也會顯示在這個分頁。
-
-點 **‹** 回到 Sessions 畫面。
-
-### Presentation MCP
-
-Presentation MCP 是給支援 MCP 的 Agent 使用的本機 stdio bridge。App 啟動後會建立 bridge 與獨立 token：
-
-```text
-Windows: %USERPROFILE%\\.desktop-pet\\presentation-mcp.mjs
-macOS/Linux: ~/.desktop-pet/presentation-mcp.mjs
-```
-
-請在 MCP client 中使用真正的 Node.js 執行這個 script。它只提供 `pet_status`（唯讀的整理後狀態）、`pet_react`（五種受限制的反應）與 `pet_say`（最長 240 字元、存活 1–15 秒的純文字）。每個 client 每 10 秒最多 3 次；queue 有上限，intent 會自動逾時，client disconnect 時會移除該 client 尚未顯示的 intent。Permission、error、waiting 與勿擾狀態永遠優先。這個管道不能控制工具、檔案、權限、XP、quota 或成就。
-
-#### 一鍵安裝到本機專案
-
-在 **Settings → Advanced** 按下 **Setup MCP for a project / 為專案設定 MCP**，於原生資料夾選擇器選擇本機專案；Agent Pets 會一次為三種支援的 project client 寫入展示 bridge：
-
-- Codex：`.codex/config.toml`（`mcp_servers.agent-pets`）
-- Claude Code：`.mcp.json`（`mcpServers.agent-pets`）
-- OpenCode：`opencode.json`（`mcp.servers.agent-pets`）
-
-這個操作可重複執行。相同設定會回報「已設定」；同名但內容不同的設定會回報衝突並完全不覆蓋。它只修改選定專案的本機設定，不執行 shell 命令，也不會重新安裝 hooks。設定完成後，請重啟對應的 Agent client，讓它重新載入 MCP 工具目錄。
-
-這個按鈕會開啟獨立的 MCP 完整面板，不會把設定精靈或主設定頁越堆越大。面板會記住所有透過此按鈕設定的專案，重新檢查三個 client，顯示「已連接」、「部分連接」、「有衝突」或「找不到資料夾」，並列出專案路徑與最後檢查時間。**重新檢查**會立即更新清單。**移除 MCP** 只會移除仍符合 Agent Pets 原始設定的項目；如果使用者改過設定，會保留檔案並標示衝突。若專案資料夾已不存在，可以只移除清單記錄，不會碰到其他檔案。按下 **完成** 會回到設定頁。
-
-### History HUD（歷史儀表板）
-
-主面板的 **History** 分頁會讀取由 main process 管理的本機彙總：近七天每日工作量、不重複的完成／失敗工作階段、觀察到的工作時間、Agent 分布、最近 Quota 快照，以及精確／估算的 token 品質。同一隻寵物、來源、session 與專案身分重複送出的 success 只算一個完成 session，與成就 ledger 使用相同定義。History 也會由 main process 唯讀掃描固定的本機 session log 路徑：`%USERPROFILE%\.codex\sessions`、`%USERPROFILE%\.claude\projects` 與 `%USERPROFILE%\.claude\transcripts`。Codex 的 `token_count` 會使用累積的 `total_token_usage`，只匯入單調增加的差值；重複的 context／rate-limit 快照，以及沒有累積 counter 的紀錄會忽略。Claude assistant 的 `usage` 會以精確來源解析；cache 欄位會併入 input，只有在沒有 output 時才使用 reasoning。掃描器限制檔案／行大小、拒絕逃出根目錄的連結、只接受白名單 usage 形狀、去重串流紀錄，並只保存雜湊後的 session／檔案身分。原始事件只保存受限制的中繼資料與雜湊後的專案／session 身分；HUD 不保存 prompt、工具參數、憑證或完整專案路徑。**匯出摘要**會將清理後的彙總寫入使用者選擇的 JSON 檔案。**清除歷史**只清除歷史與 Quota 快照，並建立新的本機 log cutoff，不會重設寵物 XP、等級、進化、心情或成就。原始事件有固定保留期限，長期每日彙總則可持續保留。
-
-History 上方的 **專案篩選**可以只查看某一個專案的近七日統計，其中的 token 用量也會依偵測到的專案（透過 Claude Code／Codex 本機紀錄的工作目錄）正確歸屬，而不是只顯示全域總量。專案寵物則在 **Settings → Pets → 專案寵物** 管理：卡片最上方的開關可以整個停用專案路由（停用後所有 session 都沿用目前選取的寵物，但已記錄的專案與綁定不會被刪除）；按下 **加入專案** 使用原生資料夾選擇器，接著選擇要綁定的寵物；選擇「使用目前選取的寵物」即可解除綁定；每個專案旁的移除鈕可以把它從清單拿掉（之後收到該專案的事件會自動重新加入）。未綁定的專案不會改變原本行為。若綁定的自訂寵物被移除，Agent Pets 會先使用永遠存在的預設寵物，並在設定頁標示「缺少的寵物」，重新加入或選擇其他寵物後即可修復。專案身份會以本機 salt 雜湊保存，資料庫與通知不保存完整專案路徑。
-
-#### 讓目前使用中的 Agent 專案接通
-
-1. 先啟動 Agent Pets，在 **Settings → Attention → Presentation MCP** 保持開啟（預設開啟）。App 必須保持執行，因為 stdio bridge 會連到它的本機 loopback control server。
-2. 確認 `node` 是真正的 Node.js，不要使用 `Agent Pets.exe` 當 interpreter。Windows PowerShell 可先確認：
-
-   ```powershell
-   $bridge = Join-Path $env:USERPROFILE '.desktop-pet\presentation-mcp.mjs'
-   node --version
-   Test-Path $bridge
-   ```
-
-3. 依照使用的 Agent client 註冊同一個 bridge。這是 presentation channel，不需要重新安裝 hooks；每個 client 只需要註冊一次，之後重啟 client。
-
-   **Codex CLI／Codex desktop／IDE extension（共用設定）：**
-
-   ```powershell
-   codex mcp add agent-pets -- node $bridge
-   codex mcp list
-   ```
-
-   **Claude Code：**
-
-   ```powershell
-   claude mcp add --scope user agent-pets -- node $bridge
-   claude mcp list
-   ```
-
-   **OpenCode：** 在 `opencode.json` 的 `mcp.servers` 加入（若使用專案設定，也可放在專案自己的設定檔）：
-
-   ```json
-   {
-     "mcp": {
-       "servers": {
-         "agent-pets": {
-           "type": "local",
-           "command": ["node", "C:/Users/<你的帳號>/.desktop-pet/presentation-mcp.mjs"]
-         }
-       }
-     }
-   }
-   ```
-
-4. 完全重啟 Agent client，並用它的 MCP 檢視功能確認 `pet_status`、`pet_react`、`pet_say` 三個工具。若只看到 hooks 的事件而看不到這三個工具，請檢查 bridge 路徑、Node executable、Presentation MCP 開關與 Agent Pets 是否仍在執行。
-
-關閉 Presentation MCP 只會拒絕新的展示 intent，不會移除既有 hooks，也不會影響 Permission Broker、XP 或一般 `/v1/events`。
-
----
-
-## Setup Wizard（設定精靈）
-
-Setup Wizard 會讀取 runtime Agent Adapter registry，並在你點擊按鈕時才安裝對應的 hooks——它本身不會自動安裝任何東西。每個 Adapter 會回報支援的來源、能力、健康狀態與診斷檢查：
-
-- **OpenCode CLI / Desktop** — 寫入 plugin 到 `~/.config/opencode/plugin/`（注意：是單數 `plugin`，跟 OpenCode 實際掃描的目錄一致）以及對應平台的 OpenCode Desktop plugin 目錄
-- **Codex CLI** — 建立 `~/.codex/hooks.json` 並在 `~/.codex/config.toml` 啟用 hooks
-- **Claude Code CLI & Desktop** — 在 `~/.claude/settings.json` 加入 `hooks` 區塊（CLI 跟 Desktop 共用這份設定，所以裝一次兩邊都算；實際是哪一邊觸發的事件，是透過 Claude Code 的 `CLAUDE_CODE_ENTRYPOINT` 環境變數在執行當下判斷，不是安裝程式決定的）
-
-每個 Adapter 會顯示狀態燈與 capability chips：
-
-- 🟢 **綠燈** — 已安裝且設定完成
-- 🟡 **黃燈** — 有偵測到，但還沒（完全）設定好
-- 🔴 **紅燈** — 發生錯誤或不可用
-
-點 Adapter 旁的 **Diagnose** 可以查看有上限的健康檢查。可安裝的 Adapter 點 **Install** 可以單獨（重新）安裝，或點 **Install All** 以 idempotent 方式執行全部安裝器。如果狀態看起來過期，點 **Refresh** 重新偵測。
-
-設定完成的 Adapter 可以點 **Test**，透過目前 app 經 token 驗證的本機 HTTP 接收器送出一筆短暫事件。測試通過會同時驗證 HTTP 204、Adapter 選擇、canonical mapping 與 renderer 收到事件；它不會啟動編程工具，也不代表該工具本身已主動觸發 hook。Generic HTTP 永遠是 observe-only，不能回覆權限。
-
-> 註：目前沒有獨立的「Codex Desktop」hook 安裝項目——只有 Codex CLI 的 hooks 有接上。
+- **勿擾**會靜音系統通知、音效、額外動態與非必要氣泡，但不會停止事件接收。限時選項在系統匣選單：30 分鐘、1 小時、到明天 9:00，或直到手動關閉（限時勿擾最長 7 天）。結束時會有摘要通知，告知期間靜音了幾則提醒。
+- **通知**（預設開啟）涵蓋等待權限、等待輸入、完成與錯誤，每個工作階段有冷卻時間，結束類事件會合併。在 macOS 上，點擊只關於一個工作階段的等待權限或等待輸入通知，會切換到該工作階段的 App；其他通知則開啟 Sessions。**音效**（預設關閉）播放簡短的合成提示音，可分別開關各事件並調整音量。
+- **回到工作階段**（預設開啟）控制上述動作；**切換到 App**（macOS，預設開啟）有獨立開關。切換使用 `open -b`（LaunchServices），不需要「自動化」或「輔助使用」權限。只能啟用固定清單中的終端機、IDE 與 Claude App，而且一定要你點擊；Windows 暫不提供。
+- **擷取排除**只讓寵物視窗不出現在支援的截圖與錄影中（Windows 使用系統 API；macOS 為盡力而為）。**全螢幕自動隱藏**讓寵物避開其他 App 的 macOS 全螢幕 Space 或 Windows 無邊框全螢幕視窗；原生執行環境無法使用時會安全地停用。
+
+## 權限氣泡
+
+Agent 要求權限時，寵物上會出現液態玻璃氣泡，面板內也會顯示同一張卡片。卡片會顯示發出請求的工具與專案、將執行的內容（已遮蔽，可展開與複製）與倒數計時。請求會在短暫的 TTL（最長 5 分鐘）後逾時，並通知 Agent 已取消。
+
+- **風險** — 只有唯讀工具（`read`、`glob`、`grep`、`list`）屬於低風險；OpenCode 的其他所有工具，包含未知與 MCP 包裝的工具，一律視為高風險。Claude Code 的 `Write`／`Edit`／`MultiEdit`／`NotebookEdit` 只有在檔案位於專案資料夾內（解析符號連結後也是），且不在 `.git`、`.claude`、`.husky`、`.vscode`、`.idea`、`.devcontainer`、`node_modules/.bin` 之下，也不是 `.zshrc`、`.envrc`、`.npmrc` 這類 shell 啟動檔或工具設定檔時才是中風險，並顯示相對於專案的路徑；其他編輯、`Bash`、`WebFetch`、`WebSearch` 為高風險，MCP 與其他工具為未知。網路類工具會標示會連到網路。高風險或未知且內容被截斷的請求，在這裡只能拒絕，要允許請回到 Agent 本身。
+- **遮蔽** — API 金鑰與權杖、`Authorization` 值、`password=` 這類參數、URL 內的帳密與私鑰都會變成 `[redacted]`，家目錄則改寫成 `~`。
+- **快捷鍵** — 只有在最上層請求符合條件（低或中風險）時才註冊全域快捷鍵：macOS 為 **Cmd+Shift+Y** 允許一次、**Cmd+Shift+N** 拒絕；Windows 為 **Ctrl+Shift+Y**、**Ctrl+Shift+N**。若按鍵被其他 App 占用，氣泡會說明，按鈕仍可使用。氣泡本身：**N** 或 **Esc** 拒絕；低風險按 **Y** 即允許一次，其他風險需按住 **Y** 0.6 秒。
+- **佇列** — 多個待處理請求會以可展開的清單顯示；**全部拒絕**需要再按一次確認。
+- 對無法在此回覆的 Agent（Codex，以及未開啟下列選項時的 Claude Code），氣泡只是提醒，請回到該工具處理。只提供「允許一次」與「拒絕」，刻意不提供永久核准。
+- **Claude Code**（預設關閉）— 在**設定 → 桌面 → 權限請求**開啟**從寵物回覆 Claude Code 權限**。之後 Claude Code 的 `PermissionRequest` hook 會在**等待秒數**內（預設 90 秒，可設 15–120 秒）等你回覆，終端機裡 Claude Code 自己的權限對話框同時保留，先回覆的一方生效，寵物卡片也會提示可在終端機回覆。一次點擊只回覆一個工具呼叫：若另一個工具呼叫正在等待完全相同的請求（例如兩個 subagent 執行同一個指令），第二個只能在終端機回覆。泡泡會在該工具執行完、Claude 開始下一個工具呼叫或權限詢問、回合結束或送出新提示，或等待逾時時撤下。由於終端機可能先回覆，權限紀錄會把 Claude Code 的決定標示為「終端機可能已先回覆」。寵物沒開、選項關閉、等待逾時或發生任何錯誤時，hook 不輸出任何內容，Claude Code 照原本流程進行（非互動的 `-p` 執行則照常拒絕）。你自己的 deny 規則仍優先於寵物的允許。拒絕時 Claude 只會收到固定文字 `Denied in Agent Pets. (已在 Agent Pets 拒絕)`。若其他工具也註冊了 `PermissionRequest` hook，會與我們並行執行，以哪一方的回覆為準由 Claude Code 決定。
+- **權限氣泡**可在設定中關閉；關閉後待處理請求仍由 broker 保管並顯示在系統匣標記上。**設定 → 桌面**也會列出最近的決定紀錄（只含時間、工具、來源與結果）。
 
 ## 插件
 
-插件可提供寵物通知、反應、面板與 Tray 指令、狀態徽章、沙箱面板頁、寵物外觀，以及清楚標示來源的唯讀狀態列。在 **Settings → Plugins** 安裝 `.agentpet-plugin` 套件，或開啟選擇加入的線上目錄檢視已簽章插件並檢查更新；問題回報會開啟只包含插件 ID 與版本的預填連結。開發者可開啟 **開發者模式** 載入本機資料夾。安裝前請檢查插件要求的權限與貢獻。插件頁面與背景程式都視為不受信任：沒有 Node.js、檔案系統或 shell 存取，網路請求只能送到核准的 HTTPS 網域。插件網路請求不會送出或儲存 Cookie。插件面板可放大覆蓋控制視窗，宿主標題列與關閉按鈕仍會顯示。從 1.4.0 起，插件面板可以用系統瀏覽器開啟已宣告的 HTTPS 連結，但只限使用者剛按下滑鼠或 Enter／Space 之後，且每分鐘最多 5 次。密鑰由 App 的受保護儲存加密，設定快照不會回傳密鑰值。
+插件可以新增寵物通知與反應、面板頁面、系統匣指令、徽章、寵物造型與狀態列。它們在沙盒中執行，沒有 Node.js、檔案系統或 shell 權限，網路只限於你核准的 HTTPS 主機。
 
-背景插件共用一個隱藏的 Plugin Host 程序，只有在至少啟用一個插件時才會啟動。它的記憶體以「載入完成、任何插件開始執行前」的用量為基準，Chromium 本身的固定開銷不會算到插件頭上。只有增長量連續兩次（每 30 秒檢查一次）超過所有啟用插件的預算合計（預設每個插件 64 MB），才會重新啟動 host。Windows 上量的是程序獨佔的 private 記憶體，因為 working set 還包含與其他 Agent Pets 程序共用的 Chromium 程式碼頁面（實測約 65 MB）。
+**設定 → 插件**有四個分頁：**已安裝**（啟用、更新、設定、詳情）、**探索**（選擇啟用的線上目錄，含簽章檢查與更新）、**通知**（插件訊息收件匣，可個別靜音）與**進階**（開發者模式、資源限制、診斷）。安裝時會顯示依風險分組的權限清單；新增的高風險權限或變更的簽章金鑰必須明確確認。插件安裝後預設停用，需要由你自己開啟。
 
-請參閱[插件開發索引](docs/plugins/README.zh-TW.md)、[10 分鐘入門](docs/plugins/getting-started.zh-TW.md)、[安全模型](docs/plugins/security.zh-TW.md)、[API 參考](docs/plugins/api-reference.zh-TW.md)與[範例](docs/plugins/examples.zh-TW.md)。
+要開發插件，請閱讀[插件開發者手冊](docs/plugins/README.zh-TW.md)。
 
----
+## 專案 MCP 與 Presentation MCP
 
-## 自訂寵物
+**Presentation MCP** 是本機 stdio 橋接程式 `~/.desktop-pet/presentation-mcp.mjs`，讓支援 MCP 的 Agent 讓寵物說話或做出反應。它只提供三個工具：`pet_status`（唯讀）、`pet_react`（五種有界反應）與 `pet_say`（最多 240 字元，顯示 1–15 秒）。每個用戶端每 10 秒最多 3 次請求。它不能執行指令、存取檔案、回覆權限或改變 XP，勿擾與權限／錯誤狀態永遠優先。可在設定 → 桌面關閉。
 
-### 精靈圖格式
+**為專案設定 MCP**（設定 → 進階）分兩步把橋接程式註冊到專案，所以在你檢視前不會寫入任何東西：
 
-自訂寵物使用跟內建寵物相同的精靈圖格式。`pet.json` 可選擇宣告受限的 `behaviorManifest`，提供 `walk` 與／或 `sleep` 的 row；缺少定義時會安全回到 Idle：
+1. 選擇專案資料夾。檢視畫面會列出每個工具、將建立或修改的確切檔案、Git 是否已追蹤，以及項目預覽。只會寫入已勾選的工具：Codex `.codex/config.toml`、Claude Code `.mcp.json`、OpenCode `opencode.json`。
+2. **僅限本機**（在 Git 儲存庫中預設開啟）會把新檔案加入 `.git/info/exclude`，因為項目內含你這台電腦上的 Node.js 與橋接程式絕對路徑，對同事沒有意義。含註解（JSONC）、JSON 無效，或已有不同 `agent-pets` 項目的檔案絕不改寫，結果頁會改給可複製的片段。
 
-```json
-{ "behaviorManifest": { "walk": { "row": 1 }, "sleep": { "row": 5 } } }
-```
-
-- **格式**：`.webp`、`.png` 或 `.jpg`（內建寵物是用 `.webp` 出貨；三種格式匯入後都是原樣複製，讀取時是看內容而不是看副檔名）
-- **網格**：8 欄 × 11 列（目前只用到第 0–8 列；9、10 保留給未來的狀態用）
-- **格子大小**：192 × 208 像素
-
-每一列對應一種狀態：
-
-| 列  | 狀態                               |
-| --- | ---------------------------------- |
-| 0   | Idle / Offline                     |
-| 5   | Error                              |
-| 6   | Waiting Permission / Waiting Input |
-| 7   | Thinking / Tool Running            |
-| 8   | Success                            |
-
-### 如何匯入
-
-**匯入單張精靈圖：**
-
-1. 打開控制面板（點擊寵物）。
-2. 點 **⚙** 進入 Settings。
-3. 點 **+ Import Sprite**。
-4. 選擇一張 `.webp`/`.png`/`.jpg` 精靈圖檔案。
-5. 寵物會加入你的收藏並自動被選取。
-
-**從 `.codex-pet.zip` 素材包匯入**（例如從 [codex-pets.net](https://codex-pets.net) 下載的）：
-
-1. 打開控制面板 → **⚙** → Settings。
-2. 點 **+ Import .zip**，選擇下載好的 `.zip`。
-3. App 會自動讀取裡面的 `pet.json` 跟精靈圖——不用手動解壓縮。
-
-自訂寵物存放在 `~/.desktop-pet/custom/`。
-
-### 如何重新命名
-
-1. 打開控制面板（點擊寵物）。
-2. 點 **⚙** 進入 Settings。
-3. 在清單中找到該自訂寵物。
-4. 點寵物名字旁的 **✎** 鉛筆圖示。
-5. 輸入新名字後按 **Enter**（或點其他地方確認）。
-6. 按 **Esc** 取消。
-
-內建寵物無法重新命名。
-
-### 如何移除／隱藏
-
-點清單中任一寵物旁的 **×** 即可移除（會先跳出確認提示，避免手滑誤觸）——自訂寵物會直接刪除匯入的檔案；內建寵物則只是從你自己的清單隱藏（不會動到隨 app 出貨的素材檔案本身）。預設的保底寵物（`aang-airbender`）沒有 **×**，無法被移除或隱藏，確保清單裡永遠至少有一隻寵物可用。
-
----
+面板會保留已設定的專案清單，狀態為已連接、部分連接、有衝突、路徑已過期或找不到資料夾；**更新路徑**可在 App 搬移或 Node 升級後修復項目，**移除 MCP** 只移除相符的項目。設定後，Claude Code 請在 `/mcp` 核准 `agent-pets`，Codex 需先信任該專案，OpenCode 請重新啟動。橋接程式需要真正的 Node.js 執行檔，且 Agent Pets 必須在執行中；若要全域註冊，可用 `codex mcp add agent-pets -- node ~/.desktop-pet/presentation-mcp.mjs` 或 `claude mcp add --scope user agent-pets -- node ~/.desktop-pet/presentation-mcp.mjs`。
 
 ## 事件伺服器
 
-Agent Pets 會在本機啟動一個 HTTP 伺服器 `http://127.0.0.1:17373/v1/events`，接收來自各 hooks 的狀態更新。請求必須包含每次安裝專用的 `X-Agent-Pets-Token` header；受管理的 hooks 會自動從目前使用者專用、權限受限的 `~/.desktop-pet/event-token` 讀取。
-
-### POST /v1/events
+Hook 會附上每次安裝專屬的 `X-Agent-Pets-Token` 標頭（讀自 `~/.desktop-pet/event-token`），把狀態送到 `http://127.0.0.1:17373/v1/events`。
 
 ```json
-{
-  "source": "codex",
-  "sessionId": "sess_abc123",
-  "state": "thinking",
-  "timestamp": 1735689600000,
-  "originalEvent": "UserPromptSubmit",
-  "project": "/Users/you/my-project",
-  "toolName": "Edit"
-}
+{ "source": "codex", "sessionId": "sess_abc123", "state": "thinking", "timestamp": 1735689600000 }
 ```
 
-`source`、`sessionId`、`state`、`timestamp` 這四個欄位是必填的——缺任何一個都會被伺服器回 `400` 拒絕；缺少或使用錯誤的 hook 驗證資訊則回 `401`。
+`source`、`sessionId`、`state`、`timestamp` 為必填（缺欄位回 `400`，權杖錯誤回 `401`）。選填：`project`、`originalEvent`、`toolName`。
 
-**欄位說明：**
+- `source`：`opencode-cli`、`opencode-desktop`、`codex`、`codex-desktop`、`claude`、`claude-desktop`（`opencode` 會正規化為 `opencode-cli`）
+- `state`：`idle`、`thinking`、`tool-running`、`waiting-permission`、`waiting-input`、`success`、`error`、`offline`（`waiting` 會正規化為 `waiting-permission`）
 
-| 欄位            | 型別   | 必填 | 說明                                                                                                                                                              |
-| --------------- | ------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`        | string | 是   | `opencode-cli`、`opencode-desktop`、`codex`、`codex-desktop`、`claude`、`claude-desktop`（也接受 `opencode`，會自動正規化成 `opencode-cli`）                      |
-| `sessionId`     | string | 是   | 唯一的 session 識別碼（最長 256 字元）                                                                                                                            |
-| `state`         | string | 是   | `idle`、`thinking`、`tool-running`、`waiting-permission`、`waiting-input`、`success`、`error`、`offline`（也接受 `waiting`，會自動正規化成 `waiting-permission`） |
-| `timestamp`     | number | 是   | 事件發生時間的 Unix 毫秒時間戳                                                                                                                                    |
-| `project`       | string | 否   | 專案路徑（UI 只會顯示 basename）                                                                                                                                  |
-| `originalEvent` | string | 否   | 觸發這筆事件的原始 hook/事件名稱，方便除錯                                                                                                                        |
-| `toolName`      | string | 否   | 工具名稱，`tool-running` 時會顯示在活動氣泡裡                                                                                                                     |
+## 診斷與紀錄
 
----
+**設定 → 進階 → 匯出診斷資訊**會把 JSON 報告存到你指定的位置，內容包含版本、系統資訊、本機伺服器與插件主機狀態、計數器與近期紀錄。權杖、提示詞與個人路徑都已移除，也不會上傳。若上一次執行不正常結束，App 會建議你匯出。
 
-## 安全性
+主行程紀錄是 App userData 資料夾內的 `logs/main.log`（macOS 為 `~/Library/Application Support/Agent Pets/`，Windows 為 `%APPDATA%\Agent Pets\`），超過 1 MB 即輪替、保留 3 個檔案，寫入時就已遮蔽敏感內容。插件診斷在各插件的**診斷**分頁。
 
-- **Renderer 隔離** — Renderer 啟用 Chromium sandbox 與 context isolation、停用 Node.js integration，使用安全的自訂 `agent-pets://` protocol 取代高權限 `file://` 頁面，並以嚴格 CSP、禁止彈窗／外部導頁、拒絕權限請求及 IPC 主 frame 來源驗證縮小攻擊面。
-- **本機事件伺服器** — 只監聽 `127.0.0.1`，每個 hook 請求都必須通過每次安裝專用 secret 驗證；同時拒絕瀏覽器來源與非 JSON 請求、限制事件速率，且只接受長度受限的白名單欄位。
-- **用量查詢** — Quota 功能只允許連線到指定的 Codex 與 Anthropic HTTPS quota／驗證端點，拒絕轉址、過大回應、過多 window 與格式錯誤的 renderer IPC payload。OAuth 憑證只存在 Electron 主行程，不會傳給 renderer 或出現在命令列參數。
-- **本機用量讀取器** — Token 歷史由 main process 唯讀管理，只掃描固定的 Codex／Claude JSONL 路徑，限制檔案與行大小，拒絕逃出根目錄的 symlink／reparse path，解析白名單欄位並雜湊來源身分；不保存原始 log、prompt 或工具內容。每行先以子字串預篩再 `JSON.parse`、每行最多解析一次，且每個檔案以單一 SQLite transaction 匯入（2 萬筆測試資料約快 10 倍）。
-- **憑證更新** — OAuth token 過期時會更新，並安全合併回原本的 Codex auth 檔或 Claude 憑證儲存區，避免 CLI 登入失效；檔案寫入會做帳號／變更檢查、限制檔案權限，並盡可能採原子替換。
-- **寵物匯入** — 寫入前會驗證 ZIP 項目數、壓縮／解壓縮大小、JSON 大小，以及圖片大小與實際格式。
-- **記憶體上限** — Agent session 數量有上限，會以單次線性掃描（O(n)）優先淘汰離線／最舊項目，避免 renderer 記憶體無限成長。
-- **本機伺服器** — 事件轉送會略過已銷毀的視窗，避免面板關閉時通知／XP／歷史處理被整個跳過；並設定較短的 header／request 逾時，限制慢速 loopback 連線佔用。啟動時如果埠（17373–17375）還被其他程序佔用（例如尚未完全結束的舊實例），事件、Presentation MCP 與 Permission adapter 伺服器會以 2 秒到 30 秒的退避持續重試，不會一直離線到下次重新啟動。
-- **Windows 檔案取代** — 原子寫入與插件安裝在 Windows Defender 或搜尋索引短暫鎖住剛寫入的檔案時（`EPERM`／`EACCES`／`EBUSY`，實測剛寫入的目錄約 3% 會遇到），會重試 rename 約 1.3 秒。其他平台與其他錯誤維持原本的立即失敗。
-- **SQLite 效能** — History、Progression、成就與專案路由 store 共用 prepared statement 快取，不再於每個 hook 事件重新編譯 SQL；專案路徑快取改為真正的 LRU。
-- **路徑清理** — 專案路徑只保留 basename，檔案寫入目的地也會限制在預期根目錄內。
-- **專案寵物路由** — main process 只保存每次安裝 salt 產生的 project hash、basename 與 pet binding；symlink／junction 會先 canonicalize，renderer、通知與 MCP status 都不會收到完整路徑。缺少綁定寵物時只回退到預設寵物，不會自動允許或改變權限。
-- **桌面通知** — 通知只會使用正規化後的 Agent 名稱與長度受限的專案 basename，不會顯示或記錄 prompt、工具參數、session identifier 或憑證；診斷紀錄有固定上限，而且只保存事件類別與結果。
-- **桌面顯示與偏好 IPC** — 擷取保護、全螢幕 capability 投影、Windows Win32 event detector、右鍵隱藏授權與桌面偏好都由 main process 擁有。Renderer 只能從已驗證的第一方 frame 傳送白名單 boolean 欄位；右鍵隱藏會再次檢查可信任的 pet sender 與持久化開關。設定檔採長度受限讀取與原子替換。Windows detector 只使用前景 HWND、DWM frame bounds、螢幕 bounds、可見性／style 檢查與 event hook，不使用焦點／標題猜測、PowerShell、WMI 或無上限輪詢；原生失效時 fail closed。
-- **Presentation MCP** — MCP bridge 只監聽 loopback，使用獨立的每次安裝 token，拒絕瀏覽器來源，限制 JSON body／請求速率，固定三個工具，清理控制字元與 markup，限制訊息長度／TTL／queue，並在 client disconnect 時移除 pending intent；它沒有命令、檔案、權限、XP、quota 或成就權限。
-- **Permission Broker** — 權限回覆使用獨立 loopback port 與專用的每次安裝 token，不會經過一般事件端點。Main process 強制 TTL、一次性狀態轉換、anti-replay、資料上限、Adapter-owned opaque handle、限時快捷鍵、Agent 端解決對帳，以及內容去識別且有上限的本機 audit；只提供 `allow_once` 與 `deny`，刻意不提供永久允許。
-- **Progression 儲存** — XP 只在 Electron 主行程發放。SQLite migration、同一 transaction 的 `pet_progress`／`xp_ledger` 更新、唯一 idempotency key、受上限保護的 session active-time 與 sanitized snapshot，避免 renderer 或重送事件灌高 XP。資料庫只留在本機，不會上傳。
-- **打包執行環境** — Electron fuses 會停用 RunAsNode、Node options／inspect 參數與 `file://` 額外權限，並強制只從 ASAR 載入及驗證內嵌 ASAR 完整性。
-- **發行簽章** — 正式發布 macOS／Windows 產物時必須配置平台簽章憑證；未簽章的本機建置只供開發測試。
+## 隱私與安全
 
----
+- 所有資料都留在你的電腦：歷史、XP、成就、紀錄與權杖都不會上傳。
+- Renderer 以沙盒、context isolation、無 Node.js、嚴格 CSP 與驗證過的 IPC 來源執行；Electron fuses 停用 RunAsNode 並強制只從 ASAR 載入。
+- 事件、權限與 Presentation MCP 伺服器只監聽 `127.0.0.1`（埠 17373–17375），使用各自獨立的安裝權杖，拒絕瀏覽器發起的請求並限制輸入速率；埠被占用時會退避重試。
+- 權限回應走獨立的埠與權杖，具備 TTL、一次性決定、防重放與已遮蔽的稽核紀錄。
+- 通知文字只包含 Agent 名稱與專案資料夾名稱，絕不含提示詞、工具參數或工作階段 ID。
+- Hook 只從少數環境變數判斷所在 App（`TERM_PROGRAM`、macOS bundle id、Claude Code 的 entrypoint，以及 Windows Terminal／VS Code／Cursor 標記）。完整專案路徑與 bundle id 只留在主行程。**顯示專案資料夾**只會在檔案管理員中選取既有的資料夾（不是檔案，也不會開啟它，因此不會啟動任何 App 或文件套件）；**複製專案路徑**會拒絕含 shell 特殊字元的路徑。
+- 額度請求只由主行程連到確切的 Codex 與 Anthropic HTTPS 端點；OAuth 憑證不會進入 renderer。
+- 紀錄讀取器為唯讀、有大小上限，且只限已知的 Codex／Claude 工作階段目錄；匯入寵物 Zip 時會先掃描封存（項目數、總大小、壓縮比、重疊項目、符號連結、不安全或非 UTF-8 檔名、重複路徑），解碼前依檔頭限制圖片尺寸，移除 `pet.json` 的原型鍵，並經由私有暫存資料夾以原子性 rename 安裝。
+- 插件在沙盒中執行並受權限控管；機密資料以系統安全儲存區加密保存，絕不回傳給介面。
+
+## 疑難排解
+
+| 症狀 | 檢查項目 |
+|------|----------|
+| 寵物一直顯示離線 | 按**等待真實事件**並執行一個提示詞。沒有事件：重新啟動工具（hook 在啟動時載入），再按**診斷**。 |
+| 診斷：找不到 Node.js 執行檔 | 安裝 Node.js 18 以上，然後按**修復**；它會寫入絕對路徑（從 Finder 或 Dock 啟動的 App 找不到單純的 `node`）。切換 nvm 版本後也需要**修復**。 |
+| Codex hooks 未啟用 | **修復**會在 `~/.codex/config.toml` 的 `[features]` 加入 `hooks = true`。 |
+| 安裝被拒：不是有效的 JSON | `settings.json`／`hooks.json` 含註解或語法錯誤。Agent Pets 不會動它；請修正或移開該檔案後再安裝。 |
+| 橫幅：事件接收器離線 | 本機埠（17373–17375）被其他程式或舊的 Agent Pets 占用。關閉它；App 會自動重試，也可按**立即重試**。 |
+| Hook 腳本過期 | **修復**會重新部署。 |
+| Claude Code 看不到專案 MCP | 在 `/mcp` 核准 `agent-pets`。Codex 需要先信任該專案。 |
+| 寵物凍結或空白 | 使用系統匣（進階）的**重新載入寵物**，或設定 → 進階的**重新啟動寵物**。 |
+| macOS：**開機時啟動**一直顯示需核准 | 到「系統設定 → 一般 → 登入項目」核准 Agent Pets（設定頁有按鈕可直接開啟）。請先把 App 移到「應用程式」資料夾；從磁碟映像或下載資料夾執行時無法註冊登入項目。 |
+| Windows：按**重新啟動**後程式關閉卻沒有再開 | 免安裝版已修正，會重新啟動原本的 `.exe`，而不是暫時解壓縮的資料夾。若仍失敗，請手動再開啟 `.exe`。 |
+| 回報問題 | 匯出診斷並附上檔案。 |
 
 ## 開發
 
-### 前置需求
-
-- Node.js 22.12+
-- pnpm 11+
-
-### 環境設置
+需要 Node.js 22.12+ 與 pnpm 12（由 `packageManager` 鎖定）。
 
 ```bash
 git clone https://github.com/Ponpon55837/agent-pets.git
 cd agent-pets
 pnpm install
-```
-
-### 開發模式執行
-
-```bash
 pnpm dev
 ```
 
-若特定 Windows 電腦在開發模式遇到 Chromium GPU process 崩潰，請直接使用內建安全模式，不需要建立本機環境檔案：
+| 指令 | 用途 |
+|------|------|
+| `pnpm dev` / `pnpm dev:safe` | Vite + Electron 開發模式；Windows GPU 程序當機時，`dev:safe` 改用軟體算圖 |
+| `pnpm test:unit` / `pnpm test:unit:watch` | `tests/` 內的 Node 內建測試（不會啟動 Electron） |
+| `pnpm test:coverage` | 單元測試，並對主行程模組設定 85% 行覆蓋率下限 |
+| `pnpm lint` | 主行程守門（未處理的 `loadURL`、全域錯誤處理） |
+| `pnpm exec vue-tsc --noEmit` | 型別檢查 |
+| `pnpm check:bundle-size` | 任一 renderer chunk 超過 250 KB 即失敗（需先 `vite build`） |
+| `pnpm check:bundle` | 驗證插件面板 tokens 的 bundle |
+| `pnpm check:contrast` | 設計 token 對比度檢查（違規即失敗） |
+| `pnpm check:design` / `check:design:strict` | 回報寫死的顏色與尺寸；`--strict` 會直接失敗 |
+| `pnpm build` / `pnpm build:fast` | 型別檢查、Vite 建置，再由 electron-builder 輸出到 `release/`（`build:fast` 不壓縮） |
+| `pnpm bench`、`pnpm bench:lag` | 效能基準測試 |
 
-```bash
-pnpm dev:safe
-```
+兩個建置指令都會先關閉本專案的 Agent Pets 程序。若想在真實 Electron App 中驗證修改又不動到你的資料，先執行 `pnpm exec vite build`，再執行 `node scripts/e2e-isolated-electron.mjs`（暫時的 home 與 userData、假的 `safeStorage`，所以不會碰到 macOS 鑰匙圈；本機埠預設為 27373–27375，已安裝的版本可保有 17373–17375，`--hook-port-base` 可改用另一組，`--real-hook-ports` 才用預設埠；見 [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)）。
 
-安全模式仍會啟用 Chromium sandbox，並只在該次 Windows Vite 開發執行改用軟體繪製；一般開發、正式打包版本、macOS 與 Linux 仍保留硬體加速。
+**開發埠覆寫** — 未打包的執行可設定 `AGENT_PETS_EVENT_PORT`、`AGENT_PETS_PERMISSION_PORT`、`AGENT_PETS_PRESENTATION_PORT`（1024–65535；預設 17373、17374、17375），避免和已安裝的版本搶埠。打包版會忽略這些變數。
 
-### 建置
+在原始碼目錄執行 `node integrations/install.mjs` 可用與精靈相同的保護機制安裝 hook（`--claude-code` 只處理 Claude Code，`--uninstall` 則移除）。
 
-```bash
-pnpm build
-```
+**CI** — `ci.yml` 在 pull request 與 `main` 推送涉及文件以外的變更時執行：型別檢查、`pnpm lint`、`pnpm test:coverage`、`vite build`、bundle 大小、插件面板 bundle 與對比度檢查、設計 token 報告，以及不阻擋合併的相依套件稽核。`ci-platforms.yml` 每週與手動觸發時，在 macOS 與 Windows 上執行型別檢查與單元測試。
 
-輸出會在 `release/` 目錄下。
+## 版本與發佈
 
-### 發版
+在 `package.json` 提高 `version`（預設升 patch；永久資料結構、公開契約或安全邊界的變更才升 minor）。該 commit 進入 `main` 且尚無 `v<version>` tag 時，`.github/workflows/release.yml` 會執行型別檢查與單元測試，建置 macOS arm64 與 x64 的 `.dmg` 及 Windows 可攜版 `.exe`，再建立 tag 與附自動產生說明的 GitHub Release。也可從 Actions 頁面重新執行，已有 tag 的版本會被略過。目前版本沒有簽章。
 
-發版由 `.github/workflows/release.yml` 自動處理。當修改 `package.json` 中 `version` 的 commit 進到 `main`，且尚未存在 `v<版本>` tag 時，GitHub Actions 會先跑型別檢查與單元測試，再打包 macOS（arm64 + x64 `.dmg`）與 Windows（可攜式 `.exe`），最後建立 `v<版本>` tag 與附上兩個平台安裝檔、自動產生說明的 GitHub Release。不需要手動打 tag 或在本機打包。也可以在 Actions 頁面按 **Run workflow** 重新執行；已有 tag 的版本會自動略過。目前產出的安裝檔尚未簽章。
+## 授權
 
-### 單元測試
-
-```bash
-pnpm test:unit
-```
-
-Windows 沒有開啟開發者模式時，一般使用者無法建立檔案 symlink，所以需要建立 symlink 的測試會自動略過；檔案權限（`0600`）的斷言只在 macOS／Linux 執行。其他測試在所有平台都會跑。
-
-想在真正的 Electron 中驗證修改、又不碰到自己的資料時，先 build，再啟動隔離啟動器。它使用暫存的 home 與 userData，以及假的 `safeStorage`。它會綁定和已安裝的 Agent Pets 相同的本機埠，所以請先結束平常使用的 App，或等測試 App 結束後讓它自動重新連上：
-
-```bash
-pnpm exec vite build
-```
-
-```bash
-node scripts/e2e-isolated-electron.mjs
-```
-
-### 安裝 Hooks（開發用）
-
-```bash
-node integrations/install.mjs
-```
-
-這會幫所有偵測到的工具安裝 hooks，安裝位置為：
-
-- `~/.codex/hooks.json`（Codex）
-- `~/.claude/settings.json`（Claude Code CLI & Desktop）
-- `~/.desktop-pet/agent-hook.mjs` + `agent-hook.cmd`（上述所有工具共用的 hook script）
-- `~/.desktop-pet/event-token`（每次安裝專用的事件驗證 secret；macOS／Linux 權限為 `0600`）
-- `~/.desktop-pet/presentation-token`（獨立的 Presentation MCP secret；macOS／Linux 權限為 `0600`）
-- `~/.desktop-pet/presentation-mcp.mjs`（MCP client 使用的 stdio bridge）
-
-既有安裝升級後，Agent Pets 會自動更新受管理的 hooks。已經在執行中的 OpenCode 需要重新啟動一次，讓已載入的 plugin 套用事件驗證。
-
-用 `--claude-code` 可以只安裝/移除 Claude Code 的 hook：
-
-```bash
-node integrations/install.mjs --claude-code
-node integrations/install.mjs --uninstall --claude-code
-```
-
-桌面 App 也會在啟動時更新 presentation bridge。MCP client 應把 stdio server 指向 `~/.desktop-pet/presentation-mcp.mjs`（Windows 為 `%USERPROFILE%\\.desktop-pet\\presentation-mcp.mjs`），並使用真正的 Node.js；不可把打包後的 Agent Pets exe 當成 Node interpreter。
-
-> **語言與建置提醒：** 目前設定、Tray、通知、Setup Wizard、權限、錯誤與 onboarding 文字已集中使用繁體中文；技術狀態與工具名稱保留原文。執行 `pnpm build` 或 `pnpm electron:build` 時，建置會先只關閉本專案可辨識的 Agent Pets 程序，避免 `win-unpacked` 檔案鎖定，不會終止其他 Electron 應用程式。
-
----
-
-## 專案結構
-
-```
-agent-pets/
-├── electron/
-│   ├── main.ts              # Electron 主行程
-│   ├── agent-adapter.ts     # AgentAdapter 契約與 runtime registry
-│   ├── agent-adapter-operations.ts # 跨平台 Adapter 偵測／安裝橋接
-│   ├── preload.ts           # IPC 橋接
-│   ├── event-server.ts      # HTTP 事件伺服器
-│   ├── event-normalizer.ts  # 一般事件 allowlist 與 projection
-│   ├── permission-broker.ts # 權限狀態機與 anti-replay
-│   ├── permission-adapter-server.ts # 獨立的 OpenCode 回覆通道
-│   ├── permission-audit.ts  # 有上限且去敏感內容的本機 audit
-│   ├── progression.ts       # SQLite XP ledger 與 Level projection
-│   ├── presentation-controller.ts # TTL／rate／queue 展示控制邊界
-│   ├── presentation-mcp.ts  # Loopback MCP 展示端點
-│   ├── project-mcp-setup.ts # 安全的專案本機 MCP 設定安裝器
-│   ├── project-mcp-registry.ts # 本機已連接專案清單與狀態檢查
-│   ├── pet-window-mode.ts   # Mini／Edge 幾何與 dwell 常數
-│   ├── desktop-visibility.ts # 平台 capability 投影
-│   ├── windows-fullscreen-detector.ts # Windows 原生全螢幕 event detector
-│   ├── desktop-preferences.ts # Main 擁有的桌面偏好
-│   ├── desktop-notifications.ts # 原生通知與有上限的診斷紀錄
-│   ├── desktop-tray.ts      # 系統匣生命週期與選單
-│   ├── notification-policy.ts # 純通知分類／冷卻規則
-│   ├── quota.ts             # Codex／Claude 剩餘用量讀取
-│   ├── local-usage.ts       # 受限制的 Codex／Claude session log token 讀取
-│   ├── sqlite-statements.ts # SQLite store 共用的 prepared statement 快取
-│   └── setup.ts             # 跨平台路徑與安裝邏輯
-├── integrations/
-│   ├── install.mjs          # 獨立的 CLI hook 安裝程式
-│   ├── agent-hook.mjs       # 共用的 hook script（透過 extraResources 打包進 app）
-│   ├── agent-hook.cmd       # agent-hook.mjs 的 Windows 包裝腳本
-│   └── presentation-mcp.mjs # 獨立 stdio MCP 展示 bridge
-├── scripts/
-│   └── stop-agent-pets.mjs  # 建置前清理本專案 Agent Pets 程序
-├── src/
-│   ├── components/
-│   │   ├── DesktopPet.vue   # 寵物視窗（拖曳＋點擊）
-│   │   ├── PetAnimation.vue # Canvas 精靈圖渲染
-│   │   ├── StatusPanel.vue  # 統一控制面板
-│   │   └── SetupWizard.vue  # 工具偵測＋安裝精靈
-│   ├── stores/
-│   │   └── agentStore.ts    # Pinia store（sessions、寵物、UI 狀態）
-│   ├── types/
-│   │   ├── agent.ts         # Agent 事件型別
-│   │   ├── agent-adapter.ts  # Adapter capability／status 契約
-│   │   ├── desktop.ts       # 桌面偏好 IPC 型別
-│   │   ├── desktop-visibility.ts # 顯示 capability 型別
-│   │   └── presentation.ts  # Presentation intent／status 契約
-│   └── utils/
-│       ├── format.ts        # 共用格式化函式
-│       └── sound.ts         # 即時合成音效（Web Audio API）
-├── public/
-│   └── pets/
-│       ├── pets.json        # 內建寵物清單（id/displayName/folder）
-│       └── <pet-id>/        # 每隻內建寵物的 spritesheet.webp + pet.json
-├── tests/                   # Node 內建單元測試
-├── package.json
-└── README.md
-```
-
-App 本身的安裝/解除安裝邏輯（Setup Wizard 按鈕在用的那套）在 `electron/setup.ts` 裡、直接在 app 行程內執行；`integrations/install.mjs` 是給終端機執行的獨立對應版本（見上方〈安裝 Hooks（開發用）〉），兩邊產生的 hook script 跟 plugin 內容是一樣的，但需要手動同步維護。
-
----
-
-## 授權條款
-
-MIT — 詳見 [LICENSE](LICENSE)。用量整合以 MIT 授權的 [TokenBar](https://github.com/Nanako0129/TokenBar) 為基礎，詳見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+MIT，見 [LICENSE](LICENSE)。額度整合參考 MIT 授權的 [TokenBar](https://github.com/Nanako0129/TokenBar)，見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

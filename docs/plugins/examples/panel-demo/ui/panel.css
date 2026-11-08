@@ -1,6 +1,6 @@
 :root {
   color: var(--text-primary, CanvasText);
-  background: var(--surface-base, Canvas);
+  background: var(--surface-panel, Canvas);
   font: 14px system-ui, sans-serif;
 }
 

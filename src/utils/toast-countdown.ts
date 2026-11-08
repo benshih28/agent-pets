@@ -1,6 +1,6 @@
 export const APP_NOTIFICATION_DURATION_MS = 3_000
 
-export type ToastSurfaceKind = 'success' | 'error' | 'permission-notice' | 'activity'
+export type ToastSurfaceKind = 'success' | 'error' | 'waiting' | 'permission-notice' | 'activity'
 
 export interface ToastCountdown {
   readonly startedAt: number
@@ -13,7 +13,7 @@ export function createToastCountdown(
   startedAt: number,
   durationMs = APP_NOTIFICATION_DURATION_MS,
 ): ToastCountdown | null {
-  if (kind !== 'success' && kind !== 'error') return null
+  if (kind !== 'success' && kind !== 'error' && kind !== 'waiting') return null
 
   const normalizedStart = Number.isFinite(startedAt) ? startedAt : 0
   const normalizedDuration = Number.isFinite(durationMs) && durationMs > 0

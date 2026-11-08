@@ -16,6 +16,8 @@ export interface DesktopIpcDependencies {
   currentPowerSaveState(): boolean
   petModeState(): PetWindowModeState
   setPetWindowMode(mode: PetWindowMode): void
+  /** Opens the fixed macOS Login Items settings pane. Returns false when unavailable. */
+  openLoginItemsSettings(): Promise<boolean>
 }
 
 export function registerDesktopIpc(deps: DesktopIpcDependencies): void {
@@ -44,6 +46,13 @@ export function registerDesktopIpc(deps: DesktopIpcDependencies): void {
   deps.ipcMain.handle(IPC_CHANNELS.desktopPreferencesSet, (event, patch: unknown) => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     return deps.updateDesktopPreferences(patch)
+  })
+
+  // No payload: the target URL is a constant in main, so the renderer cannot
+  // steer shell.openExternal.
+  deps.ipcMain.handle(IPC_CHANNELS.desktopOpenLoginItemsSettings, async (event) => {
+    deps.assertTrustedIpcSender(event, deps.getPanelWindow())
+    return deps.openLoginItemsSettings()
   })
 
   deps.ipcMain.handle(IPC_CHANNELS.powerSaveState, (event) => {

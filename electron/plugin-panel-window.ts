@@ -3,14 +3,29 @@ export interface PluginPanelSize {
   height: number
 }
 
-export interface PluginPanelWorkArea {
-  width: number
-  height: number
+/** A user drag keeps its flag alive this long after the last 'will-resize'. */
+export const USER_PANEL_RESIZE_WINDOW_MS = 600
+/** setBounds may emit several 'resize' events; all of them within this window are ours. */
+export const PROGRAMMATIC_PANEL_RESIZE_WINDOW_MS = 500
+
+export interface UserPanelResizeInput {
+  visible: boolean
+  now: number
+  /** Platforms with 'will-resize' (macOS, Windows) only emit it for manual resizes. */
+  supportsWillResize: boolean
+  lastUserResizeAt: number
+  programmaticUntil: number
 }
 
-/** Fractional display scaling can round a native resize by one DIP. */
-export function matchesProgrammaticPluginPanelSize(expected: PluginPanelSize, actual: PluginPanelSize): boolean {
-  return Math.abs(expected.width - actual.width) <= 1 && Math.abs(expected.height - actual.height) <= 1
+/**
+ * Decides whether a 'resize' event is the user's size. Programmatic resizes
+ * (wizard minimum, view switch) must never be persisted, no matter how many
+ * resize events one setBounds produces or whether the min-size clamp changes it.
+ */
+export function shouldRecordUserPanelSize(input: UserPanelResizeInput): boolean {
+  if (!input.visible) return false
+  if (input.supportsWillResize) return input.now - input.lastUserResizeAt <= USER_PANEL_RESIZE_WINDOW_MS
+  return input.now >= input.programmaticUntil
 }
 
 export interface PluginPanelRect {
@@ -35,53 +50,6 @@ const CHROME_HEADER_MIN_HEIGHT = 48
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
-}
-
-export function clampPluginPanelSize(size: PluginPanelSize, workArea: PluginPanelWorkArea): PluginPanelSize {
-  const availableWidth = Math.max(1, Math.floor(workArea.width))
-  const availableHeight = Math.max(1, Math.floor(workArea.height))
-  const minWidth = Math.min(MIN_WIDTH, availableWidth)
-  const minHeight = Math.min(MIN_HEIGHT, availableHeight)
-  return {
-    width: Math.round(Math.max(minWidth, Math.min(MAX_WIDTH, availableWidth, size.width))),
-    height: Math.round(Math.max(minHeight, Math.min(MAX_HEIGHT, availableHeight, size.height))),
-  }
-}
-
-/** Keeps one session's manual window size scoped to its plugin page. */
-export class PluginPanelWindowSizer {
-  private readonly manualSizes = new Map<string, PluginPanelSize>()
-  private baseSize: PluginPanelSize | null = null
-  private activeId: string | null = null
-
-  activePluginId(): string | null {
-    return this.activeId
-  }
-
-  begin(
-    pluginId: string,
-    currentSize: PluginPanelSize,
-    preferredSize: PluginPanelSize | undefined,
-    workArea: PluginPanelWorkArea,
-  ): PluginPanelSize {
-    if (!this.activeId) this.baseSize = clampPluginPanelSize(currentSize, workArea)
-    this.activeId = pluginId
-    const requested = this.manualSizes.get(pluginId) ?? preferredSize ?? this.baseSize ?? currentSize
-    return clampPluginPanelSize(requested, workArea)
-  }
-
-  recordManualSize(pluginId: string, size: PluginPanelSize, workArea: PluginPanelWorkArea): boolean {
-    if (this.activeId !== pluginId || !finite(size.width) || !finite(size.height)) return false
-    this.manualSizes.set(pluginId, clampPluginPanelSize(size, workArea))
-    return true
-  }
-
-  finish(): PluginPanelSize | null {
-    const baseSize = this.baseSize
-    this.activeId = null
-    this.baseSize = null
-    return baseSize
-  }
 }
 
 /** Verifies the native child view stays inside the host-drawn frame and below its header. */

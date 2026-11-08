@@ -37,3 +37,22 @@ test('adapter IPC is panel-scoped and never installs the observe-only adapter', 
   assert.deepEqual(calls, [['diagnose', 'codex'], ['install', 'codex'], ['uninstall', 'codex']])
   assert.equal(trustedWindows.every(window => window === panelWindow), true)
 })
+
+test('the pet may read integration status for first-run onboarding; diagnose stays panel-only', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const panelContents = { id: 'panel-wc' }
+  const petContents = { id: 'pet-wc' }
+  registerAdapterIpc({
+    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => { handlers.set(channel, handler) } },
+    assertTrustedIpcSender: (event: { sender: unknown }, window?: { webContents: unknown } | null) => {
+      if (event.sender !== window?.webContents) throw new Error('Unauthorized IPC sender')
+    },
+    getPanelWindow: () => ({ webContents: panelContents }),
+    getPetWindow: () => ({ webContents: petContents }),
+    getAgentAdapterRegistry: () => ({ listStatuses: async () => [], diagnose: async () => ({}) }),
+  } as never)
+  assert.deepEqual(await handlers.get(IPC_CHANNELS.integrationStatus)!({ sender: petContents }), { adapters: [] })
+  assert.deepEqual(await handlers.get(IPC_CHANNELS.integrationStatus)!({ sender: panelContents }), { adapters: [] })
+  await assert.rejects(async () => handlers.get(IPC_CHANNELS.integrationStatus)!({ sender: { id: 'other' } }), /Unauthorized/)
+  await assert.rejects(async () => handlers.get(IPC_CHANNELS.adapterDiagnose)!({ sender: petContents }, 'codex'), /Unauthorized/)
+})

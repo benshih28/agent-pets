@@ -14,7 +14,10 @@ export class PluginDeveloperModeWatcher {
   private readonly sources = new Map<string, WatchedSource>()
   private readonly debounceMs: number
 
-  constructor(debounceMs = 500) {
+  private readonly onError: ((pluginId: string, error: unknown) => void) | undefined
+
+  constructor(debounceMs = 500, onError?: (pluginId: string, error: unknown) => void) {
+    this.onError = onError
     if (!Number.isSafeInteger(debounceMs) || debounceMs < 0 || debounceMs > 10_000) {
       throw new TypeError('invalid developer watcher debounce')
     }
@@ -68,7 +71,11 @@ export class PluginDeveloperModeWatcher {
     source.debounce = setTimeout(() => {
       source.debounce = null
       if (this.sources.get(pluginId) !== source) return
-      try { void Promise.resolve(source.onChange()).catch(() => {}) } catch {}
+      const report = (error: unknown) => {
+        console.error(`Plugin developer reload failed for ${pluginId}`, error instanceof Error ? error.message : error)
+        try { this.onError?.(pluginId, error) } catch {}
+      }
+      try { void Promise.resolve(source.onChange()).catch(report) } catch (error) { report(error) }
     }, this.debounceMs)
   }
 }

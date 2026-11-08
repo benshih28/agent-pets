@@ -26,10 +26,10 @@ test('migrates legacy sound once and persists desktop preferences', (t) => {
   let openAtLogin = false
   const store = new DesktopPreferencesStore(filePath, {
     supported: true,
-    getOpenAtLogin: () => openAtLogin,
-    setOpenAtLogin: (enabled) => {
+    getStatus: () => (openAtLogin ? 'enabled' : 'disabled'),
+    setLaunchAtStartup: (enabled) => {
       openAtLogin = enabled
-      return openAtLogin
+      return openAtLogin ? 'enabled' : 'disabled'
     },
   }, TEST_VISIBILITY_CAPABILITIES)
 
@@ -42,10 +42,13 @@ test('migrates legacy sound once and persists desktop preferences', (t) => {
   assert.equal(store.get().captureExclusionEnabled, false)
   assert.equal(store.get().fullscreenAutoHideEnabled, false)
   assert.equal(store.get().rightClickHideEnabled, false)
+  assert.equal(store.get().sessionJumpEnabled, true)
+  assert.equal(store.get().sessionJumpSwitchAppEnabled, true)
   assert.equal(store.get().locale, 'zh-TW')
   assert.equal(store.initializeLegacySound(true).soundEnabled, true)
 
   const updated = store.update({
+    sessionJumpSwitchAppEnabled: false,
     dndEnabled: true,
     permissionBubbleEnabled: false,
     presentationMcpEnabled: false,
@@ -67,6 +70,8 @@ test('migrates legacy sound once and persists desktop preferences', (t) => {
   assert.equal(updated.captureExclusionEnabled, true)
   assert.equal(updated.fullscreenAutoHideEnabled, true)
   assert.equal(updated.rightClickHideEnabled, true)
+  assert.equal(updated.sessionJumpSwitchAppEnabled, false)
+  assert.throws(() => store.update({ sessionJumpEnabled: 'yes' }), /must be boolean/)
   assert.equal(updated.launchAtStartup, true)
   assert.equal(updated.locale, 'en-US')
 
@@ -84,6 +89,8 @@ test('migrates legacy sound once and persists desktop preferences', (t) => {
   assert.equal(reloaded.get().captureExclusionEnabled, true)
   assert.equal(reloaded.get().fullscreenAutoHideEnabled, true)
   assert.equal(reloaded.get().rightClickHideEnabled, true)
+  assert.equal(reloaded.get().sessionJumpSwitchAppEnabled, false)
+  assert.equal(reloaded.get().sessionJumpEnabled, true)
   assert.equal(reloaded.get().shimejiEnabled, true)
   assert.equal(reloaded.get().launchAtStartup, true)
   assert.equal(reloaded.get().locale, 'en-US')
@@ -107,8 +114,8 @@ test('rejects unknown and non-boolean preference fields', () => {
 test('keeps launch at startup disabled when the runtime does not support it', (t) => {
   const store = new DesktopPreferencesStore(tempPreferencesFile(t), {
     supported: false,
-    getOpenAtLogin: () => true,
-    setOpenAtLogin: () => true,
+    getStatus: () => 'unsupported',
+    setLaunchAtStartup: () => 'unsupported',
   })
 
   const updated = store.update({ launchAtStartup: true })
@@ -121,15 +128,15 @@ test('projects stale visibility toggles to false on an unsupported runtime', (t)
   let openAtLogin = false
   const supportedStore = new DesktopPreferencesStore(filePath, {
     supported: true,
-    getOpenAtLogin: () => openAtLogin,
-    setOpenAtLogin: enabled => { openAtLogin = enabled; return enabled },
+    getStatus: () => (openAtLogin ? 'enabled' : 'disabled'),
+    setLaunchAtStartup: enabled => { openAtLogin = enabled; return enabled ? 'enabled' : 'disabled' },
   }, TEST_VISIBILITY_CAPABILITIES)
   supportedStore.update({ captureExclusionEnabled: true, fullscreenAutoHideEnabled: true })
 
   const unsupportedStore = new DesktopPreferencesStore(filePath, {
     supported: true,
-    getOpenAtLogin: () => openAtLogin,
-    setOpenAtLogin: enabled => { openAtLogin = enabled; return enabled },
+    getStatus: () => (openAtLogin ? 'enabled' : 'disabled'),
+    setLaunchAtStartup: enabled => { openAtLogin = enabled; return enabled ? 'enabled' : 'disabled' },
   })
   assert.equal(unsupportedStore.get().captureExclusionEnabled, false)
   assert.equal(unsupportedStore.get().fullscreenAutoHideEnabled, false)
@@ -180,4 +187,125 @@ test('uses only the original regular portable executable for Windows startup', (
     null,
   )
   assert.equal(resolveLoginItemExecutable('win32', false, portablePath, portablePath), null)
+})
+
+test('dndUntil is validated, bounded, and cleared when DND is off', async () => {
+  const { parseDesktopPreferencesPatch } = await import('../electron/desktop-preferences.ts')
+  assert.deepEqual(parseDesktopPreferencesPatch({ dndUntil: null }), { dndUntil: null })
+  assert.throws(() => parseDesktopPreferencesPatch({ dndUntil: 'soon' }))
+  assert.throws(() => parseDesktopPreferencesPatch({ dndUntil: -5 }))
+})
+
+test('soundVolume must be a number from 0 to 100', async () => {
+  const { parseDesktopPreferencesPatch } = await import('../electron/desktop-preferences.ts')
+  assert.deepEqual(parseDesktopPreferencesPatch({ soundVolume: 35 }), { soundVolume: 35 })
+  assert.throws(() => parseDesktopPreferencesPatch({ soundVolume: 101 }))
+  assert.throws(() => parseDesktopPreferencesPatch({ soundVolume: '50' }))
+})
+
+test('keeps the launch-at-login intent while macOS approval is pending', (t) => {
+  const filePath = tempPreferencesFile(t)
+  let status: 'requires-approval' | 'enabled' | 'not-in-applications' | 'error' = 'requires-approval'
+  const adapter = {
+    supported: true,
+    getStatus: () => status,
+    setLaunchAtStartup: () => status,
+  }
+  const store = new DesktopPreferencesStore(filePath, adapter, TEST_VISIBILITY_CAPABILITIES)
+
+  const pending = store.update({ launchAtStartup: true })
+  assert.equal(pending.launchAtStartup, true)
+  assert.equal(pending.launchAtStartupStatus, 'requires-approval')
+
+  // Persisted intent survives a restart and an unrelated update.
+  const reloaded = new DesktopPreferencesStore(filePath, adapter, TEST_VISIBILITY_CAPABILITIES)
+  assert.equal(reloaded.get().launchAtStartup, true)
+  assert.equal(reloaded.update({ soundEnabled: true }).launchAtStartup, true)
+
+  status = 'enabled'
+  assert.equal(reloaded.get().launchAtStartupStatus, 'enabled')
+  status = 'not-in-applications'
+  const outside = reloaded.update({ launchAtStartup: true })
+  assert.equal(outside.launchAtStartup, true)
+  assert.equal(outside.launchAtStartupStatus, 'not-in-applications')
+  status = 'error'
+  assert.equal(reloaded.update({ launchAtStartup: false }).launchAtStartup, false)
+})
+
+test('reports unsupported status and rejects status in patches', (t) => {
+  const store = new DesktopPreferencesStore(tempPreferencesFile(t), {
+    supported: false,
+    getStatus: () => 'unsupported',
+    setLaunchAtStartup: () => 'unsupported',
+  })
+  assert.equal(store.get().launchAtStartupStatus, 'unsupported')
+  assert.throws(() => parseDesktopPreferencesPatch({ launchAtStartupStatus: 'enabled' }), /Unsupported desktop preference/)
+})
+
+test('answering Claude Code permissions is off by default and the wait is a bounded integer', (t) => {
+  const filePath = tempPreferencesFile(t)
+  const loginItem = { supported: false, getStatus: () => 'unsupported' as const, setLaunchAtStartup: () => 'unsupported' as const }
+  const store = new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES)
+  assert.equal(store.get().claudePermissionRespondEnabled, false)
+  assert.equal(store.get().claudePermissionWaitSeconds, 90)
+
+  const updated = store.update({ claudePermissionRespondEnabled: true, claudePermissionWaitSeconds: 45 })
+  assert.equal(updated.claudePermissionRespondEnabled, true)
+  assert.equal(updated.claudePermissionWaitSeconds, 45)
+  const reloaded = new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES)
+  assert.equal(reloaded.get().claudePermissionRespondEnabled, true)
+  assert.equal(reloaded.get().claudePermissionWaitSeconds, 45)
+
+  for (const bad of [14, 121, 30.5, '60', null, Number.NaN]) {
+    assert.throws(() => parseDesktopPreferencesPatch({ claudePermissionWaitSeconds: bad }), TypeError, String(bad))
+  }
+  assert.throws(() => parseDesktopPreferencesPatch({ claudePermissionRespondEnabled: 'yes' }), TypeError)
+
+  // A tampered file falls back to safe defaults.
+  fs.writeFileSync(filePath, JSON.stringify({ claudePermissionRespondEnabled: 'true', claudePermissionWaitSeconds: 9_999 }))
+  const tampered = new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES)
+  assert.equal(tampered.get().claudePermissionRespondEnabled, false)
+  assert.equal(tampered.get().claudePermissionWaitSeconds, 90)
+})
+
+test('completion markers default on, persist, and only accept booleans', (t) => {
+  const filePath = tempPreferencesFile(t)
+  const loginItem = { supported: false, getStatus: () => 'unsupported' as const, setLaunchAtStartup: () => 'unsupported' as const }
+  const store = new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES)
+  assert.equal(store.get().completionMarkersEnabled, true)
+
+  assert.equal(store.update({ completionMarkersEnabled: false }).completionMarkersEnabled, false)
+  assert.equal(JSON.parse(fs.readFileSync(filePath, 'utf8')).completionMarkersEnabled, false)
+  assert.equal(new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES).get().completionMarkersEnabled, false)
+
+  assert.throws(() => parseDesktopPreferencesPatch({ completionMarkersEnabled: 'off' }), /must be boolean/)
+  assert.throws(() => parseDesktopPreferencesPatch({ completionMarkersEnabled: 0 }), /must be boolean/)
+
+  // A hand-edited file with a non-boolean value falls back to the default.
+  fs.writeFileSync(filePath, JSON.stringify({ completionMarkersEnabled: 'no' }))
+  assert.equal(new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES).get().completionMarkersEnabled, true)
+})
+
+test('the pet only renders completion markers while the preference is on', () => {
+  const source = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'components', 'DesktopPet.vue'), 'utf8')
+  assert.match(source, /<span v-if="store\.completionMarkersEnabled && store\.unreadResults\.count > 0" class="mini-status-count">/)
+  assert.match(source, /v-if="store\.completionMarkersEnabled && store\.unreadResults\.count > 0"\s+class="unread-badge"/)
+  assert.match(source, /v-if="store\.completionMarkersEnabled && store\.unreadResults\.count > 0"\s+class="edge-peek-result-badge"/)
+  assert.doesNotMatch(source, /v-if="store\.unreadResults\.count > 0"/)
+})
+
+test('results are not counted while completion markers are off', async () => {
+  const { noteUnread, UNREAD_RESULTS_MAX } = await import('../src/utils/unread-results.ts')
+  const empty = { count: 0, hasError: false }
+  assert.equal(noteUnread(empty, 'error', false, true), empty)
+  assert.equal(noteUnread(empty, 'success', true, false), empty)
+  assert.deepEqual(noteUnread(empty, 'success', true, true), { count: 1, hasError: false })
+  assert.deepEqual(noteUnread({ count: 1, hasError: false }, 'error', true, true), { count: 2, hasError: true })
+  assert.equal(noteUnread({ count: UNREAD_RESULTS_MAX, hasError: false }, 'success', true, true).count, UNREAD_RESULTS_MAX)
+
+  // Switching markers off (locally or from another window's broadcast) drops what was counted.
+  const store = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'stores', 'agentStore.ts'), 'utf8')
+  assert.match(store, /function setCompletionMarkersEnabled\(enabled: boolean\) \{\s+completionMarkersEnabled\.value = enabled\s+if \(!enabled\) clearUnreadResults\(\)/)
+  assert.match(store, /completionMarkersEnabled\.value = preferences\.completionMarkersEnabled !== false\s+if \(!completionMarkersEnabled\.value\) clearUnreadResults\(\)/)
+  assert.match(store, /noteUnread\(unreadResults\.value, tone, completionMarkersEnabled\.value, away\)/)
 })

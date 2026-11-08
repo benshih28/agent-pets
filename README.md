@@ -1,526 +1,228 @@
 # Agent Pets
 
-Desktop pet that shows real-time status of your AI coding agents.
+A desktop pet that shows what your AI coding agents are doing: thinking, running a tool, waiting for you, done or failed.
 
 **English** | [繁體中文](README.zh-TW.md)
 
 ---
 
-## Features
+## Install
 
-- **Real-time status** — See at a glance which agent is running, thinking, or idle.
-- **Draggable pet** — Drag the pet anywhere on your screen (position is remembered across restarts).
-- **Multi-agent support** — OpenCode, Codex, Claude Code (CLI & Desktop).
-- **Custom pets** — Import your own spritesheet, or a `.codex-pet.zip` sprite kit from sites like [codex-pets.net](https://codex-pets.net).
-- **Desktop controls** — Tray menu, native waiting/completion notifications, Do Not Disturb, sound control, and optional launch at startup.
-- **Mini / Edge mode** — Mini is always opt-in; Edge Peek is a separate Settings/Tray toggle (off by default) that shows a dedicated Liquid Glass handle at the display edge instead of clipping the pet. Bounds are restored across display and DPI changes.
-- **Optional Shimeji behavior** — A separate Settings toggle enables low-cadence idle walking, sleep, and cursor reactions. It is off by default and pauses for active work, Permission, DND, reduced motion, background, or power saving; walking is clamped to the current display work area.
-- **Desktop visibility controls** — Optionally exclude the pet window from supported capture APIs, hide it while another app owns a macOS fullscreen Space or a supported Windows borderless fullscreen display, or enable right-click hide. Capture protection covers the pet only; macOS capture exclusion is best effort, and Windows detection is conservative and disabled if its native runtime is unavailable.
-- **Permission Control** — OpenCode permission requests can be allowed once or denied from a Liquid Glass pet bubble; scoped hotkeys are available only while an eligible request is visible.
-- **Pet progression** — Completed sessions, bounded observed active-time, first completions of the day, and consecutive-day streaks earn durable XP. Level and evolution are restored after restart from a main-process SQLite ledger.
-- **Achievement gallery** — The Growth chip shows ten pet-scoped long-term milestones. Unlocks are evaluated and persisted once in the main process, with a one-shot native notification and visual reward; token milestones show exact versus estimated quality. The Growth toggle can stop new unlocks without affecting XP, permissions, or event ingestion.
-- **Presentation MCP** — A local, presentation-only MCP bridge exposes `pet_status`, `pet_react`, and `pet_say`. It never runs commands, opens files, approves permissions, or changes XP.
+Download the latest build from the [Releases](https://github.com/Ponpon55837/agent-pets/releases) page.
 
----
+- **macOS** — `AgentPets-<version>-arm64.dmg` (Apple Silicon) or `AgentPets-<version>-x64.dmg` (Intel). Open it and drag the app to Applications.
+- **Windows** — `AgentPets-<version>.exe`, a portable app that needs no installer.
 
-## Supported Agents
+Builds are not code-signed, so the OS warns the first time:
 
-| Agent | CLI | Desktop |
-|-------|-----|---------|
-| OpenCode | ✅ | ✅ |
-| Codex | ✅ | ✅ |
-| Claude Code | ✅ | ✅ |
+- **macOS (Gatekeeper)** — right-click the app in Applications, choose **Open**, then confirm. Or use **System Settings → Privacy & Security → Open Anyway**. As a last resort: `xattr -dr com.apple.quarantine "/Applications/Agent Pets.app"`.
+- **Windows (SmartScreen)** — choose **More info → Run anyway**.
 
-The **Generic HTTP** adapter is available to local integrations through the authenticated `/v1/events` endpoint. It is observe-only and has no permission-response capability.
+## First run
 
----
+On the very first launch a pet appears and the panel opens with a short intro (what the pet shows, when it asks for you, how it grows), followed by the **Setup Wizard**:
 
-## Quick Start
+1. Click **Install** next to a tool, or **Install all**, to wire up its hooks. Nothing is installed without your click, existing config files are backed up first (`*.agent-pets-bak-*`, latest 5 kept), and only Agent Pets' own entries are added. A file it cannot parse is never overwritten.
+2. Restart the tool. Use **Wait for real event** (run any prompt; it waits 30 seconds for an event the tool itself sends) to confirm the connection end to end. **Test receiver** only proves the app can receive a local event, and **Diagnose** lists the individual checks with a fix hint.
+3. The wizard reappears on later launches only until you finish it or choose **Not now**. Reopen it any time from **Settings → Advanced → Setup Wizard**.
 
-### Install (Windows)
+To remove integrations, use **Remove** on a tool's card in the wizard (only that tool's entries are taken out), or **Full cleanup…** before deleting the app (removes every hook, the connection tokens and the files under `~/.desktop-pet`, `%USERPROFILE%\.desktop-pet` on Windows).
 
-Download and run `Agent Pets.exe` from the [Releases](https://github.com/Ponpon55837/agent-pets/releases) page. No installation needed — it's a portable app.
+## Supported agents
 
-### Install (macOS)
+| Agent | CLI | Desktop | Permission | Quota | Token usage |
+|-------|-----|---------|------------|-------|-------------|
+| OpenCode | yes | yes | respond | — | estimated |
+| Codex | yes | partial | observe | provider | exact |
+| Claude Code | yes | yes | observe (respond when enabled) | provider | exact |
 
-Download `AgentPets-<version>-arm64.dmg` (Apple Silicon) or `AgentPets-<version>-x64.dmg` (Intel) from the [Releases](https://github.com/Ponpon55837/agent-pets/releases) page, open it, and drag the app to your Applications folder.
+- **respond** — the permission request can be allowed once or denied from the pet bubble. OpenCode always; Claude Code after you turn on **Answer Claude Code permissions from the pet** (see [Permission bubble](#permission-bubble)).
+- **observe** — the pet shows Waiting Permission, but you approve inside the tool itself (Codex only reports that it is waiting; there is no way to send a decision back).
+- Codex does not report a "waiting for input" state. Codex Desktop shares `~/.codex` with the CLI and has no separate install API, so it works only if that build runs the same hooks; verify with **Wait for real event**.
+- **Token usage: exact** means per-message counts read from the agent's own local session logs (`~/.codex/sessions`, `~/.claude/projects`). **estimated** means the number comes from the event the agent sent, as OpenCode and Generic HTTP integrations do; Codex and Claude Code usage on live events is not counted, so local logs stay the single source.
+- A **Generic HTTP** adapter is available to local integrations through the authenticated `/v1/events` endpoint (see [Event server](#event-server)). It is observe-only.
 
-### First Run
-
-1. Launch Agent Pets. A small pet will appear on your screen.
-2. Click the pet, then **⚙ → Setup Wizard**. It will detect which AI tools are installed on your machine.
-3. Click **Install** next to a tool (or **Install All**) to wire up its hooks — the wizard does not do this automatically, you need to click.
-4. Once hooks are installed, restart your coding tools; the pet's appearance will then change to reflect your agents' status.
-
----
-
-## Usage
-
-### Interacting with the Pet
+## The pet
 
 | Action | Effect |
 |--------|--------|
-| **Left-click** the pet | Open the control panel (opens as its own window, next to the pet — the pet itself never moves) |
-| **Drag** the pet | Move it to a new position (remembered across restarts) |
-| **Right-click** | Hide the pet when enabled in Settings (permission controls remain interactive) |
+| Click (or focus and press Enter / Space) | Open the control panel next to the pet |
+| Double-click | Pat the pet: a small reaction and +1 mood (up to 5 per day) |
+| Drag | Move the pet; its position is remembered across restarts |
+| Right-click | Menu: open panel, open settings, Do Not Disturb, Mini mode, hide, quit (or hide immediately if **Right-click hide** is on) |
 
-The system Tray menu can show or hide the pets, open the panel or Settings, toggle Mini / Edge Peek mode, Do Not Disturb, sound and notifications, configure launch at startup in packaged builds, run commands from enabled plugins under **Plugins**, mark pending attention on the Tray icon, and quit the app. Closing or hiding the pet window keeps hooks and background status running until **Quit** is selected.
+- **Status line** — below the pet, up to 3 lines, one per active tool family (Codex / Claude / OpenCode); CLI and Desktop variants share a line. Each line is one thin row: the tool name and a short English state word in every UI language, plus the quota percentage and meter and any plugin badges, e.g. `Claude · Working 71%`. The state word is always shown in full: when a line is too narrow (small multi-pet sizes, several badges) the `+N` badge count goes first, then badges (from the end), then the name shortens and is dropped, then the percentage (the meter stays). Dropped badges stay in the tooltip and screen-reader label. With several sessions in a family the line follows the one that needs you first (highest-priority state, then most recent). The full name, CLI/Desktop variant, project and state (in the UI language) are in the hover tooltip (the quota tooltip when a quota meter is shown) and in the line's screen-reader label. With no active session the single line shows `Idle` or `Offline`, which is also its tooltip and label.
+- **Completion markers** — results that arrive while you have not touched the pet for 45 seconds add up in a `✓ N` marker beside it (`⚠ N` when one failed); Mini mode and Edge peek show the count too. Clicking the pet or the marker clears it. Turn them off under **Settings → Desktop → Completion markers**; while off nothing is counted.
+- **Bubbles** — success, failure and waiting toasts appear above the pet (**Status bubble**, on by default; closes after a few seconds, click to open the panel). A **Working hint** that names the tool in use is optional (off by default). Permission prompts never auto-dismiss. Bubbles are prioritized: permission first, then agent toasts, Presentation MCP speech, activity hints and plugin notifications.
+- **Reactions** — bounce on state changes and a shake while waiting for permission (**Bounce & shake**, on by default) plus optional decorative **Ambient motion** (off by default). Agents with Presentation MCP and plugins can also trigger `happy`, `curious`, `thinking`, `surprised` and `encouraging` reactions.
+- **Mood and growth** — see [Growth](#growth).
+- **Mini mode** — a compact 96 px pet with a status icon. **Edge peek** (separate, off by default): drag the pet to the left, right or top screen edge and hold about 650 ms to tuck it into a Liquid Glass handle; click or hover to expand. Pending permission requests always bring the full pet back. Bounds survive display and DPI changes.
+- **Shimeji behavior** (off by default) — low-frequency idle walking, sleeping and cursor reactions, clamped to the current display. It pauses for active work, permission prompts, Do Not Disturb, reduced motion, background and power saving.
+- **Multiple pets** (off by default) — when 2 or more tool families are active, show one small pet per family, each with its own pet choice.
+- **Project pets** — bind a project folder to its own pet under **Settings → Pets**. Project identity is a salted local hash; full paths are not stored.
+- **Custom pets** — see below.
 
-Below the pet, a floating status bar shows up to **3 lines**, one per active tool family (Codex / Claude / OpenCode). CLI and Desktop variants of the same tool are grouped onto a single line (e.g. `Claude (CLI+Desktop) · Thinking`). When nothing is active, a single line shows the pet's overall idle/offline state.
+### Custom pets
 
-### Control Panel
+Under **Settings → Pets**, use **+ Import asset** (`.webp`, `.png` or `.jpg` spritesheet) or **+ Import .zip** (a `.codex-pet.zip` kit, e.g. from [codex-pets.net](https://codex-pets.net), read directly with no manual unzip). A zip import first shows a preview (idle animation, first frame of each row, atlas version, frame size and warnings) before anything is installed. The atlas version is detected from the image: 9 rows is v1, 11 rows is v2; v2 kits walk on row 1 (running-right) without a `behaviorManifest`, and rows 9–10 are look-direction rows, so sleep still falls back to idle unless the kit declares one. If the pet ID already exists you choose **Replace** or **Keep both** (saved as `<id>-2`); nothing is overwritten silently, and an interrupted install never leaves a half-written folder. Pets can be renamed (pencil icon) and removed (built-in pets are only hidden; the default `aang-airbender` cannot be removed). Imported pets live in `~/.desktop-pet/custom/`.
 
-Click the pet to open the control panel — a separate always-on-top window. It has two views. The main view contains **Sessions** and **Usage** tabs:
+Sprite requirements (checked on import):
 
-#### Sessions View (default)
+- Frame cell **192 × 208 px**; the image width and height must be multiples of that, and the sheet needs **at least 9 rows** (rows 0–8).
+- Rows used: 0 Idle / Offline, 5 Error, 6 Waiting Permission / Waiting Input, 7 Thinking / Tool Running, 8 Success.
+- A `pet.json` may declare an optional `behaviorManifest` for Shimeji, for example `{"behaviorManifest":{"walk":{"row":1},"sleep":{"row":5}}}` (row 0–10, up to 16 frames, frame durations 60–3000 ms). Missing definitions fall back to Idle.
 
-Shows all sessions (including recently gone-offline ones) with their current status:
+## Control panel
 
-- **Idle** — Agent is waiting for input
-- **Thinking** — Agent is processing
-- **Tool Running** — Agent is executing a tool
-- **Waiting Permission** — Agent is waiting for approval
-- **Success** — Task completed successfully
-- **Error** — An error occurred
-- **Offline** — Session ended or went stale
+Open it with a click on the pet or the Tray. The header shows the pet, its level and the number of running / attention sessions, plus, left to right, a **⋮ menu** (Do Not Disturb, Keep open, and a quick Appearance toggle that cycles system / light / dark; a dot on the button shows Do Not Disturb is on), Settings (`Cmd/Ctrl+,`) and Close. **Esc** steps back one level, then hides the panel. Drag any edge to resize the panel (from 360×420 up to full screen); every view shares that one size and it is remembered, and **Settings → General → Reset panel size** restores the default.
 
-Live states (Thinking / Tool Running / Waiting) show an elapsed-time readout next to the status. If any sessions are offline, a **Clear offline** button appears below the list to remove them from view.
+- **Sessions** — grouped into **Needs attention**, **Running** and **Idle & finished**. Filter by All / Needs attention / Running and by tool, and sort by urgency or most recent. Live states show elapsed time; a row expands to show path, tool, last seen and session ID, plus jump-back actions: **Show project folder** (selects it in Finder or File Explorer; it never opens it), **Copy project path** and, on macOS, **Switch to** the session's terminal or IDE (it brings the app forward, not a specific window or tab). **Clear offline items** removes ended sessions from view; sessions silent for 15 minutes go stale. A banner appears if a local server port is busy, with **Retry now**.
+- **Quota** — the remaining Codex and Claude Code subscription quota (session and weekly windows, reset times in your local time). Agent Pets has no account system and never asks for agent credentials: it reuses the CLI's local sign-in, queries the provider from the main process and passes only percentages to the UI. If the CLI session is missing or expired, sign in again in that CLI. Results refresh every 2 minutes while the panel is open (**Refresh now** is rate limited); the last good reading stays visible if a refresh fails. A thin quota meter also appears in the pet's status pill while that tool is active. Below the provider quota, **Current 5-hour block** shows the block computed from local logs (it starts at the first usage after a 5-hour break, rounded down to the hour, and lasts 5 hours): tokens so far, elapsed and remaining time and tokens per minute. It is a local estimate of the window, not the provider's own limit.
+- **History** — completed / failed sessions, active time, token usage (fresh input plus output; cache is listed separately), agent distribution and a per-model breakdown for **7, 30 or 90 days**, optionally filtered by project. **Export JSON** or **Export CSV** writes the sanitized daily summary to a file you choose. **Clear history** removes history and quota snapshots only, never XP, level or achievements. History is built from hook events plus a read-only scan of local Codex / Claude Code session logs; prompts, tool arguments and full paths are not stored. Long logs are read in parts over several scans; a scan never skips a large file. Raw events are retained for 90 days; daily aggregates remain.
+- **History → Sessions** — past sessions, newest activity first (**Load more** for older ones): outcome (completed, failed, cancelled, active, incomplete), agent, project, duration, tool runs, permission waits, tokens and top model. It uses the range and project filter above and adds agent, outcome, custom dates and a search over project and agent names. Select a session to see its timeline: each state change with its time and tool name (latest 500 entries). Only metadata is kept — no prompts, transcript text or tool arguments, and only the project folder's name. Sessions recorded before this view existed show no tool counts or timeline. The JSON export includes this list without project names.
 
-#### Usage Tab
+- **Plugin tabs** — each enabled plugin adds a tab after History (only while plugins are on and the plugin is installed, enabled and not crashed). A tab shows the plugin's name, icon and an unread badge; with many plugins the tab bar scrolls (wheel, trackpad, ‹ › buttons, arrow keys). A plugin with a panel page shows it inside the tab; any other plugin shows its recent notifications and commands with links to its settings and details. The last tab you used is remembered.
 
-Shows the remaining subscription quota reported by Codex and Claude Code, including session/weekly windows, countdowns, and reset dates in the user's local time. While either family is active, a 3px quota meter is embedded inside its existing pet status pill without changing the window height; it prefers the short session window and falls back to weekly when that is the only quota returned. Hover the pill for the percentage and full reset time. **Agent Pets has no account system and never asks for an agent username, password, or token.** It reuses the local subscription session already created by Codex CLI or Claude Code, requests the provider's quota endpoint from the Electron main process, and only sends normalized percentages to the UI. If that CLI session is missing or expired, re-authentication happens in the original CLI—not in Agent Pets. Results are cached for one minute; the compact meter refreshes every five minutes while relevant agents are active, and **Refresh** requests a fresh reading for both windows. API-key-only Codex sessions do not expose subscription quota.
+### Growth
 
-Click the **⚙** icon in the header to switch to Settings.
+Under **Settings → Pets → Growth**: XP, level, evolution stage and streak, recent XP, and achievements.
 
-#### Settings View
+- XP is awarded only in the main process, idempotently: +20 per completed session, +10 for the first completion of a local day, +2 per 30 minutes of active work (up to +10 per session) and +5 for each consecutive day. Failed or cancelled work earns no XP.
+- **Mood** starts each day at 10: +4 for a success, −6 for an error, plus capped bonuses for tools and long work. **Reset today's mood** returns it to 10, and **Mood visuals** can turn the aura off without stopping tracking.
+- 14 achievements (one hidden), filterable by All / In progress / Unlocked. Unlocks are saved once per pet and announced with a native notification. Token achievements count exact local-log usage of Codex and Claude Code once per message (shared by every pet, like History), plus event-reported usage of other agents. **Enable achievements** stops new unlocks only.
 
-#### Language and copy
+## Settings
 
-The desktop UI and native prompts support Traditional Chinese and English across Settings, notifications, Tray, Setup Wizard, permission prompts, and errors. Choose **Language** in Settings; the selection is saved locally and synchronized across the pet, panel, Tray, and native notifications. Canonical technical terms such as `Running`, `Thinking`, `Permission`, `Idle`, `Allow once`, `Deny`, agent names, MCP tool names, and token terminology remain unchanged for API and status consistency.
+Open from the panel header or the pet menu. Settings are in five groups, with **search** at the top that jumps to the matching setting:
 
-The panel uses an extensible section navigator: **Language**, **Appearance**, **Desktop**, **Pets**, **Growth**, and **Advanced**.
+| Group | Contents |
+|-------|----------|
+| General | Language (Traditional Chinese / English), **Theme** (Panel: match system / light / dark; Pet: dark by default, light, or follow the panel — set separately, e.g. a dark system with a light pet), pet size, reset panel size, bounce & shake, status bubble, ambient motion, working hint |
+| Pets | Pet library and imports, multiple pets, project pets, Growth (mood, XP, achievements) |
+| Desktop | Notifications, Do Not Disturb, sound; Mini mode, Edge peek, Shimeji, capture exclusion, fullscreen auto-hide, completion markers, right-click hide, jump back to a session, permission bubble, answering Claude Code permissions, Presentation MCP, launch at startup (packaged builds), permission log |
+| Advanced | Setup Wizard, project MCP, diagnostics, restart, quit |
+| Plugins | Install, enable, permissions, updates and plugin notifications (day-to-day use is in the dashboard plugin tabs) |
 
-**Appearance section**
+- **Do Not Disturb** silences native notifications, sounds, extra motion and non-essential bubbles without stopping event ingestion. Timed presets are in the Tray menu: 30 minutes, 1 hour, until 9:00 tomorrow, or until turned off (a timed DND lasts at most 7 days). A summary notification reports how many alerts were silenced when it ends.
+- **Notifications** (on by default) cover waiting-permission, waiting-input, completion and errors, with a per-session cooldown and batching of terminal events. On macOS, clicking a waiting-permission or waiting-input notification about one session switches to that session's app; any other notification opens Sessions. **Sound** (off by default) plays short synthesized cues with per-event toggles and a volume slider.
+- **Jump back to a session** (on by default) controls the jump-back actions; **Switch to app** (macOS, on by default) has its own toggle. Switching uses `open -b` (LaunchServices), so it needs no Automation or Accessibility permission. Only apps on a fixed list of known terminals, IDEs and the Claude app can be activated, and only after you click; Windows does not offer it yet.
+- **Capture exclusion** hides only the pet window from supported screenshots (Windows system API; macOS is best effort). **Fullscreen auto-hide** keeps the pet out of another app's macOS fullscreen Space or a Windows borderless fullscreen window; it fails closed if the native runtime is unavailable.
 
-- **Size** — S / M / L / XL / XXL to scale the pet.
-- **Bounce & shake** — Click/state-change bounce, idle fidget sway, and waiting-permission shake. **Off by default.**
-- **Status bubble** — Ordinary success/error toasts close after about 3 seconds and show the remaining time; permission prompts never auto-dismiss. **Off by default.**
+## Permission bubble
 
-**Desktop section**
+When an agent asks for permission, a Liquid Glass bubble appears on the pet and the same card shows in the panel. It shows the requesting tool and project, what will run (redacted, expandable, copyable) and a countdown. Requests time out after a short TTL (at most 5 minutes) and the agent is told it was cancelled.
 
-- **Mini mode** — Shrinks the pet to a compact 96px surface and can be turned off at any time.
-- **Edge peek** — A separate, **off-by-default** preference. When enabled, dragging to a display edge and holding for about 650ms shows a dedicated 42px-thick × 96px-long Liquid Glass handle; click or hover expands back to Normal without leaving a clipped pet fragment. Pending permission requests always restore the normal interactive surface.
-- **Shimeji behavior** — Enable it under **Settings → Desktop → Desktop behavior** when you want autonomous idle movement. The scheduler uses one low-frequency timer for the whole pet window, falls back to Idle when a sprite manifest lacks Walk/Sleep rows, and never moves Mini/Edge or crosses a monitor boundary.
-- **Capture exclusion** — Excludes the pet window from supported screenshots and recordings when enabled. Windows uses the system capture-exclusion API; macOS uses a limited native sharing policy that newer capture tools may ignore. The control panel is not excluded.
-- **Fullscreen auto-hide** — On macOS, the pet and panel use native Spaces policy to stay out of another app's fullscreen Space. On Windows, a native Win32 event detector hides each Agent Pets window only when a different process owns a visible, top-level, borderless window covering its complete monitor; ordinary maximized windows are ignored. The capability fails closed when the native runtime is unavailable, and this is not video-content recognition.
-- **Right-click hide** — Enable this to hide the pet by right-clicking its sprite or the Edge Peek handle. Permission cards, status lines, toasts, and other interactive controls are exempt; the app and its hooks continue running.
-- **Do Not Disturb** — Suppresses native notifications, pet sounds, extra motion, and nonessential bubbles without stopping event ingestion. **Off by default.**
-- **Notifications** — Native alerts for waiting-permission, waiting-input, completion, and errors. Repeats use a per-session cooldown and terminal events are batched. **On by default.**
-- **Sound** — Short synthesized cues (Web Audio, no audio files) for success/error/waiting-permission. **Off by default.**
-- **Launch at startup** — Start Agent Pets when you sign in. This toggle is available in packaged builds.
-- **Permission Bubble** — An independent switch for the Liquid Glass Allow once / Deny card. Turning it off hides only the card; pending requests remain with the Broker, stay on the Tray badge, and can still be resolved by the Agent or terminal. **On by default.**
-- **Presentation MCP** — Allow or disable the local MCP presentation channel. When enabled, clients can send bounded reactions or plain-text speech; Do Not Disturb and waiting/error/permission states take precedence. **On by default.**
-
-**Advanced section**
-- **Setup Wizard** — Re-run tool detection, or install/reinstall hooks.
-- **Restart Pet** — Fully relaunch Agent Pets if the pet or its animation gets stuck.
-- **Quit** — Exit Agent Pets.
-
-**Growth tab**
-
-- **Mood** — Starts each day at a low baseline of 10. A successful task gives +4 and an error gives -6. Long tasks also earn +1 for every 2 completed tools (up to +8 per task) and +1 for every 5 minutes of work (up to +4 per task), so progress rewards are capped at +12 before the completion bonus. As mood grows, an animated energy layer built from the current pet frame intensifies around the pet's own silhouette, reaching overdrive at 90+. Click **Reset** to return to 10; it never grants extra mood.
-- **Mood visuals** — Turn off mood's aura, color, and energy-layer presentation without stopping mood tracking; re-enable it at any time.
-- **XP / Level** — The Growth chip shows the selected pet's durable XP, level, evolution stage, and current streak. XP uses a versioned, idempotent ledger: a canonical session completion is +20 XP, the first completion of a local day is +10, each observed 30 minutes of active coding is +2 (capped at +10 per session), and continuing yesterday's streak is +5. Failed or cancelled work grants no permanent XP; token milestones wait for an exact token event contract.
-- **Achievements** — The same Growth chip includes ten milestones (first completion, session/active-day thresholds, Night Owl, adapter breadth, streak, levels, and token usage). Unlocks live in a separate `achievements.sqlite`, are scoped per pet and registry version, and are idempotent across event replay and restart. While achievements are enabled, verified unique completed sessions retained by History are reconciled into the achievement ledger at startup and when tracking is re-enabled; replaying the reconciliation never duplicates an unlock or notification. Turning off **Enable achievements** stops new unlocks and reconciliation only; it does not erase existing achievements or XP.
-
-**Pets tab**
-
-- **Pet** — Choose which pet to display. Click a pet name to select it.
-- **+ Import Sprite** — Import a custom spritesheet (`.webp`/`.png`/`.jpg`, 8 columns × 11 rows).
-- **+ Import .zip** — Import a `.codex-pet.zip` sprite kit (e.g. downloaded from codex-pets.net) in one click — no manual unzip needed.
-- **Multi-pet** — Show one small pet per active tool family instead of collapsing to the single highest-priority one, when 2+ are running at once. **Off by default.** Per-agent pet choices appear here when enabled.
-
-Click **‹** to return to the Sessions view.
-
-### Presentation MCP
-
-Presentation MCP is a local stdio bridge for agents that support MCP. The app creates the bridge script and a separate local token after startup:
-
-```text
-Windows: %USERPROFILE%\\.desktop-pet\\presentation-mcp.mjs
-macOS/Linux: ~/.desktop-pet/presentation-mcp.mjs
-```
-
-Configure an MCP client to launch that script with the real Node.js executable. The bridge exposes only `pet_status` (read-only sanitized status), `pet_react` (five bounded reactions), and `pet_say` (up to 240 characters of plain text for 1–15 seconds). Each client is limited to 3 requests per 10 seconds; the queue is bounded, intents expire automatically, and disconnecting the client removes its pending intents. Permission, error, waiting, and Do Not Disturb state always take precedence. This channel cannot control tools, files, permissions, XP, quota, or achievements.
-
-#### One-click project setup
-
-In **Settings → Advanced**, click **Setup MCP for a project**. Choose the local project folder in the native folder picker; Agent Pets then installs the same presentation bridge for all three supported project clients:
-
-- Codex: `.codex/config.toml` (`mcp_servers.agent-pets`)
-- Claude Code: `.mcp.json` (`mcpServers.agent-pets`)
-- OpenCode: `opencode.json` (`mcp.servers.agent-pets`)
-
-The operation is idempotent. Existing matching entries are reported as already configured; a different entry with the same server name is reported as a conflict and is never overwritten. The setup writes only project-local configuration and does not run a shell command or reinstall hooks. Restart the affected agent client after setup so it reloads its MCP catalog.
-
-The button opens a dedicated MCP panel, separate from the Setup Wizard and the growing Settings page. The panel keeps every project configured through this button, re-checks all three client entries, and shows `Connected`, `Partial`, `Conflict`, or `Folder missing`, together with the project path and last check. **Refresh** re-checks the list. **Remove MCP** removes only matching Agent Pets entries; if a user changed an entry, it is preserved and marked as a conflict. A missing project folder can be removed from the local list without touching any files. **Done** returns to Settings.
-
-### History HUD
-
-The **History** tab in the main panel reads a local, main-process-owned aggregate projection: seven daily buckets, unique completed/failed sessions, observed active time, Agent distribution, the latest quota snapshot, and exact-versus-estimated token quality. Repeated success events for the same pet/source/session/project identity count as one completed session, matching the achievement ledger. The History reader also scans only the fixed local session-log roots `%USERPROFILE%\.codex\sessions`, `%USERPROFILE%\.claude\projects`, and `%USERPROFILE%\.claude\transcripts` from the main process. Codex `token_count` records use the cumulative `total_token_usage` counter and import only the monotonic delta; repeated context/rate-limit snapshots and records without a cumulative counter are ignored. Claude assistant `usage` records are parsed as exact usage; cache fields are folded into input and reasoning is used only when output is absent. The reader is read-only, bounded by file/line limits, skips links outside those roots, deduplicates streaming records, and stores only hashed session/file identities. Prompts, tool arguments, credentials, and full project paths are not persisted in the HUD data. **Export summary** writes the sanitized projection to a user-selected JSON file. **Clear history** clears history and quota snapshots only, establishes a new local-log cutoff, and never resets pet XP, level, evolution, mood, or achievements. Raw events use a bounded retention window while daily aggregates remain available for long-term progression views.
-
-The **Project filter** above History limits the seven-day view to one project, and token usage now attributes correctly to the detected project (via the working directory in local Claude Code/Codex logs) instead of only showing the global total. Project bindings are managed under **Settings → Pets → Project pets**: a toggle at the top of the card disables project routing entirely (every session falls back to the selected pet, without deleting recorded projects or bindings); choose **Add project** to select a local folder, then choose its pet; selecting **Use selected pet** removes the binding; each project row has a remove button to drop it from the list (it is re-added automatically the next time an event arrives from that project). Unbound projects preserve the previous behavior. If a bound custom pet is removed, Agent Pets falls back to the always-available default and marks the binding as missing so it can be repaired. Project identity is stored as a salted local hash; full paths are not persisted in the routing database or notifications.
-
-#### Connect an agent project that is already in use
-
-1. Start Agent Pets and keep **Settings → Attention → Presentation MCP** enabled (on by default). The app must remain running because the stdio bridge connects to its local loopback control server.
-2. Use a real Node.js executable; never use the packaged `Agent Pets.exe` as the interpreter. In Windows PowerShell:
-
-   ```powershell
-   $bridge = Join-Path $env:USERPROFILE '.desktop-pet\presentation-mcp.mjs'
-   node --version
-   Test-Path $bridge
-   ```
-
-3. Register the bridge once in each agent client, then restart that client. This does not reinstall hooks.
-
-   **Codex CLI / Codex desktop / IDE extension (shared configuration):**
-
-   ```powershell
-   codex mcp add agent-pets -- node $bridge
-   codex mcp list
-   ```
-
-   **Claude Code:**
-
-   ```powershell
-   claude mcp add --scope user agent-pets -- node $bridge
-   claude mcp list
-   ```
-
-   **OpenCode:** add this server under `mcp.servers` in `opencode.json` (or the project-scoped OpenCode config):
-
-   ```json
-   {
-     "mcp": {
-       "servers": {
-         "agent-pets": {
-           "type": "local",
-           "command": ["node", "C:/Users/<your-user>/.desktop-pet/presentation-mcp.mjs"]
-         }
-       }
-     }
-   }
-   ```
-
-4. Fully restart the agent client and confirm that `pet_status`, `pet_react`, and `pet_say` appear in its MCP view. If hooks work but these tools do not appear, check the bridge path, Node executable, Presentation MCP toggle, and that Agent Pets is still running.
-
-Turning Presentation MCP off rejects new presentation intents only; it does not remove hooks or affect the Permission Broker, XP, or ordinary `/v1/events`.
-
----
-
-## Setup Wizard
-
-The Setup Wizard reads the runtime Agent Adapter registry and installs hooks when you click a button — it does not install anything on its own. Each adapter reports its supported sources, capabilities, health, and diagnosis checks:
-
-- **OpenCode CLI / Desktop** — Writes a plugin to `~/.config/opencode/plugin/` (note: singular `plugin`, matching where OpenCode itself scans) and the platform's OpenCode Desktop plugin dir
-- **Codex CLI** — Creates `~/.codex/hooks.json` and enables hooks in `~/.codex/config.toml`
-- **Claude Code CLI & Desktop** — Adds a `hooks` block to `~/.claude/settings.json` (CLI and Desktop share this config, so one install covers both; which one actually fired an event is resolved at runtime via Claude Code's `CLAUDE_CODE_ENTRYPOINT` env var, not by the installer)
-
-Each adapter shows a status dot and capability chips:
-
-- 🟢 **Green** — Installed and configured
-- 🟡 **Yellow** — Detected but not (fully) configured
-- 🔴 **Red** — Error or unavailable
-
-Click **Diagnose** to inspect bounded health checks. Click **Install** next to an installable adapter to (re)install just that integration, or **Install All** to run every adapter installer idempotently. Click **Refresh** if a status seems stale.
-
-For a configured adapter, click **Test** to send a short-lived event through the running app's authenticated local HTTP receiver. A passing result confirms HTTP 204, adapter selection, canonical mapping, and renderer receipt in this Agent Pets instance; it does not launch the coding tool or prove that tool's hook has fired on its own. Generic HTTP is always observe-only and cannot respond to permissions.
-
-> Note: there is no separate "Codex Desktop" hook install — only Codex CLI hooks are wired up today.
+- **Risk** — only read-only tools (`read`, `glob`, `grep`, `list`) are low risk; every other OpenCode tool, including unknown and MCP-wrapped ones, is high risk. For Claude Code, `Write` / `Edit` / `MultiEdit` / `NotebookEdit` are medium only when the file is inside the project folder (also after resolving symlinks) and not under `.git`, `.claude`, `.husky`, `.vscode`, `.idea`, `.devcontainer` or `node_modules/.bin` and not a shell start-up or tool config file such as `.zshrc`, `.envrc` or `.npmrc`; such edits show the project-relative path. Every other edit, `Bash`, `WebFetch` and `WebSearch` are high, and MCP or other tools are unknown. Network tools are flagged "connects to the network". A high or unknown request whose text had to be cut off can only be denied here; allow it in the agent itself.
+- **Redaction** — API keys and tokens, `Authorization` values, `password=` style arguments, URL credentials and private keys become `[redacted]`, and your home directory becomes `~`.
+- **Hotkeys** — global shortcuts exist only while the top request is eligible (low or medium risk): **Cmd+Shift+Y** allow once / **Cmd+Shift+N** deny on macOS, **Ctrl+Shift+Y** / **Ctrl+Shift+N** on Windows. If another app owns the key, the bubble says so and the buttons still work. In the bubble itself: **N** or **Esc** denies; **Y** allows once for low risk, and must be held for 0.6 s for other risk levels.
+- **Queue** — several pending requests show as a list you can expand; **Deny all** needs a second press to confirm.
+- For agents that cannot be answered here (Codex, and Claude Code while the option below is off) the bubble is a reminder that tells you to go back to the tool. Only `allow once` and `deny` exist; permanent approval is intentionally unavailable.
+- **Claude Code** (off by default) — turn on **Settings → Desktop → Permission requests → Answer Claude Code permissions from the pet**. Claude Code's `PermissionRequest` hook then waits for your answer for up to the **Wait time** (default 90 s, 15–120 s) while Claude Code's own prompt stays open in the terminal; whichever answers first wins, and the pet card says you can also answer there. One click answers exactly one tool call: if the same request is already waiting from another tool call (for example two subagents running the same command), the second one is answered in the terminal only. The bubble is taken down when that tool finishes, when Claude starts its next tool call or permission prompt, when the turn ends or a new prompt is sent, or when the wait runs out. Because the terminal may have answered first, the permission log marks Claude Code decisions as possibly answered in the terminal. If the pet is not running, the option is off, the wait runs out or anything fails, the hook prints nothing and Claude Code continues as if Agent Pets were not installed (non-interactive `-p` runs then deny as usual). Your own deny rules still win over an allow from the pet. A deny tells Claude only the fixed text `Denied in Agent Pets. (已在 Agent Pets 拒絕)`. Other tools that also register a `PermissionRequest` hook run alongside ours; Claude Code decides whose answer counts.
+- **Permission Bubble** can be switched off in Settings; pending requests then stay with the broker and the Tray badge. **Settings → Desktop** also shows a bounded log of recent decisions (time, tool, source, result only).
 
 ## Plugins
 
-Plugins can add pet feed notifications, reactions, panel and Tray commands, status badges, optional sandboxed panel pages, selectable pet skins, and clearly labeled observe-only status rows. Install a `.agentpet-plugin` package from **Settings → Plugins**, or open the opt-in online catalog to review signed packages and check for updates; issue reports open a prefilled link containing only the plugin ID and version. Developers can enable Developer mode to load a local folder. Review the requested permissions and contributions before installing. Plugin pages and background code are treated as untrusted: they have no Node.js, filesystem, or shell access, and network requests are limited to approved HTTPS hosts. Plugin network requests do not send or store cookies. A plugin panel can be maximized over the control window while its host title and close controls stay visible. Since 1.4.0 a plugin panel can open a declared HTTPS link in the system browser, but only right after a real click or Enter/Space and at most five times a minute. Secrets are encrypted by the app's protected storage and never returned in settings snapshots.
+Plugins add pet notifications and reactions, a panel page, Tray commands, badges, pet skins and status rows. They run in a sandbox with no Node.js, filesystem or shell access, and network use is limited to HTTPS hosts you approve.
 
-Background plugins share one hidden Plugin Host process, which starts only while at least one plugin is enabled. Its memory is measured against its own footprint right after loading, before any plugin runs, so Chromium's fixed overhead never counts against a plugin. The host is restarted only when that growth stays above the combined per-plugin budget (64 MB per plugin by default) on two consecutive 30-second checks. On Windows the check uses the process's private memory, because the working set also includes Chromium code pages shared with other Agent Pets processes (about 65 MB measured).
+**Settings → Plugins** has four sections: **Installed** (enable, update, settings, details), **Explore** (the opt-in online catalog with signature checks and updates), **Notifications** (an inbox of plugin messages with per-plugin mute) and **Advanced** (developer mode, resource limits, diagnostics). Installing shows a sheet that groups the requested permissions by risk; new high-risk permissions or a changed signing key must be acknowledged. Plugins install disabled and you turn each on yourself.
 
-See the [plugin development index](docs/plugins/README.md) for the [10-minute guide](docs/plugins/getting-started.md), [security model](docs/plugins/security.md), [API reference](docs/plugins/api-reference.md), and [examples](docs/plugins/examples.md).
+To build a plugin, read the [plugin developer handbook](docs/plugins/README.md).
 
----
+## Project MCP and Presentation MCP
 
-## Custom Pets
+**Presentation MCP** is a local stdio bridge, `~/.desktop-pet/presentation-mcp.mjs`, that lets an MCP-capable agent make the pet speak or react. It exposes three tools: `pet_status` (read-only), `pet_react` (five bounded reactions) and `pet_say` (up to 240 characters for 1–15 seconds). Each client is limited to 3 requests per 10 seconds. It cannot run commands, touch files, answer permissions or change XP, and Do Not Disturb and permission/error states take precedence. It can be switched off under Settings → Desktop.
 
-### Spritesheet Format
+**Setup MCP for a project** (Settings → Advanced) registers the bridge in a project in two steps, so nothing is written before you review it:
 
-Custom pets use the same spritesheet format as built-in pets. A `pet.json` may optionally declare a bounded `behaviorManifest` with `walk` and/or `sleep` row definitions; missing definitions safely fall back to Idle:
+1. Choose the project folder. A review lists each tool, the exact file it would create or modify, whether Git already tracks it, and a preview of the entry. Only ticked tools are written: Codex `.codex/config.toml`, Claude Code `.mcp.json`, OpenCode `opencode.json`.
+2. **Local only** (on by default in a Git repository) adds the new files to `.git/info/exclude`, because the entry contains absolute Node.js and bridge paths from your machine that mean nothing to teammates. Files with comments (JSONC), invalid JSON or an existing different `agent-pets` entry are never rewritten; the result shows a copyable snippet instead.
 
-```json
-{"behaviorManifest":{"walk":{"row":1},"sleep":{"row":5}}}
-```
+The panel keeps a list of configured projects with status Connected, Partially connected, Conflict, Outdated paths or Folder not found; **Update paths** repairs entries after the app moves or Node upgrades, and **Remove MCP** removes only matching entries. After setup, approve `agent-pets` in `/mcp` for Claude Code, trust the project for Codex, or restart OpenCode. The bridge needs a real Node.js executable and Agent Pets running; to register it globally use `codex mcp add agent-pets -- node ~/.desktop-pet/presentation-mcp.mjs` or `claude mcp add --scope user agent-pets -- node ~/.desktop-pet/presentation-mcp.mjs`.
 
-- **Format**: `.webp`, `.png`, or `.jpg` (built-in pets ship as `.webp`; imports of any of the three are copied in as-is and rendered by content, not by file extension)
-- **Grid**: 8 columns × 11 rows (only rows 0–8 are currently used; 9 and 10 are reserved for future states)
-- **Cell size**: 192 × 208 pixels
+## Event server
 
-Each row represents a different state:
-
-| Row | State |
-|-----|-------|
-| 0 | Idle / Offline |
-| 5 | Error |
-| 6 | Waiting Permission / Waiting Input |
-| 7 | Thinking / Tool Running |
-| 8 | Success |
-
-### How to Import
-
-**From a single spritesheet:**
-
-1. Open the control panel (click the pet).
-2. Click **⚙** to go to Settings.
-3. Click **+ Import Sprite**.
-4. Select a `.webp`/`.png`/`.jpg` spritesheet file.
-5. The pet is added to your collection and automatically selected.
-
-**From a `.codex-pet.zip` sprite kit** (e.g. downloaded from [codex-pets.net](https://codex-pets.net)):
-
-1. Open the control panel → **⚙** → Settings.
-2. Click **+ Import .zip** and select the downloaded `.zip`.
-3. The app reads `pet.json` + the spritesheet inside automatically — no manual unzip required.
-
-Custom pets are stored in `~/.desktop-pet/custom/`.
-
-### How to Rename
-
-1. Open the control panel (click the pet).
-2. Click **⚙** to go to Settings.
-3. Find the custom pet in the list.
-4. Click the **✎** pencil icon next to the pet name.
-5. Type the new name and press **Enter** (or click elsewhere to confirm).
-6. Press **Esc** to cancel.
-
-Built-in pets cannot be renamed.
-
-### How to Remove / Hide
-
-Click the **×** next to any pet in the list to remove it (you'll get a confirmation prompt first) — for custom pets this deletes the imported files; for built-in pets it just hides that pet from your own list (the bundled asset itself isn't touched). The default fallback pet (`aang-airbender`) has no **×** and can't be removed or hidden, so there's always at least one pet available.
-
----
-
-## Event Server
-
-Agent Pets runs a local HTTP server on `http://127.0.0.1:17373/v1/events` that receives status updates from hooks. Requests must include the per-install `X-Agent-Pets-Token` header; the managed hooks read it from the current user's permission-restricted `~/.desktop-pet/event-token` file automatically.
-
-### POST /v1/events
+Hooks post status updates to `http://127.0.0.1:17373/v1/events` with the per-install `X-Agent-Pets-Token` header (read from `~/.desktop-pet/event-token`).
 
 ```json
-{
-  "source": "codex",
-  "sessionId": "sess_abc123",
-  "state": "thinking",
-  "timestamp": 1735689600000,
-  "originalEvent": "UserPromptSubmit",
-  "project": "/Users/you/my-project",
-  "toolName": "Edit"
-}
+{ "source": "codex", "sessionId": "sess_abc123", "state": "thinking", "timestamp": 1735689600000 }
 ```
 
-`source`, `sessionId`, `state`, and `timestamp` are required — a request missing any of them gets rejected with `400`. Missing or incorrect hook authentication is rejected with `401`.
+`source`, `sessionId`, `state` and `timestamp` are required (missing fields give `400`, a bad token `401`). Optional: `project`, `originalEvent`, `toolName`.
 
-**Fields:**
+- `source`: `opencode-cli`, `opencode-desktop`, `codex`, `codex-desktop`, `claude`, `claude-desktop` (`opencode` is normalized to `opencode-cli`)
+- `state`: `idle`, `thinking`, `tool-running`, `waiting-permission`, `waiting-input`, `success`, `error`, `offline` (`waiting` is normalized to `waiting-permission`)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `source` | string | yes | `opencode-cli`, `opencode-desktop`, `codex`, `codex-desktop`, `claude`, `claude-desktop` (`opencode` is also accepted and normalized to `opencode-cli`) |
-| `sessionId` | string | yes | Unique session identifier (max 256 chars) |
-| `state` | string | yes | `idle`, `thinking`, `tool-running`, `waiting-permission`, `waiting-input`, `success`, `error`, `offline` (`waiting` is also accepted and normalized to `waiting-permission`) |
-| `timestamp` | number | yes | Unix ms timestamp of the originating event |
-| `project` | string | no | Project path (basename shown in UI) |
-| `originalEvent` | string | no | The raw hook/event name that produced this, for debugging |
-| `toolName` | string | no | Tool name, shown in the activity bubble while `tool-running` |
+## Diagnostics and logs
 
----
+**Settings → Advanced → Export diagnostics** saves a JSON report to a place you choose: versions, system info, local server and plugin host state, counters and the recent log. Tokens, prompts and personal paths are removed and nothing is uploaded. If the previous run ended abnormally, the app suggests exporting it.
 
-## Security
+The main-process log is `logs/main.log` inside the app's userData folder (`~/Library/Application Support/Agent Pets/` on macOS, `%APPDATA%\Agent Pets\` on Windows), rotated at 1 MB with 3 files kept and redacted when written. Plugin diagnostics are under each plugin's **Diagnostics** tab.
 
-- **Renderer isolation** — Renderer processes run with Chromium sandboxing, context isolation, no Node.js integration, a restrictive CSP, a secure custom `agent-pets://` protocol instead of privileged `file://` pages, blocked popups/navigation, denied permissions, and validated main-frame IPC senders.
-- **Local event server** — The event server listens on `127.0.0.1` only, authenticates every hook request with a per-install secret, rejects browser-originated and non-JSON requests, rate-limits events, and accepts only bounded, whitelisted fields.
-- **Quota requests** — The quota feature connects only to the exact HTTPS Codex and Anthropic quota/auth endpoints. Redirects, oversized responses, excessive window counts, and malformed renderer IPC payloads are rejected. OAuth credentials stay in the Electron main process and are never exposed to the renderer or command-line arguments.
-- **Local usage reader** — Token history is read-only and main-process-owned. It scans only the known Codex/Claude JSONL roots, caps files and line sizes, rejects symlinks/reparse paths that escape those roots, parses an allowlisted usage shape, hashes source identities, and never persists raw log lines or prompt content. Lines are pre-filtered by substring before `JSON.parse`, each line is parsed at most once, and every file is imported in a single SQLite transaction (roughly 10× faster on a 20k-record fixture).
-- **Credential refresh** — Expired OAuth tokens are refreshed and merged back into the original Codex auth file or Claude credential store so the CLIs keep working. Writes use account/change guards, restrictive file permissions, and atomic replacement where applicable.
-- **Pet imports** — ZIP entry count, compressed/uncompressed sizes, JSON size, and image size/type are validated before imported files are stored.
-- **Memory bounds** — Agent sessions are capped and stale/offline entries are evicted (single-pass O(n) selection) to prevent unbounded renderer memory growth.
-- **Local servers** — Event ingress skips destroyed windows so a closing panel cannot drop notification/XP/history processing, and uses short header/request timeouts to bound slow loopback connections. If a port (17373–17375) is still held by another process at startup, such as a previous instance that is still quitting, the event, Presentation MCP, and Permission adapter servers keep retrying with backoff (2 s up to 30 s) instead of staying offline until the next restart.
-- **Windows file replacement** — Atomic writes and plugin installs retry a rename for about 1.3 seconds when Windows Defender or the search indexer briefly locks a freshly written file (`EPERM`/`EACCES`/`EBUSY`, measured on about 3% of fresh directory renames). Other platforms and other errors fail immediately as before.
-- **SQLite performance** — History, progression, achievement, and project-routing stores reuse cached prepared statements instead of recompiling SQL on every hook event; the project path cache is a true LRU.
-- **Path sanitization** — Project paths are reduced to their basename, and filesystem destinations are constrained to their expected root.
-- **Desktop notifications** — Notification text is built only from the normalized Agent name and bounded project basename; prompt text, tool arguments, session identifiers, and credentials are never shown or logged. Diagnostic notification history is bounded and stores only event class/outcome metadata.
-- **Desktop visibility and preference IPC** — The main process owns capture protection, fullscreen capability projection, the Windows Win32 event detector, right-click hide authorization, and desktop preferences. Renderer requests accept only an allowlist of boolean fields from validated first-party frames; right-click hide re-checks the trusted pet sender and persisted preference. Preference writes use bounded reads plus atomic replacement. The Windows detector uses foreground HWND, DWM frame bounds, monitor bounds, visibility/style checks, and event hooks only; it does not use focus/title heuristics, PowerShell, WMI, or an unbounded polling loop, and native failures fail closed.
-- **Presentation MCP** — The MCP bridge is loopback-only, uses a separate per-install token, rejects browser origins, limits JSON body size and request rate, validates a fixed three-tool surface, strips control/markup characters, bounds message length/TTL/queue depth, and removes a disconnected client's pending intents. It has no command, file, permission, progression, quota, or achievement authority.
-- **Permission Broker** — Permission responses use a separate loopback port and per-install token, never the generic event endpoint. The main process enforces TTL, one-shot state transitions, anti-replay, bounded records, Adapter-owned opaque handles, scoped hotkeys, external-resolution reconciliation, and a bounded redacted audit. Only `allow_once` and `deny` are exposed; permanent approval is intentionally unavailable.
-- **Progression storage** — XP is awarded only in the Electron main process. SQLite migrations, transactionally coupled `pet_progress`/`xp_ledger` writes, unique idempotency keys, bounded session activity, and sanitized snapshots prevent renderer or duplicate-event writes from inflating progression. The database stays local and is never uploaded.
-- **Packaged runtime** — Electron fuses disable RunAsNode, Node options/inspect arguments, and privileged `file://` behavior while enforcing ASAR-only loading and embedded ASAR integrity validation.
-- **Release signing** — Production macOS and Windows artifacts should be built with the platform signing credentials configured; unsigned local builds are for development only.
+## Privacy and security
 
----
+- Everything stays on your computer: history, XP, achievements, logs and tokens are never uploaded.
+- Renderers run sandboxed with context isolation, no Node.js, a strict CSP and validated IPC senders. Electron fuses disable RunAsNode and enforce ASAR-only loading.
+- The event, permission and Presentation MCP servers listen on `127.0.0.1` only (ports 17373–17375), use separate per-install tokens, reject browser-originated requests and rate-limit input. If a port is busy they retry with backoff.
+- Permission responses use their own port and token, with TTL, one-shot decisions, anti-replay and a redacted audit.
+- Notification text contains only the agent name and project folder name, never prompts, tool arguments or session IDs.
+- Hooks report the host app from a few environment values only (`TERM_PROGRAM`, the macOS bundle id, Claude Code's entrypoint and Windows Terminal / VS Code / Cursor markers). Full project paths and bundle ids stay in the main process. **Show project folder** only reveals an existing folder (never a file, and never opens it, so no app or document package is launched); **Copy project path** refuses paths with shell metacharacters.
+- Quota requests go only to the exact Codex and Anthropic HTTPS endpoints from the main process; OAuth credentials never reach the renderer.
+- The log reader is read-only, bounded and limited to the known Codex / Claude session roots. Pet zip imports pre-scan the archive (entry count, total size, compression ratio, overlapping entries, symlinks, unsafe or non-UTF-8 names, duplicates), cap image dimensions from the header before decoding, strip prototype keys from `pet.json`, and install through a private staging folder with atomic renames.
+- Plugins are sandboxed and permission-gated; secrets are stored encrypted with the system secure store and never returned to the UI.
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---------|---------------|
+| Pet stays Offline | Press **Wait for real event** and run a prompt. No event: restart the tool (hooks load at start), then **Diagnose**. |
+| Diagnose: Node.js executable missing | Install Node.js 18+, then press **Repair**; it writes the absolute path (a bare `node` fails in apps launched from Finder or the Dock). Switching nvm versions also needs a **Repair**. |
+| Codex hooks not enabled | **Repair** adds `hooks = true` under `[features]` in `~/.codex/config.toml`. |
+| Install refused: not valid JSON | `settings.json` / `hooks.json` has comments or a syntax error. Agent Pets leaves it untouched; fix or move the file, then install again. |
+| Banner: event receiver offline | A local port (17373–17375) is held by another program or an older Agent Pets. Close it; the app retries automatically, or press **Retry now**. |
+| Hook script out of date | **Repair** redeploys it. |
+| Claude Code does not show the project MCP | Approve `agent-pets` in `/mcp`. Codex needs the project to be trusted. |
+| Pet frozen or blank | Use **Reload pet** in the Tray (Advanced) or **Restart Pet** in Settings → Advanced. |
+| macOS: **Launch at login** stays pending | Approve Agent Pets in System Settings → General → Login Items (the toggle has a button). Move the app to the Applications folder first; a login item cannot be registered from a disk image or Downloads. |
+| Windows: **Restart** closes the app without reopening | Fixed for the portable build: it now relaunches the original `.exe`, not its temporary extraction folder. If it still fails, start the `.exe` again by hand. |
+| Bug report | Export diagnostics and attach the file. |
 
 ## Development
 
-### Prerequisites
-
-- Node.js 22.12+
-- pnpm 11+
-
-### Setup
+Requires Node.js 22.12+ and pnpm 12 (pinned by `packageManager`).
 
 ```bash
 git clone https://github.com/Ponpon55837/agent-pets.git
 cd agent-pets
 pnpm install
-```
-
-### Run in Dev Mode
-
-```bash
 pnpm dev
 ```
 
-On a Windows machine where Chromium's GPU process crashes during development, use the built-in safe mode instead of creating a local environment file:
+| Script | Purpose |
+|--------|---------|
+| `pnpm dev` / `pnpm dev:safe` | Vite + Electron dev run; `dev:safe` uses software rendering on Windows when the GPU process crashes |
+| `pnpm test:unit` / `pnpm test:unit:watch` | Node built-in tests in `tests/` (no Electron launched) |
+| `pnpm test:coverage` | Unit tests with an 85% line floor on main-process modules |
+| `pnpm lint` | Main-process guard (unhandled `loadURL`, global error handlers) |
+| `pnpm exec vue-tsc --noEmit` | Type check |
+| `pnpm check:bundle-size` | Fails if a renderer chunk exceeds 250 KB (run after `vite build`) |
+| `pnpm check:bundle` | Verifies the plugin panel tokens bundle |
+| `pnpm check:contrast` | Design token contrast check (fails on violation) |
+| `pnpm check:design` / `check:design:strict` | Reports hard-coded colors and sizes; `--strict` fails on them |
+| `pnpm build` / `pnpm build:fast` | Type check, Vite build, then electron-builder into `release/` (`build:fast` skips compression) |
+| `pnpm bench`, `pnpm bench:lag` | Performance benchmarks |
 
-```bash
-pnpm dev:safe
-```
+Both build commands first close project-owned Agent Pets processes. To check a change in a real Electron app without touching your data, run `pnpm exec vite build` then `node scripts/e2e-isolated-electron.mjs` (temporary home and userData, fake `safeStorage`, so macOS Keychain is never touched; its local ports default to 27373–27375 so an installed copy keeps 17373–17375 — `--hook-port-base` picks another range, `--real-hook-ports` uses the defaults; see [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)).
 
-Safe mode keeps Chromium sandboxing enabled and uses software rendering only for that Windows Vite development session. Normal development, packaged builds, macOS, and Linux retain hardware acceleration.
+**Dev port overrides** — unpackaged runs may set `AGENT_PETS_EVENT_PORT`, `AGENT_PETS_PERMISSION_PORT` and `AGENT_PETS_PRESENTATION_PORT` (1024–65535; defaults 17373, 17374, 17375) so they do not fight an installed copy. Packaged builds ignore them.
 
-### Build
+`node integrations/install.mjs` installs the hooks from a checkout with the same safeguards as the wizard (`--claude-code` limits it to Claude Code, `--uninstall` removes them).
 
-```bash
-pnpm build
-```
+**CI** — `ci.yml` runs on pull requests and `main` pushes that change more than docs: type check, `pnpm lint`, `pnpm test:coverage`, `vite build`, bundle-size, plugin-panel-bundle and contrast checks, a design-token report and a non-blocking dependency audit. `ci-platforms.yml` runs the type check and unit tests on macOS and Windows weekly and on demand.
 
-The output will be in `release/`.
+## Versioning and release
 
-### Release
-
-Releases are automated by `.github/workflows/release.yml`. When a commit that changes the `version` in `package.json` lands on `main` and no `v<version>` tag exists yet, GitHub Actions runs type-check and unit tests, builds the macOS (arm64 + x64 `.dmg`) and Windows (portable `.exe`) packages, then creates the `v<version>` tag and a GitHub Release with generated notes and both packages attached. No manual tagging or local packaging is needed. The workflow can also be re-run from the Actions tab (**Run workflow**); it skips versions that are already tagged. Builds are currently unsigned.
-
-### Unit Tests
-
-```bash
-pnpm test:unit
-```
-
-On Windows without Developer Mode, the tests that create file symlinks are skipped, because creating a symlink needs that privilege, and file-mode (`0600`) assertions run only on macOS/Linux. Everything else runs on every platform.
-
-To check a change in a real Electron app without touching your data, build first and then start the isolated launcher. It uses a temporary home and userData and a fake `safeStorage`. It binds the same local ports as an installed Agent Pets, so quit your everyday instance first or let it reconnect once the test app exits:
-
-```bash
-pnpm exec vite build
-```
-
-```bash
-node scripts/e2e-isolated-electron.mjs
-```
-
-### Install Hooks (for development)
-
-```bash
-node integrations/install.mjs
-```
-
-This installs hooks for all detected tools. Hooks are installed to:
-
-- `~/.codex/hooks.json` (Codex)
-- `~/.claude/settings.json` (Claude Code CLI & Desktop)
-- `~/.desktop-pet/agent-hook.mjs` + `agent-hook.cmd` (shared hook script all of the above call into)
-- `~/.desktop-pet/event-token` (per-install event authentication secret; mode `0600` on macOS/Linux)
-- `~/.desktop-pet/presentation-token` (separate presentation MCP secret; mode `0600` on macOS/Linux)
-- `~/.desktop-pet/presentation-mcp.mjs` (stdio bridge used by MCP clients)
-
-After upgrading an existing installation, Agent Pets refreshes managed hooks automatically. Restart a currently running OpenCode process once so its already-loaded plugin picks up event authentication.
-
-Use `--claude-code` to install/uninstall the Claude Code hook only:
-
-```bash
-node integrations/install.mjs --claude-code
-node integrations/install.mjs --uninstall --claude-code
-```
-
-The desktop app also refreshes the presentation bridge on startup. For an MCP client, point its stdio server command at `~/.desktop-pet/presentation-mcp.mjs` (or `%USERPROFILE%\\.desktop-pet\\presentation-mcp.mjs` on Windows) and use a real Node.js executable; do not use the packaged Agent Pets executable as a Node interpreter.
-
-> **Language and build note:** Settings, Tray, notifications, Setup Wizard, permission, error, and onboarding copy now use a shared Traditional Chinese layer; canonical technical statuses and tool names remain unchanged. `pnpm build` and `pnpm electron:build` run a preflight that closes only project-owned Agent Pets processes to avoid `win-unpacked` file locks; unrelated Electron applications are not terminated.
-
----
-
-## Project Structure
-
-```
-agent-pets/
-├── electron/
-│   ├── main.ts              # Electron main process
-│   ├── agent-adapter.ts     # AgentAdapter contract and runtime registry
-│   ├── agent-adapter-operations.ts # Platform-aware adapter detection/install bridge
-│   ├── preload.ts           # IPC bridge
-│   ├── event-server.ts      # HTTP event server
-│   ├── event-normalizer.ts  # Generic event allowlist and projection
-│   ├── permission-broker.ts # Permission state machine and anti-replay
-│   ├── permission-adapter-server.ts # Dedicated OpenCode response channel
-│   ├── permission-audit.ts  # Bounded redacted local audit
-│   ├── progression.ts       # SQLite XP ledger and level projection
-│   ├── presentation-controller.ts # TTL/rate/queue presentation control plane
-│   ├── presentation-mcp.ts  # Loopback MCP presentation endpoint
-│   ├── project-mcp-setup.ts # Safe project-local MCP configuration installer
-│   ├── project-mcp-registry.ts # Local connected-project registry and status checks
-│   ├── pet-window-mode.ts   # Bounded Mini/Edge geometry and dwell constants
-│   ├── desktop-visibility.ts # Platform capability projection
-│   ├── windows-fullscreen-detector.ts # Windows native fullscreen event detector
-│   ├── desktop-preferences.ts # Main-owned desktop preferences
-│   ├── desktop-notifications.ts # Native notification delivery and bounded log
-│   ├── desktop-tray.ts      # Tray lifecycle and menu
-│   ├── notification-policy.ts # Pure notification classification/cooldown
-│   ├── quota.ts             # Codex / Claude quota readers
-│   ├── local-usage.ts       # Bounded Codex / Claude session-log token reader
-│   ├── sqlite-statements.ts # Shared prepared-statement cache for SQLite stores
-│   └── setup.ts             # Platform-aware paths & setup
-├── integrations/
-│   ├── install.mjs          # Standalone CLI hook installer
-│   ├── agent-hook.mjs       # Shared hook script (bundled into the app via extraResources)
-│   ├── agent-hook.cmd       # Windows wrapper for agent-hook.mjs
-│   └── presentation-mcp.mjs # Standalone stdio MCP presentation bridge
-├── scripts/
-│   └── stop-agent-pets.mjs  # Build preflight for project-owned Agent Pets processes
-├── src/
-│   ├── components/
-│   │   ├── DesktopPet.vue   # Pet window (drag + click)
-│   │   ├── PetAnimation.vue # Canvas spritesheet renderer
-│   │   ├── StatusPanel.vue  # Unified control panel
-│   │   └── SetupWizard.vue  # Tool detection + install wizard
-│   ├── stores/
-│   │   └── agentStore.ts    # Pinia store (sessions, pets, UI state)
-│   ├── types/
-│   │   ├── agent.ts         # Agent event types
-│   │   ├── agent-adapter.ts  # Adapter capabilities/status contracts
-│   │   ├── desktop.ts       # Desktop preference IPC types
-│   │   ├── desktop-visibility.ts # Visibility capability types
-│   │   └── presentation.ts  # Presentation intent/status contract
-│   └── utils/
-│       ├── format.ts        # Shared formatting helpers
-│       └── sound.ts         # Synthesized audio cues (Web Audio API)
-├── public/
-│   └── pets/
-│       ├── pets.json        # Built-in pet manifest (id/displayName/folder)
-│       └── <pet-id>/        # spritesheet.webp + pet.json per built-in pet
-├── tests/                   # Node built-in unit tests
-├── package.json
-└── README.md
-```
-
-The app's own install/uninstall logic (used by the Setup Wizard's buttons) lives in `electron/setup.ts`, in-process — `integrations/install.mjs` is the standalone equivalent for running from a terminal (see [Install Hooks (for development)](#install-hooks-for-development) above); both generate the same hook scripts and plugin content, kept in sync by hand.
-
----
+Bump `version` in `package.json` (patch by default; minor for a persistent-schema, public-contract or security-boundary change). When that commit lands on `main` and no `v<version>` tag exists, `.github/workflows/release.yml` runs the type check and unit tests, builds the macOS arm64 and x64 `.dmg` files and the Windows portable `.exe`, then creates the tag and a GitHub Release with generated notes. It can also be re-run from the Actions tab and skips versions that are already tagged. Builds are unsigned.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The quota integration is based on the MIT-licensed [TokenBar](https://github.com/Nanako0129/TokenBar); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT, see [LICENSE](LICENSE). The quota integration is based on the MIT-licensed [TokenBar](https://github.com/Nanako0129/TokenBar); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

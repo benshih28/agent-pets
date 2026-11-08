@@ -57,10 +57,16 @@ export function miniWindowBounds(normalBounds: WindowBounds, workArea: WorkArea)
   }, workArea)
 }
 
+/** The bottom is where the pet naturally stands (on the Dock/taskbar), so it never docks there. */
+export const DOCKABLE_EDGES: readonly PetEdge[] = ['left', 'right', 'top']
+export const EDGE_HOVER_EXPAND_MS = 200
+export const EDGE_REDOCK_AFTER_MS = 1_500
+
 export function nearestEdge(
   bounds: WindowBounds,
   workArea: WorkArea,
   threshold = EDGE_TRIGGER_DISTANCE_PX,
+  dockable: readonly PetEdge[] = DOCKABLE_EDGES,
 ): PetEdge | null {
   const current = clampWindowBounds(bounds, workArea)
   const distances: Array<[PetEdge, number]> = [
@@ -69,7 +75,9 @@ export function nearestEdge(
     ['top', Math.abs(current.y - workArea.y)],
     ['bottom', Math.abs((current.y + current.height) - (workArea.y + workArea.height))],
   ]
-  const [edge, distance] = distances.reduce((best, candidate) => (
+  const candidates = distances.filter(([edge]) => dockable.includes(edge))
+  if (candidates.length === 0) return null
+  const [edge, distance] = candidates.reduce((best, candidate) => (
     candidate[1] < best[1] ? candidate : best
   ))
   return distance <= Math.max(0, threshold) ? edge : null

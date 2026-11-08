@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createAgentAdapterRegistry } from '../electron/agent-adapter.ts'
+import { createAgentAdapterRegistry, projectAdapterCapabilities } from '../electron/agent-adapter.ts'
 import { assertAgentAdapterContract } from './fixtures/agent-adapter-contract.mts'
 import type { AgentAdapter } from '../src/types/agent-adapter.ts'
 import type { AgentStatusEvent } from '../src/types/agent.ts'
@@ -90,4 +90,29 @@ test('fixture-only adapters can satisfy the contract without product changes', a
   }
 
   await assertAgentAdapterContract(fixtureAdapter, 'codex')
+})
+
+test('Claude Code reports respond only while answering from the pet is turned on', async () => {
+  let enabled = false
+  const registry = createAgentAdapterRegistry({
+    inspect: () => ({ installed: true, health: 'ready', message: 'fixture', checks: [] }),
+    install: () => {},
+    uninstall: () => {},
+    capabilities: (id, base) => projectAdapterCapabilities(id, base, enabled),
+  })
+  const claude = async () => (await registry.listStatuses()).find(status => status.id === 'claude-code')!
+  assert.equal((await claude()).capabilities.permissions, 'observe')
+  assert.deepEqual((await claude()).capabilities.permissionModes, [])
+
+  enabled = true
+  const on = (await claude()).capabilities
+  assert.equal(on.permissions, 'respond')
+  assert.deepEqual(on.permissionModes, ['allow_once', 'deny'])
+  assert.ok(Object.isFrozen(on))
+  const statuses = await registry.listStatuses()
+  assert.equal(statuses.find(status => status.id === 'codex')!.capabilities.permissions, 'observe')
+  assert.equal(statuses.find(status => status.id === 'generic-http')!.capabilities.permissions, 'none')
+
+  // The static registry entry (README source of truth) never changes.
+  assert.equal(registry.adapters.find(adapter => adapter.id === 'claude-code')!.capabilities.permissions, 'observe')
 })

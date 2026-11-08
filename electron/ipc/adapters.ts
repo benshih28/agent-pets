@@ -2,18 +2,24 @@ import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { AgentAdapterRegistry } from '../agent-adapter.ts'
 import { isAgentAdapterId } from '../agent-adapter.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import type { InstallOutcome } from '../../src/types/agent-adapter.ts'
 import type { AdapterDiagnoseIpcResult, AdapterInstallIpcResult, AdapterIntegrationStatusIpcResult, AdapterUninstallIpcResult } from '../../src/types/ipc.ts'
 
 export interface AdapterIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedIpcSender(event: IpcMainInvokeEvent, requiredWindow?: BrowserWindow | null): void
   getPanelWindow(): BrowserWindow | null
+  /** The pet asks once at first launch whether onboarding is still needed. */
+  getPetWindow?(): BrowserWindow | null
   getAgentAdapterRegistry(): AgentAdapterRegistry | null
 }
 
 export function registerAdapterIpc(deps: AdapterIpcDependencies): void {
   deps.ipcMain.handle(IPC_CHANNELS.integrationStatus, async (event): Promise<AdapterIntegrationStatusIpcResult> => {
-    deps.assertTrustedIpcSender(event, deps.getPanelWindow())
+    // Read-only status. The pet window reads it on first launch to decide whether to
+    // open the onboarding wizard; every other adapter operation stays panel-only.
+    const pet = deps.getPetWindow?.() ?? null
+    deps.assertTrustedIpcSender(event, pet?.webContents && event.sender === pet.webContents ? pet : deps.getPanelWindow())
     return { adapters: await deps.getAgentAdapterRegistry()?.listStatuses() ?? [] }
   })
 
@@ -30,10 +36,17 @@ export function registerAdapterIpc(deps: AdapterIpcDependencies): void {
       return { ok: false, error: 'Adapter is not installable' }
     }
     try {
-      const status = await deps.getAgentAdapterRegistry()?.install(id)
-      return status ? { ok: true, status } : { ok: false, error: 'Adapter unavailable' }
+      const detection = await deps.getAgentAdapterRegistry()?.install(id)
+      if (!detection) return { ok: false, error: 'Adapter unavailable' }
+      const { outcome, ...status } = detection
+      return { ok: true, status, ...(outcome ? { outcome } : {}) }
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      const outcome = (error as { installOutcome?: InstallOutcome } | null)?.installOutcome
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        ...(outcome ? { outcome } : {}),
+      }
     }
   })
 

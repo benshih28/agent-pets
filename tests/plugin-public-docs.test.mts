@@ -134,6 +134,11 @@ test('plugin documentation has bilingual page pairs and all local Markdown links
   for (const file of markdownFiles.filter(file => !file.endsWith('.zh-TW.md'))) {
     const localized = file.replace(/\.md$/, '.zh-TW.md')
     assert.equal(fs.existsSync(localized), true, `${path.relative(docsDirectory, file)} needs a Traditional Chinese page`)
+    const headingCount = (target: string): number => fs.readFileSync(target, 'utf8')
+      .replace(/```[\s\S]*?```/g, '')
+      .split('\n')
+      .filter(line => /^#{1,6} /.test(line)).length
+    assert.equal(headingCount(localized), headingCount(file), `${path.relative(docsDirectory, file)} and its zh-TW twin need the same heading count`)
   }
 
   const readmeFiles = [path.resolve('README.md'), path.resolve('README.zh-TW.md')]

@@ -14,6 +14,7 @@ test('desktop IPC uses injected stores and keeps mode and preference contracts',
   const preferencesStore = { initializeLegacySound: (enabled: boolean) => { legacyFlags.push(enabled); return { soundEnabled: enabled } } }
   const tray = { rebuild: () => undefined }
   const mode = { mode: 'normal' }
+  const opened: string[] = []
 
   registerDesktopIpc({
     ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
@@ -26,6 +27,7 @@ test('desktop IPC uses injected stores and keeps mode and preference contracts',
     currentPowerSaveState: () => true,
     petModeState: () => mode,
     setPetWindowMode: value => setModes.push(value),
+    openLoginItemsSettings: async () => { opened.push('x'); return true },
   })
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
 
@@ -34,6 +36,7 @@ test('desktop IPC uses injected stores and keeps mode and preference contracts',
     IPC_CHANNELS.petWindowModeInit,
     IPC_CHANNELS.desktopPreferencesInit,
     IPC_CHANNELS.desktopPreferencesSet,
+    IPC_CHANNELS.desktopOpenLoginItemsSettings,
     IPC_CHANNELS.powerSaveState,
   ])
   assert.equal(await invoke(IPC_CHANNELS.petWindowModeSet, 'unknown'), mode)
@@ -45,7 +48,9 @@ test('desktop IPC uses injected stores and keeps mode and preference contracts',
   assert.deepEqual(broadcasts, [{ soundEnabled: true }])
   assert.deepEqual(await invoke(IPC_CHANNELS.desktopPreferencesSet, { soundEnabled: false }), { changed: true })
   assert.deepEqual(updates, [{ soundEnabled: false }])
+  assert.equal(await invoke(IPC_CHANNELS.desktopOpenLoginItemsSettings, 'https://evil.example'), true)
+  assert.deepEqual(opened, ['x'])
   assert.equal(await invoke(IPC_CHANNELS.powerSaveState), true)
-  assert.equal(trusted.filter(item => item.requiredWindow === panelWindow).length, 1)
-  assert.equal(trusted.length, 6)
+  assert.equal(trusted.filter(item => item.requiredWindow === panelWindow).length, 2)
+  assert.equal(trusted.length, 7)
 })

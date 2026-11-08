@@ -7,14 +7,23 @@ import type {
   PermissionRequestView,
   PermissionRisk,
 } from '../src/types/permission'
+import { PERMISSION_DEFAULT_TTL_SECONDS } from '../src/types/permission.ts'
+import { redactSensitiveText } from './permission-redact.ts'
 
-const DEFAULT_TTL_MS = 60_000
+const DEFAULT_TTL_MS = PERMISSION_DEFAULT_TTL_SECONDS * 1000
 const MIN_TTL_MS = 15_000
 const MAX_TTL_MS = 300_000
 const MAX_ACTION_LENGTH = 80
 const MAX_DESCRIPTION_LENGTH = 280
+const MAX_DETAIL_ITEMS = 5
+const MAX_DETAIL_LENGTH = 120
 const MAX_AUDIT_RECORDS = 500
+// Cap on *active* requests. Finished requests are kept only briefly (replay
+// protection + late polls) and then dropped, so a long-running app never fills up.
 const DEFAULT_MAX_REQUEST_RECORDS = 5_000
+const TERMINAL_RETENTION_MS = 10 * 60_000
+const MAX_TERMINAL_RECORDS = 200
+const MAX_ACTIVE_PER_SESSION = 20
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
 export type PermissionDeliveryResult = 'delivered' | 'already_resolved' | 'rejected'
@@ -47,7 +56,11 @@ export interface PermissionRequestInput {
   generation: number
   action: string
   description: string
+  /** Tool arguments (command, path globs). Bounded and redacted here. */
+  details?: ReadonlyArray<string>
   risk?: PermissionRisk
+  /** The tool reaches outside the machine (network / external directory). */
+  network?: boolean
   ttlMs?: number
   allowedDecisions?: ReadonlyArray<PermissionDecisionValue>
   responseHandle: unknown
@@ -89,6 +102,9 @@ export interface PermissionAuditRecord {
   decision?: PermissionDecisionValue
   decidedBy?: PermissionDecisionSource
   terminalReason: string
+  /** Tool name and risk only; never the description or arguments. */
+  action?: string
+  risk?: PermissionRisk
 }
 
 interface RegisteredAdapter {
@@ -107,7 +123,10 @@ interface InternalPermissionRequest {
   generation: number
   action: string
   description: string
+  details: ReadonlyArray<string>
+  truncatedChars: number
   risk: PermissionRisk
+  network: boolean
   receivedAt: number
   expiresAt: number
   status: PermissionRequestStatus
@@ -116,6 +135,7 @@ interface InternalPermissionRequest {
   responseHandle: unknown
   adapter: RegisteredAdapter
   order: number
+  finishedAt?: number
   deliveryAbort?: AbortController
 }
 
@@ -131,15 +151,19 @@ function isIdentifier(value: unknown): value is string {
   return typeof value === 'string' && IDENTIFIER_PATTERN.test(value)
 }
 
-function sanitizeText(value: unknown, maxLength: number): { value: string; truncated: boolean } {
-  if (typeof value !== 'string') return { value: '', truncated: false }
-  const normalized = value
+function sanitizeText(
+  value: unknown,
+  maxLength: number,
+): { value: string; truncated: boolean; omitted: number } {
+  if (typeof value !== 'string') return { value: '', truncated: false, omitted: 0 }
+  const normalized = redactSensitiveText(value
     .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
+    .trim())
   return {
     value: normalized.slice(0, maxLength),
     truncated: normalized.length > maxLength,
+    omitted: Math.max(0, normalized.length - maxLength),
   }
 }
 
@@ -148,11 +172,17 @@ function isDecision(value: unknown): value is PermissionDecisionValue {
 }
 
 function isDecisionSource(value: unknown): value is PermissionDecisionSource {
-  return value === 'bubble' || value === 'hotkey'
+  return value === 'bubble' || value === 'hotkey' || value === 'panel'
 }
 
 function isRisk(value: unknown): value is PermissionRisk {
   return value === 'low' || value === 'medium' || value === 'high' || value === 'unknown'
+}
+
+// Fail-closed: a risk level must be listed here to be approvable by hotkey, so
+// a level added later (or `unknown`) is excluded by default.
+function isHotkeyRisk(risk: PermissionRisk): boolean {
+  return risk === 'low' || risk === 'medium'
 }
 
 function clampTtl(value: unknown): number {
@@ -248,7 +278,12 @@ export class PermissionBroker {
       return { ok: false, error: 'invalid_request' }
     }
     if (this.requests.has(candidate.requestId)) return { ok: false, error: 'duplicate_request' }
-    if (this.requests.size >= this.maxRequestRecords) {
+    // One agent session cannot flood the queue and bury everyone else's requests.
+    if (this.countActiveForSession(adapterId, candidate.sessionId) >= MAX_ACTIVE_PER_SESSION) {
+      return { ok: false, error: 'capacity_exceeded' }
+    }
+    this.pruneTerminal()
+    if (this.activeRequests().length >= this.maxRequestRecords) {
       return { ok: false, error: 'capacity_exceeded' }
     }
 
@@ -259,14 +294,37 @@ export class PermissionBroker {
     ) {
       return { ok: false, error: 'invalid_request' }
     }
-    const allowedDecisions = Object.freeze(
-      requestedDecisions.filter((value) => adapter.permissionModes.has(value)),
-    )
-    if (allowedDecisions.length === 0) return { ok: false, error: 'capability_denied' }
+    const supportedDecisions = requestedDecisions.filter((value) => adapter.permissionModes.has(value))
+    if (supportedDecisions.length === 0) return { ok: false, error: 'capability_denied' }
 
     const action = sanitizeText(candidate.action, MAX_ACTION_LENGTH)
     const description = sanitizeText(candidate.description, MAX_DESCRIPTION_LENGTH)
     if (!action.value || !description.value) return { ok: false, error: 'invalid_request' }
+    const rawDetails = Array.isArray(candidate.details) ? candidate.details : []
+    const details: string[] = []
+    let truncatedChars = action.omitted + description.omitted
+    let detailsTruncated = false
+    rawDetails.forEach((item, index) => {
+      const cleaned = sanitizeText(item, MAX_DETAIL_LENGTH)
+      if (index >= MAX_DETAIL_ITEMS) {
+        detailsTruncated = true
+        truncatedChars += typeof item === 'string' ? item.length : 0
+        return
+      }
+      if (!cleaned.value) return
+      details.push(cleaned.value)
+      truncatedChars += cleaned.omitted
+      if (cleaned.truncated) detailsTruncated = true
+    })
+
+    const risk: PermissionRisk = isRisk(candidate.risk) ? candidate.risk : 'unknown'
+    const truncated = action.truncated || description.truncated || detailsTruncated
+    // A risky request whose arguments were cut off cannot be approved here: the user would be
+    // allowing text they never saw. Deny stays available; allowing happens in the agent itself.
+    const allowedDecisions = Object.freeze(truncated && !isHotkeyRisk(risk)
+      ? supportedDecisions.filter((value) => value !== 'allow_once')
+      : supportedDecisions)
+    if (allowedDecisions.length === 0) return { ok: false, error: 'capability_denied' }
 
     const receivedAt = this.readNow()
     if (receivedAt === null) return { ok: false, error: 'invalid_request' }
@@ -279,12 +337,15 @@ export class PermissionBroker {
       generation: candidate.generation!,
       action: action.value,
       description: description.value,
-      risk: isRisk(candidate.risk) ? candidate.risk : 'unknown',
+      details: Object.freeze(details),
+      truncatedChars,
+      risk,
+      network: candidate.network === true,
       receivedAt,
       expiresAt: receivedAt + clampTtl(candidate.ttlMs),
       status: 'pending',
       allowedDecisions,
-      truncated: action.truncated || description.truncated,
+      truncated,
       responseHandle: candidate.responseHandle,
       adapter,
       order: this.nextOrder++,
@@ -442,7 +503,10 @@ export class PermissionBroker {
       generation: request.generation,
       action: request.action,
       description: request.description,
+      details: [...request.details],
+      truncatedChars: request.truncatedChars,
       risk: request.risk,
+      network: request.network,
       receivedAt: request.receivedAt,
       expiresAt: request.expiresAt,
       status: request.status,
@@ -450,7 +514,7 @@ export class PermissionBroker {
       queuePosition,
       queueSize,
       hotkeyEligible: request.status === 'pending'
-        && request.risk !== 'high'
+        && isHotkeyRisk(request.risk)
         && !request.truncated,
       truncated: request.truncated,
     }
@@ -471,6 +535,7 @@ export class PermissionBroker {
     request.deliveryAbort?.abort()
     request.deliveryAbort = undefined
     request.status = status
+    request.finishedAt = this.readNow() ?? request.expiresAt
     const auditRecord: PermissionAuditRecord = {
       requestId: request.requestId,
       adapterId: request.adapterId,
@@ -483,6 +548,8 @@ export class PermissionBroker {
       ...(decision ? { decision } : {}),
       ...(decidedBy ? { decidedBy } : {}),
       terminalReason,
+      action: request.action,
+      risk: request.risk,
     }
     this.audit.push(auditRecord)
     if (this.audit.length > MAX_AUDIT_RECORDS) this.audit.shift()
@@ -499,6 +566,48 @@ export class PermissionBroker {
     } catch {
       // Observers cannot interrupt the broker state transition.
     }
+  }
+
+  /**
+   * Whether this agent session has a request that is still open or finished within `withinMs`.
+   * Lets the main process tell a prompt that can be answered here from one that cannot.
+   */
+  hasRecentRequestForSession(adapterId: string, sessionId: string, withinMs: number): boolean {
+    const now = this.readNow() ?? 0
+    for (const request of this.requests.values()) {
+      if (request.adapterId !== adapterId || request.sessionId !== sessionId) continue
+      if (!isTerminal(request.status)) return true
+      if (now - (request.finishedAt ?? 0) <= withinMs) return true
+    }
+    return false
+  }
+
+  /** Whether the broker still remembers this request (active or recently finished). */
+  hasRecord(requestId: string): boolean {
+    return this.requests.has(requestId)
+  }
+
+  private pruneTerminal(): void {
+    const now = this.readNow() ?? 0
+    const finished: InternalPermissionRequest[] = []
+    for (const request of this.requests.values()) {
+      if (isTerminal(request.status)) finished.push(request)
+    }
+    if (finished.length === 0) return
+    // `finished` is in insertion order, so the oldest are first.
+    const excess = Math.max(0, finished.length - MAX_TERMINAL_RECORDS)
+    finished.forEach((request, index) => {
+      const expired = now - (request.finishedAt ?? now) >= TERMINAL_RETENTION_MS
+      if (index < excess || expired) this.requests.delete(request.requestId)
+    })
+  }
+
+  private countActiveForSession(adapterId: string, sessionId: string): number {
+    let count = 0
+    for (const request of this.requests.values()) {
+      if (!isTerminal(request.status) && request.adapterId === adapterId && request.sessionId === sessionId) count += 1
+    }
+    return count
   }
 
   // Map 依插入順序迭代，而 order 在插入時單調遞增且紀錄不會重新插入，

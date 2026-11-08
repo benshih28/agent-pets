@@ -20,6 +20,7 @@ test('plugin Tray menu is omitted when no eligible commands exist', () => {
   assert.deepEqual(buildPluginTrayMenu([], 'en-US', 'Plugins', () => {}), {
     menu: null,
     omittedPluginIds: [],
+    omittedCount: 0,
   })
 })
 
@@ -30,6 +31,7 @@ test('plugin Tray menu groups declared commands and caps the combined items at 3
   assert.ok(result.menu)
   assert.equal(submenuItems(result.menu).length, 30)
   assert.deepEqual(result.omittedPluginIds, ['plugin-30', 'plugin-31'])
+  assert.equal(result.omittedCount, 2)
   const plugin = submenuItems(result.menu)[0]
   assert.equal(plugin.label, 'plugin-00')
   assert.ok(Array.isArray(plugin.submenu))

@@ -7,6 +7,7 @@ These sources are references under the documentation tree; they are not packaged
 - [event-source-status](examples/event-source-status/): sends a short-lived observe-only status, labeled as plugin-sourced and kept outside built-in Agent status.
 - [panel-demo](examples/panel-demo/): a settings-panel page that reads plugin storage and exchanges messages with its background Worker.
 - [pomodoro](examples/pomodoro/): a 25-minute focus reminder that uses only Agent status, schedule, feed, and badge APIs.
+- [break-reminder](examples/break-reminder/): the finished [tutorial](tutorial.md) plugin: schedule, notification, command, Tray item, settings form and panel page.
 - [skin-pack](examples/skin-pack/): a skins-only plugin package with no `entry` or Worker.
 
-Start with [Getting started](getting-started.md), then read the [API reference](api-reference.md) and [Security](security.md).
+Start with the [quickstart](getting-started.md) and the [tutorial](tutorial.md), then read the [API reference](api-reference.md) and [Security](security.md).

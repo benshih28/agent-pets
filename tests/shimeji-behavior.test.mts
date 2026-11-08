@@ -77,3 +77,23 @@ test('behavior manifest accepts only bounded rows and frame timings', () => {
   assert.equal(parsePetBehaviorManifest({ walk: { row: 99 } }), undefined)
   assert.equal(parsePetBehaviorManifest({ sleep: { row: 1, frames: 0 } }), undefined)
 })
+
+test('sleep persists across ticks until the scheduler is reset', () => {
+  const scheduler = new ShimejiScheduler()
+  const sleepy = context({ idleMs: SHIMEJI_SLEEP_AFTER_MS, random: 0.1 })
+  assert.equal(scheduler.next(sleepy).behavior, 'sleep')
+  assert.equal(scheduler.isSleeping, true)
+  // A roll that would normally walk still keeps sleeping.
+  assert.equal(scheduler.next({ ...sleepy, random: 0.5 }).behavior, 'sleep')
+  scheduler.reset()
+  assert.equal(scheduler.isSleeping, false)
+  assert.equal(scheduler.next(context({ random: 0.5 })).behavior, 'walk')
+})
+
+test('idle pauses vary between 8 and 25 seconds', () => {
+  const scheduler = new ShimejiScheduler()
+  const short = scheduler.next(context({ canWalk: false, random: 0 })).delayMs
+  const long = scheduler.next(context({ canWalk: false, random: 0.999 })).delayMs
+  assert.equal(short, 8_000)
+  assert.ok(long > 24_000 && long <= 25_000)
+})

@@ -13,7 +13,7 @@ test('Traditional Chinese translations cover core settings and interpolation', (
 test('technical status and tool terms remain canonical where requested', () => {
   setLocale('zh-TW')
   assert.equal(t('miniMode'), 'Mini 模式')
-  assert.equal(t('permissionBubbleHelp'), '顯示 Allow once / Deny 請求；隱藏後請求仍會保留待處理。')
+  assert.match(t('permissionBubbleHelp', { seconds: 60 }), /最多保留 60 秒/)
   assert.equal(t('adapterNote').includes('Generic HTTP'), true)
 })
 
@@ -32,4 +32,46 @@ test('language selection switches shared renderer copy and keeps English diagnos
   assert.equal(t('languageHelp'), 'Choose the language used by the panel, Tray, notifications, and setup messages.')
   assert.equal(translateBackendError('Unsupported adapter'), 'Unsupported adapter')
   setLocale('zh-TW')
+})
+
+test('permission surfaces use translated labels and the removed keys stay removed', async () => {
+  const { readFileSync } = await import('node:fs')
+  const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
+  const ui = [
+    '../src/components/permission/PermissionBubble.vue',
+    '../src/components/permission/PermissionNoticeBubble.vue',
+    '../src/components/ui/InlinePermissionCard.vue',
+    '../src/components/DesktopPet.vue',
+    '../electron/desktop-tray.ts',
+    '../electron/tray-menu.ts',
+  ].map(read).join('\n')
+  assert.doesNotMatch(ui, />\s*(Deny|Allow once)\s*</)
+  assert.doesNotMatch(ui, /label: 'Presentation MCP'/)
+  for (const locale of ['zh-TW', 'en-US']) {
+    const catalog = JSON.parse(read(`../src/locales/${locale}.json`)) as Record<string, string>
+    for (const key of ['permissionNeeded', 'checkUpdates', 'trayTooltip', 'needsAttention', 'noPendingAttention', 'pendingCount']) {
+      assert.ok(!(key in catalog), `${key} should stay removed`)
+    }
+  }
+})
+
+test('every permission-domain key is referenced by the app', async () => {
+  const { readFileSync, readdirSync, statSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const root = new URL('..', import.meta.url).pathname
+  const files: string[] = []
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      if (name === 'locales' || name === 'node_modules') continue
+      const full = join(dir, name)
+      if (statSync(full).isDirectory()) walk(full)
+      else if (/\.(ts|vue)$/.test(name)) files.push(full)
+    }
+  }
+  walk(join(root, 'src'))
+  walk(join(root, 'electron'))
+  const source = files.map((file) => readFileSync(file, 'utf8')).join('\n')
+  const keys = Object.keys(JSON.parse(readFileSync(join(root, 'src/locales/permission/zh-TW.json'), 'utf8')) as object)
+  // Keys picked through lookup tables are listed literally in those tables.
+  for (const key of keys) assert.ok(source.includes(`'${key}'`), `unused locale key ${key}`)
 })

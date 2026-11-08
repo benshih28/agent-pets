@@ -7,6 +7,8 @@ const props = withDefaults(defineProps<{
   value: number
   tone?: 'accent' | 'success' | 'warn' | 'error' | 'claude'
   ariaLabel?: string
+  /** Human text announced instead of the bare number, e.g. "72%, resets in 2h". */
+  valueText?: string
   decorative?: boolean
   size?: 'sm' | 'md'
 }>(), {
@@ -27,6 +29,7 @@ const clamped = () => Math.max(0, Math.min(100, props.value))
     :aria-valuemin="decorative ? undefined : 0"
     :aria-valuemax="decorative ? undefined : 100"
     :aria-valuenow="decorative ? undefined : clamped()"
+    :aria-valuetext="decorative ? undefined : valueText"
   >
     <div class="fill" :style="{ width: `${clamped()}%` }" />
   </div>

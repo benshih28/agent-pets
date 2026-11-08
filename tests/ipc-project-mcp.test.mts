@@ -7,8 +7,10 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   const calls: string[] = []
   const panelWindow = { isDestroyed: () => false }
+  const tracked = new Set<string>()
   const registry = {
-    register: (projectPath: string) => { calls.push(`register:${projectPath}`) },
+    register: (projectPath: string) => { calls.push(`register:${projectPath}`); tracked.add(projectPath) },
+    has: (projectPath: string) => tracked.has(projectPath),
     list: () => ({ ok: true, projects: [] }),
     forget: (projectPath: string) => { calls.push(`forget:${projectPath}`); return true },
   }
@@ -23,9 +25,13 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
     ensurePresentationMcpScript: () => calls.push('ensure'),
     installOptions: () => ({ nodeExecutable: 'node', bridgePath: 'bridge-script' }),
     getRegistry: () => registry as never,
-    installProjectMcp: (projectPath: string) => {
-      calls.push(`install:${projectPath}`)
-      return { ok: true, projectPath, results: [] }
+    planProjectMcp: (projectPath: string) => {
+      calls.push(`plan:${projectPath}`)
+      return { ok: true, projectPath, isGitRepo: false, clients: [] }
+    },
+    installProjectMcp: (projectPath: string, _options: unknown, selection: unknown) => {
+      calls.push(`install:${projectPath}:${JSON.stringify(selection)}`)
+      return { ok: true, projectPath, results: [{ client: 'claude', status: 'installed', configPath: 'x' }] }
     },
     removeProjectMcp: (projectPath: string) => {
       calls.push(`remove:${projectPath}`)
@@ -36,18 +42,33 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
   assert.deepEqual([...handlers.keys()], [
     IPC_CHANNELS.projectMcpSetup,
+    IPC_CHANNELS.projectMcpApply,
     IPC_CHANNELS.projectMcpList,
     IPC_CHANNELS.projectMcpRemove,
     IPC_CHANNELS.projectMcpForget,
   ])
-  assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpSetup), { ok: true, projectPath: 'test-project', results: [] })
+  // Applying before a folder was picked in the dialog is refused.
+  const request = { projectPath: 'test-project', clients: ['claude'], localOnly: true }
+  assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpApply, request), {
+    ok: false, results: [], error: 'Project folder was not chosen in this session',
+  })
+  assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpSetup), { ok: true, projectPath: 'test-project', isGitRepo: false, clients: [] })
+  assert.equal((await invoke(IPC_CHANNELS.projectMcpApply, { ...request, clients: ['bogus'] }) as { ok: boolean }).ok, false)
+  assert.equal((await invoke(IPC_CHANNELS.projectMcpApply, { ...request, localOnly: 'yes' }) as { ok: boolean }).ok, false)
+  assert.equal((await invoke(IPC_CHANNELS.projectMcpApply, { ...request, clients: [] }) as { ok: boolean }).ok, false)
+  assert.equal((await invoke(IPC_CHANNELS.projectMcpApply, request) as { ok: boolean }).ok, true)
   assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpList), { ok: true, projects: [] })
+  assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpRemove, '/not/tracked'), {
+    ok: false, projectPath: '/not/tracked', results: [], error: 'Project folder is not tracked',
+  })
   assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpRemove, 'test-project'), { ok: true, projectPath: 'test-project', results: [] })
   assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpForget, 'test-project'), { ok: true, removed: true })
   assert.deepEqual(calls, [
     'ensure',
-    'install:test-project',
+    'plan:test-project',
+    'ensure',
     'register:test-project',
+    'install:test-project:{"clients":["claude"],"localOnly":true,"updateStale":false}',
     'ensure',
     'ensure',
     'remove:test-project',

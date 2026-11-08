@@ -31,12 +31,12 @@ test('panel close events map to localized status error codes', () => {
 })
 
 test('plugin panel maximize control exposes its state and translations', () => {
-  const source = readFileSync(new URL('../src/components/PluginPanel.vue', import.meta.url), 'utf8')
-  const styles = readFileSync(new URL('../src/components/PluginPanel.css', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/components/plugin-panel/PluginPanelFrame.vue', import.meta.url), 'utf8')
+  const styles = readFileSync(new URL('../src/components/plugin-panel/PluginPanelFrame.css', import.meta.url), 'utf8')
   assert.match(source, /class="plugin-panel-view-control"/)
   assert.match(source, /:aria-pressed="panelViewMaximized"/)
-  assert.match(source, /t\(panelViewMaximized \? 'pluginPanelRestore' : 'pluginPanelMaximize'\)/)
-  assert.match(styles, /plugin-panel-view-control\.btn\.icon-only\) \{[^}]*width: 32px; height: 32px;/)
+  assert.match(source, /t\(panelViewMaximized\.value \? 'pluginPanelRestore' : 'pluginPanelMaximize'\)/)
+  assert.match(styles, /plugin-panel-view-control\.btn\.icon-only\) \{[^}]*width: 32px;\s*height: 32px;/)
   assert.match(styles, /plugin-panel-view-control\.btn\.icon-only:focus-visible/)
   assert.match(styles, /prefers-reduced-motion/)
   const maximizeRule = styles.match(/\.plugin-panel-view-frame\.is-maximized\s*\{([^}]*)\}/)?.[1]
@@ -65,13 +65,13 @@ test('plugin panel maximize state resets on close and plugin switches', () => {
 })
 
 test('maximizing enlarges the panel window to the plugin page limit without shrinking it', () => {
-  assert.deepEqual(maximizedPluginPanelWindowSize({ width: 460, height: 720 }, { width: 1512, height: 944 }), { width: 960, height: 800 })
-  assert.deepEqual(maximizedPluginPanelWindowSize({ width: 460, height: 720 }, { width: 800, height: 600 }), { width: 800, height: 600 })
-  assert.deepEqual(maximizedPluginPanelWindowSize({ width: 960, height: 800 }, { width: 1512, height: 944 }), { width: 960, height: 800 })
+  assert.deepEqual(maximizedPluginPanelWindowSize({ width: 460, height: 720 }, { width: 1512, height: 944 }), { width: 1500, height: 932 })
+  assert.deepEqual(maximizedPluginPanelWindowSize({ width: 460, height: 720 }, { width: 800, height: 600 }), { width: 788, height: 720 })
+  assert.deepEqual(maximizedPluginPanelWindowSize({ width: 1500, height: 932 }, { width: 1512, height: 944 }), { width: 1500, height: 932 })
   const controller = readFileSync(new URL('../src/composables/usePluginPanelController.ts', import.meta.url), 'utf8')
   // 以既有的面板尺寸 API 加大與還原視窗（不在測試中寫出 API 名稱，避免 IPC 清冊把本檔當成該頻道的測試）。
   assert.match(controller, /window\.electronAPI\?\.\w+\(target\.height, target\.width\)/)
-  assert.match(controller, /if \(restoreWindowSize && previousSize\) window\.electronAPI\?\.\w+\(previousSize\.height, previousSize\.width\)/)
-  // 還原按鈕、Esc、關閉與切換插件都要送回放大前尺寸，主行程才不會把放大後的視窗記成手動尺寸。
+  assert.match(controller, /if \(restoreWindowSize && previousSize\) window\.electronAPI\?\.\w+\(\{ release: true \}\)/)
+  // 還原按鈕、Esc、關閉與切換插件都要釋放放大用的暫時最小尺寸，主行程才不會把放大後的視窗記成使用者尺寸。
   assert.equal(controller.match(/restorePluginPanelViewMaximized\(true\)/g)?.length, 4)
 })

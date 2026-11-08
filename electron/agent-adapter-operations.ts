@@ -1,32 +1,32 @@
-import { join } from 'node:path'
-import type { AgentAdapterId, AdapterInstallTarget } from '../src/types/agent-adapter'
-import type { AgentAdapterOperations, AdapterInspection } from './agent-adapter.ts'
+import { isAbsolute, join } from 'node:path'
+import type { AgentAdapterId, AdapterInstallTarget, InstallReport } from '../src/types/agent-adapter'
+import { reportFromWrites } from './install-outcome.ts'
+import { projectAdapterCapabilities, type AgentAdapterOperations, type AdapterInspection } from './agent-adapter.ts'
+import { configuredHookExecutable, isCodexHooksFeatureEnabled } from './hook-config.ts'
 import {
+  agentPresence,
   claudeCodeSettingsPath,
   codexConfigPath,
   codexHooksPath,
   fileExists,
   hookScriptDeployPath,
+  hookScriptIsCurrent,
   hookScriptPath,
   installIntegration,
   openCodeCliPluginPath,
   openCodeDesktopPluginPath,
+  openCodePluginIsCurrent,
+  prepareNodeForInstall,
   readFile,
   uninstallIntegration,
 } from './setup.ts'
 
+// `code` is `<check id>.<status>`; the renderer localizes it (onboarding.check.*) and the English
+// message is only a fallback for unknown codes.
 function check(id: string, status: 'pass' | 'warn' | 'fail', message: string) {
-  return { id, status, message }
+  return { id, status, code: `${id}.${status}`, message }
 }
 
-function isCodexHooksEnabled(config: string | null): boolean {
-  if (!config) return false
-  return !config.includes('hooks = false') && !config.includes('codex_hooks = false')
-}
-
-// Codex uses shell-form hooks while Claude Code uses exec-form hooks. Keep the
-// detection rule identical to the installer repair logic so a config file that
-// merely exists is never reported as a healthy Agent Pets integration.
 function isAgentPetsHookConfigured(settingsPath: string, expectedArg: string): boolean {
   const raw = readFile(settingsPath)
   if (!raw) return false
@@ -58,18 +58,39 @@ function isAgentPetsHookConfigured(settingsPath: string, expectedArg: string): b
   }
 }
 
+function nodeCheck(settingsPath: string) {
+  const executable = configuredHookExecutable(settingsPath)
+  if (executable === null) return check('node', 'fail', 'No Node.js executable is configured for the hook.')
+  // A bare "node" depends on PATH, which GUI-launched agents often lack.
+  const usable = isAbsolute(executable) && fileExists(executable)
+  return check('node', usable ? 'pass' : 'fail', usable
+    ? 'The Node.js executable used by the hook exists.'
+    : 'The Node.js executable used by the hook was not found.')
+}
+
+function agentPresenceCheck(found: boolean) {
+  return check('agent-present', found ? 'pass' : 'warn', found
+    ? 'The tool has been used on this machine.'
+    : 'No configuration folder for this tool was found; it may not be installed.')
+}
+
 function inspectOpenCode(): AdapterInspection {
   const cli = fileExists(openCodeCliPluginPath())
   const desktop = fileExists(openCodeDesktopPluginPath())
   const installed = cli || desktop
+  const outdated = (cli && !openCodePluginIsCurrent('cli')) || (desktop && !openCodePluginIsCurrent('desktop'))
+  // Either side is enough: most people use only the CLI or only the Desktop app.
+  const health = !installed ? 'needs_install' : outdated ? 'degraded' : 'ready'
   return {
     installed,
-    health: installed ? 'ready' : 'needs_install',
-    message: installed ? '至少有一個 OpenCode plugin 已安裝。' : '尚未安裝 OpenCode plugin。',
+    health,
+    message: installed ? 'At least one OpenCode plugin is installed.' : 'The OpenCode plugin is not installed.',
     checks: [
-      check('opencode-cli', cli ? 'pass' : 'warn', cli ? '找到 OpenCode CLI plugin。' : '找不到 OpenCode CLI plugin。'),
-      check('opencode-desktop', desktop ? 'pass' : 'warn', desktop ? '找到 OpenCode Desktop plugin。' : '找不到 OpenCode Desktop plugin。'),
-      check('permission-channel', 'pass', 'Permission 回應使用專用的本機 Broker channel。'),
+      check('opencode-cli', cli ? 'pass' : 'warn', cli ? 'OpenCode CLI plugin found.' : 'OpenCode CLI plugin not found.'),
+      check('opencode-desktop', desktop ? 'pass' : 'warn', desktop ? 'OpenCode Desktop plugin found.' : 'OpenCode Desktop plugin not found.'),
+      ...(installed ? [check('plugin-current', outdated ? 'warn' : 'pass', outdated ? 'An installed plugin is out of date.' : 'Installed plugins are current.')] : []),
+      check('permission-channel', 'pass', 'Permission replies use a dedicated local broker channel.'),
+      agentPresenceCheck(agentPresence().opencode),
     ],
   }
 }
@@ -77,19 +98,24 @@ function inspectOpenCode(): AdapterInspection {
 function inspectCodex(): AdapterInspection {
   const hooks = fileExists(codexHooksPath())
   const script = fileExists(hookScriptPath())
-  const enabled = isCodexHooksEnabled(readFile(codexConfigPath()))
+  const enabled = isCodexHooksFeatureEnabled(readFile(codexConfigPath()))
   const configured = isAgentPetsHookConfigured(codexHooksPath(), ' codex')
-  const healthy = hooks && script && configured && enabled
+  const node = configured ? nodeCheck(codexHooksPath()) : null
+  const outdated = script && !hookScriptIsCurrent()
+  const healthy = hooks && script && configured && enabled && node?.status !== 'fail' && !outdated
   const partiallyInstalled = hooks || script || configured
   return {
-    installed: healthy,
+    installed: hooks && script && configured && enabled,
     health: healthy ? 'ready' : partiallyInstalled ? 'degraded' : 'needs_install',
-    message: healthy ? 'Codex hooks 已完成設定。' : 'Codex hooks 需要安裝或修復。',
+    message: healthy ? 'Codex hooks are set up.' : 'Codex hooks need to be installed or repaired.',
     checks: [
-      check('hooks-file', hooks ? 'pass' : 'fail', hooks ? '找到 Codex hooks.json。' : '找不到 Codex hooks.json。'),
-      check('hooks-enabled', enabled ? 'pass' : 'fail', enabled ? 'Codex hooks 已啟用。' : 'Codex hooks 已停用或尚未設定。'),
-      check('hook-script', script ? 'pass' : 'fail', script ? '找到共用 hook script。' : '找不到共用 hook script。'),
-      check('hook-command', configured ? 'pass' : 'fail', configured ? 'Agent Pets hook command 已設定。' : '尚未設定 Agent Pets hook command。'),
+      check('hooks-file', hooks ? 'pass' : 'fail', hooks ? 'Codex hooks.json found.' : 'Codex hooks.json not found.'),
+      check('hooks-enabled', enabled ? 'pass' : 'fail', enabled ? 'Codex hooks are enabled.' : 'Codex hooks are not enabled in config.toml.'),
+      check('hook-script', script ? 'pass' : 'fail', script ? 'Shared hook script found.' : 'Shared hook script not found.'),
+      ...(script ? [check('hook-script-current', outdated ? 'warn' : 'pass', outdated ? 'The hook script is out of date.' : 'The hook script is current.')] : []),
+      check('hook-command', configured ? 'pass' : 'fail', configured ? 'The Agent Pets hook command is configured.' : 'The Agent Pets hook command is not configured.'),
+      ...(node ? [node] : []),
+      agentPresenceCheck(agentPresence().codex),
     ],
   }
 }
@@ -98,22 +124,33 @@ function inspectClaudeCode(): AdapterInspection {
   const settings = fileExists(claudeCodeSettingsPath())
   const script = fileExists(hookScriptPath())
   const configured = isAgentPetsHookConfigured(claudeCodeSettingsPath(), 'claude')
-  const healthy = settings && script && configured
+  const node = configured ? nodeCheck(claudeCodeSettingsPath()) : null
+  const outdated = script && !hookScriptIsCurrent()
+  const healthy = settings && script && configured && node?.status !== 'fail' && !outdated
   const partiallyInstalled = settings || script || configured
   return {
-    installed: healthy,
+    installed: settings && script && configured,
     health: healthy ? 'ready' : partiallyInstalled ? 'degraded' : 'needs_install',
-    message: healthy ? 'Claude Code hooks 已完成設定。' : 'Claude Code hooks 需要安裝或修復。',
+    message: healthy ? 'Claude Code hooks are set up.' : 'Claude Code hooks need to be installed or repaired.',
     checks: [
-      check('settings-file', settings ? 'pass' : 'fail', settings ? '找到 Claude Code settings。' : '找不到 Claude Code settings。'),
-      check('hook-script', script ? 'pass' : 'fail', script ? '找到共用 hook script。' : '找不到共用 hook script。'),
-      check('hook-command', configured ? 'pass' : 'fail', configured ? 'Agent Pets hook command 已設定。' : '尚未設定 Agent Pets hook command。'),
+      check('settings-file', settings ? 'pass' : 'fail', settings ? 'Claude Code settings found.' : 'Claude Code settings not found.'),
+      check('hook-script', script ? 'pass' : 'fail', script ? 'Shared hook script found.' : 'Shared hook script not found.'),
+      ...(script ? [check('hook-script-current', outdated ? 'warn' : 'pass', outdated ? 'The hook script is out of date.' : 'The hook script is current.')] : []),
+      check('hook-command', configured ? 'pass' : 'fail', configured ? 'The Agent Pets hook command is configured.' : 'The Agent Pets hook command is not configured.'),
+      ...(node ? [node] : []),
+      agentPresenceCheck(agentPresence().claude),
     ],
   }
 }
 
-export function createAgentAdapterOperations(): AgentAdapterOperations {
+export interface AgentAdapterOperationsOptions {
+  /** Main-process preference: whether Claude Code permissions may be answered from the pet. */
+  claudePermissionRespondEnabled?: () => boolean
+}
+
+export function createAgentAdapterOperations(options: AgentAdapterOperationsOptions = {}): AgentAdapterOperations {
   return {
+    capabilities: (id, base) => projectAdapterCapabilities(id, base, options.claudePermissionRespondEnabled?.() === true),
     inspect(id: AgentAdapterId): AdapterInspection {
       switch (id) {
         case 'opencode': return inspectOpenCode()
@@ -123,17 +160,21 @@ export function createAgentAdapterOperations(): AgentAdapterOperations {
           return {
             installed: true,
             health: 'ready',
-            message: '本機 /v1/events ingress 可透過已驗證的 receiver 使用。',
+            message: 'The local /v1/events ingress is available through the authenticated receiver.',
             checks: [
-              check('loopback', 'pass', 'Receiver 僅繫結 loopback。'),
-              check('token', 'pass', '請求需要安裝時產生的 bearer token。'),
-              check('permissions', 'pass', 'Generic HTTP 僅能 observe-only，無法回應 Permission。'),
+              check('loopback', 'pass', 'The receiver binds to loopback only.'),
+              check('token', 'pass', 'Requests need the token created at install time.'),
+              check('permissions', 'pass', 'Generic HTTP is observe-only and cannot answer Permission.'),
             ],
           }
       }
     },
-    install(target: AdapterInstallTarget): void {
-      installIntegration(target)
+    async prepare(target: AdapterInstallTarget): Promise<void> {
+      // Codex and Claude Code write a Node command into their hooks; OpenCode's plugin does not.
+      if (target !== 'opencode') await prepareNodeForInstall()
+    },
+    install(target: AdapterInstallTarget): InstallReport {
+      return reportFromWrites(installIntegration(target))
     },
     uninstall(target: AdapterInstallTarget): void {
       uninstallIntegration(target)

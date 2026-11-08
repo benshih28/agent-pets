@@ -3,6 +3,7 @@ import type { DesktopPreferences } from '../src/types/desktop'
 import type { AchievementUnlock } from '../src/types/achievement'
 import type { AgentStatusEvent } from './event-server'
 import { t } from '../src/i18n.ts'
+import { AttentionTracker, type AttentionRequestLike, type AttentionSummary } from './attention-tracker'
 import { readBoundedJson, writeJsonAtomic } from './desktop-preferences'
 import {
   aggregateTerminalNotifications,
@@ -28,16 +29,23 @@ interface NotificationLogRecord {
   count: number
 }
 
+export interface NotificationTarget {
+  source: string
+  sessionId: string
+}
+
 interface DesktopNotificationServiceOptions {
   logFilePath: string
   getPreferences: () => DesktopPreferences
   isAppFocused: () => boolean
-  onNotificationClick: () => void
-  onAttentionChanged: (count: number) => void
+  /** `target` is set only for a waiting-permission / waiting-input notification about one session. */
+  onNotificationClick: (target?: NotificationTarget) => void
+  onAttentionChanged: (summary: AttentionSummary) => void
   batchWindowMs?: number
 }
 
 const MAX_LOG_RECORDS = 200
+const LOG_FLUSH_DELAY_MS = 2_000
 
 export class DesktopNotificationService {
   private readonly options: DesktopNotificationServiceOptions
@@ -45,7 +53,14 @@ export class DesktopNotificationService {
   private readonly terminalQueue = new Map<string, NotificationCandidate>()
   private readonly batchWindowMs: number
   private batchTimer: ReturnType<typeof setTimeout> | null = null
-  private attentionCount = 0
+  private readonly attention = new AttentionTracker()
+  private lastAttentionKey = ''
+  // Newest notification per key: a repeat for the same session replaces the old
+  // one instead of stacking in the notification centre.
+  private readonly shown = new Map<string, Notification>()
+  private dndMissed = 0
+  private logRecords: NotificationLogRecord[] | null = null
+  private logTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(options: DesktopNotificationServiceOptions) {
     this.options = options
@@ -53,6 +68,9 @@ export class DesktopNotificationService {
   }
 
   handleEvent(event: AgentStatusEvent): void {
+    // Attention is state-based and independent of whether a notification is
+    // shown, so DND / cooldown / focus never change what the tray reports.
+    if (this.attention.observeEvent(event)) this.emitAttention()
     const candidate = classifyNotification(event)
     if (!candidate) return
 
@@ -60,9 +78,6 @@ export class DesktopNotificationService {
       this.log(candidate.kind, 'suppressed-cooldown')
       return
     }
-
-    this.attentionCount += 1
-    this.options.onAttentionChanged(this.attentionCount)
 
     if (candidate.terminal) {
       this.terminalQueue.set(candidate.key, candidate)
@@ -72,7 +87,7 @@ export class DesktopNotificationService {
       return
     }
 
-    this.deliver(candidate.title, candidate.body, candidate.kind, 1)
+    this.deliver(candidate.title, candidate.body, candidate.kind, 1, candidate.key, candidate.session)
   }
 
   showAchievement(unlock: AchievementUnlock): void {
@@ -93,16 +108,44 @@ export class DesktopNotificationService {
     )
   }
 
-  clearAttention(): void {
-    if (this.attentionCount === 0) return
-    this.attentionCount = 0
-    this.options.onAttentionChanged(0)
+  /** Notifications silenced since DND started; resets the counter. */
+  takeDndMissedCount(): number {
+    const missed = this.dndMissed
+    this.dndMissed = 0
+    return missed
+  }
+
+  showDndSummary(missed: number): void {
+    this.deliver(t('permission.dndEndedTitle'), t('permission.dndEndedBody', { count: missed }), 'summary', 1)
+  }
+
+  /** Active broker requests; removes the double count with their status events. */
+  setPermissionRequests(requests: ReadonlyArray<AttentionRequestLike>): void {
+    this.attention.setRequests(requests)
+    this.emitAttention()
+  }
+
+  getAttention(): AttentionSummary {
+    return this.attention.summary()
+  }
+
+  private emitAttention(): void {
+    const summary = this.attention.summary()
+    const key = `${summary.permission}/${summary.external}/${summary.input}`
+    if (key === this.lastAttentionKey) return
+    this.lastAttentionKey = key
+    this.options.onAttentionChanged(summary)
   }
 
   destroy(): void {
     if (this.batchTimer) clearTimeout(this.batchTimer)
     this.batchTimer = null
     this.terminalQueue.clear()
+    for (const notification of this.shown.values()) {
+      try { notification.close() } catch { /* already gone */ }
+    }
+    this.shown.clear()
+    this.flushLog()
   }
 
   private flushTerminalQueue(): void {
@@ -120,6 +163,8 @@ export class DesktopNotificationService {
     body: string,
     kind: NotificationKind,
     count: number,
+    key?: string,
+    target?: NotificationTarget,
   ): void {
     const preferences = this.options.getPreferences()
     if (!preferences.notificationsEnabled) {
@@ -127,6 +172,7 @@ export class DesktopNotificationService {
       return
     }
     if (preferences.dndEnabled) {
+      this.dndMissed += count
       this.log(kind, 'suppressed-dnd', count)
       return
     }
@@ -140,11 +186,15 @@ export class DesktopNotificationService {
     }
 
     try {
+      if (key) {
+        try { this.shown.get(key)?.close() } catch { /* already gone */ }
+      }
       const notification = new Notification({ title, body, silent: true })
+      if (key) this.shown.set(key, notification)
+      if (this.shown.size > 200) this.shown.delete(this.shown.keys().next().value as string)
       notification.on('click', () => {
         this.log(kind, 'clicked', count)
-        this.clearAttention()
-        this.options.onNotificationClick()
+        this.options.onNotificationClick(target ? { ...target } : undefined)
       })
       notification.show()
       this.log(kind, 'shown', count)
@@ -154,20 +204,34 @@ export class DesktopNotificationService {
   }
 
   private log(kind: NotificationKind, outcome: NotificationOutcome, count = 1): void {
-    const existing = readBoundedJson(this.options.logFilePath)
-    const records = Array.isArray(existing)
-      ? existing.filter((record): record is NotificationLogRecord => (
-          Boolean(record)
-          && typeof record === 'object'
-          && typeof record.at === 'number'
-          && typeof record.kind === 'string'
-          && typeof record.outcome === 'string'
-          && typeof record.count === 'number'
-        ))
-      : []
-    records.push({ at: Date.now(), kind, outcome, count })
+    if (!this.logRecords) {
+      const existing = readBoundedJson(this.options.logFilePath)
+      this.logRecords = Array.isArray(existing)
+        ? existing.filter((record): record is NotificationLogRecord => (
+            Boolean(record)
+            && typeof record === 'object'
+            && typeof record.at === 'number'
+            && typeof record.kind === 'string'
+            && typeof record.outcome === 'string'
+            && typeof record.count === 'number'
+          ))
+        : []
+    }
+    this.logRecords.push({ at: Date.now(), kind, outcome, count })
+    if (this.logRecords.length > MAX_LOG_RECORDS) this.logRecords.splice(0, this.logRecords.length - MAX_LOG_RECORDS)
+    // Debounced: event bursts no longer re-read and rewrite the file each time.
+    if (!this.logTimer) {
+      this.logTimer = setTimeout(() => this.flushLog(), LOG_FLUSH_DELAY_MS)
+      this.logTimer.unref?.()
+    }
+  }
+
+  private flushLog(): void {
+    if (this.logTimer) clearTimeout(this.logTimer)
+    this.logTimer = null
+    if (!this.logRecords) return
     try {
-      writeJsonAtomic(this.options.logFilePath, records.slice(-MAX_LOG_RECORDS))
+      writeJsonAtomic(this.options.logFilePath, this.logRecords)
     } catch {
       // Notification logging is diagnostic only. A read-only/corrupt userData
       // directory must never break event ingestion or Agent state updates.

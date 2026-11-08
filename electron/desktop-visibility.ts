@@ -27,3 +27,17 @@ export function desktopVisibilityCapabilitiesForPlatform(
         : { ...UNSUPPORTED_DESKTOP_VISIBILITY_CAPABILITIES.fullscreenAutoHide },
   }
 }
+
+/**
+ * macOS cannot detect another app's fullscreen Space, so "hide in fullscreen"
+ * is expressed as not following fullscreen Spaces. A pending permission request
+ * temporarily overrides that so the user can still see (and answer) it, the
+ * same way the Windows path restores windows while a request is active. This
+ * only affects visibility; decisions still go through the broker.
+ */
+export function macVisibleOnFullScreen(
+  fullscreenAutoHideEnabled: boolean,
+  hasActivePermissionRequest: boolean,
+): boolean {
+  return !fullscreenAutoHideEnabled || hasActivePermissionRequest
+}

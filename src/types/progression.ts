@@ -21,6 +21,51 @@ export interface ProgressionAward {
 export interface ProgressionEventResult {
   snapshot: ProgressionSnapshot
   awards: ProgressionAward[]
+  /** Level and stage before this event's awards, for level-up detection. */
+  levelBefore: number
+  stageBefore: EvolutionStage
+}
+
+/** Main -> renderer notification that a handled event actually granted XP. */
+export interface ProgressionAwardEvent {
+  petId: string
+  awards: ProgressionAward[]
+  at: number
+  levelBefore: number
+  levelAfter: number
+  stageBefore: EvolutionStage
+  stageAfter: EvolutionStage
+}
+
+export interface ProgressionLedgerEntry {
+  ruleId: string
+  amount: number
+  occurredAt: number
+}
+
+/** Read-only projection for the Growth view; never mutates XP. */
+export interface ProgressionInsights {
+  petId: string
+  localDate: string
+  todayXp: number
+  firstCompletionClaimed: boolean
+  recent: ProgressionLedgerEntry[]
+  /** Average XP per day over the last 7 days, or null with too little data. */
+  averageDailyXp: number | null
+  generatedAt: number
+}
+
+export const EVOLUTION_STAGE_LEVELS: ReadonlyArray<{ stage: EvolutionStage; level: number }> = Object.freeze([
+  { stage: 'egg', level: 1 },
+  { stage: 'baby', level: 5 },
+  { stage: 'teen', level: 10 },
+  { stage: 'adult', level: 20 },
+  { stage: 'master', level: 35 },
+])
+
+/** Next evolution stage after `level`, or null at the final stage. */
+export function nextEvolution(level: number): { stage: EvolutionStage; level: number } | null {
+  return EVOLUTION_STAGE_LEVELS.find(entry => entry.level > Math.max(1, Math.floor(level))) ?? null
 }
 
 export const XP_POLICY_VERSION = 'v1'

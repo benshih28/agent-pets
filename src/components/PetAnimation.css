@@ -5,10 +5,15 @@
   pointer-events: none;
 }
 
+.pet-visual.facing-left canvas {
+  /* The individual `scale` property composes with the animations' transform. */
+  scale: -1 1;
+}
+
 .pet-aura-canvas {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: var(--z-base);
   display: block;
   image-rendering: pixelated;
   transform-origin: 50% 72%;
@@ -41,11 +46,32 @@
 
 .pet-canvas {
   position: relative;
-  z-index: 2;
+  z-index: calc(var(--z-base) + 2);
   display: block;
   pointer-events: auto;
   image-rendering: pixelated;
   transform-origin: 50% 100%;
+}
+
+/* Last frame of the previous state, faded out over the new one so row
+   changes cross-dissolve instead of hard-cutting. Never hit-tested. */
+.pet-ghost-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-base) + 3);
+  display: block;
+  image-rendering: pixelated;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pet-ghost-canvas.fading {
+  animation: pet-ghost-fade 150ms ease-out forwards;
+}
+
+@keyframes pet-ghost-fade {
+  from { opacity: 0.85; }
+  to { opacity: 0; }
 }
 
 .pet-canvas.pet-offline-ambient {
@@ -104,6 +130,64 @@
 
 .pet-canvas.pet-reacting {
   animation: pet-bounce 0.26s ease;
+}
+
+/* Distinct motions for the five Presentation MCP reactions. */
+.pet-canvas.pet-react-happy { animation: pet-react-happy 0.56s ease-out; }
+.pet-canvas.pet-react-curious { animation: pet-react-curious 0.76s ease-in-out; }
+.pet-canvas.pet-react-thinking { animation: pet-react-thinking 0.9s ease-in-out; }
+.pet-canvas.pet-react-surprised { animation: pet-react-surprised 0.42s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.pet-canvas.pet-react-encouraging { animation: pet-react-encouraging 0.7s ease-in-out; }
+
+@keyframes pet-react-happy {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-10px); }
+  50% { transform: translateY(0) scale(1.06, 0.94); }
+  75% { transform: translateY(-5px); }
+}
+
+@keyframes pet-react-curious {
+  0%, 100% { transform: rotate(0deg); }
+  30%, 70% { transform: rotate(-9deg) translateX(-2px); }
+}
+
+@keyframes pet-react-thinking {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2px) rotate(2deg); }
+}
+
+@keyframes pet-react-surprised {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.14, 1.18); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pet-react-encouraging {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(5deg) translateY(-4px); }
+  75% { transform: rotate(-5deg) translateY(-4px); }
+}
+
+/* The icon mark floats up; it is shown even when motion effects are off. */
+.pet-reaction-mark {
+  position: absolute;
+  top: 6%;
+  right: 12%;
+  z-index: calc(var(--z-base) + 4);
+  color: var(--state-warn-bright);
+  pointer-events: none;
+  animation: pet-mark-float 1.4s ease-out forwards;
+}
+
+@keyframes pet-mark-float {
+  0% { opacity: 0; transform: translateY(6px) scale(0.6); }
+  20% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-14px) scale(1.1); }
+}
+
+@keyframes pet-mark-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 @keyframes pet-bounce {
@@ -183,6 +267,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .pet-reaction-mark {
+    animation: pet-mark-fade 1.4s ease-out forwards;
+  }
+
+  /* No shake, bounce, sway or glow: the sprite row itself carries the state. */
+  .pet-canvas {
+    animation: none !important;
+  }
+
+  .pet-ghost-canvas.fading {
+    animation: none;
+  }
+
   .pet-aura-canvas {
     animation: none;
   }

@@ -1,0 +1,69 @@
+/* The overview keeps the view's column rhythm inside its tab panel. */
+.history-overview:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--organic-space-3);
+}
+
+.history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.history-range,
+.history-metric {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.history-metric {
+  margin-bottom: var(--space-3);
+}
+
+.history-section > summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.history-updating {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.history-section > summary {
+  margin-bottom: var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.history-agent-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.outcome.ok {
+  color: var(--state-success);
+}
+
+.outcome.fail {
+  color: var(--state-error);
+}
+
+.history-action-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

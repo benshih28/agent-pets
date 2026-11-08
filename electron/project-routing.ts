@@ -41,6 +41,7 @@ export interface ProjectRoute {
 }
 
 const MAX_PROJECT_PATH_LENGTH = 4_096
+const MAX_TRACKED_PROJECTS = 1000
 const MAX_PROJECTS = 256
 const MAX_DISPLAY_NAME_LENGTH = 96
 const PROJECT_ID = /^[a-f0-9]{32}$/
@@ -265,7 +266,14 @@ export class ProjectRoutingStore {
           archived_at = NULL
       `).run(identity.projectId, identity.displayName, seenAt, seenAt)
     })
+    // Map keeps insertion order: refresh the entry and evict the oldest past the cap.
+    this.lastTrackedAt.delete(identity.projectId)
     this.lastTrackedAt.set(identity.projectId, seenAt)
+    while (this.lastTrackedAt.size > MAX_TRACKED_PROJECTS) {
+      const oldest = this.lastTrackedAt.keys().next().value
+      if (oldest === undefined) break
+      this.lastTrackedAt.delete(oldest)
+    }
   }
 
   listProjects(availablePetIds: ReadonlySet<string>): ProjectPetView[] {

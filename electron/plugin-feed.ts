@@ -421,6 +421,20 @@ export class PluginFeedController {
     return true
   }
 
+  /** Marks every unread record (optionally one plugin's) read and notifies once. */
+  markAllRead(pluginId?: string): number {
+    if (pluginId !== undefined && !normalizePluginId(pluginId)) return 0
+    let marked = 0
+    for (const record of this.center) {
+      if (!record.read && (pluginId === undefined || record.item.pluginId === pluginId)) {
+        record.read = true
+        marked += 1
+      }
+    }
+    if (marked > 0) this.notifyNotificationsChanged()
+    return marked
+  }
+
   clear(pluginId?: string): number {
     if (pluginId !== undefined && !normalizePluginId(pluginId)) return 0
     const initialCount = this.center.length

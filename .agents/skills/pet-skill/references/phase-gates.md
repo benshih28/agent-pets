@@ -80,3 +80,8 @@ Suggested roadmap classification, subject to the actual diff and user confirmati
 | Phase 8 Per-project Pet | Patch |
 | Phase 9 Achievements | Patch |
 | Phase 10 Shimeji engine | Minor |
+
+## Design gates (DS-19)
+
+- `pnpm check:contrast` must pass (token foreground/background pairs, light and dark themes).
+- `pnpm check:design` reports undefined `var(--x)`, bare hex/rgba, sub-11px font sizes, literal `blur()`, text-glyph icons and untranslated template text. It is report-only in CI; run `pnpm check:design:strict` locally on files you touched, and do not add new findings. Flip CI to `--strict` once `docs/ux-overhaul/design-followups.md` is cleared.

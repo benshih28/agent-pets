@@ -19,6 +19,12 @@
   --surface-overlay: rgba(25, 25, 35, 0.98);
   --surface-scrim: rgba(0, 0, 0, 0.5);
   --surface-blur: blur(24px) saturate(165%);
+  /* Three blur strengths app-wide. Components must use these, never a literal
+     blur(). `html[data-gpu-safe]` (dev:safe) and reduced-transparency turn
+     them all off through base.css / the media query below. */
+  --blur-chip: blur(8px) saturate(140%);
+  --blur-bubble: blur(14px) saturate(160%);
+  --blur-scrim: blur(4px);
 
   /* Native <option> popups are painted by the OS, not by us — they need an
      opaque colour or Windows/macOS fall back to their own light palette. */
@@ -33,6 +39,8 @@
   /* ── Accent ───────────────────────────────────────────────────────────── */
   --accent: #8b9cf7;
   --accent-bright: #cdd4ff;
+  /* Text/icon colour on a solid --accent fill (>= 4.5:1). Panel scopes re-point it. */
+  --accent-on: #12121a;
   --accent-wash: rgba(139, 156, 247, 0.08);
   --accent-soft: rgba(139, 156, 247, 0.15);
   --accent-strong: rgba(139, 156, 247, 0.25);
@@ -53,8 +61,8 @@
   --state-warn: #c8b450;
   --state-warn-bright: #ffe37c;
   --state-info: #9dd8ff;
-  --state-idle: #666;
-  --state-offline: #555;
+  --state-idle: #8a8a8a;
+  --state-offline: #757575;
 
   /* ── Text — four levels, nothing in between ───────────────────────────── */
   --text-primary: #e8ecfa;
@@ -71,6 +79,8 @@
   --font-md: 13px;
   --font-lg: 15px;
   --font-xl: 18px;
+  --font-2xl: 22px; /* dialog / wizard display titles */
+  --font-floor: 11px; /* use in max(var(--font-floor), calc(11px * var(--pet-scale))) so scaled pet text never drops below 11px */
 
   --weight-normal: 400;
   --weight-medium: 600;
@@ -109,14 +119,40 @@
      hand-written per component again. */
   --focus-ring-width: 2px;
   --focus-ring-color: var(--state-info);
+  /* The light-blue ring is ~1.5:1 on cream; panel scopes use this one (5.8:1). */
+  --focus-ring-color-on-light: #1b5fb0;
   --focus-ring-offset: 1px;
+
+  /* ── Hit target, layering, leading ────────────────────────────────────
+     --hit-min: every clickable element is at least this big (WCAG 2.5.8
+     asks for 24px; 32px is comfortable for mouse and touch).
+     --z-*: the only z-index values components may use. */
+  --hit-min: 32px;
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-popover: 100;
+  --z-modal: 1000;
+  --z-toast: 1100;
+  --z-system: 10000;
+  --leading-tight: 1.2;
+  --leading-normal: 1.4;
+  --leading-relaxed: 1.55;
 
   /* ── Motion ───────────────────────────────────────────────────────────── */
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
   --transition-slow: 0.35s ease;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
-  /* ── Organic panel theme ──────────────────────────────────────────────
+  /* ── Organic panel theme (palette layer) ──────────────────────────────
+     --organic-* is the PALETTE of the panel layer. Spacing and type steps
+     below sit on the same 4px grid / 5-step scale as the base tokens (no
+     fractional values). New component CSS should reference the semantic
+     --color-* aliases defined at the end of this block, not --organic-*
+     directly, so a theme swap only has to re-point one layer.
+     Layers: pet layer (DesktopPet, bubbles) = base tokens (dark);
+             panel layer (StatusPanel, SetupWizard, ProjectMcp, dialogs) =
+             --organic-* palette via the --color-* semantic aliases.
      The desktop pet keeps the original dark presentation layer. The panel
      and its modal surfaces opt into this warm, opaque theme locally so a
      bright wallpaper can never reduce text contrast behind the controls. */
@@ -128,7 +164,7 @@
   --organic-surface-sage-soft: #f0fae1;
   --organic-surface-off: #dcd3c4;
   --organic-accent: #c67139;
-  --organic-accent-hover: #b2622d;
+  --organic-accent-hover: #a85a28; /* text-on-accent >= 4.5:1 with --organic-accent-contrast */
   --organic-accent-text: #8c491a;
   --organic-accent-contrast: #fff2eb;
   --organic-sage: #7a8a5e;
@@ -136,8 +172,8 @@
   --organic-sage-dark: #3d472b;
   --organic-text: #201e1d;
   --organic-text-secondary: #645c50;
-  --organic-text-muted: #82796a;
-  --organic-text-faint: #a19786;
+  --organic-text-muted: #6b6354;
+  --organic-text-faint: #8a8070; /* decorative only (>= 3:1); never for text */
   --organic-border: rgba(32, 30, 29, 0.16);
   --organic-border-soft: rgba(32, 30, 29, 0.1);
   --organic-border-on-accent: rgba(255, 242, 235, 0.55);
@@ -172,27 +208,245 @@
   --organic-quota-warning: #e3b64f;
   --organic-quota-error: #d64a3a;
   --organic-quota-sage: #8fa073;
-  --organic-font-heading: 'Caprasimo', Georgia, serif;
-  --organic-font-body: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Status text on cream surfaces (checked >= 4.5:1 by check-contrast). */
+  --organic-danger-text: #a62f1e;
+  --organic-success-text: #3f5a1c;
+  --organic-warn-text: #7a5200;
+  /* Georgia only ships old-style figures ("0" reads as "o"), and it has no
+     lnum feature, so digits are routed to the UI font via the 'Lining Digits'
+     face defined in base.css. */
+  --organic-font-heading: 'Lining Digits', Georgia, 'Times New Roman', serif; /* Caprasimo was never bundled */
+  --organic-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  --organic-space-1: 4.4px;
-  --organic-space-2: 8.8px;
-  --organic-space-3: 13.2px;
-  --organic-space-4: 17.6px;
-  --organic-space-5: 26.4px;
-  --organic-space-6: 35.2px;
+  --organic-space-1: 4px;
+  --organic-space-2: 8px;
+  --organic-space-3: 12px;
+  --organic-space-4: 16px;
+  --organic-space-5: 24px;
+  --organic-space-6: 32px;
   --organic-radius-sm: 8px;
   --organic-radius-md: 16px;
   --organic-radius-lg: 28px;
-  --organic-font-label: 11.5px;
-  --organic-font-body-sm: 12.5px;
-  --organic-font-body-md: 13.5px;
-  --organic-font-body-lg: 14.5px;
-  --organic-font-heading-sm: 16px;
-  --organic-font-heading-md: 17px;
-  --organic-font-panel-title: 19px;
+  --organic-font-label: 12px;
+  --organic-font-body-sm: 12px;
+  --organic-font-body-md: 13px;
+  --organic-font-body-lg: 15px;
+  --organic-font-heading-sm: 15px;
+  --organic-font-heading-md: 18px;
+  --organic-font-panel-title: 18px;
   --organic-font-display-sm: 22px;
-  --organic-font-display-md: 26px;
+  --organic-font-display-md: 22px;
+
+  /* ── Semantic layer (panel) ───────────────────────────────────────────
+     The names new panel-layer CSS should use. Each is an alias of the
+     palette above so a theme only re-points these. */
+  --color-bg: var(--organic-bg);
+  --color-surface: var(--organic-surface);
+  --color-surface-2: var(--organic-surface-2);
+  --color-text: var(--organic-text);
+  --color-text-2: var(--organic-text-secondary);
+  --color-text-3: var(--organic-text-muted);
+  --color-accent: var(--organic-accent);
+  --color-accent-text: var(--organic-accent-text);
+  --color-on-accent: var(--organic-accent-contrast);
+  --color-border: var(--organic-border-soft);
+  --color-border-strong: var(--organic-border);
+  --color-scrim: var(--organic-scrim);
+
+  /* ── Compatibility aliases ────────────────────────────────────────────
+     Names that components referenced before they were defined (they
+     silently resolved to nothing). Defined once here so those references
+     work; prefer the canonical name in new code. */
+  --accent-primary: var(--accent);
+  --status-error: var(--state-error);
+  /* Status text colours. Dark pet layer uses the bright state hues; the
+     panel layer (see the .status-panel scope below) swaps in darker values
+     that keep >= 4.5:1 on the cream surfaces. */
+  --text-danger: var(--state-error-soft);
+  --text-success: var(--state-success);
+  --text-warning: var(--state-warn-bright);
+  --surface-secondary: var(--surface-raised-hover);
+  --font-2xs: var(--font-xs); /* floor is 11px; there is no smaller step */
+  --font-heading: var(--font-ui);
+  --font-body: var(--font-ui);
+}
+
+/* ── Pet bubbles ───────────────────────────────────────────────────────
+   One material for every bubble the pet shows (result toast, say, plugin feed,
+   notices). The pet layer is dark by default; `data-pet-theme='light'` (below) swaps in a
+   light palette. The
+   opaque surface is the fallback for reduced-transparency / high contrast. */
+:root {
+  --pet-bubble-surface: rgba(30, 30, 40, 0.93);
+  --pet-bubble-surface-opaque: #1d1b24;
+  --pet-bubble-border: rgba(255, 255, 255, 0.12);
+  --pet-bubble-sheen: linear-gradient(155deg, rgba(255, 255, 255, 0.1), transparent 54%);
+  --pet-bubble-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --pet-bubble-text: #f2f2f2;
+  --pet-bubble-success-text: #a6f0c0;
+  --pet-bubble-error-text: #ffb3b3;
+  --pet-bubble-warn-border: rgba(232, 198, 91, 0.58);
+  --pet-bubble-warn-text: #fff4c4;
+  --pet-bubble-info-border: rgba(157, 176, 255, 0.56);
+  --pet-bubble-info-text: #e1e6ff;
+  --pet-bubble-info-accent: #aab8ff;
+  --pet-bubble-plugin-border: rgba(112, 189, 158, 0.56);
+  --pet-bubble-plugin-text: #e4fff3;
+  --pet-bubble-warn-accent: #ffe37c;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.34);
+  --pet-drag-shadow: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.35));
+}
+
+/* Light pet appearance (Settings -> Appearance -> Pet). Bubble tokens apply
+   globally; the surface tokens the pet's own status lines, handle and badges
+   read are re-pointed only inside .desktop-pet so the panel window is
+   untouched. The *-opaque / high-contrast fallbacks keep working because
+   they read the same tokens. */
+:root[data-pet-theme='light'] {
+  --pet-bubble-surface: rgba(252, 249, 243, 0.94);
+  --pet-bubble-surface-opaque: #fbf7f0;
+  --pet-bubble-border: rgba(32, 30, 29, 0.16);
+  --pet-bubble-sheen: linear-gradient(155deg, rgba(255, 255, 255, 0.7), transparent 54%);
+  --pet-bubble-shadow:
+    0 6px 18px rgba(46, 43, 37, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --pet-bubble-text: #2a2622;
+  --pet-bubble-success-text: #17683a;
+  --pet-bubble-error-text: #a3261f;
+  --pet-bubble-warn-border: rgba(150, 100, 0, 0.55);
+  --pet-bubble-warn-text: #6e4600;
+  --pet-bubble-warn-accent: #7a4f00;
+  --pet-bubble-info-border: rgba(63, 81, 181, 0.5);
+  --pet-bubble-info-text: #2c3a96;
+  --pet-bubble-info-accent: #3a4bb5;
+  --pet-bubble-plugin-border: rgba(30, 120, 90, 0.5);
+  --pet-bubble-plugin-text: #145a45;
+  --scrollbar-thumb: rgba(32, 30, 29, 0.28);
+  --scrollbar-thumb-hover: rgba(32, 30, 29, 0.45);
+  --pet-drag-shadow: drop-shadow(0 10px 14px rgba(46, 43, 37, 0.28));
+}
+
+:root[data-pet-theme='light'] .desktop-pet {
+  --surface-panel: rgba(252, 249, 243, 0.92);
+  --surface-overlay: rgba(252, 249, 243, 0.98);
+  --surface-raised-hover: rgba(255, 255, 255, 0.6);
+  --border-strong: rgba(32, 30, 29, 0.2);
+  --text-primary: #2a2622;
+  --text-shadow-panel: none;
+  --organic-status-surface: rgba(252, 249, 243, 0.92);
+  --organic-status-surface-fallback: #fbf7f0;
+  --organic-status-border: rgba(32, 30, 29, 0.16);
+  --organic-status-text: #2a2622;
+  --organic-status-tooltip-surface: rgba(252, 249, 243, 0.97);
+  --organic-status-tooltip-border: rgba(168, 92, 40, 0.4);
+  --organic-status-tooltip-text: #2a2622;
+  --organic-status-tooltip-muted: rgba(42, 38, 34, 0.78);
+  --organic-status-track: rgba(32, 30, 29, 0.14);
+  --organic-status-shadow: 0 2px 8px rgba(46, 43, 37, 0.16);
+  --organic-status-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --organic-status-tooltip-shadow: 0 5px 16px rgba(46, 43, 37, 0.24);
+  --shadow-edge-handle: 0 3px 12px rgba(46, 43, 37, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Panel layer: the status panel and plugin pages render on cream surfaces,
+   so status text must use the darker values. */
+.status-panel {
+  --text-danger: var(--organic-danger-text);
+  --text-success: var(--organic-success-text);
+  --text-warning: var(--organic-warn-text);
+}
+
+/* Every organic-themed surface: solid accent fills carry light text. */
+.status-panel,
+.setup-overlay,
+.mcp-overlay {
+  --accent-on: var(--organic-accent-contrast);
+  --focus-ring-color: var(--focus-ring-color-on-light);
+}
+
+/* ── Dark theme (panel layer) ───────────────────────────────────────────
+   Re-points the organic palette; semantic --color-* aliases and every
+   component follow. Applied by composables/useTheme.ts as
+   <html data-theme="dark"> (the pet/bubble layer is always dark). Each
+   pair is verified by scripts/check-contrast.mjs. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --organic-bg: #1f1b16;
+  --organic-surface: #292420;
+  --organic-surface-2: #342e28;
+  --organic-surface-warm: #4a3022;
+  --organic-surface-sage: #2e3622;
+  --organic-surface-sage-soft: #263019;
+  --organic-surface-off: #3f372e;
+  --organic-accent: #d98652;
+  --organic-accent-hover: #e39a6b;
+  --organic-accent-text: #f0b48a;
+  --organic-accent-contrast: #201e1d;
+  --organic-sage: #9db07b;
+  --organic-sage-deep: #aebf8c;
+  --organic-sage-dark: #c9d6ad;
+  --organic-text: #f3ede4;
+  --organic-text-secondary: #cfc5b6;
+  --organic-text-muted: #b0a592;
+  --organic-text-faint: #8d8374;
+  --organic-border: rgba(243, 237, 228, 0.18);
+  --organic-border-soft: rgba(243, 237, 228, 0.1);
+  --organic-border-on-accent: rgba(32, 30, 29, 0.4);
+  --organic-sage-track: rgba(201, 214, 173, 0.18);
+  --organic-accent-track: rgba(243, 237, 228, 0.1);
+  --organic-accent-glow: rgba(217, 134, 82, 0.28);
+  --organic-accent-on-hover: rgba(243, 237, 228, 0.06);
+  --organic-scrim: rgba(0, 0, 0, 0.55);
+  --organic-panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --organic-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --organic-hero-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  --organic-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --organic-danger-text: #ff9a8a;
+  --organic-success-text: #b6d48a;
+  --organic-warn-text: #f0c866;
+  --focus-ring-color-on-light: #9dd8ff;
+}
+
+/* More contrast: stronger borders in both themes. */
+@media (prefers-contrast: more) {
+  :root {
+    --organic-border: rgba(32, 30, 29, 0.6);
+    --organic-border-soft: rgba(32, 30, 29, 0.4);
+    --border-strong: rgba(255, 255, 255, 0.5);
+    --border-subtle: rgba(255, 255, 255, 0.3);
+  }
+
+  :root[data-theme='dark'] {
+    --organic-border: rgba(243, 237, 228, 0.65);
+    --organic-border-soft: rgba(243, 237, 228, 0.45);
+  }
+}
+
+/* Reduced transparency: no blur anywhere; one place instead of per component. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --surface-blur: none;
+    --blur-chip: none;
+    --blur-bubble: none;
+    --blur-scrim: none;
+  }
+}
+
+/* Windows high-contrast / forced colours: the ring must use a system colour. */
+@media (forced-colors: active) {
+  :root,
+  .status-panel,
+  .setup-overlay,
+  .mcp-overlay {
+    --focus-ring-color: Highlight;
+  }
 }
 
 /* Honour the OS "reduce motion" setting in one place rather than auditing

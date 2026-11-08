@@ -207,7 +207,8 @@ export interface AgentPetsPluginApi {
   schedule: {
     /**
      * Run a callback periodically. Requires permissions.schedule. Effective interval is the greatest of the requested,
-     * manifest, and user minimums. Throws coded errors immediately: not_permitted, schedule_invalid.
+     * manifest, and user minimums. At most 16 schedules per plugin; a tick is skipped while the previous run is still pending.
+     * Throws coded errors immediately: not_permitted, schedule_invalid.
      * Example: `const cancel = api.schedule.every(300, refresh)`
      */
     every(seconds: number, callback: () => void): () => void

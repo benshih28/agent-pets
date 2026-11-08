@@ -1,0 +1,462 @@
+/* Bubble layer of the desktop pet: result toast, activity, say, plugin feed,
+   permission notice and coach mark. Colors come from the --pet-bubble-* tokens. */
+.pet-toast {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: 50% calc(100% + 9px);
+  z-index: calc(var(--z-base) + 5);
+  max-height: var(--pet-bubble-max-h);
+  max-width: calc(var(--pet-w, 250px) - 10px);
+  background: var(--pet-bubble-surface);
+  border: 1px solid var(--pet-bubble-border);
+  backdrop-filter: var(--blur-chip);
+  -webkit-backdrop-filter: var(--blur-chip);
+  box-shadow: var(--pet-bubble-shadow);
+  color: var(--pet-bubble-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: max(var(--font-sm), calc(var(--font-xs) * var(--pet-scale, 1)));
+  font-weight: 600;
+  line-height: 1.3;
+  padding: max(6px, calc(6px * var(--pet-scale, 1))) max(10px, calc(11px * var(--pet-scale, 1)));
+  border-radius: max(var(--radius-md), calc(12px * var(--pet-scale, 1)));
+  white-space: nowrap;
+  /* Visible so the tail below can poke out; long text is clipped by the inner
+     elements (.activity-text, .timed-toast-meta, .presentation-say-text). */
+  overflow: visible;
+}
+
+.pet-toast.permission-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: min(240px, calc(var(--pet-w, 250px) - 10px));
+  background:
+    var(--pet-bubble-sheen),
+    var(--pet-bubble-surface);
+  border-color: var(--pet-bubble-warn-border);
+  backdrop-filter: var(--blur-bubble);
+  -webkit-backdrop-filter: var(--blur-bubble);
+  box-shadow:
+    var(--pet-bubble-shadow);
+  color: var(--pet-bubble-warn-text);
+  text-align: left;
+  white-space: normal;
+}
+
+.pet-toast.presentation-say {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: max-content;
+  max-width: min(260px, calc(var(--pet-w, 250px) - 10px));
+  background:
+    var(--pet-bubble-sheen),
+    var(--pet-bubble-surface);
+  border-color: var(--pet-bubble-info-border);
+  backdrop-filter: var(--blur-chip);
+  -webkit-backdrop-filter: var(--blur-chip);
+  box-shadow:
+    var(--pet-bubble-shadow);
+  color: var(--pet-bubble-info-text);
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pet-toast.plugin-feed-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: max-content;
+  max-width: min(300px, calc(var(--pet-w, 250px) - 10px));
+  background:
+    var(--pet-bubble-sheen),
+    var(--pet-bubble-surface);
+  border-color: var(--pet-bubble-plugin-border);
+  color: var(--pet-bubble-plugin-text);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.plugin-feed-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.plugin-feed-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-feed-source {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--pet-bubble-plugin-text) 64%, transparent);
+  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-feed-message {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.32;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.plugin-feed-message strong {
+  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  font-weight: 700;
+}
+
+.plugin-feed-message span {
+  color: color-mix(in srgb, var(--pet-bubble-plugin-text) 84%, transparent);
+  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  font-weight: 500;
+}
+
+.plugin-feed-link {
+  cursor: pointer;
+}
+
+.plugin-feed-link:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pet-toast .plugin-feed-open-panel {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--pet-bubble-plugin-text) 28%, transparent);
+  border-radius: 5px;
+  background: var(--surface-raised-hover);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+}
+
+.pet-toast .plugin-feed-open-panel:hover {
+  background: var(--border-strong);
+}
+
+.pet-toast .plugin-feed-close {
+  display: grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: -2px -4px 0 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: color-mix(in srgb, var(--pet-bubble-plugin-text) 72%, transparent);
+  cursor: pointer;
+  font: 600 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.pet-toast .plugin-feed-close:hover {
+  background: var(--pet-bubble-border);
+  color: var(--pet-bubble-text);
+}
+
+.presentation-say-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--pet-bubble-info-accent);
+}
+
+/* A long message is clamped to four lines and opens up while hovered. */
+.presentation-say-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.pet-toast.presentation-say:hover .presentation-say-text,
+.pet-toast.presentation-say:focus-within .presentation-say-text {
+  display: block;
+  max-height: calc(var(--pet-bubble-max-h) - 24px);
+  overflow-y: auto;
+}
+
+.permission-notice-icon {
+  display: grid;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--state-warn) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pet-bubble-warn-accent) 40%, transparent);
+  font-size: var(--font-md);
+  font-weight: 800;
+}
+
+.permission-notice-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.permission-notice-copy strong {
+  font-size: var(--font-xs);
+  line-height: var(--leading-tight);
+}
+
+.permission-notice-copy span {
+  color: color-mix(in srgb, var(--pet-bubble-warn-text) 82%, transparent);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.pet-toast::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 9px;
+  height: 9px;
+  background: var(--pet-bubble-surface-opaque);
+  border-right: 1px solid var(--pet-bubble-border);
+  border-bottom: 1px solid var(--pet-bubble-border);
+}
+
+.pet-toast.success {
+  border-color: color-mix(in srgb, var(--state-success) 40%, transparent);
+  color: var(--pet-bubble-success-text);
+}
+
+.pet-toast.error {
+  border-color: color-mix(in srgb, var(--state-error) 40%, transparent);
+  color: var(--pet-bubble-error-text);
+}
+
+.pet-toast.coach-mark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: min(240px, calc(var(--pet-w, 250px) - 10px));
+  white-space: normal;
+  text-align: left;
+}
+
+.coach-copy {
+  font-weight: 500;
+  line-height: var(--leading-normal);
+}
+
+.pet-toast.waiting {
+  border-color: color-mix(in srgb, var(--pet-bubble-warn-accent) 50%, transparent);
+  color: var(--pet-bubble-warn-accent);
+}
+
+.pet-toast.activity {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent-bright);
+  font-weight: 500;
+}
+
+.pet-toast.timed-toast {
+  display: flex;
+  min-width: 150px;
+  max-width: min(260px, calc(var(--pet-w, 250px) - 10px));
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: max(6px, calc(7px * var(--pet-scale, 1)));
+  cursor: pointer;
+}
+
+.timed-toast-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.timed-toast-icon {
+  flex: 0 0 auto;
+}
+
+.timed-toast-title {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.timed-toast-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timed-toast-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+
+.pet-toast .timed-toast-action {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pet-toast .timed-toast-action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+.pet-toast.timed-toast.paused .toast-countdown-fill {
+  animation-play-state: paused;
+}
+
+.pet-toast.activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.activity-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-icon {
+  flex: 0 0 auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.toast-countdown-track {
+  display: block;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.toast-countdown-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0.78;
+  transform-origin: left center;
+  animation: toast-countdown var(--toast-duration, 3000ms) linear forwards;
+}
+
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px) scale(0.86);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unread-badge,
+  .mini-status-badge.pulse {
+    animation: none;
+  }
+
+  .toast-enter-active,
+  .toast-leave-active {
+    transition: none;
+  }
+
+  .toast-countdown-fill {
+    animation-timing-function: steps(6, end);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .toast-countdown-track {
+    background: color-mix(in srgb, var(--pet-bubble-text) 38%, transparent);
+    outline: 1px solid currentColor;
+    outline-offset: 1px;
+  }
+
+  .toast-countdown-fill {
+    opacity: 1;
+  }
+
+  /* Variants lose their translucent tint and gain a strong outline. */
+  .pet-toast {
+    background: var(--pet-bubble-surface-opaque);
+    border-width: 2px;
+    color: var(--pet-bubble-text);
+  }
+
+  .pet-toast.permission-notice {
+    border-color: var(--pet-bubble-warn-accent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  /* Every bubble variant becomes one opaque material. */
+  .pet-toast {
+    background: var(--pet-bubble-surface-opaque);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

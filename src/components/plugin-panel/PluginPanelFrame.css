@@ -1,0 +1,190 @@
+.plugin-panel-view-frame {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.plugin-panel-view-frame.is-maximized {
+  position: fixed;
+  z-index: var(--z-system);
+  inset: var(--organic-space-2, var(--space-2));
+  width: auto;
+  height: auto;
+  min-height: 0;
+  flex: none;
+  border-radius: var(--radius-md);
+}
+
+.plugin-panel-view-chrome {
+  position: relative;
+  z-index: var(--z-base);
+  display: flex;
+  min-height: 52px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-overlay);
+  color: var(--text-primary);
+}
+
+.plugin-panel-view-chrome img,
+.plugin-panel-view-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.plugin-panel-view-title {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 120px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-panel-view-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-panel-view-title strong:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.plugin-panel-view-title span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-panel-view-chrome :deep(.plugin-panel-view-control.btn.icon-only) {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.plugin-panel-view-chrome :deep(.plugin-panel-view-control.btn.icon-only:hover:not(:disabled)) {
+  border-color: transparent;
+  background: var(--surface-raised-hover);
+  color: var(--text-primary);
+}
+
+.plugin-panel-view-chrome :deep(.plugin-panel-view-control.btn.icon-only:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.plugin-panel-view-content {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  background: var(--surface-sunken);
+}
+
+.plugin-panel-view-state {
+  display: flex;
+  height: 100%;
+  min-height: 160px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.state-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+}
+
+.state-body {
+  max-width: 36ch;
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+@media (prefers-contrast: more) {
+  .plugin-panel-view-frame {
+    border-width: 2px;
+  }
+
+  .plugin-panel-view-chrome {
+    border-bottom-width: 2px;
+  }
+}
+
+@media (forced-colors: active) {
+  .plugin-panel-view-frame {
+    border: 1px solid CanvasText;
+  }
+
+  .plugin-panel-view-chrome {
+    border-bottom: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .plugin-panel-view-chrome img,
+  .plugin-panel-view-icon {
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .plugin-panel-view-chrome :deep(.plugin-panel-view-control) {
+    color: ButtonText;
+  }
+
+  .plugin-panel-view-chrome :deep(.plugin-panel-view-control:hover) {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plugin-panel-view-frame,
+  .plugin-panel-view-chrome,
+  .plugin-panel-view-chrome :deep(.plugin-panel-view-control) {
+    animation: none;
+    transition: none;
+  }
+}

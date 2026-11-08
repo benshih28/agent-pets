@@ -2,8 +2,11 @@ name: CI
 
 on:
   pull_request:
+    # 純文件變更不需要型別檢查與建置
+    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,6 +19,7 @@ jobs:
   check:
     name: check
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -30,6 +34,29 @@ jobs:
 
       - run: pnpm exec vue-tsc --noEmit
 
-      - run: pnpm test:unit
+      # 主行程守門：loadURL 未處理的 Promise、缺少全域錯誤兜底
+      - run: pnpm lint
+
+      # 單元測試同時產生主行程模組的覆蓋率並設下限
+      - run: pnpm test:coverage
 
       - run: pnpm exec vite build
+
+      # 原本只在 release 才檢查；提早在 PR 失敗，避免 release 建置到一半才發現
+      - name: Check renderer bundle size budget
+        run: pnpm check:bundle-size
+
+      - name: Check plugin panel tokens bundle
+        run: pnpm check:bundle
+
+      # 設計守門：對比度與 token／字面值檢查皆為嚴格模式
+      - name: Check design token contrast
+        run: pnpm check:contrast
+
+      - name: Check design token violations
+        run: pnpm check:design:strict
+
+      # 依賴漏洞：網路或公告來源異常時不擋合併，只留下警示
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+        continue-on-error: true

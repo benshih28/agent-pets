@@ -1,5 +1,6 @@
 import type { AgentSource, AgentState, AgentStatusEvent, AgentTokenUsage } from '../src/types/agent'
 import type { PermissionNotice } from '../src/types/capabilities'
+import { parseHostHints } from './host-app.ts'
 
 const EXTERNAL_ONLY_PERMISSION_NOTICE: Readonly<PermissionNotice> = Object.freeze({
   responseMode: 'external_only',
@@ -93,6 +94,8 @@ export function normalizeAgentStatusEvent(
   const eventId = optionalText(raw.eventId)
   const sourceEventId = optionalText(raw.sourceEventId)
   const tokenUsage = optionalTokenUsage(raw.tokenUsage)
+  // Only the allowlisted app id goes on the event; the bundle id is read separately by main.
+  const host = parseHostHints(raw.host)?.host
 
   const event: AgentStatusEvent = {
     source: normalizeSource(raw.source),
@@ -104,6 +107,7 @@ export function normalizeAgentStatusEvent(
     ...(project ? { project } : {}),
     ...(toolName ? { toolName } : {}),
     ...(tokenUsage ? { tokenUsage } : {}),
+    ...(host ? { host } : {}),
     ...(originalEvent ? { originalEvent } : {}),
     ...(state === 'waiting-permission'
       ? { permissionNotice: { ...EXTERNAL_ONLY_PERMISSION_NOTICE } }

@@ -11,8 +11,12 @@ import {
   XP_RULES,
   type ProgressionAward,
   type ProgressionEventResult,
+  type ProgressionInsights,
+  type ProgressionLedgerEntry,
   type ProgressionSnapshot,
 } from '../src/types/progression.ts'
+import { localDateKey, previousLocalDate } from '../src/utils/local-date.ts'
+import { applyWalPragmas, type SqlitePragmaState } from './sqlite-pragmas.ts'
 import { StatementCache } from './sqlite-statements.ts'
 
 type SqliteRow = Record<string, unknown>
@@ -57,6 +61,7 @@ const DEFAULT_PET_ID = 'aang-airbender'
 const MAX_PET_ID_LENGTH = 128
 const MAX_SESSION_KEY_LENGTH = 600
 const MAX_ACTIVE_GAP_MS = 5 * 60 * 1000
+const ACTIVITY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 const ACTIVE_STATES = new Set<AgentState>(['thinking', 'tool-running'])
 
 function databaseConstructor(): DatabaseSyncConstructor {
@@ -87,20 +92,6 @@ function normalizePetId(value: string | undefined, fallback: string): string {
   return fallback
 }
 
-function localDateKey(timestamp: number): string {
-  const date = new Date(timestamp)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function previousLocalDate(key: string): string {
-  const date = new Date(`${key}T12:00:00`)
-  date.setDate(date.getDate() - 1)
-  return localDateKey(date.getTime())
-}
-
 function isActiveState(state: AgentState | undefined): boolean {
   return state !== undefined && ACTIVE_STATES.has(state)
 }
@@ -112,11 +103,13 @@ function changedCount(result: { changes: number | bigint }): number {
 export class ProgressionStore {
   private readonly database: SqliteDatabase
   private readonly statements: StatementCache<SqliteStatement>
+  private pragmas: SqlitePragmaState = { journalMode: '', synchronous: -1 }
   private readonly now: () => number
   private readonly localDate: (timestamp: number) => string
   private readonly defaultPetId: string
   private activePetId: string
   private closed = false
+  private readonly ensuredPets = new Set<string>()
 
   constructor(filePath: string, options: ProgressionStoreOptions = {}) {
     mkdirSync(dirname(filePath), { recursive: true })
@@ -129,6 +122,7 @@ export class ProgressionStore {
     this.activePetId = this.defaultPetId
     try {
       this.migrate()
+      this.pruneStaleActivity()
       this.ensurePet(this.defaultPetId)
     } catch (error) {
       this.database.close()
@@ -140,6 +134,24 @@ export class ProgressionStore {
     this.activePetId = normalizePetId(petId, this.defaultPetId)
     this.ensurePet(this.activePetId)
     return this.getSnapshot(this.activePetId)
+  }
+
+  /**
+   * Drops per-session activity rows idle for `maxAgeMs`. Awarded XP lives in the
+   * ledger (unique idempotency keys), so a session that resumes after expiry
+   * restarts its active-time counter but can never be paid twice.
+   */
+  pruneStaleActivity(maxAgeMs = ACTIVITY_RETENTION_MS, limit = 5000): number {
+    const cutoff = this.now() - maxAgeMs
+    return changedCount(this.statement(`
+      DELETE FROM xp_session_activity WHERE session_key IN (
+        SELECT session_key FROM xp_session_activity WHERE last_seen_at < ? LIMIT ?
+      )
+    `).run(cutoff, Math.max(1, Math.floor(limit))))
+  }
+
+  getPragmaState(): SqlitePragmaState {
+    return this.pragmas
   }
 
   getActivePetId(): string {
@@ -156,9 +168,11 @@ export class ProgressionStore {
     const occurredAt = Number.isFinite(event.timestamp) ? event.timestamp : this.now()
     const petId = normalizePetId(routedPetId ?? event.routedPetId, this.activePetId)
     if (event.originalEvent === 'AgentPetsIntegrationTest') {
-      return { snapshot: this.getSnapshot(petId), awards: [] }
+      const snapshot = this.getSnapshot(petId)
+      return { snapshot, awards: [], levelBefore: snapshot.level, stageBefore: snapshot.evolutionStage }
     }
 
+    const before = this.getSnapshot(petId)
     const awards = this.transaction(() => {
       this.ensurePet(petId)
       const routeKey = event.projectId || petId
@@ -193,7 +207,62 @@ export class ProgressionStore {
       return result
     })
 
-    return { snapshot: this.getSnapshot(petId), awards }
+    // Progress rows only change through awards or a completion's streak update,
+    // so a plain heartbeat can reuse the snapshot read before the transaction.
+    const unchanged = awards.length === 0 && event.state !== 'success'
+    return {
+      snapshot: unchanged ? before : this.getSnapshot(petId),
+      awards,
+      levelBefore: before.level,
+      stageBefore: before.evolutionStage,
+    }
+  }
+
+  /** Newest-first ledger rows. Read-only; XP only ever changes via handleEvent. */
+  getRecentLedger(petId = this.activePetId, limit = 20): ProgressionLedgerEntry[] {
+    const safePetId = normalizePetId(petId, this.defaultPetId)
+    const bounded = Math.max(1, Math.min(50, Math.floor(limit)))
+    return this.statement(`
+      SELECT rule_id, amount, occurred_at FROM xp_ledger
+      WHERE pet_id = ? ORDER BY occurred_at DESC, ledger_id DESC LIMIT ?
+    `).all(safePetId, bounded).map(row => ({
+      ruleId: String(row.rule_id).slice(0, 64),
+      amount: Math.max(0, asInteger(row.amount)),
+      occurredAt: Math.max(0, asInteger(row.occurred_at)),
+    }))
+  }
+
+  getInsights(petId = this.activePetId, limit = 20): ProgressionInsights {
+    const safePetId = normalizePetId(petId, this.defaultPetId)
+    this.ensurePet(safePetId)
+    const generatedAt = this.now()
+    const today = this.localDate(generatedAt)
+    const todayRow = this.statement(
+      'SELECT COALESCE(SUM(amount), 0) AS total FROM xp_ledger WHERE pet_id = ? AND local_date = ?',
+    ).get(safePetId, today)
+    const claimed = this.statement(
+      'SELECT 1 AS present FROM xp_ledger WHERE pet_id = ? AND idempotency_key = ? LIMIT 1',
+    ).get(safePetId, `${safePetId}:first-completion:${today}`)
+    const dates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(`${today}T12:00:00`)
+      date.setDate(date.getDate() - index)
+      return this.localDate(date.getTime())
+    })
+    const week = this.statement(`
+      SELECT COUNT(DISTINCT local_date) AS days, COALESCE(SUM(amount), 0) AS total
+      FROM xp_ledger WHERE pet_id = ? AND local_date IN (${dates.map(() => '?').join(', ')})
+    `).get(safePetId, ...dates)
+    const activeDays = asInteger(week?.days)
+    return {
+      petId: safePetId,
+      localDate: today,
+      todayXp: Math.max(0, asInteger(todayRow?.total)),
+      firstCompletionClaimed: Boolean(claimed),
+      recent: this.getRecentLedger(safePetId, limit),
+      // Fewer than three active days is too little signal for a pace estimate.
+      averageDailyXp: activeDays >= 3 ? Math.round((asInteger(week?.total) / 7) * 10) / 10 : null,
+      generatedAt,
+    }
   }
 
   close(): void {
@@ -204,10 +273,8 @@ export class ProgressionStore {
   }
 
   private migrate(): void {
+    this.pragmas = applyWalPragmas(this.database)
     this.database.exec(`
-      PRAGMA foreign_keys = ON;
-      PRAGMA busy_timeout = 5000;
-      PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
@@ -279,6 +346,16 @@ export class ProgressionStore {
          VALUES (2, 'progression-pet-idempotency', ?, ?)`,
       ).run(this.now(), `${XP_POLICY_VERSION}-pet-idempotency`)
     })
+
+    // v3 bounds xp_session_activity (one row per session, previously forever).
+    const hasV3 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 3').get())
+    if (!hasV3) this.transaction(() => {
+      this.database.exec('CREATE INDEX IF NOT EXISTS idx_xp_session_activity_seen ON xp_session_activity(last_seen_at)')
+      this.statement(
+        `INSERT INTO schema_migrations(version, name, applied_at, checksum)
+         VALUES (3, 'progression-activity-last-seen-index', ?, ?)`,
+      ).run(this.now(), `${XP_POLICY_VERSION}-activity-index`)
+    })
   }
 
   private statement(sql: string): SqliteStatement {
@@ -298,6 +375,8 @@ export class ProgressionStore {
   }
 
   private ensurePet(petId: string): void {
+    // Pets are never deleted at runtime; once ensured, skip both INSERT OR IGNORE writes.
+    if (this.ensuredPets.has(petId)) return
     const now = this.now()
     this.statement(`
       INSERT OR IGNORE INTO pets(pet_id, name, sprite_id, created_at, is_default)
@@ -307,6 +386,7 @@ export class ProgressionStore {
       INSERT OR IGNORE INTO pet_progress(pet_id, updated_at)
       VALUES (?, ?)
     `).run(petId, now)
+    this.ensuredPets.add(petId)
   }
 
   private readProgress(petId: string): ProgressRow {
@@ -417,6 +497,9 @@ export class ProgressionStore {
 
     const progress = this.readProgress(petId)
     if (progress.lastActiveLocalDate === date) return
+    // A late-arriving event for a day before the current streak head still
+    // earns its XP above, but must never rewind or reset the streak.
+    if (progress.lastActiveLocalDate && date < progress.lastActiveLocalDate) return
 
     const continued = progress.lastActiveLocalDate === previousLocalDate(date)
     const nextStreak = continued ? progress.currentStreak + 1 : 1

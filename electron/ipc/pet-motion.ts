@@ -2,6 +2,7 @@ import type { BrowserWindow, IpcMain, IpcMainEvent } from 'electron'
 import type { DesktopPreferences } from '../../src/types/desktop'
 import type { PetWindowMode } from '../../src/types/pet-window'
 import type { WindowBounds } from '../pet-window-mode'
+import { clampDraggedBounds, spriteRect } from '../pet-drag.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
 type CursorPoint = { x: number; y: number }
@@ -32,12 +33,30 @@ export interface PetMotionIpcDependencies {
   clampWindowBounds(bounds: WindowBounds, workArea: WorkArea): WindowBounds
   setNormalPetBounds(bounds: WindowBounds | null): void
   scheduleShimejiPositionPersist(): void
+  /** Optional: when present the panel follows the pet during a drag instead of hiding. */
+  repositionVisiblePanel?(): void
+  /** Optional: re-dock to the edge once the cursor stays away after a hover expand. */
+  scheduleEdgeRedock?(): void
+  /** Glide walk steps over a short tween instead of jumping. */
+  smoothWalk?: boolean
 }
 
+const WALK_TWEEN_MS = 700
+
+const DRAG_POLL_MS = 16
+const PANEL_FOLLOW_MS = 60
+
 export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
+  let walkTween: ReturnType<typeof setInterval> | null = null
+  const stopWalkTween = () => {
+    if (walkTween) deps.clearInterval(walkTween)
+    walkTween = null
+  }
+
   deps.ipcMain.on(IPC_CHANNELS.petDragStart, event => {
     const petWindow = deps.getPetWindow()
     if (!petWindow || !deps.isTrustedIpcSender(event, petWindow)) return
+    stopWalkTween()
     deps.clearEdgeDwell()
     deps.clearShimejiPersist()
     if (deps.getPetWindowMode() !== 'normal') deps.applyNormalPetBounds()
@@ -46,10 +65,16 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
     if (previousHandle) deps.clearInterval(previousHandle)
     const startCursor = deps.getCursorScreenPoint()
     const [startX, startY] = petWindow.getPosition()
+    // Fixed for the whole drag: setPosition can grow a window on mixed-DPI
+    // setups, setBounds with the original size cannot.
+    const [startWidth, startHeight] = petWindow.getSize()
     let lastAppliedX = startX
     let lastAppliedY = startY
+    let lastPanelFollowAt = 0
     deps.setAnchorBottomCenter(null)
-    deps.getPanelWindow()?.hide()
+    // The panel is anchored to the pet, so it follows the drag when it can;
+    // otherwise it is hidden rather than left stranded.
+    if (!deps.repositionVisiblePanel) deps.getPanelWindow()?.hide()
 
     const dragPollHandle = deps.setInterval(() => {
       const currentPetWindow = deps.getPetWindow()
@@ -60,13 +85,26 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
         return
       }
       const cursor = deps.getCursorScreenPoint()
-      const targetX = startX + (cursor.x - startCursor.x)
-      const targetY = startY + (cursor.y - startCursor.y)
-      if (targetX === lastAppliedX && targetY === lastAppliedY) return
-      lastAppliedX = targetX
-      lastAppliedY = targetY
-      currentPetWindow.setPosition(targetX, targetY)
-    }, 8)
+      const desired = {
+        x: startX + (cursor.x - startCursor.x),
+        y: startY + (cursor.y - startCursor.y),
+        width: startWidth,
+        height: startHeight,
+      }
+      const display = deps.displayForBounds(spriteRect(desired))
+      const target = clampDraggedBounds(desired, display.workArea)
+      if (target.x === lastAppliedX && target.y === lastAppliedY) return
+      lastAppliedX = target.x
+      lastAppliedY = target.y
+      currentPetWindow.setBounds(target)
+      if (deps.repositionVisiblePanel) {
+        const now = Date.now()
+        if (now - lastPanelFollowAt >= PANEL_FOLLOW_MS) {
+          lastPanelFollowAt = now
+          deps.repositionVisiblePanel()
+        }
+      }
+    }, DRAG_POLL_MS)
     deps.setDragPollHandle(dragPollHandle)
   })
 
@@ -80,6 +118,7 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
     const [width, height] = petWindow.getSize()
     deps.setNormalPetBounds({ x, y, width, height })
     deps.setEdgeRestoreBounds(null)
+    deps.repositionVisiblePanel?.()
     deps.persistCurrentPetWindowState()
     const moved = payload && typeof payload === 'object'
       && (payload as Record<string, unknown>).moved === true
@@ -89,7 +128,10 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
   deps.ipcMain.on(IPC_CHANNELS.petWindowHover, event => {
     const petWindow = deps.getPetWindow()
     if (!petWindow || !deps.isTrustedIpcSender(event, petWindow)) return
-    if (deps.getPetWindowMode() === 'edge') deps.applyNormalPetBounds()
+    if (deps.getPetWindowMode() === 'edge') {
+      deps.applyNormalPetBounds()
+      deps.scheduleEdgeRedock?.()
+    }
   })
 
   deps.ipcMain.on(IPC_CHANNELS.shimejiWalkStep, (event, payload: unknown) => {
@@ -111,8 +153,29 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
     const targetDisplay = deps.displayForBounds(target)
     if (targetDisplay.id !== display.id) return
     if (target.x === current.x && target.y === current.y) return
-    petWindow.setPosition(target.x, target.y)
-    deps.setNormalPetBounds(target)
-    deps.scheduleShimejiPositionPersist()
+    stopWalkTween()
+    if (!deps.smoothWalk) {
+      petWindow.setPosition(target.x, target.y)
+      deps.setNormalPetBounds(target)
+      deps.scheduleShimejiPositionPersist()
+      return
+    }
+    // Glide so the walk cycle in the sprite matches actual movement.
+    const startedAt = Date.now()
+    const fromX = current.x
+    walkTween = deps.setInterval(() => {
+      const progress = Math.min(1, (Date.now() - startedAt) / WALK_TWEEN_MS)
+      const x = Math.round(fromX + (target.x - fromX) * progress)
+      if (deps.getDragPollHandle() || petWindow.isDestroyed()) {
+        stopWalkTween()
+        return
+      }
+      petWindow.setBounds({ x, y: target.y, width: target.width, height: target.height })
+      if (progress >= 1) {
+        stopWalkTween()
+        deps.setNormalPetBounds(target)
+        deps.scheduleShimejiPositionPersist()
+      }
+    }, 16)
   })
 }

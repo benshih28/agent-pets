@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { createServer, type AddressInfo, type Server } from 'node:net'
 import test from 'node:test'
-import { LOCAL_SERVER_RETRY_DELAYS_MS, listenOnLocalPort } from '../electron/local-server-listen.ts'
+import { EventEmitter } from 'node:events'
+import { LOCAL_SERVER_PERSISTENT_FAILURE_ATTEMPTS, LOCAL_SERVER_RETRY_DELAYS_MS, listenOnLocalPort } from '../electron/local-server-listen.ts'
+import { createServerHealthTracker } from '../electron/main/server-health.ts'
 
 function occupyPort(): Promise<Server> {
   return new Promise((resolve, reject) => {
@@ -67,4 +69,65 @@ test('non-address errors are reported instead of crashing the process', () => {
   server.emit('error', Object.assign(new Error('boom'), { code: 'EACCES' }))
   assert.deepEqual(messages, ['Test server error:'])
   server.close()
+})
+
+function fakeServerStub() {
+  const server = Object.assign(new EventEmitter(), {
+    listening: false,
+    listenCalls: 0,
+    listen() { this.listenCalls += 1; return this },
+  })
+  return server
+}
+const errno = (code: string) => Object.assign(new Error(code), { code })
+
+test('EADDRINUSE retries, reports status, and notifies once after the budget', () => {
+  const server = fakeServerStub()
+  const statuses: string[] = []
+  let persistent = 0
+  const handle = listenOnLocalPort(server as never, 1, {
+    label: 't', logError: () => {},
+    onStatus: s => statuses.push(`${s.state}:${s.attempt}`),
+    onPersistentFailure: () => { persistent += 1 },
+  })
+  for (let i = 0; i < LOCAL_SERVER_PERSISTENT_FAILURE_ATTEMPTS + 2; i += 1) server.emit('error', errno('EADDRINUSE'))
+  assert.equal(persistent, 1)
+  assert.equal(handle.status().state, 'retrying')
+  handle.retryNow()
+  assert.equal(server.listenCalls, 2)
+  server.emit('listening')
+  assert.equal(handle.status().state, 'listening')
+  assert.equal(statuses.at(-1), 'listening:0')
+})
+
+test('EACCES does not retry but is still reported', () => {
+  const server = fakeServerStub()
+  let persistent: string | undefined
+  const handle = listenOnLocalPort(server as never, 1, {
+    label: 't', logError: () => {}, onPersistentFailure: s => { persistent = s.code },
+  })
+  server.emit('error', errno('EACCES'))
+  assert.equal(persistent, 'EACCES')
+  assert.equal(handle.status().state, 'failed')
+  assert.equal(server.listenCalls, 1)
+})
+
+test('health tracker aggregates status, probes the occupant and supports retry', async () => {
+  const server = fakeServerStub()
+  const notices: string[] = []
+  const tracker = createServerHealthTracker({
+    onPersistentFailure: h => notices.push(h.id),
+    probe: async () => 'agent-pets',
+  })
+  const hooks = tracker.register('event', 17373)
+  const handle = listenOnLocalPort(server as never, 17373, { label: 't', logError: () => {}, ...hooks })
+  hooks.attach(handle)
+  for (let i = 0; i < 3; i += 1) server.emit('error', errno('EADDRINUSE'))
+  await new Promise(resolve => setImmediate(resolve))
+  const [entry] = tracker.snapshot().servers
+  assert.equal(entry.state, 'retrying')
+  assert.equal(entry.occupant, 'agent-pets')
+  assert.deepEqual(notices, ['event'])
+  tracker.retry('event')
+  assert.equal(server.listenCalls, 2)
 })

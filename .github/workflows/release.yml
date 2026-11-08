@@ -16,9 +16,11 @@ permissions:
   contents: read
 
 jobs:
-  prepare:
-    name: prepare
+  # 只讀 package.json 與遠端 tag，不安裝相依套件，幾秒內決定是否要發版
+  version:
+    name: version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
       release: ${{ steps.version.outputs.release }}
@@ -37,36 +39,41 @@ jobs:
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - if: steps.version.outputs.release == 'true'
-        uses: pnpm/action-setup@v6
-
-      - if: steps.version.outputs.release == 'true'
-        uses: actions/setup-node@v7
+  # 型別檢查與單元測試與建置平行執行；release job 仍要求兩者皆通過才發佈
+  verify:
+    name: verify
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-
-      - if: steps.version.outputs.release == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - if: steps.version.outputs.release == 'true'
-        run: pnpm exec vue-tsc --noEmit
-
-      - if: steps.version.outputs.release == 'true'
-        run: pnpm test:unit
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vue-tsc --noEmit
+      - run: pnpm test:unit
 
   build:
     name: build (${{ matrix.name }})
-    needs: prepare
-    if: needs.prepare.outputs.release == 'true'
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    timeout-minutes: 45
     strategy:
       fail-fast: true
       matrix:
         include:
-          - name: macos
+          # Apple Silicon 與 Intel 拆成兩個平行 job，不再於同一台機器上依序打包
+          - name: macos-arm64
             os: macos-latest
-            # 同時產出 Apple Silicon 與 Intel 版 dmg
-            builder-args: --mac --arm64 --x64
+            builder-args: --mac --arm64
+            artifact-glob: release/*.dmg
+          - name: macos-x64
+            os: macos-latest
+            builder-args: --mac --x64
             artifact-glob: release/*.dmg
           - name: windows
             os: windows-latest
@@ -76,6 +83,9 @@ jobs:
     env:
       # 目前沒有簽章憑證：關閉 macOS 自動尋找簽章身分，產出未簽章版本
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # 統一快取位置，讓 Electron 與 electron-builder 下載的二進位檔可跨次重用
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     steps:
       - uses: actions/checkout@v7
 
@@ -85,6 +95,14 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+          key: electron-${{ matrix.name }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ matrix.name }}-
 
       - run: pnpm install --frozen-lockfile
 
@@ -104,8 +122,9 @@ jobs:
 
   release:
     name: release
-    needs: [prepare, build]
+    needs: [version, verify, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -117,7 +136,7 @@ jobs:
       - name: Create tag and GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           ls -l dist-release
           gh release create "v$VERSION" dist-release/* \

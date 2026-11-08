@@ -17,6 +17,8 @@ withDefaults(defineProps<{
   active?: boolean
   iconOnly?: boolean
   block?: boolean
+  /** Shows a spinner, sets aria-busy and ignores clicks until it clears. */
+  loading?: boolean
 }>(), {
   variant: 'secondary',
   size: 'md',
@@ -25,6 +27,7 @@ withDefaults(defineProps<{
   active: false,
   iconOnly: false,
   block: false,
+  loading: false,
 })
 </script>
 
@@ -32,10 +35,14 @@ withDefaults(defineProps<{
   <button
     :type="type"
     class="btn"
-    :class="[`variant-${variant}`, `size-${size}`, { active, 'icon-only': iconOnly, block }]"
+    :class="[`variant-${variant}`, `size-${size}`, { active, 'icon-only': iconOnly, block, loading }]"
     :disabled="disabled"
+    :aria-disabled="loading ? true : undefined"
+    :aria-busy="loading ? true : undefined"
     :aria-pressed="active ? true : undefined"
+    @click.capture="loading && ($event.preventDefault(), $event.stopImmediatePropagation())"
   >
+    <span v-if="loading" class="spinner" aria-hidden="true" />
     <slot />
   </button>
 </template>
@@ -50,9 +57,10 @@ withDefaults(defineProps<{
   border-radius: var(--radius-sm);
   background: transparent;
   font: inherit;
-  font-family: var(--font-heading, var(--font-ui));
+  font-family: var(--font-heading);
   font-weight: var(--weight-medium);
   line-height: 1;
+  position: relative;
   cursor: pointer;
   transition:
     color var(--transition-fast),
@@ -65,14 +73,23 @@ withDefaults(defineProps<{
   width: 100%;
 }
 
+/* Invisible hit-area extension: small buttons stay visually compact but are
+   always at least --hit-min tall/wide to the pointer (WCAG 2.5.8). */
+.btn::after {
+  content: '';
+  position: absolute;
+  inset-block: min(0px, calc((100% - var(--hit-min)) / 2));
+  inset-inline: min(0px, calc((100% - var(--hit-min)) / 2));
+}
+
 .size-md {
   padding: 9px 15px;
-  font-size: var(--font-body-md, var(--font-sm));
+  font-size: var(--font-sm);
 }
 
 .size-sm {
   padding: 7px 13.2px;
-  font-size: var(--font-label, var(--font-xs));
+  font-size: var(--font-xs);
 }
 
 .icon-only {
@@ -93,17 +110,43 @@ withDefaults(defineProps<{
   opacity: 0.55;
 }
 
+.btn.loading {
+  cursor: progress;
+}
+
+.spinner {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-pill);
+  animation: btn-spin 0.8s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+}
+
 /* ── primary ─────────────────────────────────────────────────────────── */
 .variant-primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-bright);
+  border-color: var(--accent-hover, var(--accent));
+  background: var(--accent-hover, var(--accent));
+  color: var(--accent-on);
 }
 
 .variant-primary:hover:not(:disabled) {
-  border-color: var(--accent-hover, var(--accent));
-  background: var(--accent-hover, var(--accent-strong));
-  color: var(--text-bright);
+  border-color: color-mix(in srgb, var(--accent-hover, var(--accent)) 88%, black);
+  background: color-mix(in srgb, var(--accent-hover, var(--accent)) 88%, black);
+  color: var(--accent-on);
 }
 
 /* ── secondary ───────────────────────────────────────────────────────── */
@@ -145,8 +188,8 @@ withDefaults(defineProps<{
 
 /* Selected state for segmented controls (pet size, tabs). */
 .btn.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-bright);
+  border-color: var(--accent-hover, var(--accent));
+  background: var(--accent-hover, var(--accent));
+  color: var(--accent-on);
 }
 </style>

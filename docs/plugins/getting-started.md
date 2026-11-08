@@ -1,6 +1,6 @@
-# Build your first plugin in 10 minutes
+# 5-minute quickstart
 
-This guide loads a folder in developer mode and then packages it as `.agentpet-plugin`. Plugin code is untrusted; use a test folder while learning.
+Build a plugin that shows one notification, load it from a folder in developer mode, then package it. Plugin code is untrusted; use a test folder while learning. Next step: [Concepts](concepts.md) and the [tutorial](tutorial.md).
 
 ## 1. Create the files
 
@@ -42,11 +42,11 @@ export default {
 
 ## 2. Load the folder
 
-1. Open the Plugins panel in Agent Pets settings.
-2. Turn on **Developer mode** under **Advanced**.
-3. Choose **Load from folder…** and select `hello-feed`, the directory containing `plugin.json`.
-4. Review the name, version, and permissions in the install confirmation, then agree.
-5. Enable the plugin and the global plugin switch. A Hello bubble should appear beside the primary pet, and the plugin row should show **Development**.
+1. Open **Settings → Integrations → Plugins** (tabs: **Installed / Explore / Notifications / Advanced**).
+2. On the **Advanced** tab, turn on **Developer mode**; the install button in the header becomes a menu.
+3. Open that menu, choose **Load from folder…**, and select `hello-feed`, the directory containing `plugin.json`.
+4. Review the name, version, signature state and risk-grouped permissions in the install sheet, then choose **Agree and install**.
+5. The success message offers **Enable now** and also turns plugins on if they were off. A Hello bubble should appear beside the primary pet, and the plugin card should show **Developer folder · signature not verified**.
 
 ## 3. Edit and reload
 
@@ -60,4 +60,4 @@ From inside `hello-feed`, run:
 zip -r ../hello-feed.agentpet-plugin plugin.json dist/
 ```
 
-Choose **Install plugin…**, select the package, and confirm. Folder loading and package installation share manifest, path, size, and file-count validation. See [Packaging and versioning](packaging-and-versioning.md).
+Choose **Install from file…**, select the package, and confirm. Folder loading and package installation share manifest, path, size, and file-count validation. See [Packaging and versioning](packaging-and-versioning.md).

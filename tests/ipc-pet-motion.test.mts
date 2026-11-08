@@ -24,6 +24,11 @@ function fixture() {
       bounds = { ...bounds, x, y }
       calls.push(`position:${x},${y}`)
     },
+    setBounds: (next: { x: number; y: number; width: number; height: number }) => {
+      position = [next.x, next.y]
+      bounds = { ...next }
+      calls.push(`position:${next.x},${next.y}`)
+    },
   } as unknown as BrowserWindow
   const panel = { hide: () => calls.push('panel:hide') } as unknown as BrowserWindow
   const preferences = { shimejiEnabled: true, dndEnabled: false } as DesktopPreferences
@@ -53,7 +58,7 @@ function fixture() {
     getDesktopPreferences: () => preferences,
     hasActivePermissionRequests: () => false,
     currentPowerSaveState: () => false,
-    displayForBounds: () => ({ id: 1, workArea: { x: 0, y: 0, width: 1200, height: 800 } }),
+    displayForBounds: () => ({ id: 1, workArea: { x: -5_000, y: -5_000, width: 10_000, height: 10_000 } }),
     clampWindowBounds: target => target,
     setNormalPetBounds: value => { bounds = value ?? bounds; calls.push('bounds:save') },
     scheduleShimejiPositionPersist: () => calls.push('shimeji:persist'),

@@ -21,6 +21,7 @@ test('plugin feed IPC keeps pet and panel sender scopes and bounded payload chec
     complete: (id: string) => { completed.push(id); return true },
     listNotifications: () => [{ item: { id: 'feed-item-123', pluginId: 'plugin-a', link: 'https://example.test/report' } }],
     markRead: (id: string) => id === 'feed-item-123',
+    markAllRead: (pluginId?: string) => pluginId === undefined ? 7 : 2,
     clear: (pluginId?: string) => pluginId === undefined ? 4 : 1,
   }
   const badges = { list: () => [{ id: 'badge' }] }
@@ -57,6 +58,7 @@ test('plugin feed IPC keeps pet and panel sender scopes and bounded payload chec
     IPC_CHANNELS.pluginFeedComplete,
     IPC_CHANNELS.pluginNotificationsList,
     IPC_CHANNELS.pluginNotificationsRead,
+    IPC_CHANNELS.pluginNotificationsReadAll,
     IPC_CHANNELS.pluginNotificationsClear,
     IPC_CHANNELS.pluginSkinFallbackNotify,
     IPC_CHANNELS.pluginFeedOpenLink,
@@ -72,6 +74,9 @@ test('plugin feed IPC keeps pet and panel sender scopes and bounded payload chec
     value: [{ item: { id: 'feed-item-123', pluginId: 'plugin-a', link: 'https://example.test/report' } }],
   })
   assert.deepEqual(await invoke(IPC_CHANNELS.pluginNotificationsRead, 'feed-item-123'), { ok: true, value: { read: true } })
+  assert.deepEqual(await invoke(IPC_CHANNELS.pluginNotificationsReadAll), { ok: true, value: { marked: 7 } })
+  assert.deepEqual(await invoke(IPC_CHANNELS.pluginNotificationsReadAll, 'plugin-a'), { ok: true, value: { marked: 2 } })
+  assert.deepEqual(await invoke(IPC_CHANNELS.pluginNotificationsReadAll, { bad: true }), { ok: false, error: 'invalid_request' })
   assert.deepEqual(await invoke(IPC_CHANNELS.pluginNotificationsClear), { ok: true, value: { removed: 4 } })
   assert.equal(await invoke(IPC_CHANNELS.pluginSkinFallbackNotify, ['plugin-skin:plugin-a:blue-cat']), 1)
   assert.deepEqual(notifications, [
@@ -82,7 +87,28 @@ test('plugin feed IPC keeps pet and panel sender scopes and bounded payload chec
   assert.equal(await invoke(IPC_CHANNELS.pluginFeedOpenLink, 'feed-item-123'), true)
   assert.deepEqual(opened, ['https://example.test/report'])
   assert.equal(await invoke(IPC_CHANNELS.pluginFeedOpenLink, 'bad'), false)
-  assert.equal(trusted.length, 11)
+  assert.equal(trusted.length, 14)
   assert.deepEqual(trusted[1], { event: {}, window: petWindow })
   assert.deepEqual(trusted[2], { event: {}, window: panelWindow })
+})
+
+test('plugin badges can be read by the pet and by the panel (dashboard plugin tabs), nobody else', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const panelContents = { id: 'panel-wc' }
+  const petContents = { id: 'pet-wc' }
+  const panelWindow = { webContents: panelContents }
+  const petWindow = { webContents: petContents }
+  registerPluginFeedIpc({
+    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    assertTrustedIpcSender: (event, window) => {
+      if ((event as { sender: unknown }).sender !== (window as { webContents: unknown } | null)?.webContents) throw new Error('Unauthorized IPC sender')
+    },
+    getPetWindow: () => petWindow,
+    getPanelWindow: () => panelWindow,
+    getPluginBadgeController: () => ({ list: () => [{ id: 'badge' }] }) as never,
+  } as never)
+  const get = handlers.get(IPC_CHANNELS.pluginBadgesGet)!
+  assert.deepEqual(await get({ sender: petContents }), [{ id: 'badge' }])
+  assert.deepEqual(await get({ sender: panelContents }), [{ id: 'badge' }])
+  assert.throws(() => get({ sender: { id: 'plugin-view' } }), /Unauthorized/)
 })

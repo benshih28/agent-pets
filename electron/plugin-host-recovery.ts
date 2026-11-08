@@ -1,24 +1,43 @@
 export const PLUGIN_HOST_MAX_CONSECUTIVE_FAILURES = 3
 export const PLUGIN_HOST_RESTART_BACKOFF_MS = [250, 1_000, 5_000] as const
 export const PLUGIN_HOST_HEALTHY_RUNTIME_MS = 60_000
+/** Failures older than this no longer count towards giving up on a plugin. */
+export const PLUGIN_HOST_FAILURE_DECAY_MS = 10 * 60_000
 
 /** Small deterministic policy surface shared by Host startup retries and worker watchdogs. */
 export class PluginHostFailureTracker {
-  private readonly counts = new Map<string, number>()
+  private readonly failures = new Map<string, number[]>()
   private readonly now: () => number
 
   constructor(now: () => number = Date.now) {
     this.now = now
   }
 
+  private safeNow(): number {
+    try {
+      const value = this.now()
+      return Number.isFinite(value) ? value : 0
+    } catch { return 0 }
+  }
+
+  private recent(pluginId: string): number[] {
+    const current = this.safeNow()
+    // A clock that moved backwards (sleep/NTP) must not keep stale failures alive forever.
+    const list = (this.failures.get(pluginId) ?? []).filter(at => at <= current && current - at < PLUGIN_HOST_FAILURE_DECAY_MS)
+    if (list.length === 0) this.failures.delete(pluginId)
+    else this.failures.set(pluginId, list)
+    return list
+  }
+
   record(pluginId: string): number {
-    const count = (this.counts.get(pluginId) ?? 0) + 1
-    this.counts.set(pluginId, count)
-    return count
+    const list = this.recent(pluginId)
+    list.push(this.safeNow())
+    this.failures.set(pluginId, list)
+    return list.length
   }
 
   count(pluginId: string): number {
-    return this.counts.get(pluginId) ?? 0
+    return this.recent(pluginId).length
   }
 
   resetAfterHealthyRuntime(pluginId: string, startedAt: number, receivedPong: boolean): boolean {
@@ -26,12 +45,12 @@ export class PluginHostFailureTracker {
     let now: number
     try { now = this.now() } catch { return false }
     if (!Number.isSafeInteger(now) || now < startedAt || now - startedAt < PLUGIN_HOST_HEALTHY_RUNTIME_MS) return false
-    return this.counts.delete(pluginId)
+    return this.failures.delete(pluginId)
   }
 
   clear(pluginId?: string): void {
-    if (pluginId === undefined) this.counts.clear()
-    else this.counts.delete(pluginId)
+    if (pluginId === undefined) this.failures.clear()
+    else this.failures.delete(pluginId)
   }
 }
 

@@ -36,7 +36,9 @@ export function registerPluginFeedIpc(deps: PluginFeedIpcDependencies): void {
     return deps.getPluginFeedController()?.unreadCount() ?? 0
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginBadgesGet, event => {
-    deps.assertTrustedIpcSender(event, deps.getPetWindow())
+    // Read-only: the pet shows badges and the panel's plugin tabs show them too.
+    const panel = deps.getPanelWindow()
+    deps.assertTrustedIpcSender(event, panel?.webContents && event.sender === panel.webContents ? panel : deps.getPetWindow())
     return deps.getPluginBadgeController()?.list() ?? []
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginEventSourceList, event => {
@@ -56,6 +58,11 @@ export function registerPluginFeedIpc(deps: PluginFeedIpcDependencies): void {
     deps.assertPluginPanelSender(event)
     if (!isPluginPanelNotificationId(itemId)) return { ok: false, error: 'invalid_request' }
     return { ok: true, value: { read: deps.getPluginFeedController()?.markRead(itemId) ?? false } }
+  })
+  deps.ipcMain.handle(IPC_CHANNELS.pluginNotificationsReadAll, (event, pluginId: unknown) => {
+    deps.assertPluginPanelSender(event)
+    if (pluginId !== undefined && !deps.isPluginPanelPluginId(pluginId)) return { ok: false, error: 'invalid_request' }
+    return { ok: true, value: { marked: deps.getPluginFeedController()?.markAllRead(pluginId) ?? 0 } }
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginNotificationsClear, (event, pluginId: unknown) => {
     deps.assertPluginPanelSender(event)

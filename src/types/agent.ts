@@ -1,5 +1,6 @@
 import type { PermissionNotice } from './capabilities'
 import type { AgentAdapterId } from './agent-adapter'
+import type { AgentHost } from './host-app'
 
 export type AgentSource =
   | 'opencode-cli'
@@ -42,6 +43,8 @@ export interface AgentStatusEvent {
   toolName?: string
   tokenUsage?: AgentTokenUsage
   permissionNotice?: PermissionNotice
+  /** Terminal / IDE / desktop app the session runs in (allowlisted id only). */
+  host?: AgentHost
 }
 
 export interface AgentSession {
@@ -53,8 +56,11 @@ export interface AgentSession {
   routedPetId?: string
   state: AgentState
   lastSeenAt: number
+  /** When this session was first seen; a stable tie-break for "who needs you" ordering. */
+  firstSeenAt?: number
   toolName?: string
   permissionNotice?: PermissionNotice
+  host?: AgentHost
 }
 
 export const STATE_PRIORITY: Record<AgentState, number> = {
@@ -98,8 +104,8 @@ export const STATE_LABELS_SHORT: Record<AgentState, string> = {
 }
 
 export const STATE_COLORS: Record<AgentState, string> = {
-  offline: '#555',
-  idle: '#666',
+  offline: '#757575',
+  idle: '#8a8a8a',
   thinking: '#8b9cf7',
   'tool-running': '#8b9cf7',
   'waiting-permission': '#c8b450',

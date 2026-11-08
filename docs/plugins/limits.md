@@ -1,6 +1,6 @@
 # Resource and rate limits
 
-The **Plugins ▸ Advanced** defaults and hard ranges are below. Out-of-range settings are rejected; API overages reject the call or write.
+The **Plugins → Advanced** defaults and hard ranges are below. Out-of-range settings are rejected; API overages reject the call or write.
 
 | Resource | Default | Adjustable hard range |
 |---|---:|---:|
@@ -20,6 +20,7 @@ Additional fixed limits:
 - Manifest/package: 5 MB total and 64 files; `plugin.json` at most 256 KB. Settings and secrets files are each at most 64 KB; settings have at most 20 fields. Storage defaults to 1 MB and follows the panel limit.
 - Network: request body at most 256 KB; response bytes and timeout use the panel limits; at most three redirects, each revalidated before a new request. Plugin requests do not send or store cookies. Requests per plugin per minute follow the panel limit.
 - Runtime: heartbeat every 10 seconds, failure after 30 seconds without a pong, and disable plus notification after three consecutive crashes. Plugin Host memory is monitored as growth over the host's own footprint measured right after it loads and before any plugin runs (private memory on Windows, working set elsewhere), against the combined enabled-plugin budgets. The host restarts only after two consecutive over-budget checks 30 seconds apart; **exact per-Worker memory isolation is not available**.
+- Schedules: at most 16 active `schedule.every` callbacks per plugin (the 17th throws `schedule_invalid`). The effective interval is the greatest of the requested seconds, the manifest `minIntervalSec` and the user's minimum. A tick is skipped while the previous run of the same callback is still pending, so slow async callbacks never stack.
 - External links: at most five attempts per plugin per minute. Invalid URLs and calls without trusted user activation are rejected before consuming the limit.
 - Runtime host requests: at most three per plugin per 10 minutes; denial cools down that host for 24 hours.
 - Commands: at most 10 per plugin; each id is 1–32 characters and each localized title is at most 32 characters. A given command may be invoked at most once per second. Tray contributes at most five command ids per plugin, with at most 30 plugin command items across the Tray; labels are truncated to 32 characters.

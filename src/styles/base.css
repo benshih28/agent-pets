@@ -1,0 +1,32 @@
+/* Lining digits for every heading/serif run: a digits-only face backed by system
+   UI fonts, so numbers never fall through to Georgia's old-style figures. */
+@font-face {
+  font-family: 'Lining Digits';
+  src: local('-apple-system'), local('BlinkMacSystemFont'), local('Helvetica Neue'), local('Segoe UI'), local('Arial');
+  unicode-range: U+0030-0039;
+}
+
+/* Numeric UI (counters, percentages, timers): lining + tabular figures. */
+.num {
+  font-family: var(--font-body, var(--font-ui));
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Global base rules (renderer only; tokens.css stays declarations-only
+   because it is also served to plugin panels).
+
+   :where() keeps specificity at zero so a component can still refine the
+   ring, but nothing can remove it without an explicit, reviewable override. */
+
+:where(a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex='-1'])):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* GPU-safe mode (pnpm dev:safe): drop every backdrop blur in one place. */
+html[data-gpu-safe] *,
+html[data-gpu-safe] *::before,
+html[data-gpu-safe] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

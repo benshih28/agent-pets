@@ -14,15 +14,15 @@ export function shouldResetPluginPanelMaximized(previousPluginId: string, nextPl
 
 export interface PluginPanelWindowSize { width: number; height: number }
 
-// 放大時把控制面板視窗加大到插件頁允許的上限（960×800，與主行程 setMaximumSize 一致），
-// 讓插件區寬到足以切換成雙欄版面；螢幕較小時以可用範圍為準，且不會比目前更小。
-export const PLUGIN_PANEL_MAXIMIZED_SIZE: PluginPanelWindowSize = Object.freeze({ width: 960, height: 800 })
+// 放大時把控制面板視窗加大到螢幕可用範圍（扣掉四周間距），讓插件區寬到足以切換成雙欄版面；
+// 這只是暫時的最小尺寸，不會覆寫使用者自己調整的面板大小，且不會比目前更小。
+export const PLUGIN_PANEL_MAXIMIZE_GAP = 6
 
 export function maximizedPluginPanelWindowSize(current: PluginPanelWindowSize, available: PluginPanelWindowSize): PluginPanelWindowSize {
-  const fit = (value: number, limit: number, floor: number) => Math.round(Math.max(floor, Math.min(value, limit)))
+  const fit = (limit: number, current: number) => Math.round(Math.max(current, limit))
   return {
-    width: fit(PLUGIN_PANEL_MAXIMIZED_SIZE.width, available.width, Math.min(current.width, available.width)),
-    height: fit(PLUGIN_PANEL_MAXIMIZED_SIZE.height, available.height, Math.min(current.height, available.height)),
+    width: fit(available.width - PLUGIN_PANEL_MAXIMIZE_GAP * 2, current.width),
+    height: fit(available.height - PLUGIN_PANEL_MAXIMIZE_GAP * 2, current.height),
   }
 }
 

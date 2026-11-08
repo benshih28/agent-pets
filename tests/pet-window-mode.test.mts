@@ -40,3 +40,16 @@ test('edge mode keeps a visible peek and preserves the normal size', () => {
   assert.equal(edge.height, EDGE_HANDLE_LENGTH_PX)
   assert.equal(edge.x, workArea.x)
 })
+
+test('the bottom edge never docks by default but can be opted in', () => {
+  const bottom = { x: -1500, y: 780, width: 260, height: 300 }
+  assert.equal(nearestEdge(bottom, workArea), null)
+  assert.equal(nearestEdge(bottom, workArea, 24, ['bottom']), 'bottom')
+})
+
+import { EDGE_HOVER_EXPAND_MS as RENDERER_HOVER_MS } from '../src/utils/pet-edge.ts'
+import { EDGE_HOVER_EXPAND_MS as MAIN_HOVER_MS } from '../electron/pet-window-mode.ts'
+
+test('renderer and main agree on the edge hover delay', () => {
+  assert.equal(RENDERER_HOVER_MS, MAIN_HOVER_MS)
+})

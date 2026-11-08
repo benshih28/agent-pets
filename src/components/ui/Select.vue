@@ -58,7 +58,6 @@ const model = defineModel<string>({ required: true })
   -webkit-appearance: none;
   border: 1px solid var(--border-accent);
   border-radius: var(--radius-pill);
-  outline: none;
   background: var(--surface-raised-hover);
   color: var(--text-primary);
   font: inherit;
@@ -71,12 +70,12 @@ const model = defineModel<string>({ required: true })
 
 .size-md .select {
   padding: 8px 30px 8px 13px;
-  font-size: var(--font-body-sm, var(--font-sm));
+  font-size: var(--font-sm);
 }
 
 .size-sm .select {
   padding: 6px 28px 6px 13px;
-  font-size: var(--font-label, var(--font-xs));
+  font-size: var(--font-xs);
 }
 
 .select:hover:not(:disabled) {
@@ -86,7 +85,9 @@ const model = defineModel<string>({ required: true })
 
 .select:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 var(--focus-ring-width) var(--accent-glow);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  box-shadow: 0 0 0 calc(var(--focus-ring-width) + 3px) var(--accent-glow);
 }
 
 .select:disabled {

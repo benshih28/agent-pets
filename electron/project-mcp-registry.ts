@@ -56,6 +56,7 @@ function highLevelStatus(
   const statuses = summary.results.map(result => result.status)
   if (statuses.some(status => status === 'error')) return 'error'
   if (statuses.some(status => status === 'conflict')) return 'conflict'
+  if (statuses.some(status => status === 'stale')) return 'stale'
   if (statuses.every(status => status === 'already_configured')) return 'connected'
   return 'partial'
 }
@@ -150,6 +151,15 @@ export class ProjectMcpRegistryStore {
     writeStoredEntries(this.filePath, next)
   }
 
+  has(projectPath: string): boolean {
+    if (!isSafeAbsolutePath(projectPath)) return false
+    try {
+      return this.entries().some(entry => samePath(entry.projectPath, path.resolve(projectPath)))
+    } catch {
+      return false
+    }
+  }
+
   forget(projectPath: string): boolean {
     if (!isSafeAbsolutePath(projectPath)) return false
     const resolved = path.resolve(projectPath)
@@ -160,11 +170,24 @@ export class ProjectMcpRegistryStore {
     return true
   }
 
+  /**
+   * Read-only check of every tracked project. Nothing is written back (a pure read must not touch
+   * disk). An unreadable registry file is set aside once and the list starts empty with a notice.
+   */
   list(options: ProjectMcpInstallOptions): ProjectMcpRegistrySnapshot {
-    const entries = this.entries()
+    let entries: StoredProjectMcpEntry[]
+    let recovered = false
+    try {
+      entries = this.entries()
+    } catch {
+      try {
+        fs.renameSync(this.filePath, `${this.filePath}.corrupt-${Date.now()}`)
+      } catch { /* leave it in place; the list is still empty */ }
+      entries = []
+      recovered = true
+    }
     const projects: ProjectMcpProjectRecord[] = []
     const timestamp = this.now()
-    let changed = false
 
     for (const entry of entries) {
       if (!isRegularDirectory(entry.projectPath)) {
@@ -190,8 +213,8 @@ export class ProjectMcpRegistryStore {
           lastCheckedAt: timestamp,
           status: 'error',
           results: [],
+          error: error instanceof Error ? error.message : String(error),
         })
-        changed = true
         continue
       }
       projects.push({
@@ -202,17 +225,8 @@ export class ProjectMcpRegistryStore {
         status: highLevelStatus(summary),
         results: summary.results,
       })
-      changed = true
     }
 
-    if (changed) {
-      const checkedByPath = new Map(projects.map(project => [project.projectPath, project.lastCheckedAt]))
-      writeStoredEntries(this.filePath, entries.map(entry => ({
-        ...entry,
-        lastCheckedAt: checkedByPath.get(entry.projectPath) ?? entry.lastCheckedAt,
-      })))
-    }
-
-    return { ok: true, projects }
+    return { ok: true, projects, ...(recovered ? { recovered: true } : {}) }
   }
 }

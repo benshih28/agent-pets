@@ -71,6 +71,8 @@ export class PluginHostWindowController {
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private memoryTimer: ReturnType<typeof setInterval> | null = null
   private restartTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly workerRestartTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private crashLog: Array<{ at: number; pluginId: string; reason: 'host' | 'worker'; count: number }> = []
   private closingIntentionally = false
 
   constructor(options: PluginHostControllerOptions) {
@@ -371,12 +373,17 @@ export class PluginHostWindowController {
     this.onPluginReset(pluginId)
     const count = this.failureTracker.record(pluginId)
     this.runtime.delete(pluginId)
+    this.crashLog.push({ at: this.readNow() ?? 0, pluginId, reason, count })
+    if (this.crashLog.length > 50) this.crashLog.shift()
     this.onPluginCrash(pluginId, count, reason)
     if (!shouldRetryPluginHost(count)) {
       this.desired.delete(pluginId)
       this.post({ type: 'terminate', pluginId })
     } else if (scheduleWorkerRestart && this.portReady && this.desired.has(pluginId)) {
-      setTimeout(() => {
+      const previousTimer = this.workerRestartTimers.get(pluginId)
+      if (previousTimer) clearTimeout(previousTimer)
+      this.workerRestartTimers.set(pluginId, setTimeout(() => {
+        this.workerRestartTimers.delete(pluginId)
         const descriptor = this.desired.get(pluginId)
         if (!descriptor || this.runtime.has(pluginId) || !this.portReady) return
         const now = this.readNow()
@@ -386,7 +393,7 @@ export class PluginHostWindowController {
         if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(token)) return
         this.runtime.set(pluginId, { descriptor, lastPongAt: now, startedAt: now, token, receivedPong: false, ready: false })
         this.post({ type: 'start', pluginId, token, ...descriptor })
-      }, pluginHostRetryDelay(count))
+      }, pluginHostRetryDelay(count)))
     }
   }
 
@@ -412,6 +419,8 @@ export class PluginHostWindowController {
     if (this.pingTimer) clearInterval(this.pingTimer)
     if (this.memoryTimer) clearInterval(this.memoryTimer)
     if (this.restartTimer) clearTimeout(this.restartTimer)
+    for (const timer of this.workerRestartTimers.values()) clearTimeout(timer)
+    this.workerRestartTimers.clear()
     this.pingTimer = null
     this.memoryTimer = null
     this.restartTimer = null
@@ -436,6 +445,22 @@ export class PluginHostWindowController {
     window.close()
     if (!window.isDestroyed()) window.destroy()
     this.hostWindow = null
+  }
+
+  /**
+   * After the machine wakes up, worker pongs from before sleep look hours old.
+   * Treat the wake-up as a fresh start so a nap never kills healthy plugins or
+   * counts towards giving up on them.
+   */
+  handleSystemResume(): void {
+    const now = this.readNow()
+    if (now === null) return
+    for (const runtime of this.runtime.values()) runtime.lastPongAt = now
+    this.failureTracker.clear()
+  }
+
+  diagnostics(): { desired: number; running: number; recentCrashes: Array<{ at: number; pluginId: string; reason: string; count: number }> } {
+    return { desired: this.desired.size, running: this.runtime.size, recentCrashes: this.crashLog.map(entry => ({ ...entry })) }
   }
 
   private readNow(): number | null {

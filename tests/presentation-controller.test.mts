@@ -118,3 +118,14 @@ test('plugin reactions share the low-priority presentation queue without requiri
   dnd = true
   assert.equal(controller.submitPluginReaction('sample', { reaction: 'curious' }).error, 'dnd_enabled')
 })
+
+test('say messages default to a TTL that scales with length, capped at the maximum', async () => {
+  const { defaultSayTtlMs, PRESENTATION_DEFAULT_TTL_MS, PRESENTATION_MAX_TTL_MS } = await import('../electron/presentation-controller.ts')
+  assert.equal(defaultSayTtlMs(5), PRESENTATION_DEFAULT_TTL_MS)
+  assert.equal(defaultSayTtlMs(60), 7_200)
+  assert.equal(defaultSayTtlMs(240), PRESENTATION_MAX_TTL_MS)
+  const long = normalizePresentationInput({ kind: 'say', message: 'x'.repeat(100) })
+  assert.ok(long.ok && long.value.ttlMs === 12_000)
+  const explicit = normalizePresentationInput({ kind: 'say', message: 'x'.repeat(100), ttlMs: 2_000 })
+  assert.ok(explicit.ok && explicit.value.ttlMs === 2_000)
+})

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   PluginHostFailureTracker,
+  PLUGIN_HOST_FAILURE_DECAY_MS,
   PLUGIN_HOST_HEALTHY_RUNTIME_MS,
   pluginHostRetryDelay,
   shouldRetryPluginHost,
@@ -47,4 +48,17 @@ test('an early pong does not reset a failure count before stable runtime reaches
   assert.equal(tracker.resetAfterHealthyRuntime('sample-plugin', 0, true), false)
   now += 1
   assert.equal(tracker.resetAfterHealthyRuntime('sample-plugin', 0, true), true)
+})
+
+test('failures decay after ten minutes and a backwards clock does not pin them', () => {
+  let now = 1_000_000
+  const tracker = new PluginHostFailureTracker(() => now)
+  tracker.record('p')
+  tracker.record('p')
+  assert.equal(tracker.count('p'), 2)
+  now += PLUGIN_HOST_FAILURE_DECAY_MS + 1
+  assert.equal(tracker.count('p'), 0)
+  assert.equal(tracker.record('p'), 1)
+  now -= 5 * 60_000
+  assert.equal(tracker.count('p'), 0)
 })

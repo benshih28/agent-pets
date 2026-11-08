@@ -1,13 +1,18 @@
 /// <reference types="vite/client" />
 
+import type { OnboardingAction, OnboardingState } from './onboarding'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './desktop'
-import type { PermissionDecisionValue, PermissionRequestStatus, PermissionRequestView } from './permission'
-import type { ProgressionSnapshot } from './progression'
+import type { SessionJumpRequest, SessionJumpResult } from './session-jump'
+import type { PermissionDecisionValue, PermissionRequestStatus, PermissionRequestView, PermissionAuditEntry } from './permission'
+import type { ProgressionAwardEvent, ProgressionInsights, ProgressionSnapshot } from './progression'
 import type { AchievementSnapshot, AchievementUnlock } from './achievement'
-import type { HistoryClearResult, HistoryCommandResult, HistorySummary } from './history'
+import type { HistoryClearResult, HistoryCommandResult, HistoryExportRequest, HistorySessionDetail, HistorySessionPage, HistorySessionQuery, HistorySummary, HistoryUsageBlock } from './history'
 import type { PetWindowMode, PetWindowModeState } from './pet-window'
 import type { PetBehaviorManifest, PluginSkinPetSource } from './pet'
+import type { PetImportCommitResult, PetImportDecision, PetImportPrepareResult } from './pet-import'
+import type { AgentSession } from './agent'
 import type { AgentAdapterId } from './agent-adapter'
+import type { LocalServerHealthSnapshot, LocalServerId } from './reliability'
 import type { PresentationIntent, PresentationStatusUpdate } from './presentation'
 import type {
   PluginBadgeView,
@@ -28,6 +33,8 @@ import type {
 } from './plugin'
 import type { PluginCatalogPanelItem } from './plugin-catalog'
 import type {
+  ProjectMcpApplyRequest,
+  ProjectMcpPlan,
   ProjectMcpRegistrySnapshot,
   ProjectMcpRemovalSummary,
   ProjectMcpSetupSummary,
@@ -42,6 +49,14 @@ import type {
 } from './ipc'
 
 export interface ElectronAPI {
+      reportRendererError: (report: { message: string; stack?: string; kind: 'vue' | 'unhandledrejection' | 'error' }) => void
+      reloadRenderer: () => void
+      exportDiagnostics: () => Promise<{ ok: boolean; canceled?: boolean }>
+      getSessionSnapshot: () => Promise<Array<Omit<AgentSession, 'key' | 'permissionNotice'>>>
+      runSessionJump: (request: SessionJumpRequest) => Promise<SessionJumpResult>
+      getServerHealth: () => Promise<LocalServerHealthSnapshot>
+      retryServerHealth: (id?: LocalServerId) => Promise<LocalServerHealthSnapshot>
+      onServerHealthChanged: (callback: (snapshot: LocalServerHealthSnapshot) => void) => () => void
       onAgentStatusEvent: (callback: (event: any) => void) => () => void
       onPresentationIntent: (callback: (intent: PresentationIntent) => void) => () => void
       onPluginFeedItem: (callback: (item: PluginFeedItem) => void) => () => void
@@ -79,6 +94,7 @@ export interface ElectronAPI {
       getPluginDiagnostics: (pluginId: string) => Promise<PluginPanelResult<{ logs: PluginBrokerLogEntry[]; diagnostics: PluginBrokerDiagnostic[] }>>
       listPluginNotifications: () => Promise<PluginPanelResult<PluginNotificationRecord[]>>
       markPluginNotificationRead: (itemId: string) => Promise<PluginPanelResult<{ read: boolean }>>
+      markAllPluginNotificationsRead: (pluginId?: string) => Promise<PluginPanelResult<{ marked: number }>>
       clearPluginNotifications: (pluginId?: string) => Promise<PluginPanelResult<{ removed: number }>>
       onPluginNotificationsChanged: (callback: () => void) => () => void
       publishPresentationStatus: (snapshot: PresentationStatusUpdate) => void
@@ -93,13 +109,19 @@ export interface ElectronAPI {
       reportContentHeight: (height: number) => void
       setMousePassthrough: (ignore: boolean) => void
       requestPetHide: () => void
+      showPetContextMenu: () => void
+      getOnboardingState: () => Promise<OnboardingState | null>
+      updateOnboardingState: (action: OnboardingAction) => Promise<OnboardingState | null>
       togglePanel: () => void
-      resizePanel: (height: number, width?: number) => void
+      resizePanel: ((size: { height?: number; width?: number; release?: boolean }) => void) & ((height: number, width?: number) => void)
+      resetPanelSize: () => void
+      setPanelBlurLock: (lock: { pinned?: boolean; modal?: boolean }) => void
       hidePanel: () => void
       onPanelOpened: (callback: (options: { restore: boolean }) => void) => () => void
       onPanelOpenSettings: (callback: () => void) => () => void
       onPanelOpenPluginView: (callback: (pluginId: string) => void) => () => void
       initializeDesktopPreferences: (legacySoundEnabled: boolean) => Promise<DesktopPreferences>
+      openLoginItemsSettings: () => Promise<boolean>
       setDesktopPreferences: (patch: DesktopPreferencesPatch) => Promise<DesktopPreferences>
       getPowerSaveState: () => Promise<boolean>
       onPowerSaveStateUpdated: (callback: (powerSave: boolean) => void) => () => void
@@ -109,6 +131,8 @@ export interface ElectronAPI {
       onAchievementsUpdated: (callback: (snapshot: AchievementSnapshot) => void) => () => void
       onAchievementUnlocked: (callback: (unlock: AchievementUnlock) => void) => () => void
       onProgressionUpdated: (callback: (snapshot: ProgressionSnapshot) => void) => () => void
+      getProgressionInsights: (petId?: string) => Promise<ProgressionInsights | null>
+      onProgressionAwarded: (callback: (event: ProgressionAwardEvent) => void) => () => void
       onDesktopPreferencesUpdated: (callback: (preferences: DesktopPreferences) => void) => () => void
       initializePermissionRequests: () => Promise<PermissionRequestView[]>
       onPermissionRequestsUpdated: (callback: (requests: PermissionRequestView[]) => void) => () => void
@@ -120,6 +144,8 @@ export interface ElectronAPI {
         status?: PermissionRequestStatus
         error?: 'not_found' | 'invalid_decision' | 'conflict'
       }>
+      listPermissionAudit: () => Promise<PermissionAuditEntry[]>
+      clearPermissionAudit: () => Promise<{ ok: boolean }>
       quitApp: () => void
       restartApp: () => void
       checkIntegration: () => Promise<AdapterIntegrationStatusIpcResult>
@@ -138,12 +164,20 @@ export interface ElectronAPI {
             usedPercent: number
             remainingPercent: number
             resetsAt?: string
+            overage?: boolean
           }>
           error?: string
+          errorKind?: 'not-signed-in' | 'expired' | 'timeout' | 'rate-limited' | 'unavailable'
+          fetchedAt?: string
+          stale?: boolean
         }>
+        throttled?: { retryInSec: number }
       }>
       onQuotaUsageUpdated: (callback: (usage: unknown) => void) => () => void
-      getHistorySummary: (projectId?: string) => Promise<HistorySummary | null>
+      getHistorySummary: (projectId?: string, rangeDays?: number) => Promise<HistorySummary | null>
+      getUsageBlocks: () => Promise<HistoryUsageBlock[]>
+      listHistorySessions: (query?: HistorySessionQuery) => Promise<HistorySessionPage>
+      getHistorySessionDetail: (sessionId: string) => Promise<HistorySessionDetail | null>
       listProjectPets: () => Promise<ProjectPetView[]>
       pickProjectPet: () => Promise<ProjectPetCommandResult>
       setProjectPetBinding: (projectId: string, petId: string | null) => Promise<ProjectPetCommandResult>
@@ -151,7 +185,8 @@ export interface ElectronAPI {
       getProjectPetsEnabled: () => Promise<boolean>
       setProjectPetsEnabled: (enabled: boolean) => Promise<boolean>
       clearHistory: () => Promise<HistoryClearResult>
-      exportHistory: () => Promise<HistoryCommandResult>
+      exportHistory: (request?: HistoryExportRequest) => Promise<HistoryCommandResult>
+      revealHistoryExport: () => Promise<boolean>
       onHistoryUpdated: (callback: () => void) => () => void
       testIntegration: (source: 'opencode-cli' | 'opencode-desktop' | 'codex' | 'codex-desktop' | 'claude' | 'claude-desktop') => Promise<{
         ok: boolean
@@ -159,11 +194,12 @@ export interface ElectronAPI {
         error?: string
       }>
       installIntegrations: (target?: 'opencode' | 'codex' | 'claude' | 'claudeCode') => Promise<{ ok: boolean; error?: string }>
-      setupProjectMcp: () => Promise<ProjectMcpSetupSummary>
+      setupProjectMcp: () => Promise<ProjectMcpPlan>
+      applyProjectMcp: (request: ProjectMcpApplyRequest) => Promise<ProjectMcpSetupSummary>
       listProjectMcp: () => Promise<ProjectMcpRegistrySnapshot>
       removeProjectMcp: (projectPath: string) => Promise<ProjectMcpRemovalSummary>
       forgetProjectMcp: (projectPath: string) => Promise<{ ok: boolean; removed: boolean; error?: string }>
-      uninstallIntegrations: (target?: 'opencode' | 'codex' | 'claude' | 'claudeCode') => Promise<{ ok: boolean; error?: string }>
+      uninstallIntegrations: (target?: 'opencode' | 'codex' | 'claude' | 'claudeCode' | 'all') => Promise<{ ok: boolean; error?: string }>
       loadPets: () => Promise<Array<{
         id: string
         displayName: string
@@ -177,5 +213,7 @@ export interface ElectronAPI {
       removeCustomPet: (petId: string) => Promise<boolean>
       getCustomPetSprite: (petId: string) => Promise<string | null>
       importPetSprite: (petId: string, displayName: string) => Promise<string | null>
-      importPetZip: () => Promise<{ ok: boolean; id?: string; displayName?: string; error?: string }>
+      prepareImportPetZip: () => Promise<PetImportPrepareResult>
+      commitImportPetZip: (token: string, decision: PetImportDecision, expectedState: string) => Promise<PetImportCommitResult>
+      cancelImportPetZip: (token: string) => Promise<boolean>
     }

@@ -3,12 +3,14 @@ import type { ElectronAPI } from '../src/types/electron-api'
 import type { AdapterDiagnoseIpcResult, AdapterInstallIpcResult, AdapterUninstallIpcResult } from '../src/types/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopPreferences, DesktopPreferencesPatch } from '../src/types/desktop'
-import type { PermissionDecisionValue, PermissionRequestView } from '../src/types/permission'
-import type { ProgressionSnapshot } from '../src/types/progression'
+import type { SessionJumpRequest, SessionJumpResult } from '../src/types/session-jump'
+import type { PermissionDecisionValue, PermissionRequestView, PermissionAuditEntry } from '../src/types/permission'
+import type { ProgressionAwardEvent, ProgressionInsights, ProgressionSnapshot } from '../src/types/progression'
 import type { AchievementSnapshot, AchievementUnlock } from '../src/types/achievement'
-import type { HistoryClearResult, HistoryCommandResult, HistorySummary } from '../src/types/history'
+import type { HistoryClearResult, HistoryCommandResult, HistoryExportRequest, HistorySessionDetail, HistorySessionPage, HistorySessionQuery, HistorySummary, HistoryUsageBlock } from '../src/types/history'
 import type { PetWindowMode, PetWindowModeState } from '../src/types/pet-window'
 import type { PetBehaviorManifest, PluginSkinPetSource } from '../src/types/pet'
+import type { PetImportDecision } from '../src/types/pet-import'
 import type { PresentationIntent, PresentationStatusUpdate } from '../src/types/presentation'
 import type {
   PluginBadgeView,
@@ -29,12 +31,17 @@ import type {
 } from '../src/types/plugin.ts'
 import type { PluginCatalogPanelItem } from '../src/types/plugin-catalog.ts'
 import type {
+  ProjectMcpApplyRequest,
+  ProjectMcpPlan,
   ProjectMcpRegistrySnapshot,
   ProjectMcpRemovalSummary,
   ProjectMcpSetupSummary,
 } from '../src/types/project-mcp'
 import type { ProjectPetArchiveResult, ProjectPetCommandResult, ProjectPetView } from '../src/types/project-pet'
 import type { AgentAdapterId } from '../src/types/agent-adapter'
+import type { OnboardingAction, OnboardingState } from '../src/types/onboarding'
+import type { SessionSnapshotEntry } from './main/session-snapshot'
+import type { LocalServerHealthSnapshot, LocalServerId } from '../src/types/reliability'
 
 const electronAPI: ElectronAPI = {
   onAgentStatusEvent: (callback: (event: unknown) => void) => {
@@ -120,6 +127,7 @@ const electronAPI: ElectronAPI = {
   getPluginDiagnostics: (pluginId: string): Promise<PluginPanelResult<{ logs: PluginBrokerLogEntry[]; diagnostics: PluginBrokerDiagnostic[] }>> => ipcRenderer.invoke(IPC_CHANNELS.pluginDiagnostics, pluginId),
   listPluginNotifications: (): Promise<PluginPanelResult<PluginNotificationRecord[]>> => ipcRenderer.invoke(IPC_CHANNELS.pluginNotificationsList),
   markPluginNotificationRead: (itemId: string): Promise<PluginPanelResult<{ read: boolean }>> => ipcRenderer.invoke(IPC_CHANNELS.pluginNotificationsRead, itemId),
+  markAllPluginNotificationsRead: (pluginId?: string): Promise<PluginPanelResult<{ marked: number }>> => ipcRenderer.invoke(IPC_CHANNELS.pluginNotificationsReadAll, pluginId),
   clearPluginNotifications: (pluginId?: string): Promise<PluginPanelResult<{ removed: number }>> => ipcRenderer.invoke(IPC_CHANNELS.pluginNotificationsClear, pluginId),
   onPluginNotificationsChanged: (callback: () => void) => {
     const handler = () => callback()
@@ -179,16 +187,72 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.send(IPC_CHANNELS.petHideRequest)
   },
 
+  showPetContextMenu: () => {
+    ipcRenderer.send(IPC_CHANNELS.petContextMenu)
+  },
+
+  getOnboardingState: (): Promise<OnboardingState | null> => ipcRenderer.invoke(IPC_CHANNELS.onboardingGet),
+
+  updateOnboardingState: (action: OnboardingAction): Promise<OnboardingState | null> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.onboardingUpdate, action)
+  },
+
   togglePanel: () => {
     ipcRenderer.send(IPC_CHANNELS.panelToggle)
   },
 
-  resizePanel: (height: number, width?: number) => {
-    ipcRenderer.send(IPC_CHANNELS.panelResize, { height, ...(width === undefined ? {} : { width }) })
+  // Asks for a transient minimum size (wizard / MCP) or releases it ({ release: true });
+  // the user's own panel size is owned by the main process. The positional
+  // (height, width) form is kept for existing callers.
+  resizePanel: (size: { height?: number; width?: number; release?: boolean } | number, legacyWidth?: number) => {
+    const data = typeof size === 'number' ? { height: size, width: legacyWidth } : size
+    ipcRenderer.send(IPC_CHANNELS.panelResize, {
+      ...(data.release === true ? { release: true } : {}),
+      ...(data.height === undefined ? {} : { height: data.height }),
+      ...(data.width === undefined ? {} : { width: data.width }),
+    })
+  },
+
+  resetPanelSize: () => {
+    ipcRenderer.send(IPC_CHANNELS.panelResetSize)
+  },
+
+  setPanelBlurLock: (lock: { pinned?: boolean; modal?: boolean }) => {
+    ipcRenderer.send(IPC_CHANNELS.panelBlurLock, lock)
   },
 
   hidePanel: () => {
     ipcRenderer.send(IPC_CHANNELS.panelHide)
+  },
+
+  reportRendererError: (report: { message: string; stack?: string; kind: 'vue' | 'unhandledrejection' | 'error' }): void => {
+    ipcRenderer.send(IPC_CHANNELS.rendererErrorReport, report)
+  },
+
+  reloadRenderer: (): void => {
+    ipcRenderer.send(IPC_CHANNELS.rendererReload)
+  },
+
+  exportDiagnostics: (): Promise<{ ok: boolean; canceled?: boolean }> => ipcRenderer.invoke(IPC_CHANNELS.diagnosticsExport),
+
+  getSessionSnapshot: (): Promise<SessionSnapshotEntry[]> => ipcRenderer.invoke(IPC_CHANNELS.sessionSnapshotGet),
+
+  runSessionJump: (request: SessionJumpRequest): Promise<SessionJumpResult> => ipcRenderer.invoke(IPC_CHANNELS.sessionJump, request),
+
+  getServerHealth: (): Promise<LocalServerHealthSnapshot> => ipcRenderer.invoke(IPC_CHANNELS.serverHealthGet),
+
+  retryServerHealth: (id?: LocalServerId): Promise<LocalServerHealthSnapshot> => ipcRenderer.invoke(IPC_CHANNELS.serverHealthRetry, id),
+
+  onServerHealthChanged: (callback: (snapshot: LocalServerHealthSnapshot) => void) => {
+    const handler = (_event: unknown, payload: unknown) => {
+      if (payload && typeof payload === 'object' && Array.isArray((payload as { servers?: unknown }).servers)) {
+        callback(payload as LocalServerHealthSnapshot)
+      }
+    }
+    ipcRenderer.on(IPC_CHANNELS.serverHealthChanged, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.serverHealthChanged, handler)
+    }
   },
 
   onPanelOpened: (callback: (options: { restore: boolean }) => void) => {
@@ -217,6 +281,10 @@ const electronAPI: ElectronAPI = {
 
   initializeDesktopPreferences: (legacySoundEnabled: boolean): Promise<DesktopPreferences> => {
     return ipcRenderer.invoke(IPC_CHANNELS.desktopPreferencesInit, legacySoundEnabled)
+  },
+
+  openLoginItemsSettings: (): Promise<boolean> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.desktopOpenLoginItemsSettings)
   },
 
   setDesktopPreferences: (patch: DesktopPreferencesPatch): Promise<DesktopPreferences> => {
@@ -263,6 +331,18 @@ const electronAPI: ElectronAPI = {
     }
   },
 
+  getProgressionInsights: (petId?: string): Promise<ProgressionInsights | null> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.progressionInsights, petId)
+  },
+
+  onProgressionAwarded: (callback: (event: ProgressionAwardEvent) => void) => {
+    const handler = (_event: unknown, payload: ProgressionAwardEvent) => callback(payload)
+    ipcRenderer.on(IPC_CHANNELS.progressionAwarded, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.progressionAwarded, handler)
+    }
+  },
+
   onProgressionUpdated: (callback: (snapshot: ProgressionSnapshot) => void) => {
     const handler = (_event: unknown, snapshot: ProgressionSnapshot) => callback(snapshot)
     ipcRenderer.on(IPC_CHANNELS.progressionUpdated, handler)
@@ -293,6 +373,14 @@ const electronAPI: ElectronAPI = {
 
   decidePermission: (requestId: string, decision: PermissionDecisionValue) => {
     return ipcRenderer.invoke(IPC_CHANNELS.permissionDecide, { requestId, decision })
+  },
+
+  listPermissionAudit: (): Promise<PermissionAuditEntry[]> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.permissionAuditList)
+  },
+
+  clearPermissionAudit: (): Promise<{ ok: boolean }> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.permissionAuditClear)
   },
 
   quitApp: () => {
@@ -331,8 +419,20 @@ const electronAPI: ElectronAPI = {
     }
   },
 
-  getHistorySummary: (projectId?: string): Promise<HistorySummary | null> => {
-    return ipcRenderer.invoke(IPC_CHANNELS.historySummary, projectId)
+  getHistorySummary: (projectId?: string, rangeDays?: number): Promise<HistorySummary | null> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.historySummary, projectId, rangeDays)
+  },
+
+  getUsageBlocks: (): Promise<HistoryUsageBlock[]> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.historyUsageBlocks)
+  },
+
+  listHistorySessions: (query?: HistorySessionQuery): Promise<HistorySessionPage> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.historySessions, query)
+  },
+
+  getHistorySessionDetail: (sessionId: string): Promise<HistorySessionDetail | null> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.historySessionDetail, sessionId)
   },
 
   listProjectPets: (): Promise<ProjectPetView[]> => {
@@ -363,8 +463,12 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(IPC_CHANNELS.historyClear)
   },
 
-  exportHistory: (): Promise<HistoryCommandResult> => {
-    return ipcRenderer.invoke(IPC_CHANNELS.historyExport)
+  exportHistory: (request?: HistoryExportRequest): Promise<HistoryCommandResult> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.historyExport, request)
+  },
+
+  revealHistoryExport: (): Promise<boolean> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.historyRevealExport)
   },
 
   onHistoryUpdated: (callback: () => void) => {
@@ -383,8 +487,12 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(IPC_CHANNELS.installIntegrations, target)
   },
 
-  setupProjectMcp: (): Promise<ProjectMcpSetupSummary> => {
+  setupProjectMcp: (): Promise<ProjectMcpPlan> => {
     return ipcRenderer.invoke(IPC_CHANNELS.projectMcpSetup)
+  },
+
+  applyProjectMcp: (request: ProjectMcpApplyRequest): Promise<ProjectMcpSetupSummary> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectMcpApply, request)
   },
 
   listProjectMcp: (): Promise<ProjectMcpRegistrySnapshot> => {
@@ -399,7 +507,7 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(IPC_CHANNELS.projectMcpForget, projectPath)
   },
 
-  uninstallIntegrations: (target?: 'opencode' | 'codex' | 'claude' | 'claudeCode') => {
+  uninstallIntegrations: (target?: 'opencode' | 'codex' | 'claude' | 'claudeCode' | 'all') => {
     return ipcRenderer.invoke(IPC_CHANNELS.uninstallIntegrations, target)
   },
 
@@ -434,8 +542,16 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(IPC_CHANNELS.importPetSprite, petId, displayName)
   },
 
-  importPetZip: () => {
-    return ipcRenderer.invoke(IPC_CHANNELS.importPetZip)
+  prepareImportPetZip: () => {
+    return ipcRenderer.invoke(IPC_CHANNELS.prepareImportPetZip)
+  },
+
+  commitImportPetZip: (token: string, decision: PetImportDecision, expectedState: string) => {
+    return ipcRenderer.invoke(IPC_CHANNELS.commitImportPetZip, token, decision, expectedState)
+  },
+
+  cancelImportPetZip: (token: string) => {
+    return ipcRenderer.invoke(IPC_CHANNELS.cancelImportPetZip, token)
   },
 }
 

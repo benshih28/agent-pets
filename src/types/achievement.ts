@@ -9,6 +9,17 @@ export type AchievementId =
   | 'old_friend'
   | 'level_10'
   | 'level_20'
+  | 'sessions_10'
+  | 'sessions_500'
+  | 'streak_3'
+  | 'streak_30'
+
+export type AchievementCategory = 'milestone' | 'habit' | 'explore' | 'level'
+
+export interface AchievementProgress {
+  current: number
+  target: number
+}
 
 export type AchievementTranslationKey =
   | 'achievementHelloWorld'
@@ -31,6 +42,14 @@ export type AchievementTranslationKey =
   | 'achievementOldFriendHelp'
   | 'achievementLevel10Help'
   | 'achievementLevel20Help'
+  | 'growth.achievementSessions10'
+  | 'growth.achievementSessions10Help'
+  | 'growth.achievementSessions500'
+  | 'growth.achievementSessions500Help'
+  | 'growth.achievementStreak3'
+  | 'growth.achievementStreak3Help'
+  | 'growth.achievementStreak30'
+  | 'growth.achievementStreak30Help'
 
 export type AchievementTokenQuality = 'none' | 'estimated' | 'exact'
 export type AchievementVisualReward = 'sparkle' | 'badge'
@@ -58,6 +77,11 @@ export interface AchievementDefinition {
   titleKey: AchievementTranslationKey
   descriptionKey: AchievementTranslationKey
   visualReward: AchievementVisualReward
+  category: AchievementCategory
+  /** Shown as "???" until unlocked, to keep some discovery. */
+  hidden?: boolean
+  /** Distance to unlock, from the same context evaluate() uses. */
+  progress: (context: AchievementEvaluationContext) => AchievementProgress
   evaluate: (context: AchievementEvaluationContext) => AchievementEvaluation | null
 }
 
@@ -81,6 +105,9 @@ export interface AchievementView {
   unlocked: boolean
   unlockedAt?: number
   tokenQuality: AchievementTokenQuality
+  category: AchievementCategory
+  hidden: boolean
+  progress: AchievementProgress
 }
 
 export interface AchievementSnapshot {
@@ -95,6 +122,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'hello_world',
     version: 1,
+    category: 'milestone',
+    progress: c => ({ current: Math.min(1, c.completedSessions), target: 1 }),
     titleKey: 'achievementHelloWorld',
     descriptionKey: 'achievementHelloWorldHelp',
     visualReward: 'sparkle',
@@ -103,6 +132,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'getting_serious',
     version: 1,
+    category: 'milestone',
+    progress: c => ({ current: Math.min(100, c.completedSessions), target: 100 }),
     titleKey: 'achievementGettingSerious',
     descriptionKey: 'achievementGettingSeriousHelp',
     visualReward: 'badge',
@@ -111,6 +142,9 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'night_owl',
     version: 1,
+    category: 'explore',
+    hidden: true,
+    progress: c => ({ current: Math.min(1, c.nightOwlCompletion ? 1 : 0), target: 1 }),
     titleKey: 'achievementNightOwl',
     descriptionKey: 'achievementNightOwlHelp',
     visualReward: 'sparkle',
@@ -119,6 +153,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'one_million',
     version: 1,
+    category: 'milestone',
+    progress: c => ({ current: Math.min(1_000_000, c.tokenTotal), target: 1_000_000 }),
     titleKey: 'achievementOneMillion',
     descriptionKey: 'achievementOneMillionHelp',
     visualReward: 'badge',
@@ -129,6 +165,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'polyglot_agents',
     version: 1,
+    category: 'explore',
+    progress: c => ({ current: Math.min(3, c.adapterCount), target: 3 }),
     titleKey: 'achievementPolyglotAgents',
     descriptionKey: 'achievementPolyglotAgentsHelp',
     visualReward: 'badge',
@@ -137,6 +175,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'busy_day',
     version: 1,
+    category: 'habit',
+    progress: c => ({ current: Math.min(20, c.completedSessionsToday), target: 20 }),
     titleKey: 'achievementBusyDay',
     descriptionKey: 'achievementBusyDayHelp',
     visualReward: 'sparkle',
@@ -145,6 +185,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'loyal_companion',
     version: 1,
+    category: 'habit',
+    progress: c => ({ current: Math.min(7, c.currentStreak), target: 7 }),
     titleKey: 'achievementLoyalCompanion',
     descriptionKey: 'achievementLoyalCompanionHelp',
     visualReward: 'badge',
@@ -153,6 +195,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'old_friend',
     version: 1,
+    category: 'habit',
+    progress: c => ({ current: Math.min(30, c.activeDays), target: 30 }),
     titleKey: 'achievementOldFriend',
     descriptionKey: 'achievementOldFriendHelp',
     visualReward: 'badge',
@@ -161,6 +205,8 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'level_10',
     version: 1,
+    category: 'level',
+    progress: c => ({ current: Math.min(10, c.level), target: 10 }),
     titleKey: 'achievementLevel10',
     descriptionKey: 'achievementLevel10Help',
     visualReward: 'sparkle',
@@ -169,10 +215,52 @@ const definitions: readonly AchievementDefinition[] = [
   {
     id: 'level_20',
     version: 1,
+    category: 'level',
+    progress: c => ({ current: Math.min(20, c.level), target: 20 }),
     titleKey: 'achievementLevel20',
     descriptionKey: 'achievementLevel20Help',
     visualReward: 'badge',
     evaluate: context => context.level >= 20 ? { id: 'level_20' } : null,
+  },
+  {
+    id: 'sessions_10',
+    version: 1,
+    category: 'milestone',
+    progress: c => ({ current: Math.min(10, c.completedSessions), target: 10 }),
+    titleKey: 'growth.achievementSessions10',
+    descriptionKey: 'growth.achievementSessions10Help',
+    visualReward: 'sparkle',
+    evaluate: context => context.completedSessions >= 10 ? { id: 'sessions_10' } : null,
+  },
+  {
+    id: 'sessions_500',
+    version: 1,
+    category: 'milestone',
+    progress: c => ({ current: Math.min(500, c.completedSessions), target: 500 }),
+    titleKey: 'growth.achievementSessions500',
+    descriptionKey: 'growth.achievementSessions500Help',
+    visualReward: 'badge',
+    evaluate: context => context.completedSessions >= 500 ? { id: 'sessions_500' } : null,
+  },
+  {
+    id: 'streak_3',
+    version: 1,
+    category: 'habit',
+    progress: c => ({ current: Math.min(3, c.currentStreak), target: 3 }),
+    titleKey: 'growth.achievementStreak3',
+    descriptionKey: 'growth.achievementStreak3Help',
+    visualReward: 'sparkle',
+    evaluate: context => context.currentStreak >= 3 ? { id: 'streak_3' } : null,
+  },
+  {
+    id: 'streak_30',
+    version: 1,
+    category: 'habit',
+    progress: c => ({ current: Math.min(30, c.currentStreak), target: 30 }),
+    titleKey: 'growth.achievementStreak30',
+    descriptionKey: 'growth.achievementStreak30Help',
+    visualReward: 'badge',
+    evaluate: context => context.currentStreak >= 30 ? { id: 'streak_30' } : null,
   },
 ]
 

@@ -1,0 +1,24 @@
+:root {
+  color-scheme: dark;
+  color: var(--text-primary, CanvasText);
+  font: var(--font-md, 13px) system-ui, sans-serif;
+}
+
+body { margin: 0; padding: var(--space-4, 16px); background: var(--surface-panel, Canvas); }
+main { display: grid; gap: var(--space-3, 12px); }
+h1, p { margin: 0; }
+h1 { font-size: var(--font-lg, 15px); }
+#status { color: var(--text-muted, GrayText); }
+button {
+  min-height: var(--hit-min, 36px);
+  border: 1px solid var(--border-strong, ButtonBorder);
+  border-radius: var(--radius-md, 10px);
+  color: var(--text-primary, ButtonText);
+  background: var(--surface-raised, ButtonFace);
+  cursor: pointer;
+}
+button:hover { background: var(--surface-raised-hover, ButtonFace); }
+button:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, Highlight);
+  outline-offset: var(--focus-ring-offset, 2px);
+}

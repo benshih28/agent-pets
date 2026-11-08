@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import type { AgentState } from '@/types/agent'
 import type { PetAutonomousBehavior, PetBehaviorManifest } from '@/types/pet'
+import type { PresentationReaction } from '@/types/presentation'
+import Icon from '@/components/ui/Icon.vue'
 import { useAgentStore } from '@/stores/agentStore'
+import { getCachedSprite, getCachedTint, loadPetSprite, setCachedTint } from '@/composables/usePetSpriteCache'
+import { frameDelayMultiplier, isSignificantTransition, motionPlanFor } from '@/utils/pet-motion-plan'
 
 const props = defineProps<{
   state: AgentState
@@ -11,6 +15,10 @@ const props = defineProps<{
   mood?: number
   autonomousBehavior?: PetAutonomousBehavior
   freeze?: boolean
+  /** Keeps animating but at a few frames per second (mini mode). */
+  lowFps?: boolean
+  /** -1 mirrors the sprite (walking left). */
+  facing?: -1 | 1
 }>()
 
 // Keep low mood close to the pet's original colors; most of the visible
@@ -31,6 +39,10 @@ const moodEnergyTier = computed<MoodEnergyTier>(() => {
   if (moodValue.value >= 40) return 'charged'
   return 'resting'
 })
+// The glow canvases only exist (and are only redrawn) while the mood makes
+// them visible; at resting mood they are fully transparent anyway.
+const auraInnerVisible = computed(() => props.mood !== undefined && moodValue.value > 10)
+const auraOuterVisible = computed(() => props.mood !== undefined && moodValue.value > 60)
 const moodAuraStyle = computed<Record<string, string>>(() => {
   const energy = Math.max(0, (moodValue.value - 10) / 90)
   const auraSpeed = 3.8 - energy * 2.1
@@ -117,11 +129,8 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const auraInnerRef = ref<HTMLCanvasElement | null>(null)
 const auraOuterRef = ref<HTMLCanvasElement | null>(null)
 const imgRef = ref<HTMLImageElement | null>(null)
-const imageCache = new Map<string, HTMLImageElement>()
-const auraTintCache = new Map<string, string>()
 let auraTint = 'rgb(235, 242, 255)'
-let animationFrameId: number | null = null
-let frameStartedAt = 0
+let frameTimerId: ReturnType<typeof setTimeout> | null = null
 let animationFinished = false
 let currentFrame = 0
 let currentStep = 0
@@ -135,14 +144,37 @@ const activeMotionRow = ref(0)
 // state animation via a CSS class rather than extra spritesheet frames, so
 // it works for every pet regardless of how many rows its sheet has.
 const isReacting = ref(false)
+const reactionKind = ref<PresentationReaction | null>(null)
 let reactionTimer: ReturnType<typeof setTimeout> | null = null
-function playReaction() {
+// Each presentation reaction has its own motion (CSS class) and a short icon
+// mark that floats up; the mark still shows when motion effects are off.
+const REACTION_MARKS: Record<PresentationReaction, string> = {
+  happy: 'sparkle',
+  curious: 'question',
+  thinking: 'dots',
+  surprised: 'exclaim',
+  encouraging: 'heart',
+}
+const REACTION_DURATION_MS: Record<PresentationReaction, number> = {
+  happy: 560, curious: 760, thinking: 900, surprised: 420, encouraging: 700,
+}
+const reactionMark = ref<{ id: number; icon: string } | null>(null)
+let reactionMarkTimer: ReturnType<typeof setTimeout> | null = null
+let reactionMarkId = 0
+
+function playReaction(kind?: PresentationReaction) {
   isReacting.value = false
+  reactionKind.value = kind ?? null
   requestAnimationFrame(() => {
     isReacting.value = true
     if (reactionTimer) clearTimeout(reactionTimer)
-    reactionTimer = setTimeout(() => { isReacting.value = false }, 260)
+    reactionTimer = setTimeout(() => { isReacting.value = false }, kind ? REACTION_DURATION_MS[kind] : 260)
   })
+  if (kind) {
+    reactionMark.value = { id: ++reactionMarkId, icon: REACTION_MARKS[kind] }
+    if (reactionMarkTimer) clearTimeout(reactionMarkTimer)
+    reactionMarkTimer = setTimeout(() => { reactionMark.value = null }, 1400)
+  }
 }
 
 // Achievement unlocks use a separate visual hook so a new rule can reward the
@@ -223,7 +255,7 @@ function stopUrgencyTimer() {
   }
 }
 
-const urgencyLevel = computed(() => {
+const urgencyLevel = computed<0 | 1 | 2>(() => {
   if (!isWaiting.value || !props.since) return 0
   const elapsedSec = Math.max(0, urgencyTick.value - props.since) / 1000
   if (elapsedSec >= 30) return 2
@@ -232,89 +264,33 @@ const urgencyLevel = computed(() => {
 })
 
 function motionPlanForState(): MotionPlan {
-  const canUseAutonomousMotion = props.state === 'idle' || props.state === 'offline'
-  if (canUseAutonomousMotion && (props.autonomousBehavior === 'walk' || props.autonomousBehavior === 'sleep')) {
-    return {
-      steps: [{ motion: behaviorMotion(props.autonomousBehavior), loops: Number.POSITIVE_INFINITY }],
-      repeat: false,
-    }
-  }
-
-  // Stagger long-idle gestures between pets while keeping the sequence stable
-  // for a given pet instead of choosing a new random delay every cycle.
-  const idleLoops = 10 + [...props.petId].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 5
-
-  switch (props.state) {
-    case 'idle':
-      return {
-        steps: [
-          { motion: motions.idle, loops: idleLoops },
-          { motion: motions.waving, loops: 1 },
-        ],
-        repeat: true,
-      }
-    case 'thinking':
-      return {
-        steps: [
-          { motion: motions.review, loops: 8 },
-          { motion: motions.running, loops: 12 },
-        ],
-        repeat: true,
-      }
-    case 'tool-running':
-      return {
-        steps: [
-          { motion: motions.running, loops: 12 },
-          { motion: motions.review, loops: 8 },
-        ],
-        repeat: true,
-      }
-    case 'waiting-permission':
-    case 'waiting-input':
-      if (urgencyLevel.value === 0) {
-        return {
-          steps: [{ motion: motions.waiting, loops: Number.POSITIVE_INFINITY }],
-          repeat: false,
-        }
-      }
-      return {
-        steps: [
-          { motion: motions.waiting, loops: 12 },
-          { motion: motions.waving, loops: urgencyLevel.value === 2 ? 8 : 6 },
-        ],
-        repeat: true,
-      }
-    case 'success':
-      return {
-        steps: [
-          { motion: motions.jumping, loops: 1 },
-          { motion: motions.waving, loops: 1 },
-          { motion: motions.idle, loops: Number.POSITIVE_INFINITY },
-        ],
-        repeat: false,
-      }
-    case 'error':
-      return {
-        steps: [{ motion: motions.failed, loops: 1 }],
-        repeat: false,
-      }
-    case 'offline':
-    default:
-      return {
-        steps: [{ motion: motions.idle, loops: Number.POSITIVE_INFINITY }],
-        repeat: false,
-      }
+  const planned = motionPlanFor({
+    state: props.state,
+    urgency: urgencyLevel.value,
+    behavior: props.autonomousBehavior,
+    petId: props.petId,
+  })
+  return {
+    steps: planned.steps.map(step => ({
+      motion: step.motion === 'walk' || step.motion === 'sleep'
+        ? behaviorMotion(step.motion)
+        : motions[step.motion],
+      loops: step.loops,
+    })),
+    repeat: planned.repeat,
   }
 }
 
 function frameDelay(): number {
-  let multiplier = 1
-  if (props.state === 'offline' && props.autonomousBehavior !== 'walk' && props.autonomousBehavior !== 'sleep') multiplier = 2.4
-  else if (props.state === 'idle') multiplier = 1.25
-  else if (urgencyLevel.value === 2) multiplier = 0.6
-  else if (urgencyLevel.value === 1) multiplier = 0.78
-
-  return Math.max(80, Math.round(activeMotion.frameDurations[currentFrame] * multiplier))
+  const multiplier = frameDelayMultiplier({
+    state: props.state,
+    urgency: urgencyLevel.value,
+    // After the fall plays out the pet idles slowly instead of freezing.
+    sulking: props.state === 'error' && activeMotion.name === 'idle',
+  })
+  // Reduced motion steps even slower than the mini window does.
+  const lowFpsFactor = props.lowFps ? (prefersReducedMotion() ? 6 : 3) : 1
+  return Math.max(80, Math.round(activeMotion.frameDurations[currentFrame] * multiplier * lowFpsFactor))
 }
 
 function selectStep(index: number) {
@@ -325,6 +301,29 @@ function selectStep(index: number) {
   activeMotionName.value = activeMotion.name
   activeMotionRow.value = activeMotion.row
 }
+
+// The backing store is an integer multiple of the sprite cell sized to the real
+// device pixels (scale x display density), so nearest-neighbour upscaling stays
+// even and a Retina screen does not blur the pet.
+const devicePixelRatioRef = ref(window.devicePixelRatio || 1)
+const backingK = computed(() => Math.max(1, Math.min(8, Math.round(store.petScale * devicePixelRatioRef.value))))
+const backingW = computed(() => CELL_W * backingK.value)
+const backingH = computed(() => CELL_H * backingK.value)
+let densityQuery: MediaQueryList | null = null
+
+function watchDensity(): void {
+  densityQuery?.removeEventListener('change', onDensityChange)
+  if (typeof window.matchMedia !== 'function') return
+  densityQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+  densityQuery.addEventListener('change', onDensityChange)
+}
+
+function onDensityChange(): void {
+  devicePixelRatioRef.value = window.devicePixelRatio || 1
+  watchDensity()
+}
+
+watch(backingK, () => { void nextTick(draw) })
 
 const canvasW = computed(() => Math.round(CELL_W * store.petScale))
 const canvasH = computed(() => Math.round(CELL_H * store.petScale))
@@ -395,49 +394,59 @@ function deriveAuraTint(img: HTMLImageElement): string {
   }
 }
 
+let loadSequence = 0
+
+function applyImage(img: HTMLImageElement, cacheKey: string): void {
+  imgRef.value = img
+  auraTint = getCachedTint(cacheKey) ?? deriveAuraTint(img)
+  setCachedTint(cacheKey, auraTint)
+  currentFrame = 0
+  draw()
+  if (props.autonomousBehavior === 'walk' || props.autonomousBehavior === 'sleep') {
+    startAnimation()
+  }
+}
+
+async function spriteSourceFor(pet: (typeof store.pets)[number] | undefined, targetId: string): Promise<string | null> {
+  if (pet?.pluginSkin) return pet.pluginSkin.spriteUrl
+  if (pet && !pet.builtIn) return (await window.electronAPI?.getCustomPetSprite(targetId)) ?? null
+  return getSrc(targetId)
+}
+
 async function loadImage() {
-  const id = props.petId || 'qitian-dasheng'
+  // A newer request (pet switched while an older one is in flight) wins.
+  const sequence = ++loadSequence
+  const id = props.petId || store.defaultPetId
   const pet = store.pets.find(p => p.id === id)
 
   if (!pet && !store.petsLoaded) {
     return
   }
 
-  const targetId = pet ? id : 'qitian-dasheng'
-
-  const imageCacheKey = pet?.pluginSkin?.cacheKey ?? targetId
-  const cached = imageCache.get(imageCacheKey)
+  const targetId = pet ? id : store.defaultPetId
+  const isCustom = Boolean(pet && !pet.builtIn && !pet.pluginSkin)
+  // A custom sheet's URL carries its modification time, so it is the cache
+  // key: re-importing the same id can never show the previous image.
+  const source = await spriteSourceFor(pet, targetId)
+  if (sequence !== loadSequence) return
+  const cacheKey = pet?.pluginSkin?.cacheKey ?? (isCustom && source ? source : targetId)
+  const cached = getCachedSprite(cacheKey)
   if (cached) {
-    imgRef.value = cached
-    auraTint = auraTintCache.get(imageCacheKey) || deriveAuraTint(cached)
-    auraTintCache.set(imageCacheKey, auraTint)
-    currentFrame = 0
-    draw()
+    applyImage(cached, cacheKey)
+    return
+  }
+  const loaded = source ? await loadPetSprite(cacheKey, source) : null
+  if (sequence !== loadSequence) return
+  if (loaded) {
+    applyImage(loaded, cacheKey)
     return
   }
 
-  const img = new Image()
-
-  if (pet?.pluginSkin) {
-    img.src = pet.pluginSkin.spriteUrl
-  } else if (pet && !pet.builtIn) {
-    const fileUrl = await window.electronAPI?.getCustomPetSprite(targetId)
-    if (!fileUrl) return
-    img.src = fileUrl
-  } else {
-    img.src = getSrc(targetId)
-  }
-
-  img.onload = () => {
-    imageCache.set(imageCacheKey, img)
-    imgRef.value = img
-    auraTint = deriveAuraTint(img)
-    auraTintCache.set(imageCacheKey, auraTint)
-    currentFrame = 0
-    draw()
-    if (props.autonomousBehavior === 'walk' || props.autonomousBehavior === 'sleep') {
-      startAnimation()
-    }
+  // The sheet failed to load: show the default pet instead of an empty canvas.
+  if (targetId !== store.defaultPetId) {
+    const fallbackKey = store.defaultPetId
+    const fallback = await loadPetSprite(fallbackKey, getSrc(store.defaultPetId))
+    if (sequence === loadSequence && fallback) applyImage(fallback, fallbackKey)
   }
 }
 
@@ -451,80 +460,98 @@ function draw() {
 
   const targets = [
     { canvas: canvasRef.value, tint: false },
-    { canvas: auraInnerRef.value, tint: true },
-    { canvas: auraOuterRef.value, tint: true },
+    ...(auraInnerVisible.value ? [{ canvas: auraInnerRef.value, tint: true }] : []),
+    ...(auraOuterVisible.value ? [{ canvas: auraOuterRef.value, tint: true }] : []),
   ]
   for (const target of targets) {
     const { canvas, tint } = target
     if (!canvas) continue
-    const ctx = canvas.getContext('2d', canvas === canvasRef.value ? { willReadFrequently: true } : undefined)
+    const ctx = canvas.getContext('2d')
     if (!ctx) continue
 
-    ctx.clearRect(0, 0, CELL_W, CELL_H)
+    ctx.clearRect(0, 0, backingW.value, backingH.value)
+    ctx.imageSmoothingEnabled = false
     ctx.drawImage(
       img,
       frame * CELL_W, row * CELL_H,
       CELL_W, CELL_H,
       0, 0,
-      CELL_W, CELL_H
+      backingW.value, backingH.value
     )
-    if (!tint) {
-      try {
-        auraTint = deriveAuraTintFromPixels(ctx.getImageData(0, 0, CELL_W, CELL_H).data)
-      } catch {
-        // Custom file URLs can make the canvas unreadable on some platforms.
-        // Keep the last safe tint instead of interrupting the pet animation.
-      }
-    }
     if (tint) {
       ctx.globalCompositeOperation = 'source-in'
       ctx.fillStyle = auraTint
-      ctx.fillRect(0, 0, CELL_W, CELL_H)
+      ctx.fillRect(0, 0, backingW.value, backingH.value)
       ctx.globalCompositeOperation = 'source-over'
     }
   }
 }
 
+// Brief cross-fade: the last drawn frame is copied to a ghost canvas that
+// fades out over the new state's first frame, so rows no longer hard-cut.
+const ghostRef = ref<HTMLCanvasElement | null>(null)
+const ghostFading = ref(false)
+let ghostTimer: ReturnType<typeof setTimeout> | null = null
+const GHOST_FADE_MS = 150
+
+function startGhostFade(): void {
+  const source = canvasRef.value
+  const ghost = ghostRef.value
+  if (!source || !ghost || isPaused.value || prefersReducedMotion()) return
+  const ctx = ghost.getContext('2d')
+  if (!ctx) return
+  ctx.clearRect(0, 0, backingW.value, backingH.value)
+  ctx.drawImage(source, 0, 0)
+  ghostFading.value = false
+  requestAnimationFrame(() => {
+    ghostFading.value = true
+    if (ghostTimer) clearTimeout(ghostTimer)
+    ghostTimer = setTimeout(() => { ghostFading.value = false }, GHOST_FADE_MS)
+  })
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function clearFrameTimer(): void {
+  if (frameTimerId !== null) clearTimeout(frameTimerId)
+  frameTimerId = null
+}
+
+// One timer per frame, sized to that frame's delay, rather than a 60fps poll
+// that wakes the main thread just to find out nothing is due yet.
+function scheduleNextFrame(): void {
+  clearFrameTimer()
+  frameTimerId = setTimeout(animationStep, frameDelay())
+}
+
 function startAnimation() {
-  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
-  animationFrameId = null
-  frameStartedAt = performance.now()
+  clearFrameTimer()
   animationFinished = false
 
   motionPlan = motionPlanForState()
   selectStep(0)
   draw()
   if (isPaused.value) return
-  animationFrameId = requestAnimationFrame(animationTick)
+  scheduleNextFrame()
 }
 
 function pauseAnimation(): void {
-  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
-  animationFrameId = null
-  frameStartedAt = 0
+  clearFrameTimer()
 }
 
 function resumeAnimation(): void {
-  if (isPaused.value || animationFrameId !== null || animationFinished) return
-  frameStartedAt = performance.now()
-  animationFrameId = requestAnimationFrame(animationTick)
+  if (isPaused.value || frameTimerId !== null || animationFinished) return
+  scheduleNextFrame()
 }
 
-function animationTick(timestamp: number): void {
-  if (isPaused.value || animationFinished) {
-    animationFrameId = null
-    return
-  }
-  if (timestamp - frameStartedAt < frameDelay()) {
-    animationFrameId = requestAnimationFrame(animationTick)
-    return
-  }
-  frameStartedAt = timestamp
-  if (advanceAnimationFrame()) animationFrameId = requestAnimationFrame(animationTick)
-  else {
-    animationFinished = true
-    animationFrameId = null
-  }
+function animationStep(): void {
+  frameTimerId = null
+  if (isPaused.value || animationFinished) return
+  if (advanceAnimationFrame()) scheduleNextFrame()
+  else animationFinished = true
 }
 
 function advanceAnimationFrame(): boolean {
@@ -555,6 +582,9 @@ function advanceAnimationFrame(): boolean {
   return false
 }
 
+// A glow canvas that just appeared has no pixels until the next frame.
+watch([auraInnerVisible, auraOuterVisible], () => { void nextTick(draw) })
+
 watch(() => props.petId, () => {
   currentFrame = 0
   loadImage()
@@ -574,8 +604,9 @@ watch(() => store.petsLoaded, () => {
 })
 
 watch(() => props.state, (newState, oldState) => {
+  startGhostFade()
   startAnimation()
-  if (!isPaused.value && oldState !== undefined && newState !== oldState) {
+  if (!isPaused.value && isSignificantTransition(oldState, newState)) {
     playReaction()
   }
   if (newState === 'idle' && !isPaused.value) {
@@ -623,6 +654,7 @@ function handleDocumentVisibilityChange(): void {
 }
 
 onMounted(() => {
+  watchDensity()
   documentVisible.value = document.visibilityState === 'visible'
   document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
   loadImage()
@@ -636,7 +668,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
+  densityQuery?.removeEventListener('change', onDensityChange)
+  clearFrameTimer()
   document.removeEventListener('visibilitychange', handleDocumentVisibilityChange)
   if (reactionTimer !== null) {
     clearTimeout(reactionTimer)
@@ -647,6 +680,8 @@ onUnmounted(() => {
   if (cursorLookTimer !== null) {
     clearTimeout(cursorLookTimer)
   }
+  if (reactionMarkTimer !== null) clearTimeout(reactionMarkTimer)
+  if (ghostTimer !== null) clearTimeout(ghostTimer)
   stopFidgetTimer()
   stopUrgencyTimer()
 })
@@ -655,45 +690,58 @@ onUnmounted(() => {
 <template>
   <div
     class="pet-visual"
-    :class="[`mood-energy-${moodEnergyTier}`, { 'multi-pet-energy': store.isMultiPet }]"
+    :class="[`mood-energy-${moodEnergyTier}`, { 'multi-pet-energy': store.isMultiPet, 'facing-left': props.facing === -1 }]"
     :style="[{ width: canvasW + 'px', height: canvasH + 'px' }, moodAuraStyle]"
     :data-mood="moodValue"
     :data-mood-energy="moodEnergyTier"
     data-pet-context-target="hide"
   >
     <canvas
+      v-if="auraOuterVisible"
       ref="auraOuterRef"
-      :width="CELL_W"
-      :height="CELL_H"
+      :width="backingW"
+      :height="backingH"
       :style="{ width: canvasW + 'px', height: canvasH + 'px' }"
       class="pet-aura-canvas pet-aura-outer"
       aria-hidden="true"
     />
     <canvas
+      v-if="auraInnerVisible"
       ref="auraInnerRef"
-      :width="CELL_W"
-      :height="CELL_H"
+      :width="backingW"
+      :height="backingH"
       :style="{ width: canvasW + 'px', height: canvasH + 'px' }"
       class="pet-aura-canvas pet-aura-inner"
       aria-hidden="true"
     />
 
     <canvas
+      ref="ghostRef"
+      :width="backingW"
+      :height="backingH"
+      :style="{ width: canvasW + 'px', height: canvasH + 'px' }"
+      class="pet-ghost-canvas"
+      :class="{ fading: ghostFading }"
+      aria-hidden="true"
+    />
+
+    <canvas
       ref="canvasRef"
-      :width="CELL_W"
-      :height="CELL_H"
+      :width="backingW"
+      :height="backingH"
       :data-animation-action="activeMotionName"
       :data-animation-row="activeMotionRow"
       :style="{ width: canvasW + 'px', height: canvasH + 'px' }"
       class="pet-canvas"
       :class="{
-        'pet-reacting': store.reactionsActive && isReacting,
-        'pet-fidgeting': store.reactionsActive && isFidgeting && !isReacting && urgencyLevel === 0,
+        'pet-reacting': store.reactionsActive && isReacting && !reactionKind,
+        [`pet-react-${reactionKind}`]: store.reactionsActive && isReacting && !!reactionKind,
+        'pet-fidgeting': store.ambientActive && isFidgeting && !isReacting && urgencyLevel === 0,
         'pet-urgent-1': store.reactionsActive && !isReacting && urgencyLevel === 1,
         'pet-urgent-2': store.reactionsActive && !isReacting && urgencyLevel === 2,
-        'pet-idle-ambient': store.reactionsActive && props.state === 'idle' && !isReacting && !isFidgeting,
-        'pet-thinking-ambient': store.reactionsActive && props.state === 'thinking' && !isReacting,
-        'pet-tool-ambient': store.reactionsActive && props.state === 'tool-running' && !isReacting,
+        'pet-idle-ambient': store.ambientActive && props.state === 'idle' && !isReacting && !isFidgeting,
+        'pet-thinking-ambient': store.ambientActive && props.state === 'thinking' && !isReacting,
+        'pet-tool-ambient': store.ambientActive && props.state === 'tool-running' && !isReacting,
         'pet-waiting-input': store.reactionsActive && props.state === 'waiting-input' && !isReacting && urgencyLevel === 0,
         'pet-rewarding': store.reactionsActive && isRewarding,
         'pet-offline-ambient': props.state === 'offline',
@@ -704,6 +752,16 @@ onUnmounted(() => {
         'pet-frozen': props.freeze,
       }"
     />
+    <Transition name="pet-mark">
+      <span
+        v-if="reactionMark"
+        :key="reactionMark.id"
+        class="pet-reaction-mark"
+        aria-hidden="true"
+      >
+        <Icon :name="reactionMark.icon" :size="16" />
+      </span>
+    </Transition>
   </div>
 </template>
 

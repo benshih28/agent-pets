@@ -11,6 +11,8 @@ export interface PluginTrayCommandItem {
 export interface PluginTrayMenuBuildResult {
   menu: MenuItemConstructorOptions | null
   omittedPluginIds: string[]
+  /** Number of commands dropped by the cap, so the Tray can say so. */
+  omittedCount: number
 }
 
 const MAX_PLUGIN_TRAY_COMMANDS = 30
@@ -30,6 +32,7 @@ export function buildPluginTrayMenu(
   onInvoke: (pluginId: string, commandId: string) => void,
 ): PluginTrayMenuBuildResult {
   const limited = items.slice(0, MAX_PLUGIN_TRAY_COMMANDS)
+  const omittedCount = Math.max(0, items.length - MAX_PLUGIN_TRAY_COMMANDS)
   const omittedPluginIds = [...new Set(items.slice(MAX_PLUGIN_TRAY_COMMANDS).map(item => item.pluginId))]
   const grouped = new Map<string, { name: string; commands: PluginTrayCommandItem[] }>()
   for (const item of limited) {
@@ -40,14 +43,21 @@ export function buildPluginTrayMenu(
     }
     plugin.commands.push(item)
   }
-  if (grouped.size === 0) return { menu: null, omittedPluginIds }
+  if (grouped.size === 0) return { menu: null, omittedPluginIds, omittedCount }
 
-  const submenu = [...grouped.entries()].map(([pluginId, plugin]) => ({
-    label: truncateLabel(plugin.name),
-    submenu: plugin.commands.map(command => ({
-      label: truncateLabel(command.title[locale]),
-      click: () => onInvoke(pluginId, command.commandId),
-    })),
-  }))
-  return { menu: { label: truncateLabel(label), submenu }, omittedPluginIds }
+  const submenu = [...grouped.entries()].map(([pluginId, plugin]) => {
+    // Truncation can make two different commands read the same; name the
+    // plugin on the later ones so they stay distinguishable.
+    const seen = new Set<string>()
+    return {
+      label: truncateLabel(plugin.name),
+      submenu: plugin.commands.map(command => {
+        let label = truncateLabel(command.title[locale])
+        if (seen.has(label)) label = truncateLabel(`${command.title[locale]} (${command.commandId})`)
+        seen.add(label)
+        return { label, click: () => onInvoke(pluginId, command.commandId) }
+      }),
+    }
+  })
+  return { menu: { label: truncateLabel(label), submenu }, omittedPluginIds, omittedCount }
 }

@@ -1,25 +1,76 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
-import { SOURCE_LABELS } from '@/types/agent'
 import { t } from '@/i18n'
+import { useProgressionLabels } from '@/composables/useProgressionLabels'
 import type { PluginEventSourceStatusView } from '@/types/plugin'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
+import ActionMenu, { type ActionMenuItem } from '@/components/ui/ActionMenu.vue'
+import { type ThemePreference, nextThemePreference, setThemePreference, themePreference } from '@/composables/useTheme'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import InlinePermissionCard from '@/components/ui/InlinePermissionCard.vue'
+import PermissionOutcomeNotice from '@/components/permission/PermissionOutcomeNotice.vue'
 import PetAnimation from '@/components/PetAnimation.vue'
+import ServerHealthBanner from '@/components/status-panel/ServerHealthBanner.vue'
 import StatusPanelHistory from '@/components/status-panel/StatusPanelHistory.vue'
 import StatusPanelSessions from '@/components/status-panel/StatusPanelSessions.vue'
 import StatusPanelUsage from '@/components/status-panel/StatusPanelUsage.vue'
+import PluginTabContent from '@/components/status-panel/PluginTabContent.vue'
+import { usePluginTabs } from '@/composables/usePluginTabs'
+import { isBuiltInDashboardTab, parseStoredDashboardTab, pluginIdOfTab, resolveDashboardTab } from '@/utils/plugin-tabs'
+import { requestPluginDetail } from '@/utils/plugin-detail-request'
+import { countByBucket } from '@/utils/session-view'
+import { DEFAULT_SETTINGS_GROUP, SETTINGS_GROUPS, isSettingsGroupId, type SettingsGroupId } from '@/utils/settingsRegistry'
 
 const store = useAgentStore()
+const panelRoot = ref<HTMLElement | null>(null)
+const settingsShortcut = /Mac/i.test(navigator.platform) ? '\u2318,' : 'Ctrl+,'
 
-type SettingsSection = 'language' | 'appearance' | 'desktop' | 'plugins' | 'pets' | 'growth' | 'advanced'
-type DashboardTab = 'sessions' | 'usage' | 'history'
+const themeLabel = (preference: ThemePreference) =>
+  preference === 'light' ? t('design.theme.light') : preference === 'dark' ? t('design.theme.dark') : t('design.theme.system')
 
-const settingsTab = ref<SettingsSection>('appearance')
+// Toggles close the menu after the click (ActionMenu's single behaviour); the
+// current state stays visible in each row and, for DND, as a dot on the trigger.
+const headerMenuItems = computed<ActionMenuItem[]>(() => [
+  { id: 'dnd', icon: 'bell-off', label: t('dnd'), role: 'menuitemcheckbox', checked: store.dndEnabled, state: store.dndEnabled ? t('panel.stateOn') : t('panel.stateOff') },
+  { id: 'pin', icon: 'pin', label: t('panel.menuKeepOpen'), role: 'menuitemcheckbox', checked: store.panelPinned, state: store.panelPinned ? t('panel.stateOn') : t('panel.stateOff') },
+  {
+    id: 'theme',
+    icon: themePreference.value === 'light' ? 'sun' : themePreference.value === 'dark' ? 'moon' : 'theme-auto',
+    label: t('design.theme.menuLabel'),
+    state: t('design.theme.cycle', { current: themeLabel(themePreference.value), next: themeLabel(nextThemePreference(themePreference.value)) }),
+  },
+])
+
+function onHeaderMenu(id: string): void {
+  if (id === 'dnd') store.setDndEnabled(!store.dndEnabled)
+  else if (id === 'pin') store.setPanelPinned(!store.panelPinned)
+  else if (id === 'theme') setThemePreference(nextThemePreference(themePreference.value))
+}
+
+type DashboardTab = string
+
+const DASHBOARD_TAB_STORAGE_KEY = 'agent-pets-dashboard-tab'
+const SETTINGS_GROUP_STORAGE_KEY = 'agent-pets-settings-group'
+
+function readStoredSettingsGroup(): SettingsGroupId {
+  try {
+    const stored = localStorage.getItem(SETTINGS_GROUP_STORAGE_KEY)
+    if (isSettingsGroupId(stored)) return stored
+  } catch {}
+  return DEFAULT_SETTINGS_GROUP
+}
+
+// The last-used group is remembered across panel opens.
+const settingsGroup = ref<SettingsGroupId>(readStoredSettingsGroup())
 const dashboardTab = ref<DashboardTab>('sessions')
+const pluginTabs = usePluginTabs()
+// Usage and History mount on first visit, then stay mounted so their state survives tab switches.
+const visitedTabs = ref(new Set<DashboardTab>(['sessions']))
 const requestedPluginViewId = ref('')
+// 每次請求遞增，取代「先清空再 nextTick 設定」的時序 hack，讓相同 id 的重複請求也會觸發。
+const pluginViewRequestNonce = ref(0)
 const pluginEventSourceStatuses = ref<PluginEventSourceStatusView[]>([])
 const nowTick = ref(Date.now())
 let tickTimer: ReturnType<typeof setInterval> | null = null
@@ -27,105 +78,161 @@ let removePluginViewRequestListener: (() => void) | null = null
 let removePanelSettingsListener: (() => void) | null = null
 let cleanupPluginEventSourceChanged: (() => void) | null = null
 
-const SettingsLanguage = defineAsyncComponent(() => import('@/components/status-panel/SettingsLanguage.vue'))
-const SettingsAppearance = defineAsyncComponent(() => import('@/components/status-panel/SettingsAppearance.vue'))
-const SettingsDesktop = defineAsyncComponent(() => import('@/components/status-panel/SettingsDesktop.vue'))
-const SettingsPlugins = defineAsyncComponent(() => import('@/components/status-panel/SettingsPlugins.vue'))
-const SettingsPets = defineAsyncComponent(() => import('@/components/status-panel/SettingsPets.vue'))
-const SettingsGrowth = defineAsyncComponent(() => import('@/components/status-panel/SettingsGrowth.vue'))
-const SettingsAdvanced = defineAsyncComponent(() => import('@/components/status-panel/SettingsAdvanced.vue'))
+const SettingsPage = defineAsyncComponent(() => import('@/components/status-panel/SettingsPage.vue'))
 
-const settingsSections = computed<Array<{ id: SettingsSection; icon: string; label: string; hint: string }>>(() => [
-  { id: 'language', icon: 'language', label: t('language'), hint: t('languageHint') },
-  { id: 'appearance', icon: 'appearance', label: t('appearance'), hint: t('appearanceHint') },
-  { id: 'desktop', icon: 'desktop', label: t('desktop'), hint: t('desktopHint') },
-  { id: 'plugins', icon: 'advanced', label: t('plugins'), hint: t('pluginSettingsHint') },
-  { id: 'pets', icon: 'pets', label: t('pets'), hint: t('petsHint') },
-  { id: 'growth', icon: 'growth', label: t('growth'), hint: t('growthHint') },
-  { id: 'advanced', icon: 'advanced', label: t('advanced'), hint: t('advancedHint') },
-])
-const activeSettingsSection = computed(() => settingsSections.value.find(section => section.id === settingsTab.value))
-const dashboardTabs = computed<Array<{ id: DashboardTab; label: string }>>(() => [
-  { id: 'sessions', label: t('sessions') },
-  { id: 'usage', label: t('tokenRemaining') },
-  { id: 'history', label: t('history') },
-])
-const settingsTabComponent = computed(() => ({
-  language: SettingsLanguage,
-  appearance: SettingsAppearance,
-  desktop: SettingsDesktop,
-  plugins: SettingsPlugins,
-  pets: SettingsPets,
-  growth: SettingsGrowth,
-  advanced: SettingsAdvanced,
-})[settingsTab.value])
-const settingsTabProps = computed(() => settingsTab.value === 'plugins'
-  ? { requestedPluginId: requestedPluginViewId.value }
-  : {})
-const activePetName = computed(() => store.pets.find(pet => pet.id === store.activePetId)?.displayName ?? t('appName'))
-const evolutionLabels: Record<string, Parameters<typeof t>[0]> = {
-  egg: 'evolutionEgg', baby: 'evolutionBaby', teen: 'evolutionTeen', adult: 'evolutionAdult', master: 'evolutionMaster',
-}
-const panelPetSubtitle = computed(() => {
-  if (!store.progression) return t('petProgressLoading')
-  return `${t('historyLevel', { level: store.progression.level })} · ${t(evolutionLabels[store.progression.evolutionStage])} · ${t('dayStreak', { days: store.progression.currentStreak })}`
+const settingsGroupLabel = computed(() => {
+  const group = SETTINGS_GROUPS.find(item => item.id === settingsGroup.value)
+  return group ? t(group.labelKey) : ''
 })
+const dashboardTabs = computed(() => [
+  { value: 'sessions', label: t('sessions'), badge: attentionCount.value },
+  { value: 'usage', label: t('tokenRemaining') },
+  { value: 'history', label: t('history') },
+  ...pluginTabs.tabs.value.map(tab => ({
+    value: tab.value,
+    label: tab.label,
+    iconUrl: tab.iconUrl ?? undefined,
+    icon: tab.iconUrl ? undefined : 'plugin',
+    badgeText: tab.badgeText,
+    truncate: true,
+  })),
+])
+const activePluginTab = computed(() => pluginTabs.tabs.value.find(tab => tab.value === dashboardTab.value) ?? null)
+const pluginTabIds = computed(() => pluginTabs.tabs.value.map(tab => tab.pluginId))
+const attentionCount = computed(() => countByBucket(store.sessionList).attention)
+const activePetName = computed(() => store.pets.find(pet => pet.id === store.activePetId)?.displayName ?? t('appName'))
+const { evolutionLabel } = useProgressionLabels()
+// Give up on "loading" after a while so the header never spins forever.
+const progressionTimedOut = ref(false)
+let progressionTimeout: ReturnType<typeof setTimeout> | null = null
+const sessionCounts = computed(() => countByBucket(store.sessionList))
+const panelPetSubtitle = computed(() => {
+  const { running, attention } = sessionCounts.value
+  if (running + attention > 0) return t('panel.subtitleActive', { running, attention })
+  if (!store.progression) return progressionTimedOut.value ? t('panel.progressUnavailable') : t('petProgressLoading')
+  return `${t('historyLevel', { level: store.progression.level })} · ${evolutionLabel(store.progression.evolutionStage)} · ${t('dayStreak', { days: store.progression.currentStreak })}`
+})
+
+// The shared clock only needs to be precise while the permission card shows
+// its running seconds; Usage reset labels are minute-granular. Sessions have
+// their own per-label clock (useNow), so idle panels barely wake the renderer.
+const TICK_FAST_MS = 1000
+const TICK_SLOW_MS = 30_000
+const tickInterval = computed(() => store.permissionRequest ? TICK_FAST_MS : TICK_SLOW_MS)
+let tickTimerMs = 0
 
 function syncTickTimer(): void {
   if (document.hidden) {
     if (tickTimer) clearInterval(tickTimer)
     tickTimer = null
+    tickTimerMs = 0
     return
   }
-  if (!tickTimer) tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
+  if (tickTimer && tickTimerMs === tickInterval.value) return
+  if (tickTimer) clearInterval(tickTimer)
+  nowTick.value = Date.now()
+  tickTimerMs = tickInterval.value
+  tickTimer = setInterval(() => { nowTick.value = Date.now() }, tickTimerMs)
 }
 
-function onTabKeydown(event: KeyboardEvent): void {
-  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-  if (!step) return
+watch(tickInterval, syncTickTimer)
+
+// Esc steps back one level: wizard / MCP, then settings, then hide the panel.
+// Anything that already handled the key (ConfirmDialog, inputs) wins.
+function onGlobalKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented) return
+  if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+    event.preventDefault()
+    if (store.panelView !== 'settings') store.openSettings()
+    return
+  }
+  if (event.key !== 'Escape') return
   event.preventDefault()
-  const ids = dashboardTabs.value.map(tab => tab.id)
-  const next = ids[(ids.indexOf(dashboardTab.value) + step + ids.length) % ids.length]
-  selectDashboardTab(next)
-  document.getElementById(`tab-${next}`)?.focus()
+  if (store.showWizard) store.closeSetupWizard()
+  else if (store.showProjectMcpPanel) store.closeProjectMcpPanel()
+  else if (store.panelView === 'settings') store.backToSessions()
+  else store.closePanel()
 }
 
-function onSettingsKeydown(event: KeyboardEvent): void {
-  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-  if (!step) return
-  event.preventDefault()
-  const ids = settingsSections.value.map(section => section.id)
-  const next = ids[(ids.indexOf(settingsTab.value) + step + ids.length) % ids.length]
-  settingsTab.value = next
-  document.getElementById(`settings-tab-${next}`)?.focus()
+function openPetSettings(): void {
+  settingsGroup.value = 'pets'
+  store.openSettings()
+}
+
+function openPluginSettings(): void {
+  settingsGroup.value = 'plugins'
+  store.openSettings()
 }
 
 function selectDashboardTab(tab: DashboardTab): void {
   dashboardTab.value = tab
-  if ((tab === 'sessions' || tab === 'usage') && !store.quotaUsage) void store.refreshQuota()
+  if (isBuiltInDashboardTab(tab)) visitedTabs.value.add(tab)
+  try { localStorage.setItem(DASHBOARD_TAB_STORAGE_KEY, tab) } catch {}
+  // refreshQuota() is TTL-gated, so this only reaches the network when the
+  // reading is stale; a first-ever open still loads.
+  if (tab === 'sessions' || tab === 'usage') void store.refreshQuota()
 }
 
-function permissionSourceLabel(agentId: string): string {
-  return SOURCE_LABELS[agentId as keyof typeof SOURCE_LABELS] ?? agentId
+function openPluginTabSettings(pluginId: string, section: 'overview' | 'settings' = 'settings'): void {
+  requestPluginDetail(pluginId, section)
+  openPluginSettings()
 }
 
-watch(() => store.panelView, view => {
-  if (view === 'settings') settingsTab.value = 'appearance'
+// Restore the remembered tab once the plugin list is known, but only if it still qualifies;
+// a plugin tab that disappears later (disabled, removed, crashed) falls back to Sessions.
+let restoredTab = false
+watch(() => [pluginTabs.loading.value, pluginTabIds.value.join('|')] as const, () => {
+  if (pluginTabs.loading.value) return
+  if (!restoredTab) {
+    restoredTab = true
+    let stored: string | null = null
+    try { stored = parseStoredDashboardTab(localStorage.getItem(DASHBOARD_TAB_STORAGE_KEY)) } catch {}
+    if (stored && stored !== dashboardTab.value) {
+      const resolved = resolveDashboardTab(stored, pluginTabIds.value)
+      if (resolved !== dashboardTab.value) selectDashboardTab(resolved)
+    }
+    return
+  }
+  if (pluginIdOfTab(dashboardTab.value) !== null) {
+    const resolved = resolveDashboardTab(dashboardTab.value, pluginTabIds.value)
+    if (resolved !== dashboardTab.value) selectDashboardTab(resolved)
+  }
+}, { immediate: true })
+
+// Plugins are managed in Settings, so re-read them whenever the dashboard is shown again.
+watch(() => [store.panelView, store.panelOpenCount] as const, ([view]) => {
+  if (view === 'sessions') void pluginTabs.refresh()
+})
+
+// Move keyboard focus into the panel whenever it is (re)opened so Tab / arrows work immediately.
+watch(() => store.panelOpenCount, async () => {
+  await nextTick()
+  const target = store.panelView === 'settings'
+    ? panelRoot.value?.querySelector<HTMLElement>('.panel-header button')
+    : document.getElementById(`tab-${dashboardTab.value}`)
+  target?.focus({ preventScroll: true })
+})
+
+watch(settingsGroup, group => {
+  try { localStorage.setItem(SETTINGS_GROUP_STORAGE_KEY, group) } catch {}
 })
 
 onMounted(() => {
   // Keep the settings panels code-split while warming the default tab off the
   // render path, so the first settings click does not wait for its chunk.
-  void import('@/components/status-panel/SettingsAppearance.vue').catch(() => {})
+  void import('@/components/status-panel/SettingsPage.vue').catch(() => {})
+  progressionTimeout = setTimeout(() => { progressionTimedOut.value = true }, 8000)
   document.addEventListener('visibilitychange', syncTickTimer)
+  window.addEventListener('keydown', onGlobalKeydown)
   syncTickTimer()
   removePanelSettingsListener = window.electronAPI?.onPanelOpenSettings(() => {
     requestedPluginViewId.value = ''
+    pluginViewRequestNonce.value += 1
   }) ?? null
   removePluginViewRequestListener = window.electronAPI?.onPanelOpenPluginView(pluginId => {
-    settingsTab.value = 'plugins'
-    requestedPluginViewId.value = ''
-    void nextTick(() => { requestedPluginViewId.value = pluginId })
+    settingsGroup.value = 'plugins'
+    requestedPluginViewId.value = pluginId
+    pluginViewRequestNonce.value += 1
   }) ?? null
   store.loadPets()
   void store.refreshProjectPets()
@@ -142,6 +249,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', syncTickTimer)
+  window.removeEventListener('keydown', onGlobalKeydown)
+  if (progressionTimeout) clearTimeout(progressionTimeout)
   if (tickTimer) clearInterval(tickTimer)
   removePluginViewRequestListener?.()
   removePanelSettingsListener?.()
@@ -150,113 +259,89 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="status-panel" @click.stop>
+  <div ref="panelRoot" class="status-panel" :inert="store.showWizard || store.showProjectMcpPanel" @click.stop>
     <div class="panel-header">
       <Button v-if="store.panelView === 'settings'" variant="ghost" icon-only :title="t('back')" :aria-label="t('back')" @click="store.backToSessions()">
         <Icon name="back" />
       </Button>
       <template v-if="store.panelView === 'sessions'">
-        <div class="panel-pet-avatar" aria-hidden="true">
-          <PetAnimation class="panel-pet-animation" :state="store.currentState" :pet-id="store.activePetId" :since="store.highestPrioritySession?.lastSeenAt" :mood="store.mood" />
-        </div>
+        <button type="button" class="panel-pet-avatar" :title="t('panel.changePet')" :aria-label="t('panel.changePet')" @click="openPetSettings">
+          <PetAnimation class="panel-pet-animation" aria-hidden="true" :state="store.currentState" :pet-id="store.activePetId" :since="store.highestPrioritySession?.lastSeenAt" :mood="store.mood" />
+        </button>
         <div class="panel-title-group">
           <span class="panel-title">{{ activePetName }}</span>
           <span class="panel-subtitle">{{ panelPetSubtitle }}</span>
         </div>
       </template>
-      <span v-else class="panel-title settings-panel-title">{{ t('settings') }}</span>
+      <h1 v-else class="panel-title settings-panel-title">
+        {{ t('settings') }}<Icon class="breadcrumb-sep" name="chevron-right" :size="12" /><span class="breadcrumb-current">{{ settingsGroupLabel }}</span>
+      </h1>
       <div class="header-right">
-        <Button v-if="store.panelView === 'sessions'" variant="ghost" icon-only :title="t('settings')" :aria-label="t('settings')" @click="store.openSettings()">
+        <ActionMenu
+          v-if="store.panelView === 'sessions'"
+          class="header-more"
+          :items="headerMenuItems"
+          :aria-label="t('panel.more')"
+          icon-only
+          variant="ghost"
+          @select="onHeaderMenu"
+        >
+          <span class="header-more-icon">
+            <Icon name="more" :size="18" />
+            <span v-if="store.dndEnabled" class="header-more-dot" role="img" :aria-label="t('panel.dndActive')" />
+          </span>
+        </ActionMenu>
+        <Button v-if="store.panelView === 'sessions'" variant="ghost" icon-only :title="`${t('settings')} (${settingsShortcut})`" :aria-label="t('settings')" @click="store.openSettings()">
           <Icon name="settings" />
         </Button>
-        <Button variant="ghost" icon-only :title="t('close')" :aria-label="t('close')" @click="store.closePanel()">
+        <Button variant="ghost" icon-only :title="`${t('close')} (Esc)`" :aria-label="t('close')" @click="store.closePanel()">
           <Icon name="close" />
         </Button>
       </div>
     </div>
 
     <template v-if="store.panelView === 'sessions'">
+      <ServerHealthBanner />
       <InlinePermissionCard
         v-if="store.permissionRequest"
         class="panel-inline-permission"
         :request="store.permissionRequest"
-        :title="`${permissionSourceLabel(store.permissionRequest.agentId)} · ${t('permissionInlineTitle')}`"
-        :project-label="store.permissionRequest.projectId || t('projectUnknown')"
-        :elapsed-label="`${Math.max(0, (nowTick - store.permissionRequest.receivedAt) / 1000).toFixed(1)}s`"
-        :allow-label="t('permissionAllowOnce')"
-        :deny-label="t('permissionDeny')"
-        :warning-label="t('permissionWarning')"
         @decide="store.decidePermission(store.permissionRequest.requestId, $event)"
       />
+      <PermissionOutcomeNotice v-else-if="store.permissionOutcome" />
       <div v-else-if="store.permissionNotice" class="inline-permission-notice" role="status">
         <Icon name="warning" :size="18" />
         <span><strong>{{ store.permissionNotice.title }}</strong><small>{{ store.permissionNotice.detail }}</small></span>
       </div>
-      <div class="dashboard-tabs" role="tablist" :aria-label="t('dashboardSections')">
-        <Button
-          v-for="tab in dashboardTabs"
-          :key="tab.id"
-          variant="ghost"
-          size="sm"
-          class="dashboard-tab"
-          :class="{ active: dashboardTab === tab.id }"
-          role="tab"
-          :id="`tab-${tab.id}`"
-          :aria-selected="dashboardTab === tab.id"
-          :aria-controls="`panel-${tab.id}`"
-          :tabindex="dashboardTab === tab.id ? 0 : -1"
-          @click="selectDashboardTab(tab.id)"
-          @keydown="onTabKeydown"
-        >
-          {{ tab.label }}
-        </Button>
+      <div class="dashboard-nav">
+        <SegmentedControl
+          :model-value="dashboardTab"
+          :options="dashboardTabs"
+          :ariaLabel="t('dashboardSections')"
+          id-prefix="tab-"
+          panel-id-prefix="panel-"
+          scrollable
+          :scroll-prev-label="t('plugins.dashTabScrollPrev')"
+          :scroll-next-label="t('plugins.dashTabScrollNext')"
+          @update:model-value="selectDashboardTab($event as DashboardTab)"
+        />
       </div>
-      <StatusPanelSessions v-show="dashboardTab === 'sessions'" :active="dashboardTab === 'sessions'" :now-tick="nowTick" :plugin-event-source-statuses="pluginEventSourceStatuses" />
-      <StatusPanelUsage v-show="dashboardTab === 'usage'" :now-tick="nowTick" />
-      <StatusPanelHistory v-show="dashboardTab === 'history'" :active="dashboardTab === 'history'" />
+      <StatusPanelSessions v-show="dashboardTab === 'sessions'" :active="dashboardTab === 'sessions'" :now-tick="nowTick" :plugin-event-source-statuses="pluginEventSourceStatuses" @manage-plugins="openPluginSettings" />
+      <StatusPanelUsage v-if="visitedTabs.has('usage')" v-show="dashboardTab === 'usage'" :active="dashboardTab === 'usage'" :now-tick="nowTick" />
+      <StatusPanelHistory v-if="visitedTabs.has('history')" v-show="dashboardTab === 'history'" :active="dashboardTab === 'history'" />
+      <PluginTabContent
+        v-if="activePluginTab"
+        :key="activePluginTab.pluginId"
+        :tab="activePluginTab"
+        :active="!store.showWizard && !store.showProjectMcpPanel"
+        :feed="pluginTabs.feedFor(activePluginTab.pluginId)"
+        :loading="pluginTabs.loading.value"
+        @open-settings="openPluginTabSettings($event, 'settings')"
+        @open-detail="openPluginTabSettings($event, 'overview')"
+      />
     </template>
 
-    <div v-else class="settings-layout">
-      <div class="settings-content">
-        <nav class="settings-nav" role="tablist" :aria-label="t('settingsSections')">
-          <Button
-            v-for="section in settingsSections"
-            :key="section.id"
-            variant="ghost"
-            size="sm"
-            class="settings-nav-item"
-            :class="{ active: settingsTab === section.id }"
-            role="tab"
-            :id="`settings-tab-${section.id}`"
-            :aria-selected="settingsTab === section.id"
-            :tabindex="settingsTab === section.id ? 0 : -1"
-            @click="settingsTab = section.id"
-            @keydown="onSettingsKeydown"
-          >
-            {{ section.label }}
-          </Button>
-        </nav>
-
-        <div class="settings-content-header">
-          <span class="settings-kicker">{{ t('workspacePreferences') }}</span>
-          <h2>{{ activeSettingsSection?.label }}</h2>
-        </div>
-
-        <div class="settings-quick-toggles" role="group" :aria-label="t('quickSettings')">
-          <Button variant="ghost" class="quick-toggle" :class="{ active: store.notificationsEnabled }" :aria-label="`${t('notifications')} ${store.notificationsEnabled ? t('enabledShort') : t('disabledShort')}`" @click="store.setNotificationsEnabled(!store.notificationsEnabled)">
-            <Icon name="bell" :size="20" /><span>{{ t('notifications') }} {{ store.notificationsEnabled ? t('enabledShort') : t('disabledShort') }}</span>
-          </Button>
-          <Button variant="ghost" class="quick-toggle" :class="{ active: store.dndEnabled }" :aria-label="`${t('dnd')} ${store.dndEnabled ? t('enabledShort') : t('disabledShort')}`" @click="store.setDndEnabled(!store.dndEnabled)">
-            <Icon name="moon" :size="20" /><span>{{ t('dnd') }} {{ store.dndEnabled ? t('enabledShort') : t('disabledShort') }}</span>
-          </Button>
-          <Button variant="ghost" class="quick-toggle" :class="{ active: store.soundEnabled }" :aria-label="`${t('sound')} ${store.soundEnabled ? t('enabledShort') : t('disabledShort')}`" @click="store.setSoundEnabled(!store.soundEnabled)">
-            <Icon name="volume-off" :size="20" /><span>{{ t('sound') }} {{ store.soundEnabled ? t('enabledShort') : t('disabledShort') }}</span>
-          </Button>
-        </div>
-
-        <component :is="settingsTabComponent" v-bind="settingsTabProps" />
-      </div>
-    </div>
+    <SettingsPage v-else v-model:group="settingsGroup" :requested-plugin-id="requestedPluginViewId" :requested-plugin-nonce="pluginViewRequestNonce" />
   </div>
 </template>
 

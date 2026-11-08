@@ -61,6 +61,7 @@ export interface AdapterDiagnoseIpcResult {
 export interface AdapterInstallIpcResult {
   ok: boolean
   status?: import('./agent-adapter').AdapterDetection
+  outcome?: import('./agent-adapter').InstallOutcome
   error?: string
 }
 

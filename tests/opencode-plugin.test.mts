@@ -34,5 +34,9 @@ test('generated OpenCode plugins are valid modules with permission hooks', async
     assert.equal(code.includes("'tool.execute.before', projectPath"), true)
     assert.equal(code.includes("reply = decision === 'allow_once' ? 'once' : 'reject'"), true)
     assert.equal(code.includes("'always'"), false)
+    // Host hints: a few capped env values, sent with every status event.
+    assert.equal(code.includes('host: HOST_HINTS'), true)
+    assert.equal(code.includes("shortEnv('TERM_PROGRAM'"), true)
+    assert.equal(/process\.env\)|\.\.\.process\.env/.test(code), false)
   }
 })

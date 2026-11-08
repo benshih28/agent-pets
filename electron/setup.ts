@@ -1,89 +1,67 @@
-import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { execFileSync } from 'child_process'
 import { randomBytes } from 'crypto'
+import { setupEnvironment } from './setup-environment.ts'
+import { createNodeResolver, NodeNotFoundError, NodeUnsupportedError, type NodeInfo } from './node-resolver.ts'
 import type { PetEdge, PetWindowMode } from '../src/types/pet-window'
+import { readConfigText, writeConfigSafely, writeTextAtomic, type ConfigWriteResult } from './safe-config-write.ts'
+import {
+  CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS,
+  clampClaudePermissionWaitSeconds,
+} from '../src/types/permission.ts'
+import {
+  codexHookCommand,
+  ensureAgentPetsHookEntries,
+  escapeCmdQuotedPath,
+  disableCodexHooksFeatureText,
+  enableCodexHooksFeatureText,
+  fileHasAgentPetsHooks,
+  isAgentPetsHook,
+  isLegacyElectronHook,
+  mergeAgentPetsHooksFile,
+  removeAgentPetsHooksFile,
+  removeJsonKeyFile,
+  rewriteAgentPetsHookCommands,
+  setJsonKeyFile,
+} from './hook-config.ts'
 
 const IS_WIN = process.platform === 'win32'
 const IS_MAC = process.platform === 'darwin'
 
 function homeDir(): string {
-  return os.homedir()
+  return setupEnvironment().homeDir()
 }
 
 function appDataDir(): string {
-  return app.getPath('userData')
+  return setupEnvironment().userData()
 }
 
-// GUI apps (Codex Desktop, Claude Desktop, ...) launched from Finder/Dock get
-// launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) — it doesn't include
-// Homebrew or nvm, so a bare "node" in a hook command silently fails to even
-// start. Resolve an absolute path once at install time instead: ask a login
-// shell (which sources the user's real PATH) where node actually is, same
-// fix GUI apps commonly need (e.g. the "fix-path" pattern). Falls back to
-// common install locations, then the bare command as a last resort.
-let cachedNodeBin: string | null = null
+// Node resolution lives in node-resolver.ts (async, validated cache, no bare-"node" fallback).
+const nodeResolver = createNodeResolver()
+
+/** Legacy synchronous lookup for non-install callers (e.g. project MCP); may return a bare "node". */
 export function resolveNodeBin(): string {
-  if (cachedNodeBin) return cachedNodeBin
+  return nodeResolver.peek()?.path ?? nodeResolver.resolveSync()?.path ?? 'node'
+}
 
-  if (IS_WIN) {
-    // In a packaged Electron app, process.execPath is Agent Pets.exe, not
-    // node.exe. Using it for hooks launches another pet for every lifecycle
-    // event. Prefer standard Node.js locations, then the user's PATH.
-    const candidates = [
-      process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'nodejs', 'node.exe') : '',
-      process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'nodejs', 'node.exe') : '',
-      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'nodejs', 'node.exe') : '',
-    ].filter(Boolean)
+/** Resolve (async) and validate Node.js before an install that writes a hook command. */
+export async function prepareNodeForInstall(): Promise<NodeInfo> {
+  const fixed = setupEnvironment().nodePath?.()
+  if (fixed) return { path: fixed, version: null, supported: true }
+  const info = await nodeResolver.resolve()
+  if (!info) throw new NodeNotFoundError()
+  if (!info.supported) throw new NodeUnsupportedError(info.version)
+  return info
+}
 
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        cachedNodeBin = candidate
-        return candidate
-      }
-    }
-
-    try {
-      const out = execFileSync('where.exe', ['node.exe'], {
-        encoding: 'utf-8',
-        timeout: 3000,
-      })
-      const resolved = out
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .find(line => line && fs.existsSync(line))
-      if (resolved) {
-        cachedNodeBin = resolved
-        return resolved
-      }
-    } catch {}
-
-    return 'node'
-  }
-
-  try {
-    const shell = process.env.SHELL || '/bin/zsh'
-    const out = execFileSync(shell, ['-ilc', 'command -v node'], {
-      encoding: 'utf-8',
-      timeout: 3000,
-    }).trim()
-    const resolved = out.split('\n').pop()?.trim()
-    if (resolved && fs.existsSync(resolved)) {
-      cachedNodeBin = resolved
-      return resolved
-    }
-  } catch {}
-
-  for (const candidate of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
-    if (fs.existsSync(candidate)) {
-      cachedNodeBin = candidate
-      return candidate
-    }
-  }
-
-  return 'node'
+/** Synchronous accessor for installers; prepareNodeForInstall() must have succeeded first. */
+function requireNodeBin(): string {
+  const fixed = setupEnvironment().nodePath?.()
+  if (fixed) return fixed
+  const info = nodeResolver.peek() ?? nodeResolver.resolveSync()
+  if (!info) throw new NodeNotFoundError()
+  return info.path
 }
 
 // --- OpenCode CLI plugin ---
@@ -100,7 +78,7 @@ function openCodeDesktopPluginPath(): string {
   if (IS_MAC) {
     return path.join(homeDir(), 'Library', 'Application Support', 'opencode', 'plugin', 'desktop-pet.js')
   }
-  return path.join(app.getPath('appData'), 'opencode', 'plugin', 'desktop-pet.js')
+  return path.join(setupEnvironment().appData(), 'opencode', 'plugin', 'desktop-pet.js')
 }
 
 // --- Codex hooks.json ---
@@ -121,7 +99,7 @@ function claudeDesktopConfigPath(): string {
   if (IS_MAC) {
     return path.join(homeDir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
   }
-  return path.join(app.getPath('appData'), 'Claude', 'claude_desktop_config.json')
+  return path.join(setupEnvironment().appData(), 'Claude', 'claude_desktop_config.json')
 }
 
 // --- Claude Code settings.json (shared by CLI & Desktop) ---
@@ -248,24 +226,51 @@ function presentationTokenPath(): string {
   return path.join(hookScriptDeployPath(), 'presentation-token')
 }
 
-function ensureEventToken(): string {
+// Opt-in marker read by agent-hook.mjs. Present only while the user has turned on
+// answering Claude Code permissions from the pet; the main process still checks
+// its own persisted preference before accepting any request.
+function claudePermissionRespondPath(): string {
+  return path.join(hookScriptDeployPath(), 'claude-permission-respond')
+}
+
+/** Writes (enabled) or removes (null) the hook's opt-in file. */
+function syncClaudePermissionRespondOptIn(waitSeconds: number | null): void {
+  const filePath = claudePermissionRespondPath()
+  if (waitSeconds === null) {
+    fs.rmSync(filePath, { force: true })
+    return
+  }
+  const content = `${JSON.stringify({ enabled: true, waitSeconds: clampClaudePermissionWaitSeconds(waitSeconds) })}\n`
+  if (readFile(filePath) === content) return
+  ensureDir(hookScriptDeployPath())
+  writeTextAtomic(filePath, content, { mode: 0o600 })
+  if (!IS_WIN) {
+    try { fs.chmodSync(filePath, 0o600) } catch {}
+  }
+}
+
+// Tokens created or read by this process are remembered so that a full cleanup followed by a
+// reinstall in the same session re-uses the value the running event/permission servers already hold.
+const tokenCache = new Map<string, string>()
+
+function ensureToken(tokenPath: string, label: string): string {
   const dir = hookScriptDeployPath()
   ensureDir(dir)
   if (!IS_WIN) {
     try { fs.chmodSync(dir, 0o700) } catch {}
   }
 
-  const tokenPath = eventTokenPath()
   try {
     const stat = fs.lstatSync(tokenPath)
     if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw new Error('Agent Pets event token path is not a regular file')
+      throw new Error(`Agent Pets ${label} token path is not a regular file`)
     }
     const existing = fs.readFileSync(tokenPath, 'utf8').trim()
     if (/^[a-f0-9]{64}$/i.test(existing)) {
       if (!IS_WIN) {
         try { fs.chmodSync(tokenPath, 0o600) } catch {}
       }
+      tokenCache.set(tokenPath, existing)
       return existing
     }
   } catch (error) {
@@ -273,7 +278,7 @@ function ensureEventToken(): string {
     if (code && code !== 'ENOENT') throw error
   }
 
-  const token = randomBytes(32).toString('hex')
+  const token = tokenCache.get(tokenPath) ?? randomBytes(32).toString('hex')
   const descriptor = fs.openSync(tokenPath, 'w', 0o600)
   try {
     fs.writeFileSync(descriptor, `${token}\n`, 'utf8')
@@ -284,85 +289,20 @@ function ensureEventToken(): string {
   if (!IS_WIN) {
     try { fs.chmodSync(tokenPath, 0o600) } catch {}
   }
+  tokenCache.set(tokenPath, token)
   return token
+}
+
+function ensureEventToken(): string {
+  return ensureToken(eventTokenPath(), 'event')
 }
 
 function ensurePermissionToken(): string {
-  const dir = hookScriptDeployPath()
-  ensureDir(dir)
-  if (!IS_WIN) {
-    try { fs.chmodSync(dir, 0o700) } catch {}
-  }
-
-  const tokenPath = permissionTokenPath()
-  try {
-    const stat = fs.lstatSync(tokenPath)
-    if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw new Error('Agent Pets permission token path is not a regular file')
-    }
-    const existing = fs.readFileSync(tokenPath, 'utf8').trim()
-    if (/^[a-f0-9]{64}$/i.test(existing)) {
-      if (!IS_WIN) {
-        try { fs.chmodSync(tokenPath, 0o600) } catch {}
-      }
-      return existing
-    }
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code && code !== 'ENOENT') throw error
-  }
-
-  const token = randomBytes(32).toString('hex')
-  const descriptor = fs.openSync(tokenPath, 'w', 0o600)
-  try {
-    fs.writeFileSync(descriptor, `${token}\n`, 'utf8')
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-  if (!IS_WIN) {
-    try { fs.chmodSync(tokenPath, 0o600) } catch {}
-  }
-  return token
+  return ensureToken(permissionTokenPath(), 'permission')
 }
 
 function ensurePresentationToken(): string {
-  const dir = hookScriptDeployPath()
-  ensureDir(dir)
-  if (!IS_WIN) {
-    try { fs.chmodSync(dir, 0o700) } catch {}
-  }
-
-  const tokenPath = presentationTokenPath()
-  try {
-    const stat = fs.lstatSync(tokenPath)
-    if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw new Error('Agent Pets presentation token path is not a regular file')
-    }
-    const existing = fs.readFileSync(tokenPath, 'utf8').trim()
-    if (/^[a-f0-9]{64}$/i.test(existing)) {
-      if (!IS_WIN) {
-        try { fs.chmodSync(tokenPath, 0o600) } catch {}
-      }
-      return existing
-    }
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code && code !== 'ENOENT') throw error
-  }
-
-  const token = randomBytes(32).toString('hex')
-  const descriptor = fs.openSync(tokenPath, 'w', 0o600)
-  try {
-    fs.writeFileSync(descriptor, `${token}\n`, 'utf8')
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-  if (!IS_WIN) {
-    try { fs.chmodSync(tokenPath, 0o600) } catch {}
-  }
-  return token
+  return ensureToken(presentationTokenPath(), 'presentation')
 }
 
 // --- Bundled integrations/ source (agent-hook.mjs, agent-hook.cmd) ---
@@ -370,10 +310,13 @@ function ensurePresentationToken(): string {
 // extraResources; in dev __dirname is <project>/dist-electron so '..' lands
 // back on the project root, matching getPetsJsonPath's dev/prod split.
 function integrationsDir(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'integrations')
+  const env = setupEnvironment()
+  if (env.isPackaged()) {
+    return path.join(env.resourcesPath(), 'integrations')
   }
-  return path.join(__dirname, '..', 'integrations')
+  const dev = env.integrationsDir()
+  if (!dev) throw new Error('The integrations folder location is not configured')
+  return dev
 }
 
 function ensurePresentationMcpScript(): void {
@@ -394,8 +337,16 @@ function ensureDir(dirPath: string): void {
 }
 
 function writeFileEnsured(filePath: string, content: string): void {
-  ensureDir(path.dirname(filePath))
-  fs.writeFileSync(filePath, content, 'utf-8')
+  writeTextAtomic(filePath, content)
+}
+
+// Files Agent Pets fully owns (hook script, plugins): rewritten only when the content differs, so
+// the install outcome can report "unchanged" honestly. No backup is needed for our own files.
+function writeManaged(filePath: string, content: string): ConfigWriteResult {
+  const existing = readFile(filePath)
+  if (existing === content) return { status: 'unchanged', path: filePath, backupPath: null }
+  writeTextAtomic(filePath, content)
+  return { status: 'written', path: filePath, backupPath: null }
 }
 
 function fileExists(filePath: string): boolean {
@@ -427,58 +378,20 @@ function removeFile(filePath: string): void {
   }
 }
 
-function addJsonKey(filePath: string, key: string, value: unknown): void {
-  if (!fs.existsSync(filePath)) return
-  const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-  if (content[key] === value) return
-  content[key] = value
-  fs.writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n', 'utf-8')
+// Marker recording that Agent Pets (not the user) added `hooks = true`, so uninstall only
+// reverts what we changed.
+function codexFeatureMarkerPath(): string {
+  return path.join(hookScriptDeployPath(), 'codex-hooks-feature-added')
 }
 
-function removeJsonKey(filePath: string, key: string): void {
-  if (!fs.existsSync(filePath)) return
-  const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-  if (!(key in content)) return
-  delete content[key]
-  fs.writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n', 'utf-8')
-}
-
-// TOML has no JS parser dependency here, so [features].hooks is patched
-// line-by-line rather than via a full parse/stringify round-trip.
-function enableCodexHooksFeature(filePath: string): void {
-  const existing = readFile(filePath) || ''
-  const lines = existing
-    .split(/\r?\n/)
-    .filter(line => !/^\s*codex_hooks\s*=/.test(line))
-
-  const featuresIndex = lines.findIndex(line => /^\s*\[features\]\s*$/.test(line))
-
-  if (featuresIndex === -1) {
-    if (lines.length > 0 && lines[lines.length - 1].trim() !== '') {
-      lines.push('')
-    }
-    lines.push('[features]')
-    lines.push('hooks = true')
-  } else {
-    let insertIndex = featuresIndex + 1
-    let hooksIndex = -1
-
-    for (let i = featuresIndex + 1; i < lines.length; i++) {
-      if (/^\s*\[/.test(lines[i])) break
-      insertIndex = i + 1
-      if (/^\s*hooks\s*=/.test(lines[i])) {
-        hooksIndex = i
-      }
-    }
-
-    if (hooksIndex === -1) {
-      lines.splice(insertIndex, 0, 'hooks = true')
-    } else {
-      lines[hooksIndex] = 'hooks = true'
-    }
+function enableCodexHooksFeature(filePath: string): ConfigWriteResult {
+  const existing = readConfigText(filePath) ?? ''
+  const { content, added } = enableCodexHooksFeatureText(existing)
+  const result = writeConfigSafely(filePath, content)
+  if (added) {
+    try { writeFileEnsured(codexFeatureMarkerPath(), '1\n') } catch { /* marker is best effort */ }
   }
-
-  fs.writeFileSync(filePath, lines.join('\n').replace(/\n*$/, '\n'), 'utf-8')
+  return result
 }
 
 // --- Hook script content (bundled via extraResources) ---
@@ -489,20 +402,21 @@ function hookScriptContent(): string {
 function hookWrapperContent(): string {
   return fs
     .readFileSync(path.join(integrationsDir(), 'agent-hook.cmd'), 'utf-8')
-    .replace('__NODE_EXECUTABLE__', resolveNodeBin())
+    .replace('__NODE_EXECUTABLE__', () => escapeCmdQuotedPath(requireNodeBin()))
 }
 
-function installHookScript(): void {
+function installHookScript(): ConfigWriteResult[] {
   ensureEventToken()
   const dir = hookScriptDeployPath()
   ensureDir(dir)
-  writeFileEnsured(hookScriptPath(), hookScriptContent())
+  const results = [writeManaged(hookScriptPath(), hookScriptContent())]
   if (IS_WIN) {
-    writeFileEnsured(hookWrapperPath(), hookWrapperContent())
+    results.push(writeManaged(hookWrapperPath(), hookWrapperContent()))
   }
   if (!IS_WIN) {
     try { fs.chmodSync(hookScriptPath(), 0o700) } catch {}
   }
+  return results
 }
 
 // --- OpenCode plugin content ---
@@ -564,6 +478,26 @@ function postJson(port, pathname, tokenHeader, token, value) {
   });
 }
 
+// Which app OpenCode runs in (see integrations/agent-hook.mjs): a few capped env values only.
+function shortEnv(name, pattern) {
+  const value = process.env[name];
+  return typeof value === 'string' && pattern.test(value) ? value : undefined;
+}
+
+function hostHints() {
+  const hints = {
+    termProgram: shortEnv('TERM_PROGRAM', /^[A-Za-z0-9._-]{1,32}$/),
+    bundleId: process.platform === 'darwin' ? shortEnv('__CFBundleIdentifier', /^[A-Za-z0-9.-]{3,128}$/) : undefined,
+    windowsTerminal: process.env.WT_SESSION ? true : undefined,
+    vscode: process.env.VSCODE_INJECTION || process.env.VSCODE_GIT_IPC_HANDLE ? true : undefined,
+    cursor: process.env.CURSOR_TRACE_ID ? true : undefined,
+  };
+  const present = Object.fromEntries(Object.entries(hints).filter(([, value]) => value !== undefined));
+  return Object.keys(present).length > 0 ? present : undefined;
+}
+
+const HOST_HINTS = hostHints();
+
 function sendEvent(sessionId, state, toolName, originalEvent, projectPath) {
   void postJson(17373, '/v1/events', 'X-Agent-Pets-Token', readToken(eventTokenPath), {
     source: SOURCE,
@@ -573,6 +507,7 @@ function sendEvent(sessionId, state, toolName, originalEvent, projectPath) {
     toolName,
     originalEvent,
     project: projectPath,
+    host: HOST_HINTS,
   });
 }
 
@@ -755,11 +690,13 @@ export { DesktopPetPlugin };
 `
 }
 
-function installOpenCode(): void {
+function installOpenCode(): ConfigWriteResult[] {
   ensureEventToken()
   ensurePermissionToken()
-  writeFileEnsured(openCodeDesktopPluginPath(), openCodePluginContent('opencode-desktop'))
-  writeFileEnsured(openCodeCliPluginPath(), openCodePluginContent('opencode-cli'))
+  return [
+    writeManaged(openCodeDesktopPluginPath(), openCodePluginContent('opencode-desktop')),
+    writeManaged(openCodeCliPluginPath(), openCodePluginContent('opencode-cli')),
+  ]
 }
 
 function uninstallOpenCode(): void {
@@ -780,8 +717,8 @@ const CODEX_HOOK_EVENTS = [
 
 function codexHooksJson(): any {
   const hook = hookScriptPath()
-  const nodeBin = resolveNodeBin()
-  const command = IS_WIN ? `${hookWrapperPath()} codex` : `${nodeBin} "${hook}" codex`
+  const nodeBin = IS_WIN ? '' : requireNodeBin()
+  const command = codexHookCommand({ isWindows: IS_WIN, nodeBin, hookScript: hook, wrapper: hookWrapperPath() })
   const handler = () => ({
     hooks: [
       {
@@ -798,91 +735,66 @@ function codexHooksJson(): any {
   }
 }
 
-function isAgentPetsHook(hook: any): boolean {
-  if (hook?.type !== 'command') return false
-  const command = typeof hook.command === 'string' ? hook.command : ''
-  const args = Array.isArray(hook.args) ? hook.args.join(' ') : ''
-  const combined = `${command} ${args}`
-  return combined.includes('agent-hook') && combined.includes('desktop-pet')
-}
+function installCodex(): ConfigWriteResult[] {
+  const results: ConfigWriteResult[] = installHookScript()
 
-function removeAgentPetsHooks(groups: any): any[] {
-  if (!Array.isArray(groups)) return []
-  return groups
-    .map((group) => {
-      if (!Array.isArray(group?.hooks)) return group
-      return {
-        ...group,
-        hooks: group.hooks.filter((hook: any) => !isAgentPetsHook(hook)),
-      }
-    })
-    .filter((group) => !Array.isArray(group?.hooks) || group.hooks.length > 0)
-}
-
-function installCodex(): void {
-  installHookScript()
-
-  const hooksFile = codexHooksPath()
-  ensureDir(path.dirname(hooksFile))
-
+  // Throws ConfigRefusedError (and writes nothing) if hooks.json exists but is not valid JSON.
   const newHooks = codexHooksJson()
-  if (fileExists(hooksFile)) {
-    try {
-      const existing = JSON.parse(readFile(hooksFile) || '{}')
-      existing.hooks = existing.hooks || {}
-      for (const [event, arr] of Object.entries(newHooks.hooks)) {
-        existing.hooks[event] = removeAgentPetsHooks(existing.hooks[event])
-        if (!existing.hooks[event] || existing.hooks[event].length === 0) {
-          existing.hooks[event] = arr
-        } else {
-          existing.hooks[event].push((arr as any[])[0])
-        }
-      }
-      writeFileEnsured(hooksFile, JSON.stringify(existing, null, 2))
-    } catch {
-      writeFileEnsured(hooksFile, JSON.stringify(newHooks, null, 2))
-    }
-  } else {
-    writeFileEnsured(hooksFile, JSON.stringify(newHooks, null, 2))
-  }
+  const { hooks, ...defaults } = newHooks
+  results.push(mergeAgentPetsHooksFile(codexHooksPath(), hooks, defaults))
 
-  const configFile = codexConfigPath()
-  if (fileExists(configFile)) {
-    enableCodexHooksFeature(configFile)
-  } else {
-    writeFileEnsured(configFile, '[features]\nhooks = true\n')
-  }
+  results.push(enableCodexHooksFeature(codexConfigPath()))
+  return results
+}
+
+const CODEX_HOOKS_OWNED_TOP_LEVEL = { description: 'Agent Pets lifecycle hooks for Codex CLI.' }
+
+// The hook script (and Windows wrapper) is shared by Codex, Claude Code and Claude Desktop.
+// Remove it only when no remaining config still points at it.
+function isHookScriptReferenced(): boolean {
+  if (fileHasAgentPetsHooks(codexHooksPath())) return true
+  if (fileHasAgentPetsHooks(claudeCodeSettingsPath())) return true
+  try {
+    const desktop = readConfigText(claudeDesktopConfigPath())
+    if (desktop && JSON.parse(desktop)?.agent === hookScriptPath()) return true
+  } catch {}
+  return false
+}
+
+function releaseSharedHookScript(): void {
+  if (isHookScriptReferenced()) return
+  removeFile(hookScriptPath())
+  removeFile(hookWrapperPath())
 }
 
 function uninstallCodex(): void {
-  removeFile(hookScriptPath())
-  removeFile(codexHooksPath())
+  // Throws ConfigRefusedError for an unparseable file, leaving it untouched.
+  removeAgentPetsHooksFile(codexHooksPath(), CODEX_HOOKS_OWNED_TOP_LEVEL)
   const configFile = codexConfigPath()
-  if (fileExists(configFile)) {
-    removeFromFile(configFile, 'codex_hooks = true')
+  if (fileExists(configFile) && fileExists(codexFeatureMarkerPath())) {
+    const existing = readConfigText(configFile) ?? ''
+    const next = disableCodexHooksFeatureText(existing)
+    if (next !== existing) {
+      writeConfigSafely(configFile, next)
+      if (next === '') removeFile(configFile)
+    }
   }
+  removeFile(codexFeatureMarkerPath())
+  releaseSharedHookScript()
 }
 
 // --- Claude Desktop ---
-function installClaude(): void {
-  installHookScript()
-
-  const configFile = claudeDesktopConfigPath()
-  ensureDir(path.dirname(configFile))
-
-  if (!fileExists(configFile)) {
-    writeFileEnsured(configFile, '{}')
-  }
-
-  addJsonKey(configFile, 'agent', hookScriptPath())
+function installClaude(): ConfigWriteResult[] {
+  const scripts = installHookScript()
+  return [...scripts, setJsonKeyFile(claudeDesktopConfigPath(), 'agent', hookScriptPath())]
 }
 
 function uninstallClaude(): void {
-  removeFile(hookScriptPath())
   const configFile = claudeDesktopConfigPath()
   if (fileExists(configFile)) {
-    removeJsonKey(configFile, 'agent')
+    removeJsonKeyFile(configFile, 'agent', hookScriptPath())
   }
+  releaseSharedHookScript()
 }
 
 // --- Claude Code (CLI & Desktop share settings.json) ---
@@ -890,19 +802,27 @@ const CLAUDE_CODE_HOOK_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
   'PreToolUse',
+  'PermissionRequest',
   'PostToolUse',
+  'PostToolUseFailure',
   'Notification',
   'Stop',
   'StopFailure',
   'SessionEnd',
 ]
-const CLAUDE_CODE_TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse'])
+const CLAUDE_CODE_TOOL_EVENTS = new Set(['PreToolUse', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure'])
+// Only the PermissionRequest handler may wait (for a pet answer); every other
+// event keeps Claude Code's default timeout.
+const CLAUDE_CODE_HOOK_TIMEOUTS: Readonly<Record<string, number>> = { PermissionRequest: CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS }
 
 function claudeCodeHooksJson(): any {
   const hook = hookScriptPath()
-  const nodeBin = resolveNodeBin()
+  const nodeBin = requireNodeBin()
   const handler = (event: string) => {
-    const entry: any = { hooks: [{ type: 'command', command: nodeBin, args: [hook, 'claude'] }] }
+    const timeout = CLAUDE_CODE_HOOK_TIMEOUTS[event]
+    const entry: any = {
+      hooks: [{ type: 'command', command: nodeBin, args: [hook, 'claude'], ...(timeout ? { timeout } : {}) }],
+    }
     if (CLAUDE_CODE_TOOL_EVENTS.has(event)) entry.matcher = '*'
     return entry
   }
@@ -912,106 +832,86 @@ function claudeCodeHooksJson(): any {
   }
 }
 
-function installClaudeCode(): void {
-  installHookScript()
+function installClaudeCode(): ConfigWriteResult[] {
+  const scripts = installHookScript()
+  // Throws ConfigRefusedError (and writes nothing) if settings.json is not valid JSON.
+  return [...scripts, mergeAgentPetsHooksFile(claudeCodeSettingsPath(), claudeCodeHooksJson().hooks)]
+}
 
-  const settingsFile = claudeCodeSettingsPath()
-  ensureDir(path.dirname(settingsFile))
+// Events added after the first Claude Code release; older installs are upgraded on startup.
+const CLAUDE_CODE_UPGRADE_EVENTS = ['PermissionRequest', 'PostToolUseFailure']
 
-  const newHooks = claudeCodeHooksJson()
-  let existing: any = {}
-  if (fileExists(settingsFile)) {
-    try {
-      existing = JSON.parse(readFile(settingsFile) || '{}')
-    } catch {
-      existing = {}
-    }
-  }
+/**
+ * Brings an install made by an older version up to date (adds the PermissionRequest /
+ * PostToolUseFailure handlers and the PermissionRequest timeout). Touches only Agent Pets'
+ * own handlers and keeps a backup; a missing, unparseable or not-installed settings.json is
+ * left alone, and handlers for the original events are never re-added.
+ */
+function upgradeClaudeCodeHooks(): ConfigWriteResult | null {
+  return ensureAgentPetsHookEntries(claudeCodeSettingsPath(), CLAUDE_CODE_UPGRADE_EVENTS.map(event => ({
+    event,
+    ...(CLAUDE_CODE_TOOL_EVENTS.has(event) ? { matcher: '*' } : {}),
+    ...(CLAUDE_CODE_HOOK_TIMEOUTS[event] ? { timeout: CLAUDE_CODE_HOOK_TIMEOUTS[event] } : {}),
+  })))
+}
 
-  existing.hooks = existing.hooks || {}
-  for (const [event, arr] of Object.entries(newHooks.hooks)) {
-    existing.hooks[event] = removeAgentPetsHooks(existing.hooks[event])
-    if (!existing.hooks[event] || existing.hooks[event].length === 0) {
-      existing.hooks[event] = arr
-    } else {
-      existing.hooks[event].push((arr as any[])[0])
-    }
-  }
+function claudeHooksUpgradeMarkerPath(): string {
+  return path.join(hookScriptDeployPath(), 'claude-hooks-upgraded')
+}
 
-  writeFileEnsured(settingsFile, JSON.stringify(existing, null, 2))
+/**
+ * Runs the upgrade at most once per app version, so an Agent Pets entry the user removed on
+ * purpose is not added back on every launch. Settings without any Agent Pets hook are never
+ * changed (ensureAgentPetsHookEntries returns null for them).
+ */
+function upgradeClaudeCodeHooksOnce(appVersion: string): ConfigWriteResult | null {
+  const marker = claudeHooksUpgradeMarkerPath()
+  if ((readFile(marker) ?? '').trim() === appVersion) return null
+  const result = upgradeClaudeCodeHooks()
+  writeFileEnsured(marker, `${appVersion}\n`)
+  return result
 }
 
 function uninstallClaudeCode(): void {
   const settingsFile = claudeCodeSettingsPath()
   if (!fileExists(settingsFile)) return
-  try {
-    const existing = JSON.parse(readFile(settingsFile) || '{}')
-    if (existing.hooks && typeof existing.hooks === 'object') {
-      for (const event of Object.keys(existing.hooks)) {
-        existing.hooks[event] = removeAgentPetsHooks(existing.hooks[event])
-        if (!existing.hooks[event] || existing.hooks[event].length === 0) {
-          delete existing.hooks[event]
-        }
-      }
-      if (Object.keys(existing.hooks).length === 0) {
-        delete existing.hooks
-      }
-    }
-    writeFileEnsured(settingsFile, JSON.stringify(existing, null, 2))
-  } catch {
-    // malformed settings.json, leave untouched
-  }
+  // Throws ConfigRefusedError for an unparseable settings.json, leaving it untouched.
+  removeAgentPetsHooksFile(settingsFile)
+  releaseSharedHookScript()
 }
 
 // Repair hooks written by older Windows builds. Those builds used Electron's
 // process.execPath as the hook runtime, so their hooks point back to
 // Agent Pets.exe and recursively launch the desktop app on every event.
 function rewriteInstalledAgentPetsHooks(filePath: string, target: 'codex' | 'claude'): boolean {
-  const raw = readFile(filePath)
-  if (!raw) return false
-
-  try {
-    const config = JSON.parse(raw)
-    if (!config.hooks || typeof config.hooks !== 'object') return false
-
-    const hookPath = hookScriptPath()
-    const codexCommand = `${hookWrapperPath()} codex`
-    const nodeBin = target === 'claude' ? resolveNodeBin() : ''
+  const hookPath = hookScriptPath()
+  const codexCommand = codexHookCommand({ isWindows: true, nodeBin: '', hookScript: hookPath, wrapper: hookWrapperPath() })
+  const nodeBin = target === 'claude' ? (nodeResolver.resolveSync()?.path ?? '') : ''
+  if (target === 'claude' && !nodeBin) return false // cannot repair without a real Node path
+  return rewriteAgentPetsHookCommands(filePath, (hook) => {
+    // Never rewrite user config just because the Node path changed: only repair the known-bad
+    // state where the hook runs through the Electron executable.
+    if (!isLegacyElectronHook(hook)) return false
     let changed = false
-
-    for (const groups of Object.values(config.hooks) as any[]) {
-      if (!Array.isArray(groups)) continue
-      for (const group of groups) {
-        if (!Array.isArray(group?.hooks)) continue
-        for (const hook of group.hooks) {
-          if (!isAgentPetsHook(hook)) continue
-
-          if (target === 'codex') {
-            if (hook.command !== codexCommand) {
-              hook.command = codexCommand
-              changed = true
-            }
-            if ('args' in hook) {
-              delete hook.args
-              changed = true
-            }
-          } else {
-            const nextArgs = [hookPath, 'claude']
-            if (hook.command !== nodeBin || JSON.stringify(hook.args) !== JSON.stringify(nextArgs)) {
-              hook.command = nodeBin
-              hook.args = nextArgs
-              changed = true
-            }
-          }
-        }
+    if (target === 'codex') {
+      if (hook.command !== codexCommand) {
+        hook.command = codexCommand
+        changed = true
+      }
+      if ('args' in hook) {
+        delete hook.args
+        changed = true
+      }
+    } else {
+      const nextArgs = [hookPath, 'claude']
+      if (hook.command !== nodeBin || JSON.stringify(hook.args) !== JSON.stringify(nextArgs)) {
+        hook.command = nodeBin
+        hook.args = nextArgs
+        changed = true
       }
     }
-
-    if (changed) writeFileEnsured(filePath, JSON.stringify(config, null, 2))
     return changed
-  } catch {
-    return false
-  }
+  })
 }
 
 function repairWindowsInstalledHooks(): void {
@@ -1023,7 +923,7 @@ function repairWindowsInstalledHooks(): void {
   if (codexChanged || claudeChanged) installHookScript()
 }
 
-function refreshInstalledIntegrationScripts(): string {
+function refreshInstalledIntegrationScripts(appVersion?: string): string {
   const token = ensureEventToken()
   ensurePermissionToken()
   ensurePresentationToken()
@@ -1047,40 +947,107 @@ function refreshInstalledIntegrationScripts(): string {
   } catch (error) {
     console.error('Installed integration refresh skipped', error)
   }
+  try {
+    if (appVersion) upgradeClaudeCodeHooksOnce(appVersion)
+  } catch (error) {
+    console.error('Claude Code hook upgrade skipped', error)
+  }
   return token
+}
+
+// --- Health helpers used by the adapter diagnostics ---
+/** The bundled hook script matches what is deployed (a stale copy keeps old behaviour). */
+function hookScriptIsCurrent(): boolean {
+  try {
+    const deployed = readFile(hookScriptPath())
+    return deployed !== null && deployed === hookScriptContent()
+  } catch {
+    return true // bundle unreadable: do not raise a false alarm
+  }
+}
+
+function openCodePluginIsCurrent(kind: 'cli' | 'desktop'): boolean {
+  const target = kind === 'cli' ? openCodeCliPluginPath() : openCodeDesktopPluginPath()
+  const deployed = readFile(target)
+  return deployed !== null
+    && deployed === openCodePluginContent(kind === 'cli' ? 'opencode-cli' : 'opencode-desktop')
+}
+
+/** Whether each agent's own config directory exists (the tool has been used on this machine). */
+function agentPresence(): { codex: boolean, claude: boolean, opencode: boolean } {
+  return {
+    codex: fs.existsSync(path.join(homeDir(), '.codex')),
+    claude: fs.existsSync(path.join(homeDir(), '.claude')),
+    opencode: fs.existsSync(path.dirname(openCodeCliPluginPath())) || fs.existsSync(path.dirname(openCodeDesktopPluginPath())),
+  }
 }
 
 export type IntegrationTarget = 'opencode' | 'codex' | 'claude' | 'claudeCode'
 
-function installIntegration(target?: IntegrationTarget): void {
+function installIntegration(target?: IntegrationTarget): ConfigWriteResult[] {
   switch (target) {
-    case 'opencode': installOpenCode(); return
-    case 'codex': installCodex(); return
-    case 'claude': installClaude(); return
-    case 'claudeCode': installClaudeCode(); return
+    case 'opencode': return installOpenCode()
+    case 'codex': return installCodex()
+    case 'claude': return installClaude()
+    case 'claudeCode': return installClaudeCode()
     default:
-      installOpenCode()
-      installCodex()
-      installClaude()
-      installClaudeCode()
+      // Claude Desktop's `agent` key is not a documented setting, so it is no longer written by default
+      // (it is still removed on uninstall for older installs). Claude Code covers CLI and Desktop.
+      return [...installOpenCode(), ...installCodex(), ...installClaudeCode()]
   }
 }
 
-function uninstallIntegration(target?: IntegrationTarget): void {
+function cleanupDeployDirectory(): void {
+  for (const filePath of [
+    eventTokenPath(),
+    permissionTokenPath(),
+    presentationTokenPath(),
+    presentationMcpScriptPath(),
+    hookScriptPath(),
+    hookWrapperPath(),
+    codexFeatureMarkerPath(),
+    claudePermissionRespondPath(),
+    claudeHooksUpgradeMarkerPath(),
+  ]) {
+    removeFile(filePath)
+  }
+  try { fs.rmdirSync(hookScriptDeployPath()) } catch { /* not empty: user files stay */ }
+}
+
+/**
+ * Removes Agent Pets' own entries. With no target every integration is removed; with 'all' the
+ * tokens and bridge scripts under the deploy directory are removed too. Every step runs even if an
+ * earlier one is refused; failures are reported together afterwards.
+ */
+function uninstallIntegration(target?: IntegrationTarget | 'all'): void {
   switch (target) {
     case 'opencode': uninstallOpenCode(); return
     case 'codex': uninstallCodex(); return
     case 'claude': uninstallClaude(); return
     case 'claudeCode': uninstallClaudeCode(); return
-    default:
-      uninstallOpenCode()
-      uninstallCodex()
-      uninstallClaude()
-      uninstallClaudeCode()
+    default: {
+      const failures: string[] = []
+      const steps: Array<[IntegrationTarget, () => void]> = [
+        ['opencode', uninstallOpenCode],
+        ['codex', uninstallCodex],
+        ['claude', uninstallClaude],
+        ['claudeCode', uninstallClaudeCode],
+      ]
+      for (const [name, run] of steps) {
+        try { run() } catch (error) {
+          failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      if (target === 'all' && failures.length === 0) cleanupDeployDirectory()
+      if (failures.length > 0) throw new Error(failures.join('\n'))
+    }
   }
 }
 
 export {
+  hookScriptIsCurrent,
+  openCodePluginIsCurrent,
+  agentPresence,
   IS_WIN,
   IS_MAC,
   homeDir,
@@ -1100,6 +1067,11 @@ export {
   ensurePresentationToken,
   ensurePresentationMcpScript,
   presentationMcpScriptPath,
+  claudePermissionRespondPath,
+  syncClaudePermissionRespondOptIn,
+  upgradeClaudeCodeHooks,
+  upgradeClaudeCodeHooksOnce,
+  claudeHooksUpgradeMarkerPath,
   ensureDir,
   writeFileEnsured,
   fileExists,

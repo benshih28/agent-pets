@@ -4,10 +4,14 @@
 // the user's real data or macOS Keychain. Usage:
 //   pnpm exec vite build
 //   node scripts/e2e-isolated-electron.mjs [--inspect-port 9349] [--debug-port 9348] [--app-root <dir>]
+//                                          [--hook-port-base 27373 | --real-hook-ports]（說明見下）
 // --app-root runs another copy of the app (e.g. an extracted packaged app.asar) instead of this repo.
 // Prints one JSON line with the temp root, ports and pid, then keeps running.
-// The test app binds the same local hook ports (17373–17375) as an installed Agent Pets;
-// whichever starts second keeps retrying and takes the ports once the other exits.
+// 測試 app 預設使用自己的本機埠（event／permission／presentation = base、base+1、base+2，base 為 27373），
+// 不會搶走已安裝 Agent Pets 的 17373–17375，也收不到使用者真實的 hook 事件。這裡一律以
+// node_modules 的 Electron 執行（app.isPackaged 為 false），所以 app 會讀 AGENT_PETS_*_PORT
+// （electron/main/ports.ts）。例外：--app-root 指向在這組環境變數出現之前建置的版本時仍會綁定預設埠，
+// 請看啟動日誌的「listening on」確認。--real-hook-ports 刻意使用預設埠，給需要真實 hook 的測試；這類測試請盡量縮短。
 import { spawn } from 'node:child_process'
 import { createHash, generateKeyPairSync, sign as cryptoSign } from 'node:crypto'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -28,6 +32,17 @@ const argValue = (name, fallback) => {
 const inspectPort = argValue('--inspect-port', 9349)
 const debugPort = argValue('--debug-port', 9348)
 const appRoot = resolve(argString('--app-root') ?? repoRoot)
+const realHookPorts = process.argv.includes('--real-hook-ports')
+const hookPortBase = argValue('--hook-port-base', 27373)
+if (!realHookPorts && !(Number.isInteger(hookPortBase) && hookPortBase >= 1024 && hookPortBase <= 65533)) {
+  console.error('--hook-port-base must be an integer between 1024 and 65533')
+  process.exit(1)
+}
+const hookPortEnv = realHookPorts ? {} : {
+  AGENT_PETS_EVENT_PORT: String(hookPortBase),
+  AGENT_PETS_PERMISSION_PORT: String(hookPortBase + 1),
+  AGENT_PETS_PRESENTATION_PORT: String(hookPortBase + 2),
+}
 const mainBundle = join(appRoot, 'dist-electron', 'main.js')
 if (!existsSync(mainBundle)) {
   console.error(`${mainBundle} not found; run \`pnpm exec vite build\` first (or check --app-root)`)
@@ -216,6 +231,7 @@ const child = spawn(electronBinary, [
     HOME: join(root, 'home'),
     // Windows 的 os.homedir() 讀 USERPROFILE 而非 HOME；少了它隔離檢查會失敗並中止。
     USERPROFILE: join(root, 'home'),
+    ...hookPortEnv,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
@@ -230,7 +246,7 @@ for (const [stream, target] of [[child.stdout, process.stdout], [child.stderr, p
     target.write(chunk)
   })
 }
-console.log(JSON.stringify({ root, appRoot, inspectPort, debugPort, pid: child.pid }))
+console.log(JSON.stringify({ root, appRoot, inspectPort, debugPort, hookPorts: realHookPorts ? 'default' : [hookPortBase, hookPortBase + 1, hookPortBase + 2], pid: child.pid }))
 child.on('exit', (code, signal) => {
   if (!readySeen) {
     console.error(`AGENT_PETS_E2E_ABORT electron exited before READY (code=${code ?? 'null'}, signal=${signal ?? 'none'})`)

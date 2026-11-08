@@ -21,6 +21,13 @@ const MAX_RESPONSE_BYTES = 1024 * 1024
 // coalesces the pet and panel windows asking at roughly the same moment.
 const CACHE_TTL_MS = 90_000
 const FORCE_REFRESH_COOLDOWN_MS = 10_000
+// Failures are not worth holding for the full success TTL: a user who fixes a
+// login and presses Refresh must not keep seeing the same error for 90s.
+const ERROR_CACHE_TTL_MS = 10_000
+// Auth/limit failures (not signed in, expired token, rate limited) will not fix themselves in
+// seconds; hammering the usage endpoint with the user's OAuth token can trigger stricter limits.
+const AUTH_ERROR_CACHE_TTL_MS = 60_000
+const MAX_ERROR_CACHE_TTL_MS = 15 * 60_000
 const MAX_WINDOWS_PER_PROVIDER = 32
 const MAX_DISPLAY_TEXT_LENGTH = 96
 // Claude Code answers /usage itself without asking a model. Running it lets
@@ -58,7 +65,17 @@ export interface QuotaWindow {
   usedPercent: number
   remainingPercent: number
   resetsAt?: string
+  // True when the provider reported more than 100% used; the percentages are
+  // clamped to [0, 100] and this flag preserves the fact of the overage.
+  overage?: boolean
 }
+
+export type QuotaErrorKind =
+  | 'not-signed-in'
+  | 'expired'
+  | 'timeout'
+  | 'rate-limited'
+  | 'unavailable'
 
 export interface QuotaProvider {
   id: 'codex' | 'claude'
@@ -66,11 +83,18 @@ export interface QuotaProvider {
   plan?: string
   windows: QuotaWindow[]
   error?: string
+  errorKind?: QuotaErrorKind
+  /** ISO time of this provider's last successful reading. */
+  fetchedAt?: string
+  /** True when `windows` are the last good reading kept after a failure. */
+  stale?: boolean
 }
 
 export interface QuotaUsageResult {
   updatedAt: string
   providers: QuotaProvider[]
+  /** Set when a forced refresh was answered from cache during the cooldown. */
+  throttled?: { retryInSec: number }
 }
 
 interface ClaudeCredential {
@@ -86,7 +110,7 @@ let inFlight: Promise<QuotaUsageResult> | null = null
 let tempSequence = 0
 let lastFetchStartedAt = 0
 
-class QuotaDisplayError extends Error {}
+export class QuotaDisplayError extends Error {}
 // The CLI could not answer; the stored-token request is tried instead.
 class ClaudeCliUnavailable extends Error {}
 
@@ -100,9 +124,17 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-function finitePercent(value: unknown): number | null {
-  const numeric = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100 ? numeric : null
+// Clamps a reported percentage into [0, 100] instead of discarding the whole
+// window, so an over-quota reading (e.g. 105%) shows as exhausted, not missing.
+export function clampedUsage(value: unknown): Pick<QuotaWindow, 'usedPercent' | 'remainingPercent' | 'overage'> | null {
+  const numeric = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  if (!Number.isFinite(numeric)) return null
+  const used = Math.min(100, Math.max(0, numeric))
+  return {
+    usedPercent: used,
+    remainingPercent: 100 - used,
+    ...(numeric > 100 ? { overage: true } : {}),
+  }
 }
 
 function cleanPlan(value: unknown): string | undefined {
@@ -117,6 +149,25 @@ function cleanPlan(value: unknown): string | undefined {
 
 function displayString(value: unknown, fallback: string): string {
   return (nonEmptyString(value) || fallback).slice(0, MAX_DISPLAY_TEXT_LENGTH)
+}
+
+export function classifyQuotaError(error: unknown): QuotaErrorKind {
+  if (error instanceof Error && error.name === 'AbortError') return 'timeout'
+  const message = error instanceof QuotaDisplayError ? error.message : ''
+  if (/timed out/i.test(message)) return 'timeout'
+  if (/rate limited|\(429\)/i.test(message)) return 'rate-limited'
+  if (/expired|cannot access quota|re-authenticate/i.test(message)) return 'expired'
+  if (/no existing|unavailable|api-key mode|credentials/i.test(message)) return 'not-signed-in'
+  return 'unavailable'
+}
+
+function failedProvider(
+  id: QuotaProvider['id'],
+  name: string,
+  error: unknown,
+  fallback: string,
+): QuotaProvider {
+  return { id, name, windows: [], error: safeError(error, fallback), errorKind: classifyQuotaError(error) }
 }
 
 function safeError(error: unknown, fallback: string): string {
@@ -290,8 +341,8 @@ async function refreshCodexCredential(
 
 function mapCodexWindow(id: string, raw: unknown, fallbackLabel?: string): QuotaWindow | null {
   const window = asObject(raw)
-  const used = finitePercent(window?.used_percent)
-  if (!window || used === null) return null
+  const usage = clampedUsage(window?.used_percent)
+  if (!window || usage === null) return null
   const duration = Number(window.limit_window_seconds)
   const label = displayString(
     fallbackLabel,
@@ -301,8 +352,7 @@ function mapCodexWindow(id: string, raw: unknown, fallbackLabel?: string): Quota
   return {
     id,
     label,
-    usedPercent: used,
-    remainingPercent: 100 - used,
+    ...usage,
     ...(Number.isFinite(resetSeconds) && resetSeconds > 0
       ? { resetsAt: new Date(resetSeconds * 1000).toISOString() }
       : {}),
@@ -359,7 +409,7 @@ async function fetchCodexQuota(): Promise<QuotaProvider> {
     if (parsed.windows.length === 0) throw new QuotaDisplayError('Codex returned no quota windows.')
     return { id: 'codex', name: 'Codex', ...parsed }
   } catch (error) {
-    return { id: 'codex', name: 'Codex', windows: [], error: safeError(error, 'Could not load Codex usage.') }
+    return failedProvider('codex', 'Codex', error, 'Could not load Codex usage.')
   }
 }
 
@@ -435,15 +485,14 @@ async function loadClaudeCredential(): Promise<ClaudeCredential> {
 
 function mapClaudeWindow(id: string, label: string, raw: unknown): QuotaWindow | null {
   const window = asObject(raw)
-  const used = finitePercent(window?.utilization ?? window?.percent)
-  if (!window || used === null) return null
+  const usage = clampedUsage(window?.utilization ?? window?.percent)
+  if (!window || usage === null) return null
   const resetValue = nonEmptyString(window.resets_at)
   const resetMillis = resetValue ? Date.parse(resetValue) : NaN
   return {
     id,
     label,
-    usedPercent: used,
-    remainingPercent: 100 - used,
+    ...usage,
     ...(Number.isFinite(resetMillis) ? { resetsAt: new Date(resetMillis).toISOString() } : {}),
   }
 }
@@ -640,8 +689,8 @@ export function parseClaudeCliUsage(text: string, now = Date.now()): QuotaWindow
   for (const line of lines) {
     if (windows.length >= MAX_WINDOWS_PER_PROVIDER) break
     const match = line.match(CLAUDE_USAGE_LINE)
-    const used = finitePercent(match?.[3])
-    if (!match || used === null) continue
+    const usage = clampedUsage(match?.[3])
+    if (!match || usage === null) continue
     const scope = nonEmptyString(match[2])
     const isSession = match[1] === 'session'
     const identity = isSession
@@ -655,8 +704,7 @@ export function parseClaudeCliUsage(text: string, now = Date.now()): QuotaWindow
       : undefined
     windows.push({
       ...identity,
-      usedPercent: used,
-      remainingPercent: 100 - used,
+      ...usage,
       ...(resetsAt ? { resetsAt } : {}),
     })
   }
@@ -749,21 +797,80 @@ async function fetchClaudeQuota(): Promise<QuotaProvider> {
     }
     return await fetchClaudeApiQuota(binary)
   } catch (error) {
-    return { id: 'claude', name: 'Claude Code', windows: [], error: safeError(error, 'Could not load Claude usage.') }
+    return failedProvider('claude', 'Claude Code', error, 'Could not load Claude usage.')
   }
 }
 
-export async function getQuotaUsage(force = false): Promise<QuotaUsageResult> {
+// Last good reading per provider, kept so a transient failure can still show
+// (clearly marked stale) numbers instead of replacing the whole card with an
+// error. Only ever holds already-sanitized display data.
+const lastGoodProviders = new Map<QuotaProvider['id'], QuotaProvider>()
+let cachedTtlMs = CACHE_TTL_MS
+let consecutiveFailures = 0
+
+function withRetainedReadings(providers: QuotaProvider[], nowIso: string): QuotaProvider[] {
+  return providers.map((provider) => {
+    if (!provider.error) {
+      const fresh: QuotaProvider = { ...provider, fetchedAt: nowIso }
+      lastGoodProviders.set(provider.id, fresh)
+      return fresh
+    }
+    const previous = lastGoodProviders.get(provider.id)
+    if (!previous) return provider
+    return {
+      ...provider,
+      plan: previous.plan,
+      windows: previous.windows,
+      fetchedAt: previous.fetchedAt,
+      stale: true,
+    }
+  })
+}
+
+/** Cache lifetime after a fetch: exponential back-off while providers keep failing. */
+export function nextQuotaCacheTtl(fetched: QuotaProvider[]): number {
+  const failed = fetched.filter((provider) => provider.error)
+  if (failed.length === 0) {
+    consecutiveFailures = 0
+    return CACHE_TTL_MS
+  }
+  consecutiveFailures = Math.min(consecutiveFailures + 1, 16)
+  const slow = failed.some((provider) => provider.errorKind !== undefined && provider.errorKind !== 'timeout')
+  const base = slow ? AUTH_ERROR_CACHE_TTL_MS : ERROR_CACHE_TTL_MS
+  return Math.min(MAX_ERROR_CACHE_TTL_MS, base * 2 ** (consecutiveFailures - 1))
+}
+
+export function resetQuotaCacheForTests(): void {
+  cachedResult = null
+  cachedAt = 0
+  lastFetchStartedAt = 0
+  cachedTtlMs = CACHE_TTL_MS
+  consecutiveFailures = 0
+  lastGoodProviders.clear()
+}
+
+export async function getQuotaUsage(
+  force = false,
+  fetchProviders: () => Promise<QuotaProvider[]> = () => Promise.all([fetchCodexQuota(), fetchClaudeQuota()]),
+): Promise<QuotaUsageResult> {
   const now = Date.now()
-  if (!force && cachedResult && now - cachedAt < CACHE_TTL_MS) return cachedResult
-  if (force && cachedResult && now - lastFetchStartedAt < FORCE_REFRESH_COOLDOWN_MS) return cachedResult
+  if (!force && cachedResult && now - cachedAt < cachedTtlMs) return cachedResult
+  if (force && cachedResult && now - lastFetchStartedAt < FORCE_REFRESH_COOLDOWN_MS) {
+    return {
+      ...cachedResult,
+      throttled: { retryInSec: Math.max(1, Math.ceil((FORCE_REFRESH_COOLDOWN_MS - (now - lastFetchStartedAt)) / 1000)) },
+    }
+  }
   if (inFlight) return inFlight
   lastFetchStartedAt = now
   inFlight = (async () => {
-    const providers = await Promise.all([fetchCodexQuota(), fetchClaudeQuota()])
-    const result = { updatedAt: new Date().toISOString(), providers }
+    const fetched = await fetchProviders()
+    const updatedAt = new Date().toISOString()
+    const providers = withRetainedReadings(fetched, updatedAt)
+    const result = { updatedAt, providers }
     cachedResult = result
     cachedAt = Date.now()
+    cachedTtlMs = nextQuotaCacheTtl(fetched)
     return result
   })()
   try {

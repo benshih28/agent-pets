@@ -87,3 +87,25 @@ test('removal deletes only matching Agent Pets entries and preserves conflicts',
     cleanup(project)
   }
 })
+
+test('list is read-only, keeps error text, and sets a corrupt registry aside', () => {
+  const root = createProject()
+  const project = path.join(root, 'p')
+  fs.mkdirSync(project)
+  const registryPath = path.join(root, 'registry.json')
+  const store = new ProjectMcpRegistryStore(registryPath)
+  try {
+    store.register(project)
+    const before = fs.readFileSync(registryPath, 'utf8')
+    store.list(options(root))
+    store.list(options(root))
+    assert.equal(fs.readFileSync(registryPath, 'utf8'), before, 'listing must not rewrite the registry')
+
+    fs.writeFileSync(registryPath, '{ corrupt')
+    const snapshot = store.list(options(root))
+    assert.equal(snapshot.ok, true)
+    assert.equal(snapshot.recovered, true)
+    assert.deepEqual(snapshot.projects, [])
+    assert.ok(fs.readdirSync(root).some(name => name.startsWith('registry.json.corrupt-')))
+  } finally { cleanup(root) }
+})

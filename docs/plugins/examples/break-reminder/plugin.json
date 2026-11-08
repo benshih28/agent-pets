@@ -1,0 +1,42 @@
+{
+  "id": "break-reminder",
+  "name": { "zh-TW": "休息提醒", "en-US": "Break reminder" },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets example",
+  "entry": "dist/main.js",
+  "permissions": {
+    "storage": true,
+    "schedule": { "minIntervalSec": 60 }
+  },
+  "contributes": {
+    "feed": true,
+    "settings": {
+      "type": "object",
+      "properties": {
+        "intervalMinutes": {
+          "type": "number",
+          "title": { "zh-TW": "提醒間隔（分鐘）", "en-US": "Reminder interval (minutes)" },
+          "minimum": 5,
+          "maximum": 120,
+          "default": 30
+        },
+        "message": {
+          "type": "string",
+          "title": { "zh-TW": "提醒內容", "en-US": "Reminder text" },
+          "maxLength": 120,
+          "default": "Stretch, drink some water, rest your eyes."
+        }
+      }
+    },
+    "commands": [
+      { "id": "remind-now", "title": { "zh-TW": "現在提醒我", "en-US": "Remind me now" } }
+    ],
+    "tray": { "commands": ["remind-now"] },
+    "panelView": {
+      "entry": "ui/index.html",
+      "title": { "zh-TW": "休息提醒", "en-US": "Break reminder" },
+      "preferredSize": { "width": 420, "height": 320 }
+    }
+  }
+}

@@ -18,7 +18,7 @@ Put the panel page and its assets under one directory in the plugin package. The
 }
 ```
 
-`preferredSize` is optional. Width is clamped to 320–960 px and height to 240–800 px. The host also clamps the window to the current display work area. A size manually chosen for this plugin page takes priority; leaving the page restores the panel's previous size. The plugin cannot move or resize its window directly.
+`preferredSize` is optional and is still validated (width 320–960 px, height 240–800 px), but it no longer resizes the window. The control panel has one size for every view, chosen by the user by dragging its edges (minimum 360×420, up to the current display's work area minus a small gap) and saved in `panel-size.json` in the app's userData folder (ignored if damaged), so opening your page never moves or resizes the window. Design the page to be responsive. The panel header also lets the user reload, jump to the plugin's permissions and settings, or toggle maximize (double-click the header; Esc restores). The plugin cannot move or resize its window directly.
 
 The host draws the panel border, plugin icon and name, the “Plugin content” marker, and the close button outside the plugin view. Keep page controls inside your own content area. A page can draw arbitrary content inside that area, so users should use the host-drawn identity and controls when deciding whether a prompt is genuine.
 
@@ -32,7 +32,7 @@ The page can load files from its own plugin package and the read-only shared sty
 <script type="module" src="./panel.js"></script>
 ```
 
-The shared stylesheet exposes Agent Pets design tokens. Use fallbacks for standalone previews. The host destroys the page when it is closed or the user switches away; persist state with `api.storage` and keep background work in the plugin Worker.
+The shared stylesheet is the app's own `tokens.css`. The page does not receive the app's light/dark switch, so it gets the default dark palette (set `color-scheme: dark`), and the page view is transparent until your content paints. Use tokens such as `--surface-panel`, `--text-primary` and `--border-subtle` with fallbacks for standalone previews, and see the [UX guidelines](ux-guidelines.md) for the full list and the rules for glass. The host destroys the page when it is closed or the user switches away; persist state with `api.storage` and keep background work in the plugin Worker.
 
 ## Panel API
 

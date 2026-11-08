@@ -9,7 +9,7 @@ export default {
 
     const updateWorkingState = statuses => {
       agentIsWorking = statuses.some(status =>
-        !status.dnd && ['Thinking', 'Tool Running'].includes(status.visibleState),
+        !status.dnd && ['thinking', 'tool-running'].includes(status.visibleState),
       )
     }
 

@@ -13,7 +13,7 @@ test('progression IPC registration delegates validation and pet-scoped snapshots
     assertTrustedIpcSender: event => senders.push(event),
     isProgressionPetId: value => typeof value === 'string' && value.startsWith('pet-'),
     setActiveProgressionPet: petId => { selectedPets.push(petId); return { petId } },
-    getProgressionStore: () => ({ getActivePetId: () => 'pet-active' }),
+    getProgressionStore: () => ({ getActivePetId: () => 'pet-active', getInsights: (petId: string) => ({ petId }) as never, getSnapshot: () => undefined as never }),
     getAchievementStore: () => ({ getSnapshot: petId => { achievementSnapshots.push(petId); return { petId } } }),
   })
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
@@ -21,14 +21,18 @@ test('progression IPC registration delegates validation and pet-scoped snapshots
   assert.deepEqual([...handlers.keys()], [
     IPC_CHANNELS.progressionInit,
     IPC_CHANNELS.progressionSetPet,
+    IPC_CHANNELS.progressionInsights,
     IPC_CHANNELS.achievementsInit,
   ])
   assert.deepEqual(await invoke(IPC_CHANNELS.progressionInit), { petId: 'aang-airbender' })
   assert.equal(await invoke(IPC_CHANNELS.progressionInit, 'not-a-pet'), null)
   assert.deepEqual(await invoke(IPC_CHANNELS.progressionSetPet, 'pet-next'), { petId: 'pet-next' })
+  assert.deepEqual(await invoke(IPC_CHANNELS.progressionInsights), { petId: 'pet-active' })
+  assert.deepEqual(await invoke(IPC_CHANNELS.progressionInsights, 'pet-other'), { petId: 'pet-other' })
+  assert.equal(await invoke(IPC_CHANNELS.progressionInsights, 'bad'), null)
   assert.deepEqual(await invoke(IPC_CHANNELS.achievementsInit), { petId: 'pet-active' })
   assert.deepEqual(await invoke(IPC_CHANNELS.achievementsInit, 'invalid'), null)
   assert.deepEqual(selectedPets, ['aang-airbender', 'pet-next'])
   assert.deepEqual(achievementSnapshots, ['pet-active'])
-  assert.equal(senders.length, 5)
+  assert.equal(senders.length, 8)
 })

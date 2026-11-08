@@ -461,3 +461,19 @@ test('invalid plugin identity, preference state, clock, and asset resolution fai
     error: 'invalid_request',
   })
 })
+
+test('markAllRead marks every unread record in one pass and notifies once', () => {
+  const harness = createHarness({ visible: false, defaultPluginState: { rateLimitPer10Min: 30 } })
+  for (let index = 0; index < 5; index += 1) {
+    harness.setNow(harness.now() + PLUGIN_FEED_RATE_WINDOW_MS + 1)
+    const result = submitValid(harness.controller, 'sample', { title: `Sample ${index}` })
+    assert.equal(result.accepted, true)
+    completeIfQueued(harness.controller, result)
+  }
+  assert.equal(harness.controller.unreadCount(), 5)
+  assert.equal(harness.controller.markAllRead('bad id!'), 0)
+  assert.equal(harness.controller.markAllRead('other'), 0)
+  assert.equal(harness.controller.markAllRead('sample'), 5)
+  assert.equal(harness.controller.unreadCount(), 0)
+  assert.equal(harness.controller.markAllRead(), 0)
+})

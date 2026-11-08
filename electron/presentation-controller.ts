@@ -16,6 +16,13 @@ export const PRESENTATION_MIN_TTL_MS = 1_000
 export const PRESENTATION_MAX_TTL_MS = 15_000
 export const PRESENTATION_DEFAULT_TTL_MS = 4_000
 export const PRESENTATION_MAX_MESSAGE_LENGTH = 240
+export const PRESENTATION_READ_MS_PER_CHAR = 120
+
+/** Longer messages need longer to read; an explicit ttlMs always wins. */
+export function defaultSayTtlMs(messageLength: number): number {
+  const readable = Math.max(0, Math.floor(messageLength)) * PRESENTATION_READ_MS_PER_CHAR
+  return Math.min(PRESENTATION_MAX_TTL_MS, Math.max(PRESENTATION_DEFAULT_TTL_MS, readable))
+}
 export const PRESENTATION_MAX_QUEUE_DEPTH = 32
 export const PRESENTATION_MAX_CLIENT_REQUESTS = 3
 export const PRESENTATION_RATE_WINDOW_MS = 10_000
@@ -124,7 +131,7 @@ export function normalizePresentationInput(value: unknown): PresentationValidati
       kind: 'say',
       ...(petId ? { petId } : {}),
       message,
-      ttlMs,
+      ttlMs: value.ttlMs === undefined ? defaultSayTtlMs(message.length) : ttlMs,
     },
   }
 }

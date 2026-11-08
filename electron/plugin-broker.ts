@@ -48,6 +48,7 @@ export interface PluginBrokerOptions {
   feed: PluginFeedController
   onReaction: (pluginId: string, request: PluginReactionRequest) => { ok: boolean; error?: PluginErrorCode }
   now?: () => number
+  onLog?: (pluginId: string, entry: PluginBrokerLogEntry) => void
   network?: PluginNetworkClient
   onRequestHost?: (pluginId: string, host: unknown, reason: unknown) => Promise<unknown> | unknown
   onSecretGet?: (pluginId: string, key: string) => string | { ok: false; error: PluginErrorCode }
@@ -146,6 +147,7 @@ export class PluginBroker {
   private readonly onAgentEmit: PluginBrokerOptions['onAgentEmit']
   private readonly onBadgeSet: PluginBrokerOptions['onBadgeSet']
   private readonly now: () => number
+  private readonly onLog: PluginBrokerOptions['onLog']
   private readonly storage = new Map<string, PluginStorageState>()
   private readonly storageTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly logs = new Map<string, PluginBrokerLogEntry[]>()
@@ -165,6 +167,7 @@ export class PluginBroker {
     this.onAgentEmit = options.onAgentEmit
     this.onBadgeSet = options.onBadgeSet
     this.now = options.now ?? Date.now
+    this.onLog = options.onLog
   }
 
   handle(pluginId: string, rawRequest: unknown): RpcResponse | { ok: false; error: PluginErrorCode } | Promise<RpcResponse | { ok: false; error: PluginErrorCode }> {
@@ -377,6 +380,7 @@ export class PluginBroker {
       records.push(entry)
       while (records.length > PLUGIN_LOG_MAX_ENTRIES) records.shift()
       this.logs.set(pluginId, records)
+      try { this.onLog?.(pluginId, entry) } catch {}
       return { logged: true }
     }
     return { ok: false, error: 'invalid_request' }

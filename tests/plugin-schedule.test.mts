@@ -18,3 +18,18 @@ test('schedule.every raises short intervals, rounds fractional seconds, and reje
   }
   assert.throws(() => effectivePluginScheduleMinimum(20, 60), { code: 'schedule_invalid' })
 })
+
+import { pluginHostAssets } from '../electron/plugin-host-assets.ts'
+
+test('worker bootstrap isolates async plugin failures and bounds schedules', () => {
+  const worker = pluginHostAssets['worker-bootstrap.js']
+  assert.match(worker, /addEventListener\('unhandledrejection'[\s\S]*?preventDefault/)
+  assert.match(worker, /MAX_SCHEDULES = 16/)
+  assert.match(worker, /if \(running\) return/)
+  assert.match(worker, /function callSafely[\s\S]*?result\.then\(undefined/)
+  for (const label of ['settings.onChange', 'pet.onStatusChange', 'commands.onInvoke', 'ui.onMessage']) {
+    assert.match(worker, new RegExp(`callSafely\\('${label.replace('.', '\\.')}'`))
+  }
+  assert.match(worker, /function clearSchedules/)
+  assert.match(worker, /clearSchedules\(\)/)
+})

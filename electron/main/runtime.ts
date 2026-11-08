@@ -1,6 +1,16 @@
 import { IPC_CHANNELS } from '../ipc/channels'
-import { app, BrowserWindow, WebContentsView, screen, ipcMain, dialog, net, session, protocol, globalShortcut, powerMonitor, shell, safeStorage } from 'electron'
+import { sanitizePetId } from '../pet-id.ts'
+import { app, BrowserWindow, WebContentsView, screen, ipcMain, dialog, net, session, protocol, globalShortcut, powerMonitor, shell, safeStorage, Notification } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
+import { attachRendererRecovery, type RendererRecovery } from './renderer-recovery'
+import { logMain, mainLogger } from '../diagnostics/main-log'
+import { buildDiagnosticsReport, registerDiagnosticsSection } from '../diagnostics/report'
+import { eventPipelineStats } from '../event-stats'
+import { resolveLocalPorts } from './ports'
+import { openWithCorruptionRecovery } from './db-recovery'
+import { localUsageCatchUpDelayMs, LOCAL_USAGE_TICK_MS, shouldRunLocalUsageTick } from './scan-schedule'
+import { createServerHealthTracker, type ServerHealthTracker } from './server-health'
+import { createSessionJumpService, withSessionJumpContext } from './session-jump-runtime'
 import { join, resolve } from 'path'
 import { randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
@@ -12,24 +22,28 @@ import * as path from 'path'
 
 
 
-import { DesktopPreferencesStore, resolveLoginItemExecutable } from '../desktop-preferences'
+import { DesktopPreferencesStore } from '../desktop-preferences'
+import { createLoginItemAdapter } from '../login-item'
 import { DesktopNotificationService } from '../desktop-notifications'
 import { DesktopTrayController } from '../desktop-tray'
 import type { PluginTrayCommandItem } from '../plugin-tray'
-import { desktopVisibilityCapabilitiesForPlatform } from '../desktop-visibility'
+import { desktopVisibilityCapabilitiesForPlatform, macVisibleOnFullScreen } from '../desktop-visibility'
 import { PermissionBroker } from '../permission-broker'
-import { appendPermissionAudit } from '../permission-audit'
+import { appendPermissionAudit, clearPermissionAudit, readPermissionAudit, trimPermissionAuditOnStartup } from '../permission-audit'
+import type { PermissionAuditEntry } from '../../src/types/permission'
+import { CLAUDE_PERMISSION_WAIT_DEFAULT_SECONDS } from '../../src/types/permission'
 import { ProgressionStore } from '../progression'
 import { AchievementStore } from '../achievements'
 import { HistoryStore } from '../history'
 import { LocalUsageReader } from '../local-usage'
-import { createPresentationMcpServer, PRESENTATION_MCP_PORT } from '../presentation-mcp'
+import { createPresentationMcpServer } from '../presentation-mcp'
 import { listenOnLocalPort } from '../local-server-listen'
 import { normalizePresentationStatus, PresentationController } from '../presentation-controller'
 
 
 import { ProjectRoutingStore } from '../project-routing'
 import { PluginRegistry, PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES, PLUGIN_ARCHIVE_SKIN_MAX_BYTES } from '../plugin-registry'
+import { PanelSizeStore } from '../panel-size-store'
 import { PluginPreferencesStore, pluginHostMemoryBudgetMb } from '../plugin-preferences'
 import { PluginHostWindowController, type PluginHostDescriptor } from '../plugin-host-window'
 import { selectEnabledPluginDescriptors } from '../plugin-host-selection'
@@ -53,18 +67,19 @@ import { PluginDeveloperModeWatcher } from '../plugin-developer-mode.ts'
 import { catalogFingerprintMatches, createPluginCatalogGateway, isPluginCatalogUrl, PLUGIN_CATALOG_ALLOWED_HOSTS, PLUGIN_CATALOG_MAX_PACKAGE_BYTES, selectLatestCompatiblePluginVersion } from '../plugin-catalog.ts'
 import { buildPluginCatalogPanelItems, PluginCatalogAutoCheckSchedule } from '../plugin-catalog-updates.ts'
 import { PluginPanelViewController, type PluginPanelNativeView, type PluginPanelViewSession } from '../plugin-panel-view.ts'
-import { matchesProgrammaticPluginPanelSize, validatePluginPanelViewBounds, type PluginPanelRect } from '../plugin-panel-window.ts'
+import { PROGRAMMATIC_PANEL_RESIZE_WINDOW_MS, shouldRecordUserPanelSize, validatePluginPanelViewBounds, type PluginPanelRect } from '../plugin-panel-window.ts'
 import { isPluginPanelInstallConfirmation, isPluginPanelPluginId, isPluginPanelPreferencePatch, pluginPanelErrorCode } from '../plugin-panel-validation.ts'
 import { handlePluginProtocolRequest } from '../plugin-protocol'
 import { pluginHostAssets } from '../plugin-host-assets'
 import { parsePluginManifest } from '../plugin-manifest'
-import { createPermissionAdapterServer, PERMISSION_ADAPTER_PORT, PermissionAdapterRelay } from '../permission-adapter-server'
+import { createPermissionAdapterServer, PermissionAdapterRelay } from '../permission-adapter-server'
 import type { DesktopPreferences } from '../../src/types/desktop'
+import { CLAUDE_ANSWERABLE_GRACE_MS, withAnswerableClaudeNotice } from '../claude-permission-notice'
 import { locale, setLocale, t } from '../../src/i18n'
 import tokensCss from '../../src/styles/tokens.css?raw'
-import type { ProgressionSnapshot } from '../../src/types/progression'
+import type { ProgressionAwardEvent, ProgressionEventResult, ProgressionSnapshot } from '../../src/types/progression'
 import type { AchievementUnlock } from '../../src/types/achievement'
-import type { HistorySummary } from '../../src/types/history'
+import type { HistorySummary, HistoryTokenUsageRecord } from '../../src/types/history'
 import type { PresentationIntent } from '../../src/types/presentation'
 import type { PluginEventSourceStatusView, PluginPanelPlugin, PluginPanelResult, PluginPanelSnapshot } from '../../src/types/plugin'
 import type { IpcErrorCode } from '../../src/types/ipc'
@@ -72,8 +87,8 @@ import type { IpcErrorCode } from '../../src/types/ipc'
 import type { PetEdge, PetWindowMode, PetWindowModeState } from '../../src/types/pet-window'
 import { createPluginSkinPetId, isPluginSkinPetId, isValidPetId, isValidRegularPetId } from '../../src/utils/pet-id.ts'
 import { availablePluginSkinPetIds } from '../plugin-skins.ts'
-import { EDGE_DWELL_MS, EDGE_TRIGGER_DISTANCE_PX, clampWindowBounds, edgeWindowBounds, miniWindowBounds, nearestEdge, type WindowBounds } from '../pet-window-mode'
-import { IS_MAC, hookScriptDeployPath, readWindowState, writeWindowState } from '../setup'
+import { EDGE_DWELL_MS, EDGE_REDOCK_AFTER_MS, EDGE_TRIGGER_DISTANCE_PX, clampWindowBounds, edgeWindowBounds, miniWindowBounds, nearestEdge, type WindowBounds } from '../pet-window-mode'
+import { IS_MAC, hookScriptDeployPath, readWindowState, syncClaudePermissionRespondOptIn, writeWindowState } from '../setup'
 
 
 import { createWindowsFullscreenDetector, nativeWindowHandleToPointer, type WindowsFullscreenState } from '../windows-fullscreen-detector'
@@ -86,6 +101,7 @@ import { createWindowsFullscreenDetector, nativeWindowHandleToPointer, type Wind
 
 import { registerPluginFeedIpc } from '../ipc/plugin-feed'
 import { createLatestValueCoalescer } from '../ipc/broadcast-coalescer.ts'
+import { createProgressionChangeGate, createVisibleSender } from '../ipc/progression-broadcast-gate.ts'
 
 import { type IntegrationTestSource } from '../ipc/integrations'
 
@@ -98,14 +114,28 @@ import { registerPluginPreferencesIpc } from '../ipc/plugin-preferences'
 import { registerPluginCatalogIpc } from '../ipc/plugin-catalog'
 import { registerPluginInstallIpc } from '../ipc/plugin-install'
 import { mainState, type PluginSkinFallbackInfo } from './state'
+import { EMPTY_ATTENTION } from '../attention-tracker'
+import { attachHotkeyInfo, PermissionHotkeys } from '../permission-hotkeys'
+import { PANEL_GAP, PANEL_WIDTH, PANEL_BLUR_HIDE_DELAY_MS, clampPanelSize, clampRectToWorkArea, computePanelPlacement, effectivePanelSize, panelMaxSize, panelMinSize, shouldHidePanelOnBlur } from '../../src/utils/panel-layout'
 
-const PERMISSION_ALLOW_HOTKEY = 'CommandOrControl+Shift+Y'
-const PERMISSION_DENY_HOTKEY = 'CommandOrControl+Shift+N'
+let permissionHotkeys: PermissionHotkeys | null = null
 
-export const PANEL_WIDTH = 460
-export const PANEL_MIN_WIDTH = 320
-export const PANEL_MAX_WIDTH = 960
-export const PANEL_GAP = 6
+function getPermissionHotkeys(): PermissionHotkeys {
+  permissionHotkeys ??= new PermissionHotkeys({
+    platform: process.platform,
+    shortcuts: {
+      register: (accelerator, callback) => globalShortcut.register(accelerator, callback),
+      unregister: (accelerator) => globalShortcut.unregister(accelerator),
+      isRegistered: (accelerator) => globalShortcut.isRegistered(accelerator),
+    },
+    decide: (requestId, decision) => {
+      void mainState.permissionBroker?.decide(requestId, decision, 'hotkey')
+    },
+  })
+  return permissionHotkeys
+}
+
+export { PANEL_GAP, PANEL_WIDTH }
 // petWindow's actual bounds include a fixed, unscaled band of transparent
 // space reserved above the visible sprite for the quota tooltip to pop
 // into (see QUOTA_TOOLTIP_HEADROOM_H in agentStore.ts — keep in sync).
@@ -139,7 +169,8 @@ export function sendIntegrationTestEvent(
   return new Promise((resolvePromise, reject) => {
     const request = httpRequest({
       hostname: '127.0.0.1',
-      port: 17373,
+      // 與事件伺服器實際監聽的埠相同（開發或 e2e 執行可能不是 17373）。
+      port: localPorts().event,
       path: '/v1/events',
       method: 'POST',
       headers: {
@@ -196,6 +227,13 @@ export function animateBounds(target: { x: number; y: number; width: number; hei
     mainState.resizeAnimHandle = null
   }
 
+  // A hidden window has nothing to animate; jump straight to the end state.
+  if (!mainState.petWindow.isVisible()) {
+    mainState.petWindow.setBounds({ x: Math.round(target.x), y: Math.round(target.y), width: Math.round(target.width), height: Math.round(target.height) })
+    repositionVisiblePanel()
+    return
+  }
+
   const start = mainState.petWindow.getBounds()
   const startTime = Date.now()
 
@@ -221,7 +259,7 @@ export function animateBounds(target: { x: number; y: number; width: number; hei
       clearInterval(mainState.resizeAnimHandle)
       mainState.resizeAnimHandle = null
     }
-  }, 8)
+  }, 16)
 }
 
 export function clamp(value: number, min: number, max: number): number {
@@ -333,13 +371,7 @@ export async function pluginPanelSnapshot(): Promise<PluginPanelResult<PluginPan
 }
 
 
-export function sanitizePetId(id: string): string | null {
-  if (typeof id !== 'string') return null
-  const cleaned = id.replace(/[^a-zA-Z0-9_\-.]/g, '')
-  if (cleaned.length === 0 || cleaned.length > 64) return null
-  if (cleaned.includes('..')) return null
-  return cleaned
-}
+export { sanitizePetId }
 
 export function safeJoin(base: string, ...parts: string[]): string | null {
   const root = resolve(base)
@@ -410,6 +442,12 @@ export async function readRegularFileWithin(root: string, relativePath: string, 
   }
 }
 
+// Hands the file buffer to the Response as-is. Uint8Array.from() walked the
+// iterator and copied up to 20 MB per sprite or preview request.
+function responseBody(data: Buffer): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)
+}
+
 export function configureSecureProtocol(): void {
   protocol.handle('agent-pets', async (request) => {
     if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
@@ -436,12 +474,25 @@ export function configureSecureProtocol(): void {
         const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
         const data = await readRegularFileWithin(resolve(join(__dirname, '../dist')), relativePath, 25 * 1024 * 1024)
         if (!data) return new Response('Not found', { status: 404 })
-        return new Response(Uint8Array.from(data), {
+        return new Response(responseBody(data), {
           status: 200,
           headers: {
             'content-type': contentTypeFor(relativePath),
             'x-content-type-options': 'nosniff',
           },
+        })
+      }
+      if (url.hostname === 'import-preview') {
+        // Staged (not yet installed) import, addressed by an unguessable
+        // per-import token; anything else 404s.
+        const match = pathname.match(/^\/([0-9a-f]{32})\/spritesheet$/)
+        const directory = match ? mainState.petImport?.previewDirectory(match[1]) : null
+        const data = directory ? await readRegularFileWithin(directory, 'spritesheet.webp', MAX_PET_IMAGE_BYTES) : null
+        const contentType = data ? rasterContentType(data) : null
+        if (!data || !contentType) return new Response('Not found', { status: 404 })
+        return new Response(responseBody(data), {
+          status: 200,
+          headers: { 'content-type': contentType, 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' },
         })
       }
       if (url.hostname === 'custom') {
@@ -452,7 +503,7 @@ export function configureSecureProtocol(): void {
         const data = await readRegularFileWithin(customRoot, join(safeId, 'spritesheet.webp'), MAX_PET_IMAGE_BYTES)
         const contentType = data ? rasterContentType(data) : null
         if (!data || !contentType) return new Response('Not found', { status: 404 })
-        return new Response(Uint8Array.from(data), {
+        return new Response(responseBody(data), {
           status: 200,
           headers: { 'content-type': contentType, 'x-content-type-options': 'nosniff' },
         })
@@ -898,16 +949,21 @@ export function initializePluginCatalogAutoCheck(): void {
     },
   })
   void mainState.pluginCatalogAutoCheckSchedule.checkIfDue()
-  setInterval(() => {
+  if (mainState.pluginCatalogAutoCheckTimer) clearInterval(mainState.pluginCatalogAutoCheckTimer)
+  mainState.pluginCatalogAutoCheckTimer = setInterval(() => {
     void mainState.pluginCatalogAutoCheckSchedule?.checkIfDue()
   }, 60 * 60 * 1_000)
+  mainState.pluginCatalogAutoCheckTimer.unref?.()
 }
 
 export async function createPluginServices(): Promise<void> {
   if (mainState.pluginRegistry || mainState.pluginPreferences || mainState.pluginHostWindow) return
   const userDataDirectory = app.getPath('userData')
   mainState.pluginRegistry = new PluginRegistry(userDataDirectory)
-  mainState.pluginDeveloperModeWatcher = new PluginDeveloperModeWatcher(500)
+  mainState.pluginDeveloperModeWatcher = new PluginDeveloperModeWatcher(500, pluginId => {
+    // Surfaces in the plugin's diagnostics in the manager instead of vanishing.
+    mainState.pluginBroker?.recordSystemDiagnostic(pluginId, 'invalid_request', 'developer.reload')
+  })
   mainState.pluginPreferences = new PluginPreferencesStore(userDataDirectory)
   mainState.pluginSecretsStore = new PluginSecretsStore(userDataDirectory, safeStorage)
   mainState.pluginSecretConsentStore = new PluginSecretConsentStore(userDataDirectory)
@@ -993,6 +1049,7 @@ export async function createPluginServices(): Promise<void> {
   })
   mainState.pluginBroker = new PluginBroker({
     userDataDirectory,
+    onLog: (pluginId, entry) => logMain(entry.level === 'info' ? 'info' : entry.level === 'warn' ? 'warn' : 'error', `plugin:${pluginId}`, String(entry.message).slice(0, 300)),
     getContext: pluginId => {
       const context = mainState.pluginRuntimeContexts.get(pluginId)
       return context ? { ...context, dndEnabled: currentDesktopPreferences().dndEnabled } : null
@@ -1111,6 +1168,7 @@ export async function createPluginServices(): Promise<void> {
     pluginRootForToken: token => mainState.pluginRootsByToken.get(token) ?? null,
     messageGuard: mainState.pluginUiMessageGuard,
     onPluginCrash: (pluginId, consecutiveCrashes, reason) => {
+      logMain('warn', 'plugin-host', `plugin crash reason=${reason} consecutive=${consecutiveCrashes}`, { pluginId })
       mainState.pluginBadgeController?.clearPlugin(pluginId)
       mainState.pluginEventSourceController?.clearPlugin(pluginId)
       if (consecutiveCrashes >= 3) {
@@ -1199,7 +1257,6 @@ export async function createPluginServices(): Promise<void> {
       return mainState.pluginBroker?.handle(pluginId, request) ?? { ok: false, error: 'disabled' }
     },
     onClosed: event => {
-      restorePluginPanelWindowSize(event.pluginId)
       if (mainState.panelWindow && !mainState.panelWindow.isDestroyed()) {
         mainState.panelWindow.webContents.send(IPC_CHANNELS.pluginPanelViewClosed, event)
       }
@@ -1364,6 +1421,7 @@ export async function createPluginServices(): Promise<void> {
 }
 
 export function clearEdgeDwell(): void {
+  cancelEdgeRedock()
   if (mainState.edgeDwellHandle) clearTimeout(mainState.edgeDwellHandle)
   mainState.edgeDwellHandle = null
   mainState.edgeDwellCandidate = null
@@ -1518,6 +1576,46 @@ export function toggleMiniMode(): void {
   setPetWindowMode(mainState.petWindowMode === 'mini' ? 'normal' : 'mini')
 }
 
+let edgeRedockHandle: ReturnType<typeof setInterval> | null = null
+
+export function cancelEdgeRedock(): void {
+  if (edgeRedockHandle) clearInterval(edgeRedockHandle)
+  edgeRedockHandle = null
+}
+
+// After a hover-expand from the edge, tuck the pet back once the cursor has
+// stayed away and the pet is still resting against that edge.
+export function scheduleEdgeRedock(): void {
+  cancelEdgeRedock()
+  if (!currentDesktopPreferences().edgeModeEnabled) return
+  let outsideSince: number | null = null
+  edgeRedockHandle = setInterval(() => {
+    const window = mainState.petWindow
+    if (!window || window.isDestroyed() || mainState.petWindowMode !== 'normal' || mainState.dragPollHandle) {
+      cancelEdgeRedock()
+      return
+    }
+    const bounds = window.getBounds()
+    const display = displayForBounds(bounds)
+    if (!nearestEdge(bounds, display.workArea, EDGE_TRIGGER_DISTANCE_PX)) {
+      cancelEdgeRedock()
+      return
+    }
+    const cursor = screen.getCursorScreenPoint()
+    const inside = cursor.x >= bounds.x && cursor.x <= bounds.x + bounds.width
+      && cursor.y >= bounds.y && cursor.y <= bounds.y + bounds.height
+    if (inside || mainState.permissionBroker?.hasActiveRequests()) {
+      outsideSince = null
+      return
+    }
+    outsideSince ??= Date.now()
+    if (Date.now() - outsideSince >= EDGE_REDOCK_AFTER_MS) {
+      cancelEdgeRedock()
+      scheduleEdgeDwell()
+    }
+  }, 400)
+}
+
 export function scheduleEdgeDwell(): void {
   clearEdgeDwell()
   if (
@@ -1595,7 +1693,10 @@ export function applyMacFullscreenVisibilityPolicy(): void {
   if (!IS_MAC) return
   const preferences = currentDesktopPreferences()
   if (!preferences.visibilityCapabilities.fullscreenAutoHide.supported) return
-  const visibleOnFullScreen = !preferences.fullscreenAutoHideEnabled
+  const visibleOnFullScreen = macVisibleOnFullScreen(
+    preferences.fullscreenAutoHideEnabled,
+    mainState.permissionAttentionCount > 0,
+  )
   for (const window of [mainState.petWindow, mainState.panelWindow]) {
     if (!window || window.isDestroyed()) continue
     try {
@@ -1612,7 +1713,82 @@ export function applyMacFullscreenVisibilityPolicy(): void {
   }
 }
 
+export function localPorts() {
+  return resolveLocalPorts(process.env, app.isPackaged)
+}
+
+export function serverHealthTracker(): ServerHealthTracker {
+  if (!mainState.serverHealth) {
+    mainState.serverHealth = createServerHealthTracker({
+      onChange: snapshot => {
+        for (const window of [mainState.petWindow, mainState.panelWindow]) {
+          if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.serverHealthChanged, snapshot)
+        }
+      },
+      onPersistentFailure: health => {
+        try {
+          if (!Notification.isSupported()) return
+          new Notification({
+            title: t('reliability.server.offlineTitle'),
+            body: t(health.code === 'EADDRINUSE' ? 'reliability.server.portBusyBody' : 'reliability.server.failedBody', { port: health.port }),
+          }).show()
+        } catch {}
+      },
+    })
+  }
+  return mainState.serverHealth
+}
+
+const rendererRecoveries = new Map<'pet' | 'panel', RendererRecovery>()
+
+// Re-pushes main-owned state after a renderer crash/reload. Initial load
+// broadcasts only run once, so a recovered renderer would otherwise sit with
+// stale defaults (power-save, window mode, badges, progression, permissions).
+function resyncRendererState(): void {
+  broadcastPetWindowMode()
+  broadcastPowerSaveState()
+  broadcastPluginBadges()
+  broadcastPluginFeedUnreadCount()
+  broadcastProgression()
+  broadcastAchievements()
+  broadcastHistoryUpdated()
+  schedulePermissionUiSync()
+  try { broadcastDesktopPreferences(currentDesktopPreferences()) } catch {}
+}
+
+function attachWindowRecovery(label: 'pet' | 'panel', window: BrowserWindow): void {
+  rendererRecoveries.get(label)?.dispose()
+  const contents = window.webContents
+  const recovery = attachRendererRecovery(contents, {
+    label,
+    reload: () => { if (!contents.isDestroyed()) contents.reload() },
+    log: (level, message) => (level === 'error' ? console.error(message) : console.warn(message)),
+    onRecovered: resyncRendererState,
+    onGaveUp: () => {
+      try {
+        if (!Notification.isSupported()) return
+        new Notification({
+          title: t('reliability.renderer.gaveUpTitle'),
+          body: t('reliability.renderer.gaveUpBody'),
+        }).show()
+      } catch {}
+    },
+  })
+  rendererRecoveries.set(label, recovery)
+  window.once('closed', () => {
+    recovery.dispose()
+    if (rendererRecoveries.get(label) === recovery) rendererRecoveries.delete(label)
+  })
+}
+
+/** Tray / error-boundary rescue: reloads pet and panel renderers, rebuilding a window that is gone. */
+export function reloadPetRenderers(): void {
+  if (!ensureDesktopWindows()) return
+  for (const recovery of rendererRecoveries.values()) recovery.manualReload()
+}
+
 export function createPetWindow() {
+  if (mainState.petWindow && !mainState.petWindow.isDestroyed()) return
   const primaryWorkArea = screen.getPrimaryDisplay().workArea
   const rawScale = parseFloat(process.env.PET_SCALE || '1')
   const scale = clamp(isNaN(rawScale) ? 1 : rawScale, 0.3, 5)
@@ -1707,11 +1883,11 @@ export function createPetWindow() {
   applyPetCaptureProtection()
   applyMacFullscreenVisibilityPolicy()
 
-  if (process.env.VITE_DEV_SERVER_URL && !app.isPackaged) {
-    mainState.petWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-  } else {
-    mainState.petWindow.loadURL('agent-pets://app/index.html')
-  }
+  attachWindowRecovery('pet', mainState.petWindow)
+  const petLoad = process.env.VITE_DEV_SERVER_URL && !app.isPackaged
+    ? mainState.petWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+    : mainState.petWindow.loadURL('agent-pets://app/index.html')
+  petLoad.catch(error => console.error('Pet renderer load failed', error))
 
   mainState.petWindow.webContents.once('did-finish-load', () => {
     broadcastPetWindowMode()
@@ -1733,6 +1909,7 @@ export function createPetWindow() {
     schedulePermissionUiSync()
   })
 
+  attachBroadcastResync(mainState.petWindow)
   mainState.petWindow.on('closed', () => {
     mainState.petWindow = null
     mainState.windowsFullscreenAutoHiddenPet = false
@@ -1761,14 +1938,19 @@ export function createPetWindow() {
 // window, so opening/closing or resizing it (Sessions <-> Settings) never
 // moves or resizes the pet itself.
 export function createPanelWindow() {
-  mainState.panelWindow = new BrowserWindow({
-    width: PANEL_WIDTH,
-    height: 560,
+  // Idempotent: the first-run wizard or a pet click can create the panel on demand
+  // before the startup step reaches it. A second window would orphan the first
+  // renderer (its IPC would be rejected as untrusted) and its 'closed' event would
+  // then clear the live reference.
+  if (mainState.panelWindow && !mainState.panelWindow.isDestroyed()) return
+  const panelWindow = new BrowserWindow({
+    ...currentPanelSize(),
     show: false,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
+    // Always user-resizable (every view); limits come from applyPanelWindowLimits.
+    resizable: true,
     skipTaskbar: true,
     hasShadow: false,
     webPreferences: {
@@ -1781,6 +1963,7 @@ export function createPanelWindow() {
       devTools: !app.isPackaged,
     },
   })
+  mainState.panelWindow = panelWindow
 
   mainState.panelWindow.on('hide', () => mainState.pluginPanelViewController?.onPanelWindowHidden())
   mainState.panelWindow.on('show', () => {
@@ -1789,54 +1972,52 @@ export function createPanelWindow() {
     mainState.pluginPanelViewController?.relayout({ width: contentBounds.width, height: contentBounds.height })
   })
   mainState.panelWindow.webContents.on('did-start-loading', () => mainState.pluginPanelViewController?.onPanelRendererReload())
+  // 'will-resize' (macOS / Windows) fires only for user-initiated resizes, never for setBounds.
+  mainState.panelWindow.on('will-resize', () => { mainState.lastUserPanelResizeAt = Date.now() })
   mainState.panelWindow.on('resize', () => {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
     const contentBounds = mainState.panelWindow.getContentBounds()
     mainState.pluginPanelViewController?.relayout({ width: contentBounds.width, height: contentBounds.height })
-    const pluginId = mainState.pluginPanelWindowSizer.activePluginId()
-    if (!pluginId) return
+    if (!shouldRecordUserPanelSize({
+      visible: mainState.panelWindow.isVisible(),
+      now: Date.now(),
+      supportsWillResize: process.platform === 'darwin' || process.platform === 'win32',
+      lastUserResizeAt: mainState.lastUserPanelResizeAt,
+      programmaticUntil: mainState.programmaticPluginPanelUntil,
+    })) return
     const [width, height] = mainState.panelWindow.getSize()
-    if (mainState.programmaticPluginPanelSize) {
-      if (matchesProgrammaticPluginPanelSize(mainState.programmaticPluginPanelSize, { width, height })) {
-        mainState.programmaticPluginPanelSize = null
-        if (mainState.pluginPanelResizeResetTimer) clearTimeout(mainState.pluginPanelResizeResetTimer)
-        mainState.pluginPanelResizeResetTimer = null
-        return
-      }
-      mainState.programmaticPluginPanelSize = null
-      if (mainState.pluginPanelResizeResetTimer) clearTimeout(mainState.pluginPanelResizeResetTimer)
-      mainState.pluginPanelResizeResetTimer = null
-    }
-    const workArea = screen.getDisplayMatching(mainState.panelWindow.getBounds()).workArea
-    mainState.pluginPanelWindowSizer.recordManualSize(pluginId, { width, height }, workArea)
+    recordUserPanelSize({ width, height })
   })
 
   secureRendererWindow(mainState.panelWindow)
 
   applyMacFullscreenVisibilityPolicy()
 
-  if (process.env.VITE_DEV_SERVER_URL && !app.isPackaged) {
-    mainState.panelWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#panel`)
-  } else {
-    mainState.panelWindow.loadURL('agent-pets://app/index.html#panel')
-  }
+  attachWindowRecovery('panel', mainState.panelWindow)
+  const panelLoad = process.env.VITE_DEV_SERVER_URL && !app.isPackaged
+    ? mainState.panelWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#panel`)
+    : mainState.panelWindow.loadURL('agent-pets://app/index.html#panel')
+  panelLoad.catch(error => console.error('Panel renderer load failed', error))
 
   mainState.panelWindow.on('blur', () => {
-    if (mainState.dialogOpen) return
     // Clicking the pet focuses petWindow just before the click handler's
     // 'panel-toggle' IPC arrives — if we hid on blur here too, the toggle
     // would then see the panel already hidden and reopen it (a flicker,
     // and clicking the pet could never close the panel). Let the toggle
     // handler own that case; blur-hide is only for genuine click-outside.
-    if (mainState.petWindow?.isFocused()) return
+    if (!shouldHidePanelOnBlur(currentPanelBlurState())) return
     schedulePanelBlurHide()
   })
 
+  attachBroadcastResync(mainState.panelWindow)
   mainState.panelWindow.on('closed', () => {
+    // Only the window that is still current may clear shared state.
+    if (mainState.panelWindow !== panelWindow) return
     mainState.pluginPanelViewController?.close()
     if (mainState.panelBlurHideHandle) clearTimeout(mainState.panelBlurHideHandle)
     mainState.panelBlurHideHandle = null
     mainState.panelWindow = null
+    mainState.panelModalOpen = false
     mainState.windowsFullscreenAutoHiddenPanel = false
     syncWindowsFullscreenTargets()
   })
@@ -1845,65 +2026,110 @@ export function createPanelWindow() {
 }
 
 export function computePanelBounds(height: number, width = PANEL_WIDTH) {
-  const panelWidth = Math.round(clamp(width, PANEL_MIN_WIDTH, PANEL_MAX_WIDTH))
   if (!mainState.petWindow) {
     const { workArea } = screen.getPrimaryDisplay()
-    return { x: workArea.x, y: workArea.y, width: panelWidth, height }
+    return { x: workArea.x, y: workArea.y, ...clampPanelSize({ width, height }, workArea) }
   }
-
   const petBounds = mainState.petWindow.getBounds()
   // The window's horizontal center still matches the visible sprite's (the
-  // headroom band is only added above, not to the sides), so x needs no
-  // adjustment — only the vertical anchor does.
-  //
-  // Prefer the height the pet renderer measured for its own content: the
-  // sprite is bottom-anchored in the window, and how much of the window it
-  // actually fills depends on pet size AND status-line count, neither of
-  // which the constant below can express. It is only the fallback for the
-  // brief window before the first measurement arrives.
-  const visibleHeight = mainState.petContentHeight !== null
-    ? clamp(mainState.petContentHeight, 40, petBounds.height)
-    : petBounds.height - PET_WINDOW_TOP_HEADROOM
-  const visibleTop = petBounds.y + petBounds.height - visibleHeight
-  const { workArea } = screen.getDisplayMatching(petBounds)
-  const maxX = Math.max(workArea.x, workArea.x + workArea.width - panelWidth)
-  const maxY = Math.max(workArea.y, workArea.y + workArea.height - height)
-  let x = petBounds.x + Math.round(petBounds.width / 2) - Math.round(panelWidth / 2)
-  const aboveY = visibleTop - height - PANEL_GAP
-  const belowY = visibleTop + visibleHeight + PANEL_GAP
-  let y = aboveY
+  // headroom band is only added above, not to the sides). Prefer the height
+  // the pet renderer measured for its own content: it depends on pet size AND
+  // status-line count, which the headroom constant cannot express.
+  return computePanelPlacement({
+    petBounds,
+    petContentHeight: mainState.petContentHeight,
+    petHeadroom: PET_WINDOW_TOP_HEADROOM,
+    workArea: screen.getDisplayMatching(petBounds).workArea,
+    width,
+    height,
+  })
+}
 
-  // Keep the panel touching the pet even near a work-area edge. Prefer above,
-  // but place it below when there is no room instead of clamping it far away.
-  if (aboveY < workArea.y && belowY + height <= workArea.y + workArea.height) {
-    y = belowY
+// ── Panel size: one user-owned size for every view ───────────────────────────
+// The window is always resizable. Its size is the user's own (persisted) size, or the
+// first-run default; the route (dashboard / Settings / plugin tabs) never changes it.
+// Wizard / MCP pages may raise it temporarily, which is never saved.
+
+function panelSizeStore(): PanelSizeStore {
+  if (!mainState.panelSizeStore) {
+    const store = new PanelSizeStore(join(app.getPath('userData'), 'panel-size.json'))
+    mainState.panelUserSize = store.load()
+    app.once('before-quit', () => store.flush())
+    mainState.panelSizeStore = store
   }
+  return mainState.panelSizeStore
+}
 
-  x = clamp(x, workArea.x, maxX)
-  y = clamp(y, workArea.y, maxY)
+export function currentPanelSize(): { width: number; height: number } {
+  panelSizeStore()
+  return effectivePanelSize(mainState.panelUserSize, mainState.panelMinimumSize)
+}
 
-  return { x, y, width: panelWidth, height }
+function panelWorkArea(bounds?: Electron.Rectangle) {
+  if (bounds) return screen.getDisplayMatching(bounds).workArea
+  if (mainState.petWindow && !mainState.petWindow.isDestroyed()) return screen.getDisplayMatching(mainState.petWindow.getBounds()).workArea
+  return screen.getPrimaryDisplay().workArea
+}
+
+// Min / max follow the display the panel sits on: the user can drag up to the work
+// area minus the gap, and never below the readable minimum.
+export function applyPanelWindowLimits(workArea = panelWorkArea()): void {
+  const panel = mainState.panelWindow
+  if (!panel || panel.isDestroyed()) return
+  const min = panelMinSize(workArea)
+  const max = panelMaxSize(workArea)
+  panel.setResizable(true)
+  panel.setMinimumSize(min.width, min.height)
+  panel.setMaximumSize(max.width, max.height)
 }
 
 export function setPluginPanelWindowBounds(bounds: ReturnType<typeof computePanelBounds>): void {
   if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
-  mainState.programmaticPluginPanelSize = { width: bounds.width, height: bounds.height }
-  if (mainState.pluginPanelResizeResetTimer) clearTimeout(mainState.pluginPanelResizeResetTimer)
-  mainState.pluginPanelResizeResetTimer = setTimeout(() => {
-    mainState.programmaticPluginPanelSize = null
-    mainState.pluginPanelResizeResetTimer = null
-  }, 500)
+  applyPanelWindowLimits(panelWorkArea(bounds))
+  mainState.programmaticPluginPanelUntil = Date.now() + PROGRAMMATIC_PANEL_RESIZE_WINDOW_MS
   mainState.panelWindow.setBounds(bounds)
 }
 
-export function restorePluginPanelWindowSize(pluginId: string): void {
-  if (mainState.pluginPanelWindowSizer.activePluginId() !== pluginId) return
-  const baseSize = mainState.pluginPanelWindowSizer.finish()
-  if (!baseSize || !mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
-  mainState.panelWindow.setResizable(false)
-  mainState.panelWindow.setMinimumSize(0, 0)
-  mainState.panelWindow.setMaximumSize(0, 0)
-  setPluginPanelWindowBounds(computePanelBounds(baseSize.height, baseSize.width))
+function applyCurrentPanelSize(): void {
+  const { width, height } = currentPanelSize()
+  setPluginPanelWindowBounds(computePanelBounds(height, width))
+}
+
+// A drag by the user: remember it (debounced on disk), drop any wizard minimum, and
+// once the drag settles slide the window back inside the work area.
+function recordUserPanelSize(size: { width: number; height: number }): void {
+  const panel = mainState.panelWindow
+  if (!panel || panel.isDestroyed()) return
+  const clamped = clampPanelSize(size, panelWorkArea(panel.getBounds()))
+  mainState.panelUserSize = clamped
+  mainState.panelMinimumSize = null
+  panelSizeStore().save(clamped)
+  if (mainState.panelSettleTimer) clearTimeout(mainState.panelSettleTimer)
+  mainState.panelSettleTimer = setTimeout(() => {
+    mainState.panelSettleTimer = null
+    const window = mainState.panelWindow
+    if (!window || window.isDestroyed() || !window.isVisible()) return
+    const bounds = window.getBounds()
+    const inside = clampRectToWorkArea(bounds, screen.getDisplayMatching(bounds).workArea)
+    if (inside.x !== bounds.x || inside.y !== bounds.y || inside.width !== bounds.width || inside.height !== bounds.height) {
+      setPluginPanelWindowBounds(inside)
+    }
+  }, 250)
+}
+
+// Wizard / MCP pages ask for a minimum size (null releases it). It never changes or
+// persists the user's own size.
+export function requestPanelMinimum(size: { width: number; height: number } | null): void {
+  panelSizeStore()
+  mainState.panelMinimumSize = size && size.height > 0 ? { width: size.width, height: size.height } : null
+  if (mainState.panelWindow?.isVisible()) applyCurrentPanelSize()
+}
+
+export function resetPanelSize(): void {
+  panelSizeStore().save(null)
+  mainState.panelUserSize = null
+  mainState.panelMinimumSize = null
+  if (mainState.panelWindow?.isVisible()) applyCurrentPanelSize()
 }
 
 export async function openPluginPanelViewForPlugin(
@@ -1928,16 +2154,7 @@ export async function openPluginPanelViewForPlugin(
   )
   if (!bounds) return { ok: false as const, error: 'panel_unavailable' }
   mainState.pluginPanelViewController.close('replaced')
-  const [currentWidth, currentHeight] = mainState.panelWindow.getSize()
-  const workArea = screen.getDisplayMatching(mainState.panelWindow.getBounds()).workArea
-  const size = mainState.pluginPanelWindowSizer.begin(pluginId, { width: currentWidth, height: currentHeight }, panelView.preferredSize, workArea)
-  mainState.panelWindow.setResizable(true)
-  mainState.panelWindow.setMinimumSize(Math.min(320, workArea.width), Math.min(240, workArea.height))
-  mainState.panelWindow.setMaximumSize(Math.min(960, workArea.width), Math.min(800, workArea.height))
-  setPluginPanelWindowBounds(computePanelBounds(size.height, size.width))
-  const result = await mainState.pluginPanelViewController.open({ pluginId, entry: panelView.entry, openToken, bounds })
-  if (!result.ok) restorePluginPanelWindowSize(pluginId)
-  return result
+  return mainState.pluginPanelViewController.open({ pluginId, entry: panelView.entry, openToken, bounds })
 }
 
 // Status-line count can flap as agents come and go, so coalesce the writes
@@ -1956,8 +2173,7 @@ export function persistPetBounds(x: number, y: number, width: number, height: nu
 
 export function repositionVisiblePanel() {
   if (!mainState.panelWindow?.isVisible()) return
-  const [width, height] = mainState.panelWindow.getSize()
-  mainState.panelWindow.setBounds(computePanelBounds(height, width))
+  applyCurrentPanelSize()
 }
 
 export function ensureDesktopWindows(): boolean {
@@ -2032,6 +2248,15 @@ function revealPanelWindowAfterFirstFrame(panelWindow: BrowserWindow): void {
 // 其他 view 是明確導向，會先關閉暫停中的插件畫面再切換。
 export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'sessions', pluginViewPluginId?: string): void {
   if (!ensureDesktopWindows() || !mainState.panelWindow) return
+  if (rendererRecoveries.get('panel')?.state().gaveUp) {
+    // The panel renderer is dead and out of retries; show a fresh window
+    // rather than a broken one.
+    const broken = mainState.panelWindow
+    mainState.panelWindow = null
+    try { broken.destroy() } catch {}
+    createPanelWindow()
+    if (!mainState.panelWindow) return
+  }
   const restore = view === 'restore'
   if (!restore) mainState.pluginPanelViewController?.close(mainState.panelWindow.isVisible() ? 'closed' : 'hidden')
   if (mainState.panelBlurHideHandle) clearTimeout(mainState.panelBlurHideHandle)
@@ -2039,12 +2264,8 @@ export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'ses
   mainState.windowsFullscreenAutoHiddenPanel = false
   if (mainState.petWindowMode === 'edge') applyNormalPetBounds()
   showPetWindow()
-  if (restore) {
-    const [width, height] = mainState.panelWindow.getSize()
-    setPluginPanelWindowBounds(computePanelBounds(height, width))
-  } else {
-    mainState.panelWindow.setBounds(computePanelBounds(view === 'settings' ? 720 : 560))
-  }
+  // The same user-owned size for every view; only the anchor (the pet) can move it.
+  applyCurrentPanelSize()
   const wasHidden = !mainState.panelWindow.isVisible()
   if (wasHidden) {
     mainState.panelWindow.setOpacity(0)
@@ -2059,7 +2280,6 @@ export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'ses
   mainState.panelWindow.show()
   mainState.panelWindow.focus()
   if (wasHidden) revealPanelWindowAfterFirstFrame(mainState.panelWindow)
-  mainState.desktopNotifications?.clearAttention()
 
   const notifyRenderer = () => {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
@@ -2078,8 +2298,11 @@ export function currentDesktopPreferences(): DesktopPreferences {
   if (!mainState.desktopPreferences) {
     return {
       dndEnabled: false,
+      dndUntil: null,
       notificationsEnabled: true,
       permissionBubbleEnabled: true,
+      claudePermissionRespondEnabled: false,
+      claudePermissionWaitSeconds: CLAUDE_PERMISSION_WAIT_DEFAULT_SECONDS,
       presentationMcpEnabled: true,
       achievementsEnabled: true,
       edgeModeEnabled: false,
@@ -2087,9 +2310,17 @@ export function currentDesktopPreferences(): DesktopPreferences {
       captureExclusionEnabled: false,
       fullscreenAutoHideEnabled: false,
       rightClickHideEnabled: false,
+      completionMarkersEnabled: true,
+      sessionJumpEnabled: true,
+      sessionJumpSwitchAppEnabled: true,
       soundEnabled: false,
+      soundVolume: 60,
+      soundOnPermission: true,
+      soundOnError: true,
+      soundOnSuccess: true,
       launchAtStartup: false,
       launchAtStartupSupported: false,
+      launchAtStartupStatus: 'unsupported',
       locale: 'zh-TW',
       visibilityCapabilities: currentDesktopVisibilityCapabilities(),
     }
@@ -2187,6 +2418,15 @@ export function restoreWindowsHiddenByFullscreen(): void {
   }
 }
 
+function currentPanelBlurState() {
+  return {
+    dialogOpen: mainState.dialogOpen,
+    petFocused: mainState.petWindow?.isFocused() ?? false,
+    pinned: mainState.panelPinned,
+    modalOpen: mainState.panelModalOpen,
+  }
+}
+
 export function schedulePanelBlurHide(): void {
   if (mainState.panelBlurHideHandle) clearTimeout(mainState.panelBlurHideHandle)
   mainState.panelBlurHideHandle = setTimeout(() => {
@@ -2194,13 +2434,15 @@ export function schedulePanelBlurHide(): void {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed() || mainState.panelWindow.isFocused() || !mainState.panelWindow.isVisible()) {
       return
     }
+    // A pin / wizard can be engaged during the grace delay.
+    if (mainState.panelPinned || mainState.panelModalOpen) return
     // Give the Win32 detector's event-driven refresh a chance to classify an
     // external fullscreen transition before treating the blur as a manual
     // click-away. This preserves the marker needed to restore an open panel.
     if (process.platform === 'win32' && mainState.windowsFullscreenState.panelDisplayFullscreen) return
     mainState.windowsFullscreenAutoHiddenPanel = false
     mainState.panelWindow.hide()
-  }, 100)
+  }, PANEL_BLUR_HIDE_DELAY_MS)
 }
 
 export function applyWindowsFullscreenAutoHideState(state: WindowsFullscreenState): void {
@@ -2252,12 +2494,35 @@ export function createWindowsFullscreenServices(): void {
   }
 }
 
+let dndExpiryTimer: ReturnType<typeof setTimeout> | null = null
+
+// A timed Do Not Disturb ends by itself; when it does, summarise what was
+// silenced so the user is not left wondering what they missed.
+function scheduleDndExpiry(preferences: DesktopPreferences): void {
+  if (dndExpiryTimer) clearTimeout(dndExpiryTimer)
+  dndExpiryTimer = null
+  if (!preferences.dndEnabled || preferences.dndUntil === null) return
+  const delay = Math.min(Math.max(0, preferences.dndUntil - Date.now()) + 50, 2_147_483_647)
+  dndExpiryTimer = setTimeout(() => {
+    dndExpiryTimer = null
+    const missed = mainState.desktopNotifications?.takeDndMissedCount() ?? 0
+    updateDesktopPreferences({ dndEnabled: false, dndUntil: null })
+    if (missed > 0) mainState.desktopNotifications?.showDndSummary(missed)
+  }, delay)
+  dndExpiryTimer.unref?.()
+}
+
 export function updateDesktopPreferences(patch: unknown): DesktopPreferences {
   if (!mainState.desktopPreferences) throw new Error('Desktop preferences are not ready')
   const previousPreferences = mainState.desktopPreferences.get()
   const achievementsWereEnabled = previousPreferences.achievementsEnabled
   const preferences = mainState.desktopPreferences.update(patch)
   if (previousPreferences.dndEnabled !== preferences.dndEnabled) mainState.pluginFeedController?.onVisibilityChanged()
+  if (
+    previousPreferences.claudePermissionRespondEnabled !== preferences.claudePermissionRespondEnabled
+    || previousPreferences.claudePermissionWaitSeconds !== preferences.claudePermissionWaitSeconds
+  ) applyClaudePermissionRespond(preferences)
+  scheduleDndExpiry(preferences)
   setLocale(preferences.locale)
   if (!preferences.edgeModeEnabled && mainState.petWindowMode === 'edge') applyNormalPetBounds()
   applyPetCaptureProtection()
@@ -2278,70 +2543,107 @@ export function updateDesktopPreferences(patch: unknown): DesktopPreferences {
 
 export function unregisterPermissionHotkeys(): void {
   if (!app.isReady()) return
-  for (const accelerator of [PERMISSION_ALLOW_HOTKEY, PERMISSION_DENY_HOTKEY]) {
-    if (globalShortcut.isRegistered(accelerator)) globalShortcut.unregister(accelerator)
-  }
+  permissionHotkeys?.clear()
 }
 
 export function syncTrayAttention(): void {
-  mainState.desktopTray?.setAttentionCount(mainState.notificationAttentionCount + mainState.permissionAttentionCount)
+  mainState.desktopTray?.setAttention(mainState.desktopNotifications?.getAttention() ?? EMPTY_ATTENTION)
 }
 
 export function broadcastPermissionRequests(): void {
-  const requests = mainState.permissionBroker?.listRequests() ?? []
-  if (requests.length > 0 && mainState.petWindowMode !== 'normal') {
+  const listed = mainState.permissionBroker?.listRequests() ?? []
+  if (listed.length > 0 && mainState.petWindowMode !== 'normal') {
     applyNormalPetBounds()
   }
-  mainState.permissionAttentionCount = requests.length
-  syncTrayAttention()
+  const hadPermissionRequests = mainState.permissionAttentionCount > 0
+  mainState.permissionAttentionCount = listed.length
+  if (hadPermissionRequests !== listed.length > 0) applyMacFullscreenVisibilityPolicy()
+  if (mainState.desktopNotifications) mainState.desktopNotifications.setPermissionRequests(listed)
+  else syncTrayAttention()
+
+  const top = listed[0]
+  const hotkeyInfo = app.isReady()
+    ? getPermissionHotkeys().sync(
+      top,
+      Boolean(
+        currentDesktopPreferences().permissionBubbleEnabled
+        && mainState.petWindow
+        && !mainState.petWindow.isDestroyed()
+        && mainState.petWindow.isVisible(),
+      ),
+    )
+    : null
+  const requests = attachHotkeyInfo(listed, hotkeyInfo)
   for (const window of [mainState.petWindow, mainState.panelWindow]) {
     if (window && !window.isDestroyed()) {
       window.webContents.send(IPC_CHANNELS.permissionRequestsUpdated, requests)
     }
   }
+}
 
-  unregisterPermissionHotkeys()
-  const top = requests[0]
-  const permissionBubbleEnabled = currentDesktopPreferences().permissionBubbleEnabled
-  if (
-    !permissionBubbleEnabled
-    || !top
-    || top.status !== 'pending'
-    || !top.hotkeyEligible
-    || !mainState.petWindow
-    || mainState.petWindow.isDestroyed()
-    || !mainState.petWindow.isVisible()
-  ) return
+const progressionGate = createProgressionChangeGate()
+const progressionSender = createVisibleSender<BrowserWindow>()
+const historySender = createVisibleSender<BrowserWindow>()
 
-  try {
-    if (top.allowedDecisions.includes('allow_once')) {
-      globalShortcut.register(PERMISSION_ALLOW_HOTKEY, () => {
-        void mainState.permissionBroker?.decide(top.requestId, 'allow_once', 'hotkey')
-      })
-    }
-    if (top.allowedDecisions.includes('deny')) {
-      globalShortcut.register(PERMISSION_DENY_HOTKEY, () => {
-        void mainState.permissionBroker?.decide(top.requestId, 'deny', 'hotkey')
-      })
-    }
-  } catch {
-    unregisterPermissionHotkeys()
-  }
+function sendProgressionTo(window: BrowserWindow): void {
+  const snapshot = mainState.progressionStore?.getSnapshot()
+  if (snapshot) window.webContents.send(IPC_CHANNELS.progressionUpdated, snapshot)
+}
+
+function sendHistoryUpdatedTo(window: BrowserWindow): void {
+  window.webContents.send(IPC_CHANNELS.historyUpdated)
+}
+
+// Hidden windows skip progression/history pushes; on show they get exactly one
+// resync so a stale pet or panel never stays behind.
+function attachBroadcastResync(window: BrowserWindow): void {
+  window.on('show', () => {
+    progressionSender.resync(window, sendProgressionTo)
+    historySender.resync(window, sendHistoryUpdatedTo)
+  })
 }
 
 export function broadcastProgression(snapshot?: ProgressionSnapshot): void {
   const next = snapshot ?? mainState.progressionStore?.getSnapshot()
   if (!next) return
+  progressionGate.record(next)
+  for (const window of [mainState.petWindow, mainState.panelWindow]) {
+    progressionSender.send(window, w => w.webContents.send(IPC_CHANNELS.progressionUpdated, next))
+  }
+}
+
+/** Event hot path: heartbeats leave the snapshot unchanged, so send nothing. */
+export function broadcastProgressionIfChanged(snapshot: ProgressionSnapshot): void {
+  if (!progressionGate.shouldBroadcast(snapshot)) return
+  broadcastProgression(snapshot)
+}
+
+// Tells the pet and panel windows that XP was actually granted (the awards are
+// already deduplicated by the ledger, so a replayed event produces none). The
+// renderer derives toasts and level-up celebrations from this, never XP itself.
+export function broadcastProgressionAwards(result: ProgressionEventResult): void {
+  if (result.awards.length === 0) return
+  const payload: ProgressionAwardEvent = {
+    petId: result.snapshot.petId,
+    awards: result.awards.map(award => ({ ruleId: award.ruleId, amount: award.amount })),
+    at: Date.now(),
+    levelBefore: result.levelBefore,
+    levelAfter: result.snapshot.level,
+    stageBefore: result.stageBefore,
+    stageAfter: result.snapshot.evolutionStage,
+  }
   for (const window of [mainState.petWindow, mainState.panelWindow]) {
     if (window && !window.isDestroyed()) {
-      window.webContents.send(IPC_CHANNELS.progressionUpdated, next)
+      window.webContents.send(IPC_CHANNELS.progressionAwarded, payload)
     }
   }
 }
 
 export function broadcastAchievements(petId?: string): void {
+  const targetPet = petId ?? mainState.progressionStore?.getActivePetId() ?? 'aang-airbender'
   const snapshot = mainState.achievementStore?.getSnapshot(
-    petId ?? mainState.progressionStore?.getActivePetId() ?? 'aang-airbender',
+    targetPet,
+    mainState.progressionStore?.getSnapshot(targetPet),
   )
   if (!snapshot) return
   for (const window of [mainState.petWindow, mainState.panelWindow]) {
@@ -2360,16 +2662,49 @@ export function broadcastAchievementUnlock(unlock: AchievementUnlock): void {
   broadcastAchievements()
 }
 
-export function currentHistorySummary(projectId?: string): HistorySummary | null {
+export function currentHistorySummary(projectId?: string, rangeDays = 7): HistorySummary | null {
   if (!mainState.historyStore) return null
-  return mainState.historyStore.getSummary(mainState.progressionStore?.getActivePetId() ?? 'aang-airbender', projectId)
+  const summary = mainState.historyStore.getSummary(mainState.progressionStore?.getActivePetId() ?? 'aang-airbender', projectId, rangeDays)
+  const scan = mainState.localUsageReader?.getDiagnostics()
+  return scan
+    ? {
+        ...summary,
+        scan: {
+          finishedAt: scan.finishedAt,
+          durationMs: scan.durationMs,
+          filesScanned: scan.filesScanned,
+          filesSkipped: scan.filesSkipped,
+          filesDeferred: scan.filesDeferred,
+        },
+      }
+    : summary
 }
 
-export async function refreshLocalUsage(): Promise<void> {
+// Opening the History tab must not rescan the whole log tree each time; the
+// 60s timer is the regular cadence, so panel-triggered refreshes are throttled.
+const LOCAL_USAGE_MIN_SCAN_INTERVAL_MS = 10_000
+let localUsageLastScanAt = 0
+let localUsageCatchUpTimer: ReturnType<typeof setTimeout> | null = null
+let localUsageStalledScans = 0
+
+export async function refreshLocalUsage(options: { catchUp?: boolean } = {}): Promise<void> {
   if (!mainState.localUsageReader || mainState.localUsageScanPromise) return mainState.localUsageScanPromise ?? Promise.resolve()
+  if (!options.catchUp && Date.now() - localUsageLastScanAt < LOCAL_USAGE_MIN_SCAN_INTERVAL_MS) return
   mainState.localUsageScanPromise = mainState.localUsageReader.scan()
     .then(result => {
+      localUsageLastScanAt = Date.now()
       if (result.recordsImported > 0) broadcastHistoryUpdated()
+      evaluateLocalTokenAchievements()
+      localUsageStalledScans = result.bytesRead > 0 ? 0 : localUsageStalledScans + 1
+      // A budget-limited scan continues shortly instead of waiting a full tick.
+      const delay = localUsageCatchUpDelayMs(result.pending, powerMonitor.isOnBatteryPower(), localUsageStalledScans)
+      if (delay !== null && !localUsageCatchUpTimer && !mainState.isQuitting) {
+        localUsageCatchUpTimer = setTimeout(() => {
+          localUsageCatchUpTimer = null
+          void refreshLocalUsage({ catchUp: true })
+        }, delay)
+        localUsageCatchUpTimer.unref?.()
+      }
     })
     .catch(error => {
       console.error('Local token usage scan failed', error)
@@ -2380,10 +2715,21 @@ export async function refreshLocalUsage(): Promise<void> {
   return mainState.localUsageScanPromise
 }
 
-export function broadcastHistoryUpdated(): void {
+function flushHistoryUpdated(): void {
   for (const window of [mainState.petWindow, mainState.panelWindow]) {
-    if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.historyUpdated)
+    historySender.send(window, sendHistoryUpdatedTo)
   }
+}
+
+const HISTORY_UPDATED_COALESCE_MS = 1000
+const queueHistoryUpdated = createLatestValueCoalescer<void>(
+  flushHistoryUpdated,
+  callback => { setTimeout(callback, HISTORY_UPDATED_COALESCE_MS).unref?.() },
+)
+
+/** At most one historyUpdated per ~1s regardless of event rate. */
+export function broadcastHistoryUpdated(): void {
+  queueHistoryUpdated()
 }
 
 export function broadcastPresentationIntent(intent: PresentationIntent): void {
@@ -2419,12 +2765,16 @@ export function createPresentationServices(presentationToken: string): void {
     token: presentationToken,
     controller: mainState.presentationController,
   })
-  listenOnLocalPort(server, PRESENTATION_MCP_PORT, {
+  const presentationHealth = serverHealthTracker().register('presentation', localPorts().presentation)
+  const presentationHandle = listenOnLocalPort(server, localPorts().presentation, {
     label: 'Presentation MCP',
+    onStatus: presentationHealth.onStatus,
+    onPersistentFailure: presentationHealth.onPersistentFailure,
     onListening: () => {
-      if (!app.isPackaged) console.log(`Presentation MCP control listening on http://127.0.0.1:${PRESENTATION_MCP_PORT}`)
+      if (!app.isPackaged) console.log(`Presentation MCP control listening on http://127.0.0.1:${localPorts().presentation}`)
     },
   })
+  presentationHealth.attach(presentationHandle)
   mainState.presentationMcpServer = server
 }
 
@@ -2471,9 +2821,7 @@ export function createAchievementServices(): void {
 }
 
 export function logAchievementDiagnostic(label: string, error: unknown, extra?: unknown): void {
-  const line = `${new Date().toISOString()} [${label}] ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`
-    + `${extra !== undefined ? ` extra=${JSON.stringify(extra)}` : ''}\n`
-  void fs.promises.appendFile(join(app.getPath('userData'), 'achievements-init-error.log'), line).catch(() => {})
+  logMain('error', 'achievements', `[${label}] attempt=${mainState.achievementStoreRetryAttempt}`, { error, extra })
 }
 
 export function scheduleAchievementStoreRetry(): void {
@@ -2487,26 +2835,148 @@ export function scheduleAchievementStoreRetry(): void {
   }, delay)
 }
 
+const HISTORY_STORE_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const
+const STARTUP_DEFERRED_WORK_MS = 10_000
+let deferredHistoryWorkTimer: ReturnType<typeof setTimeout> | null = null
+let historyStoreRetryTimer: ReturnType<typeof setTimeout> | null = null
+let historyPruneTimer: ReturnType<typeof setInterval> | null = null
+const HISTORY_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000
+let historyStoreRetryAttempt = 0
+
+export function cancelHistoryStoreRetry(): void {
+  if (deferredHistoryWorkTimer) clearTimeout(deferredHistoryWorkTimer)
+  deferredHistoryWorkTimer = null
+  if (historyStoreRetryTimer) clearTimeout(historyStoreRetryTimer)
+  historyStoreRetryTimer = null
+}
+
+function notifyHistoryRecovered(): void {
+  try {
+    if (!Notification.isSupported()) return
+    new Notification({
+      title: t('reliability.history.recoveredTitle'),
+      body: t('reliability.history.recoveredBody'),
+    }).show()
+  } catch {}
+}
+
 export function createHistoryServices(): void {
   if (mainState.historyStore) return
   try {
-    mainState.historyStore = new HistoryStore(join(app.getPath('userData'), 'history.sqlite'))
+    const databasePath = join(app.getPath('userData'), 'history.sqlite')
+    mainState.historyStore = openWithCorruptionRecovery(
+      databasePath,
+      () => new HistoryStore(databasePath),
+      {
+        log: (message, detail) => console.error(message, detail),
+        verify: store => store.quickCheck(),
+        dispose: store => store.close(),
+        onRecovered: () => notifyHistoryRecovered(),
+      },
+    )
+    if (!mainState.historyStore) throw new Error('History database could not be opened')
+    historyStoreRetryAttempt = 0
+    const retentionDays = mainState.historyStore.getRetentionDays()
     mainState.localUsageReader = new LocalUsageReader({
       homeDir: app.getPath('home'),
       history: mainState.historyStore,
       projectRouting: mainState.projectRoutingStore,
+      onRecordsImported: records => syncLocalTokenAchievements(records, retentionDays),
     })
+    let scanTick = 0
     mainState.localUsageScanTimer = setInterval(() => {
+      scanTick += 1
+      if (!shouldRunLocalUsageTick(scanTick, powerMonitor.isOnBatteryPower())) return
       void refreshLocalUsage()
-    }, 60_000)
-    reconcileAchievementsFromHistory()
-    void refreshLocalUsage()
+    }, LOCAL_USAGE_TICK_MS)
+    mainState.localUsageScanTimer.unref?.()
+    // Heavy first-run work waits until the pet has been on screen for a while.
+    if (deferredHistoryWorkTimer) clearTimeout(deferredHistoryWorkTimer)
+    deferredHistoryWorkTimer = setTimeout(() => {
+      deferredHistoryWorkTimer = null
+      reconcileAchievementsFromHistory()
+      void refreshLocalUsage()
+    }, STARTUP_DEFERRED_WORK_MS)
+    deferredHistoryWorkTimer.unref?.()
+    // A tray app runs for weeks: expire old events/sessions at runtime too,
+    // in bounded batches that yield between steps.
+    if (historyPruneTimer) clearInterval(historyPruneTimer)
+    historyPruneTimer = setInterval(() => {
+      void mainState.historyStore?.pruneInBatches().catch(error => console.error('History prune failed', error))
+      try { mainState.progressionStore?.pruneStaleActivity() } catch (error) { console.error('XP activity prune failed', error) }
+    }, HISTORY_PRUNE_INTERVAL_MS)
+    historyPruneTimer.unref?.()
   } catch (error) {
     // History is an additive HUD feature. A broken history database must not
     // prevent the pet, event receiver, XP, or permission controls from booting.
     console.error('History storage is unavailable', error)
+    if (historyPruneTimer) clearInterval(historyPruneTimer)
+    historyPruneTimer = null
+    try { mainState.historyStore?.close() } catch {}
     mainState.historyStore = null
     mainState.localUsageReader = null
+    const delay = HISTORY_STORE_RETRY_DELAYS_MS[historyStoreRetryAttempt]
+    if (delay !== undefined && !historyStoreRetryTimer && !mainState.isQuitting) {
+      historyStoreRetryAttempt += 1
+      historyStoreRetryTimer = setTimeout(() => {
+        historyStoreRetryTimer = null
+        createHistoryServices()
+      }, delay)
+      historyStoreRetryTimer.unref?.()
+    }
+  }
+}
+
+/**
+ * Feeds exact local-log usage into the achievement token ledger (the single
+ * token source for Codex and Claude Code). The ledger always updates so no
+ * token is lost while achievements are switched off; unlock evaluation only
+ * runs, for the active pet, when achievements are enabled.
+ */
+let achievementProgressTimer: ReturnType<typeof setTimeout> | null = null
+let localTokenLedgerChanged = false
+
+function syncLocalTokenAchievements(records: readonly HistoryTokenUsageRecord[], retentionDays: number): void {
+  const store = mainState.achievementStore
+  if (!store) return
+  try {
+    // Ledger only: a first import arrives in hundreds of 500-record batches,
+    // so unlock evaluation runs once per scan (evaluateLocalTokenAchievements).
+    const result = store.syncLocalTokenUsage(records, {
+      // One day of slack past the scanner's own retention cutoff.
+      compactBefore: Date.now() - (retentionDays + 1) * 24 * 60 * 60 * 1000,
+      evaluatePetId: null,
+    })
+    if (result.changed) localTokenLedgerChanged = true
+  } catch (error) {
+    console.error('Achievement local token sync failed', error)
+    logAchievementDiagnostic('local-token-sync', error)
+  }
+}
+
+/** Once per completed scan: evaluate the active pet if the ledger changed, and refresh progress. */
+function evaluateLocalTokenAchievements(): void {
+  if (!localTokenLedgerChanged) return
+  localTokenLedgerChanged = false
+  const store = mainState.achievementStore
+  if (!store) return
+  try {
+    if (currentDesktopPreferences().achievementsEnabled) {
+      const petId = mainState.progressionStore?.getActivePetId() ?? 'aang-airbender'
+      const unlocks = store.evaluateTokenAchievements(petId, mainState.progressionStore?.getSnapshot(petId))
+      unlocks.forEach(broadcastAchievementUnlock)
+      if (unlocks.length > 0) return
+    }
+    if (!achievementProgressTimer) {
+      achievementProgressTimer = setTimeout(() => {
+        achievementProgressTimer = null
+        broadcastAchievements()
+      }, 1_000)
+      achievementProgressTimer.unref?.()
+    }
+  } catch (error) {
+    console.error('Achievement local token evaluation failed', error)
+    logAchievementDiagnostic('local-token-evaluate', error)
   }
 }
 
@@ -2517,10 +2987,15 @@ export function reconcileAchievementsFromHistory(): void {
     || !currentDesktopPreferences().achievementsEnabled
   ) return
   try {
+    // Incremental: only sessions since the last reconcile (minus one day of
+    // overlap for late-arriving events) instead of the whole history.
+    const startedAt = Date.now()
+    const previous = mainState.historyStore.getAchievementReconciledAt()
     const unlocks = mainState.achievementStore.reconcileCompletedSessions(
-      mainState.historyStore.getAchievementCompletedSessions(),
+      mainState.historyStore.getAchievementCompletedSessions(previous > 0 ? previous - 24 * 60 * 60 * 1000 : 0),
       petId => mainState.progressionStore?.getSnapshot(petId),
     )
+    mainState.historyStore.setAchievementReconciledAt(startedAt)
     unlocks.forEach(broadcastAchievementUnlock)
   } catch (error) {
     console.error('Achievement history reconciliation failed', error)
@@ -2554,15 +3029,64 @@ export function cancelPermissionRequests(
   }
 }
 
+function permissionAuditPath(): string {
+  return join(app.getPath('userData'), 'permission-audit.jsonl')
+}
+
+export function listPermissionAuditEntries(limit: number): PermissionAuditEntry[] {
+  return readPermissionAudit(permissionAuditPath(), limit)
+    .filter(record => typeof record.action === 'string' && record.risk)
+    .map(record => ({
+      resolvedAt: record.resolvedAt,
+      agentId: record.agentId,
+      action: record.action as string,
+      risk: record.risk as PermissionAuditEntry['risk'],
+      status: record.status,
+      ...(record.decidedBy ? { decidedBy: record.decidedBy } : {}),
+      terminalReason: record.terminalReason,
+    }))
+}
+
+export function clearPermissionAuditLog(): void {
+  clearPermissionAudit(permissionAuditPath())
+}
+
+// --- Claude Code permission respond (opt-in) --------------------------------
+const CLAUDE_PERMISSION_SOURCES: ReadonlySet<string> = new Set(['claude', 'claude-desktop'])
+// Cached so the permission server never reads preferences (or the OS login item) per request.
+let claudePermissionRespondEnabled = false
+
+export function isClaudePermissionRespondEnabled(): boolean {
+  return claudePermissionRespondEnabled
+}
+
+function applyClaudePermissionRespond(preferences: DesktopPreferences): void {
+  claudePermissionRespondEnabled = preferences.claudePermissionRespondEnabled
+  try {
+    syncClaudePermissionRespondOptIn(preferences.claudePermissionRespondEnabled ? preferences.claudePermissionWaitSeconds : null)
+  } catch (error) {
+    logMain('warn', 'permission', `Claude permission opt-in file sync failed: ${(error as NodeJS.ErrnoException)?.code ?? 'unknown'}`)
+  }
+  if (preferences.claudePermissionRespondEnabled || !mainState.permissionBroker) return
+  // Turning the feature off takes pending Claude requests down; their hooks then get 410
+  // and leave the decision to Claude Code's own prompt.
+  for (const request of mainState.permissionBroker.listRequests()) {
+    if (CLAUDE_PERMISSION_SOURCES.has(request.adapterId)) {
+      mainState.permissionBroker.resolveExternally(request.requestId, 'adapter_disconnected')
+    }
+  }
+}
+
 export function createPermissionServices(permissionToken: string): void {
   if (mainState.permissionBroker || mainState.permissionRelay || mainState.permissionAdapterServer) return
 
+  trimPermissionAuditOnStartup(permissionAuditPath(), join(app.getPath('userData'), 'permission-audit.json'))
   const relay = new PermissionAdapterRelay()
   const broker = new PermissionBroker({
     onChanged: schedulePermissionUiSync,
     onAudit: record => {
       try {
-        appendPermissionAudit(join(app.getPath('userData'), 'permission-audit.json'), record)
+        appendPermissionAudit(permissionAuditPath(), record)
       } catch (error) {
         console.error('Failed to persist permission audit record', error)
       }
@@ -2570,14 +3094,25 @@ export function createPermissionServices(permissionToken: string): void {
   })
   broker.registerAdapter(relay.createPort('opencode-cli'))
   broker.registerAdapter(relay.createPort('opencode-desktop'))
-  const server = createPermissionAdapterServer({ token: permissionToken, broker, relay })
-  listenOnLocalPort(server, PERMISSION_ADAPTER_PORT, {
+  broker.registerAdapter(relay.createPort('claude'))
+  broker.registerAdapter(relay.createPort('claude-desktop'))
+  const server = createPermissionAdapterServer({
+    token: permissionToken,
+    broker,
+    relay,
+    isSourceEnabled: source => !CLAUDE_PERMISSION_SOURCES.has(source) || claudePermissionRespondEnabled,
+  })
+  const permissionHealth = serverHealthTracker().register('permission', localPorts().permission)
+  const permissionHandle = listenOnLocalPort(server, localPorts().permission, {
     label: 'Permission adapter',
+    onStatus: permissionHealth.onStatus,
+    onPersistentFailure: permissionHealth.onPersistentFailure,
     onListening: () => {
-      if (!app.isPackaged) console.log(`Permission adapter listening on http://127.0.0.1:${PERMISSION_ADAPTER_PORT}`)
+      if (!app.isPackaged) console.log(`Permission adapter listening on http://127.0.0.1:${localPorts().permission}`)
     },
   })
 
+  permissionHealth.attach(permissionHandle)
   mainState.permissionRelay = relay
   mainState.permissionBroker = broker
   mainState.permissionAdapterServer = server
@@ -2585,47 +3120,47 @@ export function createPermissionServices(permissionToken: string): void {
   powerMonitor.on('suspend', () => cancelPermissionRequests('system_suspend'))
 }
 
+/**
+ * A waiting-permission / waiting-input notification about one session (the only kinds that carry a
+ * target) switches to that session's app when allowed (macOS, allowlisted app, both toggles on);
+ * anything else opens the Sessions tab. The click itself is the user action.
+ */
+export async function openNotificationTarget(target?: { source: string; sessionId: string }): Promise<void> {
+  try {
+    if (target && await mainState.sessionJump?.switchFromNotification(target)) return
+  } catch (error) {
+    console.error('Switching to the session app failed', error)
+  }
+  showPanelWindow('sessions')
+}
+
 export function createDesktopServices(): void {
   if (mainState.desktopPreferences || mainState.desktopTray || mainState.desktopNotifications) return
 
-  // electron-builder's Windows portable target runs the app from a temporary
-  // extraction directory. Register the original launcher path, never that
-  // ephemeral process.execPath. Unsupported/invalid paths fail closed.
-  const loginItemExecutable = resolveLoginItemExecutable(
-    process.platform,
-    app.isPackaged,
-    process.execPath,
-    process.env.PORTABLE_EXECUTABLE_FILE,
-  )
-
   mainState.desktopPreferences = new DesktopPreferencesStore(
     join(app.getPath('userData'), 'desktop-preferences.json'),
-    {
-      supported: loginItemExecutable !== null,
-      getOpenAtLogin: () => {
-        if (!loginItemExecutable) return false
-        return app.getLoginItemSettings({ path: loginItemExecutable }).openAtLogin
-      },
-      setOpenAtLogin: (enabled) => {
-        if (!loginItemExecutable) return false
-        app.setLoginItemSettings({ openAtLogin: enabled, path: loginItemExecutable })
-        return app.getLoginItemSettings({ path: loginItemExecutable }).openAtLogin
-      },
-    },
+    createLoginItemAdapter({
+      platform: process.platform,
+      app,
+      execPath: process.execPath,
+      portableExecutableFile: process.env.PORTABLE_EXECUTABLE_FILE,
+    }),
     currentDesktopVisibilityCapabilities(),
   )
   setLocale(currentDesktopPreferences().locale)
+  applyClaudePermissionRespond(currentDesktopPreferences())
+
+  mainState.sessionJump = createSessionJumpService(currentDesktopPreferences)
 
   mainState.desktopNotifications = new DesktopNotificationService({
     logFilePath: join(app.getPath('userData'), 'notification-log.json'),
     getPreferences: currentDesktopPreferences,
     isAppFocused: () => [mainState.petWindow, mainState.panelWindow].some(window => window?.isFocused()),
-    onNotificationClick: () => showPanelWindow('sessions'),
-    onAttentionChanged: count => {
-      mainState.notificationAttentionCount = count
-      syncTrayAttention()
-    },
+    onNotificationClick: target => { void openNotificationTarget(target) },
+    onAttentionChanged: () => syncTrayAttention(),
   })
+
+  scheduleDndExpiry(currentDesktopPreferences())
 
   mainState.desktopTray = new DesktopTrayController(
     join(__dirname, '..', 'build', 'icon.png'),
@@ -2652,6 +3187,7 @@ export function createDesktopServices(): void {
         }
       },
       toggleMiniMode,
+      reloadPet: reloadPetRenderers,
       quit: () => app.quit(),
     },
   )
@@ -2750,8 +3286,21 @@ export function rawProjectPath(input: unknown): string | undefined {
 }
 
 export async function normalizeIngressEvent(input: unknown, receivedAt?: number) {
-  const normalized = await mainState.agentAdapterRegistry?.normalize(input, receivedAt)
-  if (!normalized) return { ok: false as const, error: 'adapter_registry_unavailable' }
+  const routed = await routeIngressEvent(input, receivedAt)
+  if (!routed.ok) return routed
+  return { ok: true as const, event: withSessionJumpContext(input, routed.event) }
+}
+
+async function routeIngressEvent(input: unknown, receivedAt?: number) {
+  const normalized = withAnswerableClaudeNotice(
+    await mainState.agentAdapterRegistry?.normalize(input, receivedAt) ?? { ok: false as const, error: 'adapter_registry_unavailable' },
+    {
+      enabled: claudePermissionRespondEnabled,
+      hasRecentRequest: (source, sessionId) => Boolean(
+        mainState.permissionBroker?.hasRecentRequestForSession(source, sessionId, CLAUDE_ANSWERABLE_GRACE_MS),
+      ),
+    },
+  )
   if (!normalized.ok || !mainState.projectRoutingStore) return normalized
 
   try {
@@ -2775,4 +3324,51 @@ export async function normalizeIngressEvent(input: unknown, receivedAt?: number)
     console.error('Project routing failed; preserving unbound event behavior', error)
     return normalized
   }
+}
+
+export async function exportDiagnostics(): Promise<{ ok: boolean; canceled?: boolean }> {
+  const recentLogLines = mainLogger().readRecent(300)
+  const report = buildDiagnosticsReport({
+    app: {
+      version: app.getVersion(),
+      electron: process.versions.electron ?? '',
+      chrome: process.versions.chrome ?? '',
+      node: process.versions.node ?? '',
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+      locale: locale.value,
+    },
+    recentLogLines,
+    generatedAt: Date.now(),
+  })
+  const parent = mainState.panelWindow && !mainState.panelWindow.isDestroyed() ? mainState.panelWindow : undefined
+  const options = {
+    defaultPath: join(app.getPath('documents'), `agent-pets-diagnostics-${new Date().toISOString().slice(0, 10)}.json`),
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  }
+  const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+  await fs.promises.writeFile(result.filePath, report, { encoding: 'utf8', mode: 0o600 })
+  return { ok: true }
+}
+
+export function registerRuntimeDiagnostics(startupResults: () => unknown, crashStats: () => unknown, previousRunUnclean: boolean): void {
+  registerDiagnosticsSection('startup', startupResults)
+  registerDiagnosticsSection('crashGuard', crashStats)
+  registerDiagnosticsSection('previousRunUnclean', () => previousRunUnclean)
+  registerDiagnosticsSection('localServers', () => serverHealthTracker().snapshot().servers.map(server => ({
+    id: server.id, port: server.port, state: server.state, attempt: server.attempt, code: server.code ?? null,
+  })))
+  registerDiagnosticsSection('pluginHost', () => mainState.pluginHostWindow?.diagnostics() ?? null)
+  registerDiagnosticsSection('rendererErrors', () => ({ count: mainState.rendererErrorCount }))
+  registerDiagnosticsSection('eventPipeline', () => ({ ...eventPipelineStats }))
+  registerDiagnosticsSection('stores', () => ({
+    history: mainState.historyStore ? 'ready' : 'unavailable',
+    achievements: mainState.achievementStore ? 'ready' : 'unavailable',
+    achievementInitRetries: mainState.achievementStoreRetryAttempt,
+    progression: mainState.progressionStore ? 'ready' : 'unavailable',
+    plugins: mainState.pluginRegistry ? 'ready' : 'unavailable',
+    sessionsTracked: mainState.sessionSnapshot.list().length,
+  }))
 }

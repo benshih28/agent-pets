@@ -1,7 +1,7 @@
 import type { AgentStatusEvent } from './event-server'
 import { t } from '../src/i18n.ts'
 
-export type NotificationKind = 'waiting-permission' | 'waiting-input' | 'success' | 'error' | 'achievement'
+export type NotificationKind = 'waiting-permission' | 'waiting-input' | 'success' | 'error' | 'achievement' | 'summary'
 
 export interface NotificationCandidate {
   key: string
@@ -9,6 +9,11 @@ export interface NotificationCandidate {
   title: string
   body: string
   terminal: boolean
+  /**
+   * Only for waiting-permission / waiting-input: the one session that is waiting for the user, so a
+   * click on that notification may switch to its app. Completions and errors never switch apps.
+   */
+  session?: { source: string; sessionId: string }
 }
 
 const SOURCE_NAMES: Record<string, string> = {
@@ -35,15 +40,21 @@ export function classifyNotification(event: AgentStatusEvent): NotificationCandi
   const project = displayText(event.project)
   const body = project || t('agentTask')
   const keyBase = `${event.source}:${event.sessionId}`
+  const session = { source: event.source, sessionId: event.sessionId }
 
   switch (event.state) {
     case 'waiting-permission':
       return {
         key: `${keyBase}:waiting-permission`,
         kind: 'waiting-permission',
-        title: t('notificationNeedsPermission', { source }),
+        // Codex / Claude cannot be answered from Agent Pets; say so in the title so
+        // clicking the notification is not mistaken for a way to approve here.
+        title: event.permissionNotice?.responseMode === 'external_only'
+          ? t('permission.notifyExternal', { source })
+          : t('notificationNeedsPermission', { source }),
         body,
         terminal: false,
+        session,
       }
     case 'waiting-input':
       return {
@@ -52,6 +63,7 @@ export function classifyNotification(event: AgentStatusEvent): NotificationCandi
         title: t('notificationWaitingInput', { source }),
         body,
         terminal: false,
+        session,
       }
     case 'success':
       return {
@@ -108,7 +120,9 @@ export function aggregateTerminalNotifications(candidates: NotificationCandidate
   const completed = candidates.filter(candidate => candidate.kind === 'success').length
   const failed = candidates.filter(candidate => candidate.kind === 'error').length
   return {
-    title: t('notificationAggregate', { count: candidates.length }),
+    title: failed > 0
+      ? t('permission.notifyAggregateFailed', { count: candidates.length, failed })
+      : t('notificationAggregate', { count: candidates.length }),
     body: [
       completed > 0 ? t('notificationCompletedCount', { count: completed }) : '',
       failed > 0 ? t('notificationFailedCount', { count: failed }) : '',
