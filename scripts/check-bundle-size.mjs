@@ -3,9 +3,10 @@
 // Run after `vite build`. Raise the limit deliberately, in the same PR as the growth.
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const LIMIT_BYTES = 250 * 1024
-const directory = new URL('../dist/assets/', import.meta.url).pathname
+const directory = fileURLToPath(new URL('../dist/assets/', import.meta.url))
 const offenders = readdirSync(directory)
   .filter(name => name.endsWith('.js'))
   .map(name => ({ name, size: statSync(join(directory, name)).size }))

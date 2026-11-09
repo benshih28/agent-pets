@@ -4,8 +4,10 @@
 // A full ESLint setup with no-floating-promises can replace this later.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = new URL('..', import.meta.url).pathname
+// URL.pathname 在 Windows 會變成 `/C:/...`，再被 join 成 `C:\C:\...`；fileURLToPath 才是跨平台的轉法。
+const root = fileURLToPath(new URL('..', import.meta.url))
 const problems = []
 
 function walk(directory) {

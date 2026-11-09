@@ -259,14 +259,26 @@ test('configured hook executable is read from exec-form and shell-form hooks', (
 
 import { codexHookCommand, escapeCmdQuotedPath } from '../electron/hook-config.ts'
 
-test('Codex hook commands quote every path (spaces, non-ASCII, shell metacharacters)', () => {
+test('Windows Codex hook commands never start with a quoted path (PowerShell parse error)', () => {
+  const winCommand = (home: string) => codexHookCommand({ isWindows: true, nodeBin: '', hookScript: `${home}\\.desktop-pet\\agent-hook.mjs`, wrapper: `${home}\\.desktop-pet\\agent-hook.cmd` })
+  for (const home of ['C:\\Users\\dgh', 'C:\\Users\\first.last', 'D:\\home\\a-b_c']) {
+    const win = winCommand(home)
+    assert.equal(win, `${home}\\.desktop-pet\\agent-hook.cmd codex`)
+    assert.equal(leadingExecutable(win), `${home}\\.desktop-pet\\agent-hook.cmd`)
+    assert.ok(isAgentPetsHook({ type: 'command', command: win }), home)
+  }
+  for (const home of ['C:\\Users\\Jane Doe', 'C:\\Users\\王小明', 'C:\\Users\\a&b', 'C:\\Users\\a^b', "C:\\Users\\o'brien", 'C:\\Users\\a(b)']) {
+    const win = winCommand(home)
+    assert.equal(win, `cmd /d /c "${home}\\.desktop-pet\\agent-hook.cmd" codex`)
+    assert.ok(!win.startsWith('"'))
+    assert.equal(leadingExecutable(win), `${home}\\.desktop-pet\\agent-hook.cmd`)
+    assert.ok(isAgentPetsHook({ type: 'command', command: win }), home)
+  }
+})
+
+test('Codex hook commands quote every POSIX path (spaces, non-ASCII, shell metacharacters)', () => {
   const nasty = ["C:\\Users\\Jane Doe", "C:\\Users\\王小明", "C:\\Users\\a&b", "/Users/o'brien", "C:\\Users\\a^b", '/Users/$(touch x)', '/Users/`id`', '/Users/a"b', '/Users/a\\b']
   for (const home of nasty) {
-    if (!home.includes('"')) {
-      const win = codexHookCommand({ isWindows: true, nodeBin: '', hookScript: `${home}\\.desktop-pet\\agent-hook.mjs`, wrapper: `${home}\\.desktop-pet\\agent-hook.cmd` })
-      assert.equal(win, `"${home}\\.desktop-pet\\agent-hook.cmd" codex`)
-      assert.equal(leadingExecutable(win), `${home}\\.desktop-pet\\agent-hook.cmd`)
-    }
     const mac = codexHookCommand({ isWindows: false, nodeBin: `${home}/node`, hookScript: `${home}/.desktop-pet/agent-hook.mjs`, wrapper: '' })
     const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
     assert.equal(mac, `${quote(`${home}/node`)} ${quote(`${home}/.desktop-pet/agent-hook.mjs`)} codex`)
@@ -278,6 +290,8 @@ test('Codex hook commands quote every path (spaces, non-ASCII, shell metacharact
 test('unsafe paths are refused instead of producing an ambiguous hook command', () => {
   assert.throws(() => codexHookCommand({ isWindows: true, nodeBin: '', hookScript: '', wrapper: 'C:\\Users\\50%off\\.desktop-pet\\agent-hook.cmd' }), ConfigRefusedError)
   assert.throws(() => codexHookCommand({ isWindows: true, nodeBin: '', hookScript: '', wrapper: 'C:\\Users\\a"b\\agent-hook.cmd' }), ConfigRefusedError)
+  assert.throws(() => codexHookCommand({ isWindows: true, nodeBin: '', hookScript: '', wrapper: 'C:\\Users\\$env\\agent-hook.cmd' }), ConfigRefusedError)
+  assert.throws(() => codexHookCommand({ isWindows: true, nodeBin: '', hookScript: '', wrapper: 'C:\\Users\\a`b\\agent-hook.cmd' }), ConfigRefusedError)
   assert.throws(() => codexHookCommand({ isWindows: false, nodeBin: '/n\node', hookScript: '/h', wrapper: '' }), ConfigRefusedError)
   assert.throws(() => codexHookCommand({ isWindows: false, nodeBin: '/node', hookScript: '/h\0', wrapper: '' }), ConfigRefusedError)
 })
@@ -385,5 +399,33 @@ test('ensureAgentPetsHookEntries leaves files without Agent Pets hooks or with i
     assert.equal(fs.readFileSync(file, 'utf8'), '{ "hooks": // broken')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Codex 在 Windows 透過 PowerShell 執行 hook 指令；這裡用真的 shell 驗證產生的指令兩種都能啟動 wrapper。
+test('Windows Codex hook command launches the wrapper under PowerShell and cmd.exe', { skip: process.platform !== 'win32' }, async () => {
+  const { spawnSync } = await import('node:child_process')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-hook-shell-'))
+  try {
+    for (const home of [path.join(root, 'plain'), path.join(root, 'Jane Doe')]) {
+      const deploy = path.join(home, '.desktop-pet')
+      fs.mkdirSync(deploy, { recursive: true })
+      const wrapper = path.join(deploy, 'agent-hook.cmd')
+      const marker = path.join(deploy, 'ran.txt')
+      fs.writeFileSync(wrapper, `@echo off\r\n>>"%~dp0ran.txt" echo %1\r\n`)
+      const command = codexHookCommand({ isWindows: true, nodeBin: '', hookScript: '', wrapper })
+      const runs: Array<[string, string, string[], boolean]> = [
+        ['powershell', 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], false],
+        ['cmd', 'cmd.exe', ['/d', '/s', '/c', `"${command}"`], true],
+      ]
+      for (const [shell, exe, args, verbatim] of runs) {
+        fs.rmSync(marker, { force: true })
+        const result = spawnSync(exe, args, { encoding: 'utf8', windowsVerbatimArguments: verbatim, timeout: 30_000 })
+        assert.equal(result.status, 0, `${shell} ${command}: ${result.stderr}`)
+        assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'codex', `${shell} ${command}`)
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
   }
 })

@@ -359,7 +359,8 @@ export function disableCodexHooksFeatureText(existing: string): string {
 
 /** First token of a shell-form command, honouring double quotes. */
 export function leadingExecutable(command: string): string {
-  const trimmed = command.trim()
+  // `cmd /d /c "<wrapper>"` 只是啟動器；健康檢查要看的是被啟動的 wrapper。
+  const trimmed = command.trim().replace(WINDOWS_CMD_LAUNCHER, '')
   if (trimmed.startsWith("'")) {
     // POSIX single quotes; a literal quote is written as '\''.
     let value = ''
@@ -418,11 +419,19 @@ export function isCodexHooksFeatureEnabled(config: string | null): boolean {
 
 // ---- Hook command construction (quoting) ----
 
+// 不需任何引號、在 cmd.exe 與 PowerShell 都會被解析成同一個路徑的字元集。
+const WINDOWS_BARE_PATH = /^[A-Za-z0-9_.:\\-]+$/
+const WINDOWS_CMD_LAUNCHER = /^cmd(?:\.exe)?\s+\/d\s+\/c\s+/i
+
 /**
  * Shell-form command Codex runs. On POSIX every path is single-quoted (`'` becomes `'\''`), so `$`,
- * backticks, `"` and `\` in a user name stay literal. On Windows the batch wrapper is double-quoted
- * and receives the node path itself, so only the wrapper is referenced. Paths that cannot be quoted
- * safely (newline/NUL everywhere, `"` and `%` on Windows) are refused with a ConfigRefusedError.
+ * backticks, `"` and `\` in a user name stay literal. Paths that cannot be quoted safely
+ * (newline/NUL everywhere; `"`, `%`, `$` and backtick on Windows) are refused with a ConfigRefusedError.
+ *
+ * Windows 的 Codex 用 PowerShell 執行 hook：`"C:\...\agent-hook.cmd" codex` 在 PowerShell 是
+ * 「字串 + 多餘 token」的語法錯誤，hook 會被靜默略過。因此一般路徑一律不加引號（兩種 shell 都可用，
+ * 也與舊版安裝相同，不會讓 Codex 的 hook 信任失效）；含空白或非 ASCII 的路徑才經由
+ * `cmd /d /c "..."` 啟動，這個形式在 PowerShell 與 cmd.exe 底下都只把引號內視為單一路徑。
  */
 export function codexHookCommand(options: { isWindows: boolean, nodeBin: string, hookScript: string, wrapper: string }): string {
   const refuse = (value: string, pattern: RegExp) => {
@@ -431,8 +440,10 @@ export function codexHookCommand(options: { isWindows: boolean, nodeBin: string,
     }
   }
   if (options.isWindows) {
-    refuse(options.wrapper, /["%\r\n\0]/)
-    return `"${options.wrapper}" codex`
+    // `$` 與反引號在 PowerShell 雙引號字串內會被展開，`%` 會被 cmd.exe 展開。
+    refuse(options.wrapper, /["%$`\r\n\0]/)
+    if (WINDOWS_BARE_PATH.test(options.wrapper)) return `${options.wrapper} codex`
+    return `cmd /d /c "${options.wrapper}" codex`
   }
   const quote = (value: string) => {
     refuse(value, /[\r\n\0]/)

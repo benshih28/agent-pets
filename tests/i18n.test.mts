@@ -58,7 +58,8 @@ test('permission surfaces use translated labels and the removed keys stay remove
 test('every permission-domain key is referenced by the app', async () => {
   const { readFileSync, readdirSync, statSync } = await import('node:fs')
   const { join } = await import('node:path')
-  const root = new URL('..', import.meta.url).pathname
+  const { fileURLToPath } = await import('node:url')
+  const root = fileURLToPath(new URL('..', import.meta.url))
   const files: string[] = []
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
