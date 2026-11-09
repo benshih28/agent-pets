@@ -181,3 +181,33 @@ Update Radar 插件版本：`0.1.0`（未變更）
 - 根捲軸那一欄不會被固定層蓋到，因此捲軸寬度設為圓角半徑，自己畫底色與右下圓角；軌道底部讓出圓角高度，滑塊不會蓋進角落。頁面不需捲動時由底色層補上右下圓角。forced-colors 下底色層改用 `Canvas`。
 - 需要宿主把插件 view 的原生底色設為透明（Agent Pets PR「give plugin panel views a transparent native background」）；在尚未包含該修正的宿主上，圓角外側會露出 view 的預設底色。
 - 驗證：Update Radar 測試 77/77、update-radar 套件 34/34、全部單元測試 556/556、`git diff --check` 通過。Playwright 驗收全部通過（視覺規則 115 項）；開啟傳統捲軸後，淺深色 × 捲到頂／底／不需捲動共 6 種情況，右下角 3,111 個取樣點與 15px 弧線全部吻合。實機在一般、放大、淺深色與捲動中確認下方兩角貼齊外框。權限、網域與 manifest（除版本外）未變更。
+
+## 後續：Update Radar `0.4.0`：HTTP 條件請求與 Retry-After（2026-11-09）
+
+升 minor（`0.4.0`，使用者已確認）：儲存的狀態 schema 由 v4 升到 v5，每個來源多存一組驗證標記。
+
+- **條件請求**：某個來源抓取成功且解析出資料後，存下回應的 `etag`／`last-modified`。存之前限制長度不超過 256、只接受可見 ASCII，不合格就丟掉。之後抓同一個來源時，手上還有它的資料才送出 `if-none-match`／`if-modified-since`。收到 304 就沿用既有資料，來源標為正常並照一般間隔排下一次，不重新解析也不發通知，包含 Codex 重設通知。手上沒資料卻收到 304 時，清掉標記並當作失敗，下一輪改為整頁下載。X 只有個人頁套用條件請求，對話頁不帶標記。
+- **Retry-After**：429／503 附 `retry-after` 時，解析秒數或 HTTP-date 作為下一次重試時間，限制在 60 秒到 6 小時；無法解析時沿用 5／15／30／60 分鐘退避。新增錯誤碼 `source_rate_limited`、`source_cache_missing`。面板只顯示狀態，不顯示錯誤碼，因此不需要新文案。
+- **實際效果**（2026-11-09 以帶 `If-None-Match` 的請求實測）：
+  - 有效：OpenAI changelog、OpenAI deprecations、Claude Code（GitHub API）、codex-resets 都回 304、0 bytes。GitHub 的 304 不計入匿名 API 額度。
+  - 沒有效果：Claude Platform release notes、Claude model deprecations、X 個人頁不提供 ETag／Last-Modified，維持原本的整頁下載。
+- **宿主相容性**：宿主 `net.fetch` 已允許這兩個條件 header，並回傳 `etag`／`last-modified`／`retry-after`。transport 使用 `cache: 'no-store'`，304 不在轉址清單內，會原樣交給插件。不需新增權限，更新時不需重新同意。
+- 驗證：Update Radar 測試 86/86（新增 9 項）、update-radar 套件 34/34。全部單元測試 1294/1295，唯一失敗的 `project-mcp-setup`「symlinked info directory」案例在未修改的上游 `main` 上同樣失敗。`node --check` 與 `git diff --check` 通過。實作由 Codex（gpt-6-luna）完成，規劃、審查與驗證由 Claude 負責。尚未在實機 Agent Pets 上確認。權限、網域與 manifest 未變更。
+
+## 後續：Update Radar `0.4.0`：電腦版版面（2026-11-09）
+
+原則：頁籤是為了讓每一頁專注於自己的資訊。電腦版延續這個原則，每頁只把多出的寬度用在自己的內容，不把篩選或其他頁的內容拉成側欄。
+
+- **吃滿插件區（≥ 900px）**：依使用者要求和宿主其他頁籤一致，移除原本 792px 外殼與 760px 頁面的最大寬度，三個頁籤都吃滿。更新動態維持單欄，詳情頁同寬。Codex 頁倒數放左邊（不換行），右邊並列上次重設時間、類型、累計次數（已排定時加上預定時間）。
+- **≥ 1200px**：總覽兩欄比例 1 : 1.6，熱度圖格子 12px。
+- **≥ 900px 共通**：
+  - 重要更新的標題最多兩行，版本號不換行。
+  - 重要更新的數量：寬版 8 則、900px 起 5 則、窄版 3 則。以 `matchMedia` 監聽兩個斷點，跨越時才重新渲染。
+  - 總覽格線的前四列高度隨內容，多出的高度全部給最後一列，左欄項目不會被右欄撐出空隙。
+- **窄版（< 900px）**：版面不變。
+- 驗證：
+  - Update Radar 測試 86/86（舊測試原本鎖住 760px 上限，改為檢查吃滿、不設最大寬度）、update-radar 套件 34/34、`node --check`、`git diff --check` 通過。
+  - Playwright 截圖：1440／1280／940／423／278 寬 × 淺深色 × 三個頁籤，皆無水平溢出。跨斷點時重要更新為 940 寬 5 則、1280 寬 8 則、600 寬 3 則。
+  - 既有視覺驗收：verify-visual 115/115、verify-codex 47/47，verify-tabs／verify-nav／verify-cards 全過。
+  - verify-overview 有 1 項失敗：423 寬點重要更新後卡片 top=220，門檻是 ≤ 200。換回改動前的面板檔案也同樣失敗，屬於既有問題，與本次無關，尚未處理。
+- 實作由 Codex（gpt-6-luna）完成。Claude 審查後修正左欄被右欄撐出空隙、Codex 倒數換行，並依使用者要求改成吃滿。
