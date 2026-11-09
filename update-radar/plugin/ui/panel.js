@@ -1,5 +1,7 @@
 const api = window.agentPetsPlugin
 const X_PROFILE_USERNAME = 'ajambrosino'
+const overviewDesktopQuery = window.matchMedia('(min-width: 900px)')
+const overviewWideQuery = window.matchMedia('(min-width: 1200px)')
 
 // --- 外觀（淺色／深色）-------------------------------------------------------
 // 'system' 代表尚未選擇：未選擇前跟隨系統，控制項顯示系統目前的模式。
@@ -1336,15 +1338,17 @@ function renderSpotlight(target) {
     staleWarning.setAttribute('role', 'status')
   }
 
+  const main = document.createElement('div')
+  main.className = 'codex-reset-main'
   if (hasScheduledReset) {
     const countdownText = formatScheduledCountdown(scheduledAt)
-    const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
+    const countdown = appendText(main, 'p', 'codex-reset-countdown', '')
     appendHighlightedNumbers(countdown, countdownText)
     countdown.setAttribute('aria-live', 'off')
     countdown.setAttribute('aria-label', `距預定重設時間 ${countdown.textContent}`)
     if (hasFutureSchedule) codexResetCountdownTick = tickCodexCountdown
   } else {
-    const countdown = appendText(card, 'p', 'codex-reset-countdown', '')
+    const countdown = appendText(main, 'p', 'codex-reset-countdown', '')
     appendHighlightedNumbers(countdown, formatTimeSinceReset(reset.stats.lastResetAt))
   }
 
@@ -1368,7 +1372,8 @@ function renderSpotlight(target) {
     } else factValue.textContent = value
     facts.append(row)
   }
-  card.append(facts)
+  main.append(facts)
+  card.append(main)
   appendCodexSourceLine(card, source)
   target.replaceChildren(...(staleWarning ? [staleWarning, card] : [card]))
 }
@@ -1986,6 +1991,11 @@ function renderOverviewHighlights(units, now, limit) {
   elements.overviewAllUpdates.hidden = false
 }
 
+function overviewHighlightLimit() {
+  if (overviewWideQuery.matches) return 8
+  return overviewDesktopQuery.matches ? 5 : 3
+}
+
 function renderOverview() {
   const now = Date.now()
   const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
@@ -2036,7 +2046,7 @@ function renderOverview() {
   renderSources()
 
   renderOverviewCodexStatus()
-  renderOverviewHighlights(units, now, window.innerWidth >= 900 ? 5 : 3)
+  renderOverviewHighlights(units, now, overviewHighlightLimit())
 
   const today = new Date()
   today.setHours(12, 0, 0, 0)
@@ -2283,11 +2293,22 @@ tabController.renderCurrent()
 
 window.addEventListener('resize', () => {
   updateStickyMeasurements()
-  if (state.activeTab === 'overview' && !state.detail) {
-    const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
-    renderOverviewHighlights(updateUnits(updates), Date.now(), window.innerWidth >= 900 ? 5 : 3)
-  }
 })
+
+let overviewHighlightRenderScheduled = false
+function refreshOverviewHighlightsAtBreakpoint() {
+  if (overviewHighlightRenderScheduled) return
+  overviewHighlightRenderScheduled = true
+  window.requestAnimationFrame(() => {
+    overviewHighlightRenderScheduled = false
+    if (state.activeTab !== 'overview' || state.detail) return
+    const updates = Array.isArray(state.radar?.updates) ? state.radar.updates : []
+    renderOverviewHighlights(updateUnits(updates), Date.now(), overviewHighlightLimit())
+  })
+}
+
+overviewDesktopQuery.addEventListener('change', refreshOverviewHighlightsAtBreakpoint)
+overviewWideQuery.addEventListener('change', refreshOverviewHighlightsAtBreakpoint)
 
 document.fonts?.ready?.then(updateStickyMeasurements)
 document.fonts?.addEventListener?.('loadingdone', updateStickyMeasurements)

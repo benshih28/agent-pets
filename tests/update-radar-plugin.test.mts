@@ -168,6 +168,9 @@ function createApiFixture() {
   const panelMessages: Array<Record<string, unknown>> = []
   const logs: Array<unknown[]> = []
   const failures = new Set<string>()
+  const fetchCalls: Array<{ url: string, headers: Record<string, string> }> = []
+  const responses = new Map<string, { status: number, headers: Record<string, string>, body: string }>()
+  const responseHeaders = new Map<string, Record<string, string>>()
   const uiGuard = new PluginUiMessageGuard()
   const uiMessageRejections: Array<{ type: unknown, error: string }> = []
   let openAiBody = baselineMarkdown
@@ -190,19 +193,23 @@ function createApiFixture() {
       },
     },
     net: {
-      async fetch(url: string) {
+      async fetch(url: string, options: { headers?: Record<string, string> } = {}) {
+        fetchCalls.push({ url, headers: structuredClone(options.headers ?? {}) })
         const gate = fetchGate
         if (gate) await gate
+        if (responses.has(url)) return structuredClone(responses.get(url))
         if (failures.has(url)) return { status: 503, headers: {}, body: 'unavailable' }
-        if (url.endsWith('/changelog.md')) return { status: 200, headers: {}, body: openAiBody }
-        if (url.endsWith('/deprecations.md')) return { status: 200, headers: {}, body: baselineMarkdown }
-        if (url.includes('release-notes/overview.md')) return { status: 200, headers: {}, body: anthropicMarkdown }
-        if (url.includes('model-deprecations.md')) return { status: 200, headers: {}, body: anthropicMarkdown }
-        if (url.startsWith('https://api.github.com/')) return { status: 200, headers: {}, body: githubBody }
-        if (url === 'https://codex-resets.com/api/v1/status') return { status: 200, headers: {}, body: JSON.stringify(codexStatus) }
+        if (url.endsWith('/changelog.md')) return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: openAiBody }
+        if (url.endsWith('/deprecations.md')) return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: baselineMarkdown }
+        if (url.includes('release-notes/overview.md')) return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: anthropicMarkdown }
+        if (url.includes('model-deprecations.md')) return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: anthropicMarkdown }
+        if (url.startsWith('https://api.github.com/')) return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: githubBody }
+        if (url === 'https://codex-resets.com/api/v1/status') return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: JSON.stringify(codexStatus) }
         if (url === 'https://x.com/ajambrosino') {
-          return { status: 200, headers: {}, body: xProfileBody }
+          return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: xProfileBody }
         }
+        const conversation = /^https:\/\/x\.com\/ajambrosino\/status\/(\d+)$/.exec(url)
+        if (conversation) return { status: 200, headers: structuredClone(responseHeaders.get(url) ?? {}), body: conversationHtml(conversation[1], []) }
         throw new Error(`unexpected_url:${url}`)
       },
     },
@@ -246,6 +253,7 @@ function createApiFixture() {
     failures,
     logs,
     notifications,
+    fetchCalls,
     panelMessages,
     uiMessageRejections,
     storage,
@@ -257,6 +265,10 @@ function createApiFixture() {
     setGithubBody: (value: string) => { githubBody = value },
     setCodexStatus: (value: unknown) => { codexStatus = structuredClone(value) },
     setXProfileBody: (value: string) => { xProfileBody = value },
+    setResponseHeaders: (url: string, headers: Record<string, string>) => { responseHeaders.set(url, structuredClone(headers)) },
+    setResponse: (url: string, response: { status: number, headers?: Record<string, string>, body?: string }) => {
+      responses.set(url, { status: response.status, headers: structuredClone(response.headers ?? {}), body: response.body ?? '' })
+    },
     pauseFetches() {
       let release!: () => void
       fetchGate = new Promise<void>(resolve => { release = resolve })
@@ -1785,7 +1797,10 @@ test('Update Radar uses sticky single-column tabs and removes sidebar layout cod
   assert.match(forcedColorsTab, /outline: 2px solid Highlight/)
   assert.match(forcedColorsTab, /font-weight: 600/)
   assert.match(narrowTabs, /\.radar-tab-count \{ display: none; \}/)
-  assert.match(desktop, /width: min\(100%, 760px\)/)
+  // 電腦版和宿主其他頁籤一樣吃滿插件區，不能再出現最大寬度的上限。
+  assert.match(desktop, /main\.radar-shell \{ width: 100%;/)
+  assert.match(desktop, /\.tab-panel, \.updates-panel, \.reset-panel, \.change-detail \{ width: 100%; max-width: none; \}/)
+  assert.doesNotMatch(desktop, /width: min\(100%, \d+px\)/)
   assert.doesNotMatch(desktop, /grid-template-columns: 368px/)
   assert.match(desktop, /\.overview-grid \{[^}]*grid-template-areas:/s, 'the overview alone uses the required two-column desktop layout')
   assert.doesNotMatch(markup + styles + panelSource, /radar-sidebar|sidebarStickyTop|applySidebarLayout|--radar-sidebar-top|data-sticky/)
@@ -1906,8 +1921,214 @@ test('runtime establishes a quiet baseline and notifies only later new updates',
 
   await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
   assert.equal(fixture.notifications.length, 1)
-  assert.equal((fixture.storage.get('radar-state') as { schemaVersion: number }).schemaVersion, 4)
+  assert.equal((fixture.storage.get('radar-state') as { schemaVersion: number }).schemaVersion, 5)
   assert.ok(fixture.panelMessages.some(message => message.type === 'radar:state'))
+})
+
+test('source validators persist after a successful parse and are sent on the next fetch', async () => {
+  const fixture = createApiFixture()
+  const url = 'https://developers.openai.com/api/docs/changelog.md'
+  fixture.setResponseHeaders(url, { etag: '"openai-v1"', 'last-modified': 'Wed, 28 Oct 2026 07:00:00 GMT' })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+
+  const source = runtime.getState().sources.find(item => item.id === 'openai-api') as any
+  assert.deepEqual(source.validators, { etag: '"openai-v1"', lastModified: 'Wed, 28 Oct 2026 07:00:00 GMT' })
+  const calls = fixture.fetchCalls.filter(call => call.url === url)
+  assert.equal(calls[0]?.headers['if-none-match'], undefined)
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
+  const nextCall = fixture.fetchCalls.filter(call => call.url === url).at(-1)
+  assert.equal(nextCall?.headers['if-none-match'], '"openai-v1"')
+  assert.equal(nextCall?.headers['if-modified-since'], 'Wed, 28 Oct 2026 07:00:00 GMT')
+})
+
+test('304 reuses source data and marks it successful without sending notifications', async () => {
+  const fixture = createApiFixture()
+  const url = 'https://developers.openai.com/api/docs/changelog.md'
+  fixture.setResponseHeaders(url, { etag: '"openai-v1"' })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+  const cached = runtime.getState().updates.filter(update => update.sourceId === 'openai-api')
+  fixture.setNow('2026-10-28T08:02:00Z')
+  fixture.setResponse(url, { status: 304 })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
+
+  const source = runtime.getState().sources.find(item => item.id === 'openai-api') as any
+  assert.deepEqual(runtime.getState().updates.filter(update => update.sourceId === 'openai-api'), cached)
+  assert.equal(source.status, 'ok')
+  assert.equal(source.failures, 0)
+  assert.equal(source.fetchedAt, '2026-10-28T08:02:00.000Z')
+  assert.equal(source.nextAttemptAt, '2026-10-28T09:02:00.000Z')
+  assert.deepEqual(source.validators, { etag: '"openai-v1"' })
+  assert.equal(fixture.notifications.length, 0)
+})
+
+test('Codex Resets 304 retains the reset and does not repeat its notification', async () => {
+  const fixture = createApiFixture()
+  const url = 'https://codex-resets.com/api/v1/status'
+  fixture.setResponseHeaders(url, { etag: '"codex-v1"' })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+  fixture.setCodexStatus(codexResetPayload({
+    id: '2115330127886463245', announcedAt: '2026-10-28T08:01:00.000Z', lastResetAt: '2026-10-28T08:01:00.000Z',
+  }))
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'codex-resets' })
+  assert.equal(fixture.notifications.length, 1)
+  const cached = structuredClone(runtime.getState().codexReset)
+
+  fixture.setNow('2026-10-28T08:02:00Z')
+  fixture.setResponse(url, { status: 304 })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'codex-resets' })
+
+  const source = runtime.getState().sources.find(item => item.id === 'codex-resets') as any
+  assert.deepEqual(runtime.getState().codexReset, cached)
+  assert.equal(source.status, 'ok')
+  assert.equal(source.failures, 0)
+  assert.equal(source.fetchedAt, '2026-10-28T08:02:00.000Z')
+  assert.deepEqual(source.validators, { etag: '"codex-v1"' })
+  assert.equal(fixture.notifications.length, 1)
+})
+
+test('validators are not sent when a source has no cached data', async () => {
+  const fixture = createApiFixture()
+  fixture.storage.set('radar-state', {
+    schemaVersion: 4,
+    sources: [
+      { id: 'openai-api', validators: { etag: '"orphan-openai"' } },
+      { id: 'x-ajambrosino', validators: { etag: '"orphan-x"' } },
+      { id: 'codex-resets', validators: { etag: '"orphan-codex"' } },
+    ],
+    updates: [], codexReset: null, knownIds: [], baselineSourceIds: [], lastCheckedAt: null, lastSuccessAt: null,
+  })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+
+  for (const url of [
+    'https://developers.openai.com/api/docs/changelog.md',
+    'https://x.com/ajambrosino',
+    'https://codex-resets.com/api/v1/status',
+  ]) {
+    const call = fixture.fetchCalls.find(item => item.url === url)
+    assert.equal(call?.headers['if-none-match'], undefined, url)
+    assert.equal(call?.headers['if-modified-since'], undefined, url)
+  }
+  assert.equal(runtime.getState().schemaVersion, 5)
+})
+
+test('304 without cached data clears validators and retries as a full fetch', async () => {
+  const fixture = createApiFixture()
+  const url = 'https://developers.openai.com/api/docs/changelog.md'
+  fixture.storage.set('radar-state', {
+    schemaVersion: 4,
+    sources: [{ id: 'openai-api', validators: { etag: '"orphan-openai"' } }],
+    updates: [], codexReset: null, knownIds: [], baselineSourceIds: [], lastCheckedAt: null, lastSuccessAt: null,
+  })
+  fixture.setResponse(url, { status: 304 })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+  const firstSource = runtime.getState().sources.find(item => item.id === 'openai-api') as any
+  assert.equal(firstSource.status, 'error')
+  assert.equal(firstSource.error, 'source_cache_missing')
+  assert.equal(firstSource.validators, undefined)
+  assert.equal(fixture.fetchCalls.find(call => call.url === url)?.headers['if-none-match'], undefined)
+
+  fixture.setResponse(url, { status: 200, body: baselineMarkdown })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
+  const nextCall = fixture.fetchCalls.filter(call => call.url === url).at(-1)
+  assert.equal(nextCall?.headers['if-none-match'], undefined)
+  assert.equal(runtime.getState().sources.find(item => item.id === 'openai-api')?.status, 'ok')
+})
+
+test('invalid response and stored validators are discarded before storage and requests', async () => {
+  const fixture = createApiFixture()
+  const url = 'https://developers.openai.com/api/docs/changelog.md'
+  fixture.setResponseHeaders(url, {
+    etag: `"${'a'.repeat(257)}"`,
+    'last-modified': 'Wed, 28 Oct 2026 07:00:00 GMT\u0001',
+  })
+  const firstRuntime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await firstRuntime.start()
+  const stored = fixture.storage.get('radar-state') as any
+  const openAiSource = stored.sources.find((source: any) => source.id === 'openai-api')
+  assert.equal(openAiSource.validators, undefined)
+
+  fixture.storage.set('radar-state', {
+    ...stored,
+    sources: stored.sources.map((source: any) => source.id === 'openai-api'
+      ? { ...source, validators: { etag: `"${'b'.repeat(257)}"`, lastModified: 'bad\u0001date' } }
+      : source),
+  })
+  const secondRuntime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await secondRuntime.start()
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
+  const calls = fixture.fetchCalls.filter(call => call.url === url)
+  const nextCall = calls.at(-1)
+  assert.equal(nextCall?.headers['if-none-match'], undefined)
+  assert.equal(nextCall?.headers['if-modified-since'], undefined)
+  assert.equal((fixture.storage.get('radar-state') as any).sources.find((source: any) => source.id === 'openai-api').validators, undefined)
+})
+
+test('Retry-After seconds and HTTP dates are parsed and clamped to one minute through six hours', async () => {
+  const cases = [
+    { status: 429, header: '120', expected: '2026-10-28T08:02:00.000Z' },
+    { status: 503, header: new Date(FIXED_NOW + 120_000).toUTCString(), expected: '2026-10-28T08:02:00.000Z' },
+    { status: 429, header: '1', expected: '2026-10-28T08:01:00.000Z' },
+    { status: 503, header: '999999', expected: '2026-10-28T14:00:00.000Z' },
+    { status: 429, header: '9'.repeat(256), expected: '2026-10-28T14:00:00.000Z' },
+    { status: 429, header: new Date(FIXED_NOW - 120_000).toUTCString(), expected: '2026-10-28T08:01:00.000Z' },
+    { status: 503, header: new Date(FIXED_NOW + 8 * 60 * 60 * 1000).toUTCString(), expected: '2026-10-28T14:00:00.000Z' },
+  ]
+  const url = 'https://developers.openai.com/api/docs/changelog.md'
+  for (const { status, header, expected } of cases) {
+    const fixture = createApiFixture()
+    const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+    await runtime.start()
+    fixture.setResponse(url, { status, headers: { 'retry-after': header }, body: 'try later' })
+    await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
+    const source = runtime.getState().sources.find(item => item.id === 'openai-api') as any
+    assert.equal(source.error, 'source_rate_limited')
+    assert.equal(source.nextAttemptAt, expected)
+  }
+})
+
+test('invalid Retry-After uses the existing retry backoff', async () => {
+  const fixture = createApiFixture()
+  const url = 'https://developers.openai.com/api/docs/changelog.md'
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+  fixture.setResponse(url, { status: 429, headers: { 'retry-after': 'tomorrow' }, body: 'try later' })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-api' })
+  const source = runtime.getState().sources.find(item => item.id === 'openai-api') as any
+  assert.equal(source.error, 'source_rate_limited')
+  assert.equal(source.nextAttemptAt, '2026-10-28T08:05:00.000Z')
+})
+
+test('X profile 304 reuses today posts and conversation requests never carry validators', async () => {
+  const fixture = createApiFixture()
+  const profileUrl = 'https://x.com/ajambrosino'
+  const postId = '2115330127886463246'
+  fixture.setXProfileBody(profileHtml([profilePost(postId, '2026-10-28T07:30:00Z', 'Today post.')]))
+  fixture.setResponseHeaders(profileUrl, { etag: '"x-profile-v1"', 'last-modified': 'Wed, 28 Oct 2026 07:00:00 GMT' })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+
+  const conversationUrl = `https://x.com/ajambrosino/status/${postId}`
+  const conversationCall = fixture.fetchCalls.find(call => call.url === conversationUrl)
+  assert.equal(conversationCall?.headers['if-none-match'], undefined)
+  assert.equal(conversationCall?.headers['if-modified-since'], undefined)
+  fixture.setNow('2026-10-28T08:01:00Z')
+  fixture.setResponse(profileUrl, { status: 304 })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'x-ajambrosino' })
+
+  const profileCalls = fixture.fetchCalls.filter(call => call.url === profileUrl)
+  assert.equal(profileCalls.at(-1)?.headers['if-none-match'], '"x-profile-v1"')
+  assert.equal(profileCalls.at(-1)?.headers['if-modified-since'], 'Wed, 28 Oct 2026 07:00:00 GMT')
+  assert.equal(fixture.fetchCalls.filter(call => call.url === conversationUrl).length, 1)
+  assert.equal(runtime.getState().updates.some(update => update.id === `x-${postId}`), true)
+  const source = runtime.getState().sources.find(item => item.id === 'x-ajambrosino') as any
+  assert.equal(source.status, 'ok')
+  assert.equal(source.failures, 0)
+  assert.equal(fixture.notifications.length, 0)
 })
 
 test('legacy tibo-x state is discarded and a new X source establishes a quiet baseline', async () => {
@@ -1938,7 +2159,7 @@ test('legacy tibo-x state is discarded and a new X source establishes a quiet ba
   await new Promise<void>(resolve => setImmediate(resolve))
 
   const normalized = fixture.panelMessages.find(message => message.type === 'radar:state')?.state as any
-  assert.equal(normalized.schemaVersion, 4)
+  assert.equal(normalized.schemaVersion, 5)
   assert.equal(normalized.updates.some((update: any) => update.sourceId === 'tibo-x'), false)
   assert.equal(normalized.knownIds.includes(`x-${previousPostId}`), false)
   assert.equal(normalized.knownIds.includes('openai-existing-id'), true)
@@ -2028,7 +2249,7 @@ test('schema version five quota snapshot fields are safely ignored during migrat
   })
   const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
   await runtime.start()
-  assert.equal(runtime.getState().schemaVersion, 4)
+  assert.equal(runtime.getState().schemaVersion, 5)
   assert.equal(runtime.getState().sources.length, 7)
   assert.equal('quotaSnapshot' in runtime.getState(), false)
   assert.equal('notifiedQuotaResetKeys' in runtime.getState(), false)

@@ -10,7 +10,7 @@ import {
 } from './core.js'
 
 const STATE_KEY = 'radar-state'
-const STATE_SCHEMA_VERSION = 4
+const STATE_SCHEMA_VERSION = 5
 const HEARTBEAT_SECONDS = 300
 const MAX_UPDATES = 330
 const MAX_KNOWN_IDS = 800
@@ -216,6 +216,7 @@ function emptySource(definition) {
 
 function normalizeSource(value, definition, itemCount) {
   const status = ['idle', 'loading', 'ok', 'stale', 'error'].includes(value?.status) ? value.status : 'idle'
+  const validators = normalizeValidators(value?.validators)
   return {
     ...emptySource(definition),
     status: status === 'loading' ? 'stale' : status,
@@ -224,7 +225,24 @@ function normalizeSource(value, definition, itemCount) {
     nextAttemptAt: isIsoDateTime(value?.nextAttemptAt) ? value.nextAttemptAt : null,
     ...(isIsoDateTime(value?.fetchedAt) ? { fetchedAt: value.fetchedAt } : {}),
     ...(typeof value?.error === 'string' && /^[a-z0-9_]{3,64}$/.test(value.error) ? { error: value.error } : {}),
+    ...(validators ? { validators } : {}),
   }
+}
+
+function normalizeValidators(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const validators = {}
+  if (typeof value.etag === 'string' && value.etag.length > 0 && value.etag.length <= 256 && /^[\x20-\x7e]+$/.test(value.etag)) {
+    validators.etag = value.etag
+  }
+  if (typeof value.lastModified === 'string' && value.lastModified.length > 0 && value.lastModified.length <= 256 && /^[\x20-\x7e]+$/.test(value.lastModified)) {
+    validators.lastModified = value.lastModified
+  }
+  return Object.keys(validators).length ? validators : null
+}
+
+function responseValidators(headers) {
+  return normalizeValidators({ etag: headers?.etag, lastModified: headers?.['last-modified'] })
 }
 
 function emptyState() {
@@ -284,23 +302,61 @@ function sourceUpdates(state, sourceId) {
   return state.updates.filter(update => update.sourceId === sourceId)
 }
 
-async function fetchSource(api, definition, now) {
-  const sourceUrl = definition.kind === 'codex-reset-status' ? CODEX_RESET_STATUS_URL : definition.url
-  const response = await api.net.fetch(sourceUrl, {
-    headers: { accept: definition.kind === 'x-public-profile' ? 'text/html,application/xhtml+xml;q=0.9' : definition.kind === 'codex-reset-status' ? 'application/json' : 'text/markdown,application/json;q=0.9,text/plain;q=0.8' },
-  })
-  if (response.status < 200 || response.status >= 300 || typeof response.body !== 'string') {
-    throw Object.assign(new Error('source_http_error'), { code: 'source_http_error' })
+function cachedSourceUpdates(state, definition, now) {
+  const updates = sourceUpdates(state, definition.id)
+  if (definition.kind !== 'x-public-profile') return updates
+  const today = localDateKey(new Date(now()), Intl.DateTimeFormat().resolvedOptions().timeZone)
+  return updates.filter(update => update.publishedAt === today)
+}
+
+function retryAfterDelaySeconds(value, nowMs) {
+  if (typeof value !== 'string' || value.length > 256) return null
+  const header = value.trim()
+  let seconds
+  if (/^\d+$/.test(header)) {
+    const digits = header.replace(/^0+(?=\d)/, '')
+    seconds = digits.length > 5 ? 6 * 60 * 60 : Number(digits)
+  } else {
+    const weekday = '(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)'
+    const longWeekday = '(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)'
+    const month = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+    const isHttpDate = new RegExp(`^(?:${weekday}, \\d{2} ${month} \\d{4} \\d{2}:\\d{2}:\\d{2} GMT|${longWeekday}, \\d{2}-${month}-\\d{2} \\d{2}:\\d{2}:\\d{2} GMT|${weekday} ${month} [ \\d]\\d \\d{2}:\\d{2}:\\d{2} \\d{4})$`).test(header)
+    if (!isHttpDate) return null
+    const retryAt = Date.parse(header)
+    if (!Number.isFinite(retryAt)) return null
+    seconds = Math.ceil((retryAt - nowMs) / 1000)
   }
+  if (!Number.isFinite(seconds)) return null
+  return Math.min(6 * 60 * 60, Math.max(60, Math.ceil(seconds)))
+}
+
+async function fetchSource(api, definition, now, validators, hasCachedData) {
+  const sourceUrl = definition.kind === 'codex-reset-status' ? CODEX_RESET_STATUS_URL : definition.url
+  const headers = { accept: definition.kind === 'x-public-profile' ? 'text/html,application/xhtml+xml;q=0.9' : definition.kind === 'codex-reset-status' ? 'application/json' : 'text/markdown,application/json;q=0.9,text/plain;q=0.8' }
+  const safeValidators = hasCachedData ? normalizeValidators(validators) : null
+  if (safeValidators?.etag) headers['if-none-match'] = safeValidators.etag
+  if (safeValidators?.lastModified) headers['if-modified-since'] = safeValidators.lastModified
+  const response = await api.net.fetch(sourceUrl, {
+    headers,
+  })
+  if (response.status === 304) return { notModified: true }
+  if (response.status < 200 || response.status >= 300 || typeof response.body !== 'string') {
+    const rateLimited = response.status === 429 || response.status === 503
+    throw Object.assign(new Error(rateLimited ? 'source_rate_limited' : 'source_http_error'), {
+      code: rateLimited ? 'source_rate_limited' : 'source_http_error',
+      ...(typeof response.headers?.['retry-after'] === 'string' ? { retryAfter: response.headers['retry-after'] } : {}),
+    })
+  }
+  const receivedValidators = responseValidators(response.headers)
   if (definition.kind === 'codex-reset-status') {
     const status = parseCodexResetsStatus(response.body, now())
     if (!status) throw Object.assign(new Error('source_format_changed'), { code: 'source_format_changed' })
-    return status
+    return { value: status, validators: receivedValidators }
   }
   if (definition.kind !== 'x-public-profile') {
     const updates = parseSource(definition, response.body)
     if (updates.length === 0) throw Object.assign(new Error('source_format_changed'), { code: 'source_format_changed' })
-    return updates
+    return { value: updates, validators: receivedValidators }
   }
 
   const currentTime = new Date(now())
@@ -320,7 +376,10 @@ async function fetchSource(api, definition, now) {
       // A changed conversation page must not hide a valid profile post.
     }
   }
-  return sortUpdates([...new Map([...roots, ...replies].map(update => [update.id, update])).values()]).slice(0, definition.maxItems)
+  return {
+    value: sortUpdates([...new Map([...roots, ...replies].map(update => [update.id, update])).values()]).slice(0, definition.maxItems),
+    validators: receivedValidators,
+  }
 }
 
 function stateBytes(state) {
@@ -553,8 +612,23 @@ export function createUpdateRadarRuntime(api, options = {}) {
       const sourceIndex = nextSources.findIndex(source => source.id === definition.id)
       const previous = nextSources[sourceIndex] ?? emptySource(definition)
       const checkedAt = isoNow(now)
+      const retained = definition.id === 'codex-resets' ? [] : cachedSourceUpdates(state, definition, now)
+      const hasCachedData = definition.id === 'codex-resets' ? Boolean(codexReset) : retained.length > 0
       try {
-        const collected = await fetchSource(api, definition, now)
+        const response = await fetchSource(api, definition, now, previous.validators, hasCachedData)
+        if (response.notModified) {
+          if (!hasCachedData) throw Object.assign(new Error('source_cache_missing'), { code: 'source_cache_missing' })
+          const itemCount = definition.id === 'codex-resets' ? 1 : retained.length
+          if (definition.id !== 'codex-resets') updates.push(...retained)
+          nextSources[sourceIndex] = {
+            ...emptySource(definition), status: 'ok', itemCount, fetchedAt: checkedAt,
+            nextAttemptAt: new Date(Date.parse(checkedAt) + definition.intervalSec * 1000).toISOString(),
+            ...(previous.validators ? { validators: previous.validators } : {}),
+          }
+          anySuccess = true
+          continue
+        }
+        const collected = response.value
         if (definition.id === 'codex-resets') {
           if (shouldNotifyCodexReset(codexReset, collected, lastNotifiedCodexReset)) {
             resetToNotify = collected.latestReset
@@ -565,6 +639,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
           nextSources[sourceIndex] = {
             ...emptySource(definition), status: 'ok', itemCount: 1, fetchedAt: checkedAt,
             nextAttemptAt: new Date(Date.parse(checkedAt) + definition.intervalSec * 1000).toISOString(),
+            ...(response.validators ? { validators: response.validators } : {}),
           }
           anySuccess = true
           continue
@@ -576,19 +651,25 @@ export function createUpdateRadarRuntime(api, options = {}) {
         nextSources[sourceIndex] = {
           ...emptySource(definition), status: 'ok', itemCount: collected.length, fetchedAt: checkedAt,
           nextAttemptAt: new Date(Date.parse(checkedAt) + definition.intervalSec * 1000).toISOString(),
+          ...(response.validators ? { validators: response.validators } : {}),
         }
         anySuccess = true
       } catch (error) {
-        const retained = sourceUpdates(state, definition.id)
         updates.push(...retained)
         const failures = Math.min(20, previous.failures + 1)
-        const retrySeconds = RETRY_DELAYS_SECONDS[Math.min(failures - 1, RETRY_DELAYS_SECONDS.length - 1)]
+        const retryAfterSeconds = error?.code === 'source_rate_limited'
+          ? retryAfterDelaySeconds(error.retryAfter, now())
+          : null
+        const retrySeconds = retryAfterSeconds ?? RETRY_DELAYS_SECONDS[Math.min(failures - 1, RETRY_DELAYS_SECONDS.length - 1)]
+        const retryBase = retryAfterSeconds === null ? Date.parse(checkedAt) : now()
+        const validators = errorCode(error) === 'source_cache_missing' ? null : previous.validators
         nextSources[sourceIndex] = {
           ...emptySource(definition), status: retained.length || (definition.id === 'codex-resets' && codexReset) ? 'stale' : 'error',
           itemCount: definition.id === 'codex-resets' ? (codexReset ? 1 : 0) : retained.length,
           failures, error: errorCode(error),
           ...(previous.fetchedAt ? { fetchedAt: previous.fetchedAt } : {}),
-          nextAttemptAt: new Date(Date.parse(checkedAt) + retrySeconds * 1000).toISOString(),
+          nextAttemptAt: new Date(retryBase + retrySeconds * 1000).toISOString(),
+          ...(validators ? { validators } : {}),
         }
         await api.log.warn(`Update Radar source failed: ${definition.id}`, errorCode(error))
       }
