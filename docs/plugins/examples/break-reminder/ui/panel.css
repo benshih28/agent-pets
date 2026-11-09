@@ -1,24 +1,29 @@
+/* Colours, radii and fonts come from the host-injected --ap-* theme tokens (they follow the user's panel theme
+   and light/dark mode live); spacing, type sizes and the hit target come from the shared tokens.css. The fallbacks
+   are the built-in dark palette for previewing the file on its own. */
 :root {
-  color-scheme: dark;
-  color: var(--text-primary, CanvasText);
-  font: var(--font-md, 13px) system-ui, sans-serif;
+  color: var(--ap-text, #f3ede4);
+  font: calc(var(--font-md, 13px) * var(--ap-font-scale, 1)) var(--ap-font-body, system-ui, sans-serif);
 }
 
-body { margin: 0; padding: var(--space-4, 16px); background: var(--surface-panel, Canvas); }
+body { margin: 0; padding: var(--space-4, 16px); background: var(--ap-bg, #1f1b16); }
 main { display: grid; gap: var(--space-3, 12px); }
 h1, p { margin: 0; }
-h1 { font-size: var(--font-lg, 15px); }
-#status { color: var(--text-muted, GrayText); }
+h1 { font-family: var(--ap-font-heading, serif); font-size: calc(var(--font-lg, 15px) * var(--ap-font-scale, 1)); }
+#status { color: var(--ap-text-muted, #b0a592); }
 button {
   min-height: var(--hit-min, 36px);
-  border: 1px solid var(--border-strong, ButtonBorder);
-  border-radius: var(--radius-md, 10px);
-  color: var(--text-primary, ButtonText);
-  background: var(--surface-raised, ButtonFace);
+  border: 0;
+  border-radius: var(--ap-radius-md, 16px);
+  /* Text on the accent fill uses accent-hover: on-accent is guaranteed 4.5:1 there (3:1 on accent). */
+  color: var(--ap-on-accent, #201e1d);
+  background: var(--ap-accent-hover, #e39a6b);
+  font: inherit;
   cursor: pointer;
 }
-button:hover { background: var(--surface-raised-hover, ButtonFace); }
+/* The app's own hovered primary button: accent-hover mixed 12 % toward text, also validated at 4.5:1. */
+button:hover { background: color-mix(in srgb, var(--ap-accent-hover, #e39a6b) 88%, var(--ap-text, #f3ede4)); }
 button:focus-visible {
-  outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, Highlight);
+  outline: var(--focus-ring-width, 2px) solid var(--ap-focus, #f0b48a);
   outline-offset: var(--focus-ring-offset, 2px);
 }

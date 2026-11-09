@@ -5,9 +5,12 @@ import { renameSyncWithRetry } from './fs-rename.ts'
 import { zipSync } from 'fflate'
 import { guardArchive } from './archive-guard.ts'
 import { parsePluginManifest } from './plugin-manifest.ts'
+import { checkPanelThemePackagedImage, isWoff2, panelThemeAssetPaths, PANEL_THEME_FONT_MAX_BYTES, PANEL_THEME_IMAGE_MAX_BYTES } from './plugin-panel-themes.ts'
 import { verifyPluginSignature } from './plugin-signature.ts'
 import type { PluginManifest, PluginRuntimeState } from '../src/types/plugin.ts'
 import type { PluginRegistryError } from '../src/types/ipc.ts'
+import { isPluginId, isKeyFingerprint, isSemverCore } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_ARCHIVE_MAX_BYTES = 5 * 1024 * 1024
 export const PLUGIN_ARCHIVE_SKIN_MAX_BYTES = 25 * 1024 * 1024
@@ -50,7 +53,8 @@ export interface PluginInstallPlan {
 
 export type { PluginRegistryError } from '../src/types/ipc.ts'
 
-export type PluginRegistryResult<T> = { ok: true; value: T } | { ok: false; error: PluginRegistryError }
+/** `diagnostic` 只會在開發者模式安裝時設定（經清理，<= 200 字元）。 */
+export type PluginRegistryResult<T> = { ok: true; value: T } | { ok: false; error: PluginRegistryError; diagnostic?: string }
 
 interface PreparedPlan {
   publicPlan: PluginInstallPlan
@@ -59,19 +63,9 @@ interface PreparedPlan {
   createdAt: number
 }
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
-const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
-const ALLOWED_EXTENSIONS = ['.js', '.json', '.png', '.webp', '.html', '.css'] as const
+const ALLOWED_EXTENSIONS = ['.js', '.json', '.png', '.webp', '.html', '.css', '.woff2'] as const
 const PLAN_TTL_MS = 10 * 60 * 1_000
 const REGISTRY_MAX_BYTES = 1024 * 1024
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isVersion(value: unknown): value is string {
-  return typeof value === 'string' && VERSION.test(value)
-}
 
 function compareVersions(left: string, right: string): number {
   const a = left.split('.').map(Number)
@@ -108,6 +102,9 @@ function permissionUnits(manifest: PluginManifest): string[] {
   if (manifest.contributes.badge) result.add('contributes:badge')
   if (manifest.contributes.skins?.length) result.add(`contributes:skins:${manifest.contributes.skins.length}`)
   if (manifest.contributes.eventSource) result.add('contributes:eventSource')
+  const panelThemes = manifest.contributes.panelThemes ?? []
+  if (panelThemes.length) result.add(`contributes:panelThemes:${panelThemes.length}`)
+  if (panelThemes.some(theme => theme.fonts.length > 0)) result.add('contributes:panelThemeFonts')
   return [...result].sort()
 }
 
@@ -182,7 +179,7 @@ function readRegistry(filePath: string): Record<string, PluginRegistryEntry> {
   if (!isRecord(value) || !isRecord(value.plugins)) throw new TypeError('invalid plugin registry')
   const entries: Record<string, PluginRegistryEntry> = {}
   for (const [id, raw] of Object.entries(value.plugins)) {
-    if (!PLUGIN_ID.test(id) || !isRecord(raw) || raw.id !== id || !isVersion(raw.currentVersion)
+    if (!isPluginId(id) || !isRecord(raw) || raw.id !== id || !isSemverCore(raw.currentVersion)
       || !Number.isSafeInteger(raw.installedAt)
       || (raw.status !== 'installed' && raw.status !== 'enabled' && raw.status !== 'disabled_crashed' && raw.status !== 'incompatible')) {
       continue
@@ -190,10 +187,10 @@ function readRegistry(filePath: string): Record<string, PluginRegistryEntry> {
     const signatureStatus = raw.signatureStatus === 'valid' || raw.signatureStatus === 'unverified'
       ? raw.signatureStatus
       : 'unsigned'
-    const signatureFingerprint = typeof raw.signatureFingerprint === 'string' && /^[a-f0-9]{16}$/.test(raw.signatureFingerprint)
+    const signatureFingerprint = isKeyFingerprint(raw.signatureFingerprint)
       ? raw.signatureFingerprint
       : undefined
-    const trustedKeyFingerprint = typeof raw.trustedKeyFingerprint === 'string' && /^[a-f0-9]{16}$/.test(raw.trustedKeyFingerprint)
+    const trustedKeyFingerprint = isKeyFingerprint(raw.trustedKeyFingerprint)
       ? raw.trustedKeyFingerprint
       : undefined
     entries[id] = {
@@ -212,8 +209,8 @@ function readRegistry(filePath: string): Record<string, PluginRegistryEntry> {
 
 function manifestFromUnsupportedApi(value: unknown): { id?: string; name?: PluginManifest['name']; version?: string; author?: string } {
   if (!isRecord(value)) return {}
-  const id = typeof value.id === 'string' && PLUGIN_ID.test(value.id) ? value.id : undefined
-  const version = isVersion(value.version) ? value.version : undefined
+  const id = isPluginId(value.id) ? value.id : undefined
+  const version = isSemverCore(value.version) ? value.version : undefined
   const author = typeof value.author === 'string' && value.author.length <= 64 ? value.author : undefined
   const name = isRecord(value.name)
     && typeof value.name['zh-TW'] === 'string' && value.name['zh-TW'].length <= 48
@@ -255,7 +252,7 @@ export class PluginRegistry {
   }
 
   setStatus(pluginId: string, status: PluginRuntimeState): boolean {
-    if (!PLUGIN_ID.test(pluginId)
+    if (!isPluginId(pluginId)
       || (status !== 'installed' && status !== 'enabled' && status !== 'disabled_crashed' && status !== 'incompatible')) return false
     try {
       const entries = readRegistry(this.registryPath)
@@ -313,18 +310,50 @@ export class PluginRegistry {
           developerMode,
         }, guarded.files, null)
       }
+      if (parsed.error === 'invalid_panel_theme') {
+        return {
+          ok: false,
+          error: 'invalid_panel_theme',
+          ...(developerMode && parsed.diagnostic ? { diagnostic: parsed.diagnostic } : {}),
+        }
+      }
       return { ok: false, error: 'invalid_manifest' }
     }
     const manifest = parsed.manifest
     const skinPaths = new Set((manifest.contributes.skins ?? []).map(skin => skin.spritesheet))
+    const themeAssets = panelThemeAssetPaths(manifest.contributes.panelThemes)
+    // 「資產套件」（skins 及/或面板主題）適用較大的總大小上限。
+    const assetPackage = skinPaths.size > 0 || themeAssets.images.size > 0 || themeAssets.fonts.size > 0
     const totalBytes = [...guarded.files.values()].reduce((total, bytes) => total + bytes.byteLength, 0)
-    const archiveLimit = skinPaths.size > 0 ? PLUGIN_ARCHIVE_SKIN_MAX_BYTES : PLUGIN_ARCHIVE_MAX_BYTES
-    if (totalBytes > archiveLimit || (archive.byteLength > PLUGIN_ARCHIVE_MAX_BYTES && skinPaths.size === 0)) {
+    const archiveLimit = assetPackage ? PLUGIN_ARCHIVE_SKIN_MAX_BYTES : PLUGIN_ARCHIVE_MAX_BYTES
+    if (totalBytes > archiveLimit || (archive.byteLength > PLUGIN_ARCHIVE_MAX_BYTES && !assetPackage)) {
       return { ok: false, error: 'archive_too_large' }
     }
     for (const [name, bytes] of guarded.files) {
-      const fileLimit = skinPaths.has(name) ? PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES : PLUGIN_ARCHIVE_MAX_BYTES
+      const fileLimit = skinPaths.has(name) ? PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES
+        : themeAssets.images.has(name) ? PANEL_THEME_IMAGE_MAX_BYTES
+          : themeAssets.fonts.has(name) ? PANEL_THEME_FONT_MAX_BYTES
+            : PLUGIN_ARCHIVE_MAX_BYTES
       if (bytes.byteLength > fileLimit) return { ok: false, error: 'archive_too_large' }
+      // 每個套件內的字型都必須由主題的字型 face 宣告。
+      if (path.posix.extname(name).toLowerCase() === '.woff2' && !themeAssets.fonts.has(name)) {
+        return { ok: false, error: 'invalid_panel_theme', ...(developerMode ? { diagnostic: 'panelThemes: a packaged .woff2 is not referenced by any fonts[].src' } : {}) }
+      }
+    }
+    for (const fontPath of themeAssets.fonts) {
+      const font = guarded.files.get(fontPath)
+      if (!font || !isWoff2(font)) {
+        return { ok: false, error: 'invalid_panel_theme', ...(developerMode ? { diagnostic: 'panelThemes: a fonts[].src file is missing or is not WOFF2' } : {}) }
+      }
+    }
+    for (const imagePath of themeAssets.images) {
+      const image = guarded.files.get(imagePath)
+      const check = image ? checkPanelThemePackagedImage(image) : null
+      if (!check?.ok) {
+        const reason = !check ? 'is missing' : check.error === 'image_animated' ? 'is animated'
+          : check.error === 'image_too_large' ? 'is too large (8 MiB, 4096 px per side, 8.39 MP)' : 'is not a static PNG/WebP of at least 64 px with orientation 1'
+        return { ok: false, error: 'invalid_panel_theme', ...(developerMode ? { diagnostic: `panelThemes: a background image ${reason}` } : {}) }
+      }
     }
     if (manifest.entry && !guarded.files.has(manifest.entry)) return { ok: false, error: 'missing_entry' }
     for (const skin of manifest.contributes.skins ?? []) {
@@ -536,7 +565,7 @@ export class PluginRegistry {
         const oldVersion = path.join(pluginDirectory, name)
         try {
           const stat = fs.lstatSync(oldVersion)
-          if (stat.isDirectory() && !stat.isSymbolicLink() && isVersion(name)) fs.rmSync(oldVersion, { recursive: true, force: true })
+          if (stat.isDirectory() && !stat.isSymbolicLink() && isSemverCore(name)) fs.rmSync(oldVersion, { recursive: true, force: true })
         } catch {}
       }
       return { ok: true, value: { ...entry } }
@@ -560,7 +589,7 @@ export class PluginRegistry {
   }
 
   remove(pluginId: string, keepData: boolean): PluginRegistryResult<{ removed: true; keptData: boolean }> {
-    if (!PLUGIN_ID.test(pluginId) || typeof keepData !== 'boolean') return { ok: false, error: 'plugin_not_found' }
+    if (!isPluginId(pluginId) || typeof keepData !== 'boolean') return { ok: false, error: 'plugin_not_found' }
     let entries: Record<string, PluginRegistryEntry>
     try {
       entries = readRegistry(this.registryPath)

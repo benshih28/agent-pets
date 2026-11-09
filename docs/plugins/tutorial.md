@@ -117,7 +117,7 @@ document.querySelector('#remind').addEventListener('click', () => api.ui.postMes
 await api.ui.postMessage({ type: 'break:get' }).catch(() => {})
 ```
 
-The full files, including error handling and token-based styling, are in the example folder. Style with the shared tokens (see [UX guidelines](ux-guidelines.md)) and never rely on external URLs.
+The full files, including error handling, are in the example folder. `ui/panel.css` takes every colour, radius and font from the `--ap-*` theme tokens the host writes on `<html>` (they follow the user's panel theme and light/dark mode live) and only spacing and type sizes from the shared `tokens.css`; `ui/panel.js` sets `color-scheme` from `api.theme.get()` / `onDidChange`. See [Panel themes](panel-themes.md) and the [UX guidelines](ux-guidelines.md), and never rely on external URLs.
 
 ## 4. Load and try it
 

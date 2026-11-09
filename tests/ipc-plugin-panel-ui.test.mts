@@ -22,6 +22,7 @@ function createFixture() {
       return true
     },
     handleApiRequest: (_sender: unknown, method: unknown) => ({ ok: true, method }),
+    initialTheme: (sender: unknown): unknown => (sender && typeof sender === 'object' && 'theme' in sender ? sender.theme : null),
   }
   const deps: PluginPanelUiIpcDependencies = {
     ipcMain: {
@@ -125,4 +126,20 @@ test('panel API denies subframes and delegates main-frame requests', () => {
   assert.deepEqual(api(childFrame, 'storage.get', []), { ok: false, error: 'not_permitted' })
   const mainFrame = { sender, senderFrame: sender.mainFrame } as unknown as IpcMainInvokeEvent
   assert.deepEqual(api(mainFrame, 'storage.get', []), { ok: true, method: 'storage.get' })
+})
+
+test('the initial theme channel always answers synchronously and only the panel main frame gets a snapshot', () => {
+  const { listeners, controller } = createFixture()
+  const initial = listeners.get('plugin-panel-theme-initial')!
+  const sender = { mainFrame: {}, theme: { apiVersion: 1 } } as unknown as WebContents
+  const call = (event: Record<string, unknown>) => {
+    initial(event as unknown as IpcMainEvent)
+    return event.returnValue
+  }
+  assert.equal(call({ sender, senderFrame: {} }), null, 'subframe')
+  assert.deepEqual(call({ sender, senderFrame: sender.mainFrame }), { apiVersion: 1 })
+  const plain = { mainFrame: {} } as unknown as WebContents
+  assert.equal(call({ sender: plain, senderFrame: plain.mainFrame }), null, 'not the open view')
+  controller.initialTheme = () => { throw new Error('boom') }
+  assert.equal(call({ sender, senderFrame: sender.mainFrame }), null, 'controller failure still answers')
 })

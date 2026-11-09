@@ -108,7 +108,7 @@ function sizeLabel(bytes: number): string {
           <Button
             :variant="item.updateAvailable || !item.installedVersion ? 'primary' : 'secondary'"
             size="sm"
-            :disabled="busy || (item.installedVersion !== null && !item.updateAvailable)"
+            :disabled="busy || Boolean(item.requiresAppVersion) || (item.installedVersion !== null && !item.updateAvailable)"
             :aria-label="`${actionLabel(item)} ${item.plugin.name[locale]}`"
             @click="installCatalogPlugin(item)"
           >
@@ -120,6 +120,7 @@ function sizeLabel(bytes: number): string {
           <Chip v-if="item.installedVersion" tone="success" icon="check">{{ t('pluginCatalogInstalledVersion', { version: item.installedVersion }) }}</Chip>
           <Chip v-if="item.updateAvailable" tone="info" icon="arrow-up">{{ t('plugins.updateTo', { version: item.latestVersion.version }) }}</Chip>
           <Chip v-if="item.updateAvailable && item.signingKeyChange === 'changed'" tone="danger" icon="warning">{{ t('pluginCatalogSigningKeyChanged') }}</Chip>
+          <Chip v-if="item.requiresAppVersion" tone="warn" icon="warning">{{ t('plugins.catalogRequiresApp', { version: item.requiresAppVersion }) }}</Chip>
           <Chip v-if="item.catalogOlder" tone="warn" icon="warning">{{ t('pluginCatalogOlderThanInstalled') }}</Chip>
           <Chip v-if="item.plugin.publicKeyFingerprint" tone="neutral" icon="shield">{{ t('plugins.signaturePinned') }}</Chip>
         </div>

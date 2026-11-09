@@ -99,7 +99,14 @@ async function copy(): Promise<void> {
   font-weight: var(--weight-medium);
 }
 
+.permission-details > * {
+  flex: none;
+}
+
+/* 容器（寵物的權限泡泡）高度不夠時，只有程式碼框縮短，至少留一行；完整內容用「展開」或「複製」。 */
 .permission-details-code {
+  flex: 0 1 auto;
+  min-height: calc(1.4em + var(--space-2) * 2);
   max-height: calc(1.4em * 3 + var(--space-2) * 2);
   margin: 0;
   padding: var(--space-2);

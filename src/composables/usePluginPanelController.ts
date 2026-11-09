@@ -40,8 +40,9 @@ import {
   defaultSettingsDraft, isSettingsDirty, validateSettings, type SettingErrorCode,
 } from '@/utils/plugin-settings-form'
 import { usePluginNotify } from '@/composables/plugin/usePluginNotify'
-import { takePluginDetailRequest } from '@/utils/plugin-detail-request'
+import { pluginDetailRequestNonce, takePluginDetailRequest } from '@/utils/plugin-detail-request'
 import { formatDateParts, formatDateTime, formatNumber } from '@/utils/intl-format'
+import { isKeyFingerprint } from '@/types/id-patterns'
 export interface PermissionEntryView {
   unit: string
   label: string
@@ -61,7 +62,7 @@ let consumedPanelRequestNonce = 0
 
 export type PluginInstalledFilter = 'all' | 'enabled' | 'updates' | 'issues'
 
-export type PluginDetailSection = 'overview' | 'settings' | 'commands' | 'diagnostics'
+export type PluginDetailSection = 'overview' | 'settings' | 'commands' | 'themes' | 'diagnostics'
 
 export function usePluginPanelController(props: { requestedPluginId?: string; requestNonce?: number }) {
 
@@ -220,7 +221,7 @@ async function restoreCatalogUrl(): Promise<void> {
 }
 
 function displayFingerprint(value: string | undefined): string {
-  return typeof value === 'string' && /^[a-f0-9]{16}$/.test(value)
+  return isKeyFingerprint(value)
     ? value.match(/.{4}/g)?.join(' ') ?? ''
     : ''
 }
@@ -453,6 +454,7 @@ function localizedError(code: string): string {
     signature_confirmation_required: 'pluginSignatureConfirmationRequired',
     invalid_archive: 'pluginInvalidArchive',
     invalid_manifest: 'pluginInvalidArchive',
+    invalid_panel_theme: 'plugins.errInvalidPanelTheme',
     incompatible: 'pluginIncompatible',
     permission_reconsent_required: 'pluginReconsentRequired',
     filesystem_unsafe: 'pluginFilesystemUnsafe',
@@ -480,11 +482,12 @@ function localizedError(code: string): string {
   return t(keys[code] ?? 'pluginActionFailed')
 }
 
-function setError(code: string, retry?: () => void): void {
+function setError(code: string, retry?: () => void, diagnostic?: string): void {
   notifier.notify({
     tone: 'error',
     text: localizedError(code),
-    detail: code,
+    // 開發者模式安裝會從主程序帶入經清理的作者提示（<= 200 字元）。
+    detail: diagnostic ? `${code}: ${diagnostic}` : code,
     action: retry ? { label: t('plugins.retry'), run: retry } : undefined,
   })
 }
@@ -1001,7 +1004,7 @@ async function selectDeveloperFolder(): Promise<void> {
   try {
     const result = await window.electronAPI?.selectPluginFolder()
     if (!result?.ok) {
-      if (result && !result.ok && !result.cancelled) setError(result.error)
+      if (result && !result.ok && !result.cancelled) setError(result.error, undefined, result.diagnostic)
       return
     }
     pendingPlan.value = result.value
@@ -1040,6 +1043,8 @@ function permissionLabel(unit: string): string {
   if (detail === 'badge') return t('pluginPermissionBadge')
   if (detail === 'eventSource') return t('pluginPermissionEventSource')
   if (detail.startsWith('skins:')) return t('pluginPermissionSkins', { count: detail.slice(6) })
+  if (detail.startsWith('panelThemes:')) return t('pluginPermissionPanelThemes', { count: detail.slice(12) })
+  if (detail === 'panelThemeFonts') return t('pluginPermissionPanelThemeFonts')
   return t('plugins.permUnknown', { unit })
 }
 
@@ -1060,6 +1065,8 @@ function permissionHint(unit: string): string {
   if (detail === 'badge') return t('plugins.hintBadge')
   if (detail === 'eventSource') return t('plugins.hintEventSource')
   if (detail.startsWith('skins:')) return t('plugins.hintSkins')
+  if (detail.startsWith('panelThemes:')) return t('plugins.hintPanelThemes')
+  if (detail === 'panelThemeFonts') return t('plugins.hintPanelThemeFonts')
   return t('plugins.hintUnknown')
 }
 
@@ -1314,6 +1321,14 @@ function consumePanelRequest(): void {
 }
 
 watch(() => [props.requestedPluginId, props.requestNonce] as const, consumePanelRequest)
+
+// 此面板已掛載時才發出的詳細頁請求（例如從搜尋觸發 Appearance 卡片的
+// "Open plugin settings"）在這裡處理。
+watch(pluginDetailRequestNonce, () => {
+  if (!snapshot.value) return
+  const detailRequest = takePluginDetailRequest()
+  if (detailRequest) openPluginDetail(detailRequest.pluginId, detailRequest.section)
+})
 
 onMounted(() => {
   void refreshPanel().then(() => {

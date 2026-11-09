@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { isPluginId } from '../src/types/id-patterns.ts'
 
 interface WatchedSource {
   pluginId: string
@@ -26,7 +27,7 @@ export class PluginDeveloperModeWatcher {
 
   watch(pluginId: string, directory: string, onChange: () => void | Promise<void>): boolean {
     this.unwatch(pluginId)
-    if (!/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(pluginId) || typeof onChange !== 'function') return false
+    if (!isPluginId(pluginId) || typeof onChange !== 'function') return false
     const selectedRoot = path.resolve(directory)
     try {
       const stat = fs.lstatSync(selectedRoot)

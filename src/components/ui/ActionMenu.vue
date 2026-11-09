@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref } from 'vue'
+import { nextTick, onUnmounted, ref, useId } from 'vue'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
 
@@ -43,7 +43,7 @@ const emit = defineEmits<{ select: [id: string] }>()
 
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
-const menuId = `action-menu-${Math.random().toString(36).slice(2, 9)}`
+const menuId = `action-menu-${useId()}`
 
 function menuButtons(): HTMLButtonElement[] {
   return Array.from(root.value?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? [])
@@ -216,7 +216,7 @@ onUnmounted(() => document.removeEventListener('pointerdown', onDocumentPointerD
 }
 
 .menu-item.danger {
-  color: var(--state-error-soft);
+  color: var(--text-danger);
 }
 
 .menu-item:disabled {

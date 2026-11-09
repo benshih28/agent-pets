@@ -13,8 +13,10 @@ test('base.css ships a global zero-specificity :focus-visible ring built from to
   assert.match(base, /outline:\s*var\(--focus-ring-width\)\s+solid\s+var\(--focus-ring-color\)/)
 })
 
-test('focus ring switches colour on cream surfaces and in forced-colors mode', () => {
-  assert.match(tokens, /--focus-ring-color:\s*var\(--focus-ring-color-on-light\)/)
+test('the focus ring follows the palette accent text (>= 3:1 on every surface) and Highlight in forced-colors mode', () => {
+  assert.match(tokens, /--color-focus:\s*var\(--organic-accent-text\);/)
+  assert.match(tokens, /--focus-ring-color:\s*var\(--color-focus\);/)
+  assert.doesNotMatch(tokens, /focus-ring-color-on-light/)
   assert.match(tokens, /forced-colors:\s*active[\s\S]*--focus-ring-color:\s*Highlight/)
 })
 

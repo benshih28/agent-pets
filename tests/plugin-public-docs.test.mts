@@ -21,6 +21,28 @@ test('every public plugin example manifest passes the runtime validator', () => 
   }
 })
 
+test('example panel pages take every colour, radius and font from the --ap-* theme tokens', () => {
+  const examplesDirectory = path.join(docsDirectory, 'examples')
+  // tokens.css 仍提供間距、字級與點擊範圍；顏色、圓角與字族只能來自 --ap-*（ux-guidelines.md）。
+  const sharedLayout = /^--(?:space-\d|font-(?:xs|sm|md|lg|xl|2xl)|hit-min|focus-ring-(?:width|offset))$/
+  let pages = 0
+  for (const example of fs.readdirSync(examplesDirectory, { withFileTypes: true })) {
+    const ui = path.join(examplesDirectory, example.name, 'ui')
+    if (!example.isDirectory() || !fs.existsSync(ui)) continue
+    for (const file of fs.readdirSync(ui).filter(name => name.endsWith('.css'))) {
+      pages += 1
+      const css = fs.readFileSync(path.join(ui, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      for (const match of css.matchAll(/var\((--[a-z0-9-]+)/g)) {
+        assert.ok(match[1]!.startsWith('--ap-') || sharedLayout.test(match[1]!), `${example.name}/${file}: ${match[1]}`)
+      }
+      assert.doesNotMatch(css, /color-scheme:\s*(?:dark|light)/, `${example.name}/${file} must follow the theme mode, not hard-code it`)
+    }
+    const script = fs.readFileSync(path.join(ui, 'panel.js'), 'utf8')
+    assert.match(script, /api\.theme\.onDidChange\(/, `${example.name} follows theme mode changes`)
+  }
+  assert.equal(pages, 2)
+})
+
 test('P16 public examples cover the documented timer APIs and skin-only package', () => {
   const examples = path.join(docsDirectory, 'examples')
   const pomodoro = fs.readFileSync(path.join(examples, 'pomodoro/dist/main.js'), 'utf8')
@@ -163,7 +185,7 @@ test('public manifest schema required keys and enums match the runtime validator
   assert.deepEqual(schema.required, ['id', 'name', 'version', 'apiVersion', 'author', 'permissions', 'contributes'])
   assert.equal(schema.properties.apiVersion?.const, '1')
   assert.deepEqual(Object.keys(schema.properties.permissions?.properties ?? {}).sort(), ['agentStatus', 'links', 'network', 'schedule', 'secrets', 'storage'])
-  assert.deepEqual(Object.keys(schema.properties.contributes?.properties ?? {}).sort(), ['badge', 'commands', 'eventSource', 'feed', 'panelView', 'reaction', 'settings', 'skins', 'tray'])
+  assert.deepEqual(Object.keys(schema.properties.contributes?.properties ?? {}).sort(), ['badge', 'commands', 'eventSource', 'feed', 'panelThemes', 'panelView', 'reaction', 'settings', 'skins', 'tray'])
   const panelView = schema.properties.contributes?.properties?.panelView
   assert.match(panelView?.description ?? '', /sandboxed host view/)
   assert.equal(panelView?.properties?.preferredSize?.properties?.width?.type, 'integer')

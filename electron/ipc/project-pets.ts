@@ -4,6 +4,7 @@ import type { ProjectPetArchiveResult, ProjectPetCommandResult, ProjectPetView }
 import { isValidPetId } from '../../src/utils/pet-id.ts'
 import { IPC_CHANNELS } from './channels.ts'
 import { handleTrusted } from './trusted.ts'
+import { isProjectId } from '../../src/types/id-patterns.ts'
 
 type DirectoryDialogResult = { canceled: boolean; filePaths: string[] }
 type DirectoryDialogOptions = { title: string; message: string; properties: Array<'openDirectory' | 'createDirectory'> }
@@ -87,7 +88,7 @@ export function registerProjectPetsIpc(deps: ProjectPetsIpcDependencies): void {
     const input = payload as Record<string, unknown>
     const projectId = typeof input.projectId === 'string' ? input.projectId : ''
     const petId = input.petId === null ? null : typeof input.petId === 'string' ? input.petId : undefined
-    if (!/^[a-f0-9]{32}$/.test(projectId)) return { ok: false, error: 'invalid_project' }
+    if (!isProjectId(projectId)) return { ok: false, error: 'invalid_project' }
     if (petId === undefined) return { ok: false, error: 'invalid_pet' }
     const available = await deps.availablePetIds()
     if (petId !== null && (!isValidPetId(petId, 128) || !available.has(petId))) {
@@ -105,7 +106,7 @@ export function registerProjectPetsIpc(deps: ProjectPetsIpcDependencies): void {
   handleTrusted(deps.ipcMain, IPC_CHANNELS.projectPetsArchive, deps.getPanelWindow, deps.assertTrustedIpcSender, (_event, projectId: unknown): ProjectPetArchiveResult => {
     const store = deps.getStore()
     if (!store) return { ok: false, error: 'unavailable' }
-    if (typeof projectId !== 'string' || !/^[a-f0-9]{32}$/.test(projectId)) {
+    if (!isProjectId(projectId)) {
       return { ok: false, error: 'invalid_project' }
     }
     try {

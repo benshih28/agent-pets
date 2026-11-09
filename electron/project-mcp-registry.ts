@@ -7,6 +7,7 @@ import type {
   ProjectMcpSetupSummary,
 } from '../src/types/project-mcp.ts'
 import { inspectProjectMcp, type ProjectMcpInstallOptions } from './project-mcp-setup.ts'
+import { isRecord } from './value-guards.ts'
 
 const MAX_REGISTRY_BYTES = 64 * 1024
 const MAX_PROJECTS = 128
@@ -15,10 +16,6 @@ interface StoredProjectMcpEntry {
   projectPath: string
   registeredAt: string
   lastCheckedAt: string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isSafeAbsolutePath(value: unknown): value is string {

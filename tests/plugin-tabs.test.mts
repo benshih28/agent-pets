@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  parseStoredDashboardTab, pluginIdOfTab, pluginTabBadgeText, pluginTabValue,
+  hasPluginTabContent, parseStoredDashboardTab, pluginIdOfTab, pluginTabBadgeText, pluginTabSections, pluginTabValue,
   resolveDashboardTab, unreadCountByPlugin, visiblePluginTabPlugins,
 } from '../src/utils/plugin-tabs.ts'
 import { overflowState, pageScrollDelta, scrollLeftToReveal, wheelScrollDelta } from '../src/utils/tab-overflow.ts'
@@ -11,7 +11,7 @@ type Snap = Parameters<typeof visiblePluginTabPlugins>[0]
 function plugin(id: string, over: Record<string, unknown> = {}, enabled = true) {
   return {
     id, currentVersion: '1.0.0', status: 'installed', installedAt: 1, grantedPermissions: {},
-    manifest: { id, name: { 'zh-TW': id, 'en-US': id }, contributes: {} }, development: false,
+    manifest: { id, name: { 'zh-TW': id, 'en-US': id }, contributes: { feed: true } }, development: false,
     preference: { enabled, muted: false, rateLimitPer10Min: 10, targetPetId: null, grantedHosts: [] },
     ...over,
   }
@@ -88,4 +88,38 @@ test('wheel redirects vertical and shift wheel only when overflowing', () => {
   assert.equal(wheelScrollDelta({ deltaX: 0, deltaY: 0 }, true), null)
   assert.equal(pageScrollDelta(300, 1), 225)
   assert.equal(pageScrollDelta(300, -1), -225)
+})
+
+test('a tab shows only the sections the plugin can use, and a plugin with none gets no tab', () => {
+  const manifest = (contributes: Record<string, unknown>) => ({ contributes }) as never
+  // 只提供面板主題：分頁主體是主題清單，沒有通知、命令或設定。
+  assert.deepEqual(pluginTabSections(manifest({ panelThemes: [{ id: 'aurora' }] })), { panelView: false, panelThemes: true, feed: false, commands: false, settings: false })
+  // 能送通知的插件才有通知區；空的設定 schema 不算設定。
+  assert.deepEqual(pluginTabSections(manifest({ feed: true, settings: { type: 'object', properties: {} } })), { panelView: false, panelThemes: false, feed: true, commands: false, settings: false })
+  assert.equal(pluginTabSections(manifest({ settings: { type: 'object', properties: { interval: { type: 'number' } } } })).settings, true)
+  assert.equal(pluginTabSections(manifest({ commands: [{ id: 'go' }] })).commands, true)
+  assert.equal(pluginTabSections(manifest({ panelView: { entry: 'ui/index.html' } })).panelView, true)
+  // 只有寵物外觀、只有反應或徽章：沒有分頁。
+  for (const contributes of [{ skins: [{ id: 'fox' }] }, { reaction: true, badge: true }, {}]) {
+    assert.equal(hasPluginTabContent(pluginTabSections(manifest(contributes))), false, JSON.stringify(contributes))
+  }
+  const skins = plugin('skin-pack', { manifest: { id: 'skin-pack', name: { 'zh-TW': 's', 'en-US': 's' }, contributes: { skins: [{ id: 'fox' }] } } })
+  const themes = plugin('theme-pack', { manifest: { id: 'theme-pack', name: { 'zh-TW': 't', 'en-US': 't' }, contributes: { panelThemes: [{ id: 'aurora' }] } } })
+  assert.deepEqual(visiblePluginTabPlugins(snap([skins, themes])).map(p => p.id), ['theme-pack'])
+  assert.equal(pluginTabSections(null).feed, false)
+})
+
+test('the tab content renders each section only for a matching capability and hosts the shared theme list', async () => {
+  const { readFileSync } = await import('node:fs')
+  const content = readFileSync('src/components/status-panel/PluginTabContent.vue', 'utf8')
+  assert.match(content, /<PluginThemeTab v-if="tab\.sections\.panelThemes"/)
+  assert.match(content, /<section v-if="tab\.sections\.commands"/)
+  assert.match(content, /<section v-if="tab\.sections\.feed"/)
+  assert.match(content, /v-if="tab\.sections\.settings"[^>]*@click="emit\('openSettings'/)
+  // 主題清單與詳情頁共用同一個元件，不複製邏輯。
+  assert.match(readFileSync('src/components/status-panel/PluginThemeTab.vue', 'utf8'), /<PluginPanelThemes :plugin-id="pluginId"/)
+  assert.match(readFileSync('src/components/plugin-panel/PluginDetail.vue', 'utf8'), /<PluginPanelThemes /)
+  // 「開啟插件設定」與搜尋先找分頁，沒有分頁才開詳情頁。
+  const panel = readFileSync('src/components/StatusPanel.vue', 'utf8')
+  assert.match(panel, /watch\(panelThemeTargetRequest,[\s\S]*?candidate\.sections\.panelThemes[\s\S]*?openPluginTabSettings\(request\.pluginId, 'themes'\)[\s\S]*?selectDashboardTab\(tab\.value\)/)
 })

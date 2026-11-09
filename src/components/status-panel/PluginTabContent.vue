@@ -8,6 +8,8 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import Icon from '@/components/ui/Icon.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 import Spinner from '@/components/ui/Spinner.vue'
+import PluginThemeTab from '@/components/status-panel/PluginThemeTab.vue'
+import MyPanelThemes from '@/components/panel-theme/MyPanelThemes.vue'
 import { formatDateTime } from '@/utils/intl-format'
 import { isCurrentPluginPanelViewClose, pluginPanelViewCloseError } from '@/utils/plugin-panel-view'
 import type { PluginDashboardTab } from '@/composables/usePluginTabs'
@@ -15,19 +17,20 @@ import type { PluginNotificationRecord, PluginPanelViewClosedEvent } from '@/typ
 
 // One plugin's dashboard tab. A plugin with a panel view embeds it in the content area
 // through the same open / bounds / close IPC as the Settings plugin page; every other
-// plugin gets a native summary (recent feed, commands, links to Settings -> Plugins).
+// plugin gets a native summary with only the sections it can use (tab.sections): its panel
+// themes, commands, recent notifications (only when it may post them) and a settings link.
 const props = defineProps<{
   tab: PluginDashboardTab
   active: boolean
   feed: PluginNotificationRecord[]
   loading: boolean
 }>()
-const emit = defineEmits<{ openSettings: [pluginId: string]; openDetail: [pluginId: string] }>()
+const emit = defineEmits<{ openSettings: [pluginId: string]; openDetail: [pluginId: string]; openThemes: [pluginId: string] }>()
 
 const store = useAgentStore()
 const toast = useToast()
 
-const hasPanelView = computed(() => Boolean(props.tab.plugin.manifest?.contributes.panelView))
+const hasPanelView = computed(() => props.tab.sections.panelView)
 const pluginTitle = computed(() => props.tab.plugin.manifest?.contributes.panelView?.title[locale.value] || props.tab.label)
 const commands = computed(() => props.tab.plugin.manifest?.contributes.commands ?? [])
 const recentFeed = computed(() => [...props.feed].sort((a, b) => b.item.createdAt - a.item.createdAt).slice(0, 8))
@@ -218,6 +221,8 @@ onBeforeUnmount(() => {
           <strong>{{ pluginTitle }}</strong>
           <span>{{ tab.label }} · {{ t('pluginVersion', { version: tab.plugin.currentVersion }) }}</span>
         </div>
+        <!-- 原生面板頁佔滿內容區，主題清單放不下；同時提供主題的插件從這裡前往詳情頁的面板主題。 -->
+        <Button v-if="tab.sections.panelThemes" variant="ghost" size="sm" @click="emit('openThemes', tab.pluginId)">{{ t('plugins.sectionPanelThemes') }}</Button>
         <Button variant="ghost" icon-only :aria-label="t('plugins.reloadPanel')" :title="t('plugins.reloadPanel')" @click="openView">
           <Icon name="refresh" :size="18" />
         </Button>
@@ -245,11 +250,20 @@ onBeforeUnmount(() => {
           <strong>{{ tab.label }}</strong>
           <span>{{ t('pluginVersion', { version: tab.plugin.currentVersion }) }}</span>
         </div>
-        <Button variant="ghost" size="sm" @click="emit('openSettings', tab.pluginId)">{{ t('plugins.dashTabSettings') }}</Button>
+        <Button v-if="tab.sections.settings" variant="ghost" size="sm" @click="emit('openSettings', tab.pluginId)">{{ t('plugins.dashTabSettings') }}</Button>
         <Button variant="ghost" size="sm" @click="emit('openDetail', tab.pluginId)">{{ t('plugins.dashTabDetails') }}</Button>
       </header>
 
-      <section v-if="commands.length" class="plugin-tab-section" :aria-label="t('pluginCommandsHeading')">
+      <PluginThemeTab v-if="tab.sections.panelThemes" :plugin-id="tab.pluginId">
+        <template #after-list>
+          <section class="plugin-tab-section" :aria-label="t('design.themeEditor.myThemes')" data-testid="plugin-tab-my-themes">
+            <h2>{{ t('design.themeEditor.myThemes') }}</h2>
+            <MyPanelThemes />
+          </section>
+        </template>
+      </PluginThemeTab>
+
+      <section v-if="tab.sections.commands" class="plugin-tab-section" :aria-label="t('pluginCommandsHeading')">
         <h2>{{ t('pluginCommandsHeading') }}</h2>
         <div class="plugin-tab-commands">
           <Button
@@ -264,7 +278,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="plugin-tab-section" :aria-label="t('pluginNotificationsHeading')">
+      <section v-if="tab.sections.feed" class="plugin-tab-section" :aria-label="t('pluginNotificationsHeading')">
         <h2>{{ t('pluginNotificationsHeading') }}</h2>
         <div v-if="loading" class="plugin-tab-skeleton"><Skeleton :lines="3" /></div>
         <EmptyState v-else-if="!recentFeed.length" compact icon="info" :title="t('plugins.dashTabFeedEmpty')" />

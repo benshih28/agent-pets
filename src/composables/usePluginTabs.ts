@@ -3,7 +3,9 @@ import { locale } from '@/i18n'
 import { resolvePluginIconUrl } from '@/utils/plugin-icon'
 import {
   pluginTabBadgeText,
+  pluginTabSections,
   pluginTabValue,
+  type PluginTabSections,
   unreadCountByPlugin,
   visiblePluginTabPlugins,
 } from '@/utils/plugin-tabs'
@@ -20,6 +22,7 @@ export interface PluginDashboardTab {
   label: string
   iconUrl: string | null
   badgeText: string
+  sections: PluginTabSections
   plugin: PluginPanelPlugin
 }
 
@@ -96,6 +99,7 @@ export function usePluginTabs() {
         plugin.id, plugin.manifest?.icon, plugin.preference.enabled, pluginsEnabled.value, failedIcons.value.has(plugin.id),
       ),
       badgeText: pluginTabBadgeText(count) || liveText.slice(0, 4),
+      sections: pluginTabSections(plugin.manifest),
       plugin,
     }
   }))

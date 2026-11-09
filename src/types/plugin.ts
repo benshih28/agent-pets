@@ -79,6 +79,64 @@ export interface PluginPanelViewContribution {
   preferredSize?: { width: number; height: number }
 }
 
+export type PluginPanelThemeFit = 'cover' | 'contain' | 'tile'
+export type PluginPanelThemePosition =
+  | 'center' | 'top' | 'bottom' | 'left' | 'right'
+  | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+export type PluginPanelThemeColorKey =
+  | 'bg' | 'surface' | 'surface2' | 'surfaceWarm' | 'surfaceSage' | 'surfaceSageSoft' | 'surfaceOff'
+  | 'text' | 'textSecondary' | 'textMuted' | 'textFaint'
+  | 'accent' | 'accentHover' | 'accentText' | 'onAccent' | 'accentGlow' | 'accentTrack' | 'accentOnHover'
+  | 'sage' | 'sageDeep' | 'sageDark' | 'sageTrack'
+  | 'border' | 'borderSoft'
+  | 'dangerText' | 'successText' | 'warnText' | 'scrim'
+  | 'infoText' | 'shadow' | 'highlight'
+
+/** 正規化後的 manifest 顏色：主機標準的 `rgb(R G B / A)` 字串（spec §3.3）。 */
+export type PluginPanelThemeColors = Partial<Record<PluginPanelThemeColorKey, string>>
+
+export interface PluginPanelThemeOverlay { color: string; opacity: number }
+
+export type PluginPanelThemeBackground =
+  | { type: 'solid' }
+  | { type: 'gradient'; kind: 'linear'; angle: number; stops: Array<{ color: string; at: number }> }
+  | { type: 'gradient'; kind: 'radial'; position: PluginPanelThemePosition; stops: Array<{ color: string; at: number }> }
+  | {
+      type: 'image'
+      src: string
+      fit: PluginPanelThemeFit
+      position: PluginPanelThemePosition
+      opacity: number
+      blur: number
+      overlay: PluginPanelThemeOverlay
+    }
+
+export interface PluginPanelThemeModeDefinition {
+  colors: PluginPanelThemeColors
+  background: PluginPanelThemeBackground
+  userImage?: { allowed: true; fit: PluginPanelThemeFit; overlay: PluginPanelThemeOverlay }
+  petStatus?: Partial<Record<'background' | 'border' | 'text' | 'textMuted' | 'quotaFill' | 'quotaTrack' | 'quotaWarn', string>>
+}
+
+export interface PluginPanelThemeFontFace {
+  id: string
+  src: string
+  weight: 400 | 600 | 700
+  style: 'normal' | 'italic'
+}
+
+/** 已驗證並套用預設值的 `contributes.panelThemes[]` 項目（electron/plugin-panel-themes.ts）。 */
+export interface PluginPanelThemeContribution {
+  id: string
+  displayName: PluginLocalizedText
+  description?: PluginLocalizedText
+  fonts: PluginPanelThemeFontFace[]
+  typography: { body?: string[]; heading?: string[]; scale: number }
+  shape: { radiusSm: number; radiusMd: number; radiusLg: number }
+  modes: Partial<Record<'light' | 'dark', PluginPanelThemeModeDefinition>>
+}
+
 /** One registry row owns the contribution identifier, implementation entry point, and public API mapping. */
 export const PLUGIN_CONTRIBUTION_REGISTRY = Object.freeze({
   feed: { implementationFile: 'electron/plugin-feed.ts', hostApi: 'feed.notify' },
@@ -90,6 +148,7 @@ export const PLUGIN_CONTRIBUTION_REGISTRY = Object.freeze({
   badge: { implementationFile: 'electron/plugin-badges.ts', hostApi: 'badge.set' },
   skins: { implementationFile: 'electron/plugin-skins.ts', hostApi: null, allowsWorkerlessPlugin: true },
   eventSource: { implementationFile: 'electron/plugin-event-source.ts', hostApi: 'agent.emit' },
+  panelThemes: { implementationFile: 'electron/plugin-panel-themes.ts', hostApi: null, allowsWorkerlessPlugin: true },
 } as const)
 
 export type PluginContributionId = keyof typeof PLUGIN_CONTRIBUTION_REGISTRY
@@ -104,6 +163,7 @@ export interface PluginContributionValueMap {
   badge: boolean
   skins: PluginSkinContribution[]
   eventSource: PluginEventSourceContribution
+  panelThemes: PluginPanelThemeContribution[]
 }
 
 type AssertPluginContributionKeysMatch<T extends true> = T
@@ -303,4 +363,7 @@ export interface PluginNotificationRecord {
   read: boolean
 }
 
-export type PluginPanelResult<T> = { ok: true; value: T } | { ok: false; error: import('./ipc').IpcErrorCode; cancelled?: boolean }
+export type PluginPanelResult<T> =
+  | { ok: true; value: T }
+  /** `diagnostic`：開發者模式安裝提示，經清理且最多 200 字元。 */
+  | { ok: false; error: import('./ipc').IpcErrorCode; cancelled?: boolean; diagnostic?: string }

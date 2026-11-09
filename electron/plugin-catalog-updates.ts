@@ -16,12 +16,30 @@ export interface InstalledPluginUpdateState {
 export function buildPluginCatalogPanelItems(
   catalog: PluginCatalogDocument,
   installedPlugins: InstalledPluginUpdateState[],
+  appVersion?: string,
 ): PluginCatalogPanelItem[] {
   const installed = new Map(installedPlugins.map(plugin => [plugin.id, plugin] as const))
   const items: PluginCatalogPanelItem[] = []
   for (const plugin of catalog.plugins) {
-    const latestVersion = selectLatestCompatiblePluginVersion(plugin, '1')
-    if (!latestVersion) continue
+    const latestVersion = selectLatestCompatiblePluginVersion(plugin, '1', appVersion)
+    if (!latestVersion) {
+      // 這個 API 有版本，但全都需要更新的 app：顯示 "requires Agent Pets X"。
+      const blocked = selectLatestCompatiblePluginVersion(plugin, '1')
+      const required = blocked ? lowestRequiredAppVersion(plugin.versions) : null
+      if (blocked && required) {
+        items.push({
+          plugin,
+          latestVersion: blocked,
+          installedVersion: installed.get(plugin.id)?.currentVersion ?? null,
+          updateAvailable: false,
+          catalogOlder: false,
+          permissionsIncreased: null,
+          signingKeyChange: 'unknown',
+          requiresAppVersion: required,
+        })
+      }
+      continue
+    }
     const installedPlugin = installed.get(plugin.id)
     const installedVersion = installedPlugin?.currentVersion ?? null
     const comparison = installedVersion === null ? null : comparePluginSemver(latestVersion.version, installedVersion)
@@ -44,6 +62,15 @@ export function buildPluginCatalogPanelItems(
     })
   }
   return items
+}
+
+function lowestRequiredAppVersion(versions: PluginCatalogDocument['plugins'][number]['versions']): string | null {
+  let lowest: string | null = null
+  for (const version of versions) {
+    if (version.apiVersion !== '1' || !version.minAppVersion) continue
+    if (lowest === null || (comparePluginSemver(version.minAppVersion, lowest) ?? 1) < 0) lowest = version.minAppVersion
+  }
+  return lowest
 }
 
 /** Compares a downloaded manifest's permission units against the persisted user grants. */

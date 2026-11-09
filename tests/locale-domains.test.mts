@@ -41,3 +41,23 @@ test('every panel-domain key is referenced by the renderer source', () => {
   const unused = Object.keys(read(join(root, 'panel', 'zh-TW.json'))).filter((key) => !text.includes(`'${key}'`) && !text.includes(`"${key}"`))
   assert.deepEqual(unused, [])
 })
+
+test('every theme-editor key is used: literally, or through the colour, pill, state and font tables', async () => {
+  const { USER_PANEL_THEME_COLOR_KEYS, USER_PANEL_THEME_FONT_STACK_IDS, USER_PANEL_THEME_PET_STATUS_KEYS } = await import('../src/types/panel-theme-user.ts')
+  const sourceRoot = join(import.meta.dirname, '..', 'src', 'components', 'panel-theme')
+  const text = [
+    ...readdirSync(sourceRoot).filter(name => name.endsWith('.vue')).map(name => readFileSync(join(sourceRoot, name), 'utf8')),
+    readFileSync(join(import.meta.dirname, '..', 'src', 'utils', 'panel-theme-issue-text.ts'), 'utf8'),
+  ].join('\n')
+  const dynamic = new Set<string>([
+    ...USER_PANEL_THEME_COLOR_KEYS.flatMap(key => [`themeEditor.key.${key}`, `themeEditor.usage.${key}`]),
+    ...USER_PANEL_THEME_PET_STATUS_KEYS.flatMap(key => [`themeEditor.petKey.${key}`, `themeEditor.petUsage.${key}`]),
+    ...['dangerText', 'successText', 'warnText', 'infoText'].map(key => `themeEditor.meaning.${key}`),
+    ...['black', 'white'].map(key => `themeEditor.desktop.${key}`),
+  ])
+  const keys = Object.keys(read(join(root, 'themeEditor', 'zh-TW.json')))
+  for (const key of dynamic) assert.ok(keys.includes(key), `missing ${key}`)
+  for (const id of USER_PANEL_THEME_FONT_STACK_IDS) assert.ok(text.includes(`'themeEditor.font.${id}'`), `font label ${id}`)
+  const unused = keys.filter(key => !dynamic.has(key) && !text.includes(`'${key}'`))
+  assert.deepEqual(unused, [])
+})

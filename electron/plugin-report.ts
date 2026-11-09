@@ -1,6 +1,6 @@
 import { comparePluginSemver } from './plugin-catalog.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 export const DEFAULT_PLUGIN_ISSUE_REPORT_URL = 'https://github.com/Ponpon55837/agent-pets-plugins/issues/new'
 
 export function buildPluginIssueReportUrl(
@@ -9,7 +9,7 @@ export function buildPluginIssueReportUrl(
   version: unknown,
   localInstall: unknown,
 ): string | null {
-  if (typeof pluginId !== 'string' || !PLUGIN_ID.test(pluginId)
+  if (!isPluginId(pluginId)
     || typeof version !== 'string' || comparePluginSemver(version, version) === null
     || typeof localInstall !== 'boolean') return null
   let url: URL

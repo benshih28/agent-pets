@@ -122,7 +122,7 @@ test('settings header, numerics, plugins CTA and server banner keep their UI con
   const css = read('../src/components/StatusPanel.css')
   assert.match(css, /\.settings-panel-title\) \{\s*display: flex;/)
   assert.match(css, /breadcrumb-current\) \{[^}]*text-overflow: ellipsis/)
-  assert.match(read('../src/styles/tokens.css'), /--organic-font-heading: 'Lining Digits'/)
+  assert.match(read('../src/styles/tokens.css'), /--builtin-organic-font-heading: 'Lining Digits'/)
   assert.match(read('../src/styles/base.css'), /font-family: 'Lining Digits';[\s\S]*unicode-range: U\+0030-0039/)
   const panel = read('../src/components/PluginPanel.vue')
   assert.equal((panel.match(/plugins\.enablePlugins/g) ?? []).length, 1)

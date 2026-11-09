@@ -3,6 +3,7 @@ import { isIP } from 'node:net'
 import type { PluginErrorCode } from '../src/types/plugin.ts'
 import { isValidPluginNetworkHost } from './plugin-manifest.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_NET_MAX_REDIRECTS = 3
 export const PLUGIN_NET_MAX_REQUEST_BYTES = 256 * 1024
@@ -38,10 +39,6 @@ export interface PluginNetLimits {
 }
 
 export type PluginNetResult = { ok: true; value: PluginNetResponse } | { ok: false; error: PluginErrorCode }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function inIpv4Range(address: string, network: string, prefix: number): boolean {
   const toInteger = (value: string): number => value.split('.').reduce((result, part) => ((result << 8) | Number(part)) >>> 0, 0)

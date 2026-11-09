@@ -39,6 +39,7 @@
       "properties": {
         "version": { "type": "string", "maxLength": 100, "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$" },
         "apiVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,3})$" },
+        "minAppVersion": { "type": "string", "maxLength": 32, "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", "description": "Lowest Agent Pets version that may install this package. Required (>= 1.12.0) when the package contributes panelThemes. Older apps hide the version." },
         "url": { "type": "string", "format": "uri", "maxLength": 2048, "pattern": "^https://(raw\\.githubusercontent\\.com|github\\.com|objects\\.githubusercontent\\.com|release-assets\\.githubusercontent\\.com)(:443)?/" },
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "size": { "type": "integer", "minimum": 1, "maximum": 26214400 },

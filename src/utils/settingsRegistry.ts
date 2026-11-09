@@ -48,6 +48,8 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   { id: 'language', section: 'language', labelKey: 'language', helpKey: 'languageHint', keywords: ['locale', '語系', '中文', 'english'] },
   { id: 'themePanel', section: 'appearance', labelKey: 'design.theme.panelEntry', helpKey: 'design.theme.help', keywords: ['theme', 'dark mode', 'light mode', 'appearance', 'system', '主題', '深色', '淺色', '外觀', '面板'] },
   { id: 'themePet', section: 'appearance', labelKey: 'design.theme.petEntry', helpKey: 'design.theme.help', keywords: ['theme', 'dark mode', 'light mode', 'appearance', 'bubble', '主題', '深色', '淺色', '外觀', '寵物', '氣泡'] },
+  { id: 'panelThemeStyle', section: 'appearance', labelKey: 'design.panelTheme.entry', helpKey: 'design.panelTheme.help', keywords: ['theme', 'skin', 'background', 'wallpaper', 'font', 'colour', 'color', 'plugin', '主題', '背景', '桌布', '字型', '字體', '顏色', '外觀', '插件', '外掛'] },
+  { id: 'myPanelThemes', section: 'appearance', labelKey: 'design.themeEditor.myThemes', helpKey: 'design.themeEditor.myThemesHelp', keywords: ['my theme', 'custom', 'customize', 'editor', 'palette', 'colour picker', 'color picker', 'gradient', 'import', 'export', '我的主題', '自訂', '編輯器', '調色盤', '色盤', '取色', '漸層', '匯入', '匯出'] },
   { id: 'petSize', section: 'appearance', labelKey: 'petSize', keywords: ['scale', 'size', '縮放', '大小', '尺寸'] },
   { id: 'reactions', section: 'appearance', labelKey: 'bounceShake', helpKey: 'animateStatus', keywords: ['animation', '動畫', '彈跳', '晃動', 'reaction'] },
   { id: 'statusBubble', section: 'appearance', labelKey: 'statusBubble', helpKey: 'showCompletionError', keywords: ['bubble', '氣泡', '提示'] },

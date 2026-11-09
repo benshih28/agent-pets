@@ -1,66 +1,5 @@
 .setup-overlay {
-  --surface-raised: var(--organic-surface);
-  --surface-raised-hover: var(--organic-surface-2);
-  --surface-overlay: var(--organic-surface);
-  --surface-option: var(--organic-surface);
-  --surface-scrim: var(--organic-scrim);
-  --border-subtle: var(--organic-border-soft);
-  --border-strong: var(--organic-border);
-  --border-accent: var(--organic-accent);
-  --border-accent-strong: var(--organic-accent);
-  --accent: var(--organic-accent);
-  --accent-hover: var(--organic-accent-hover);
-  --accent-text: var(--organic-accent-text);
-  --accent-bright: var(--organic-accent-contrast);
-  --accent-soft: var(--organic-surface-warm);
-  --accent-strong: var(--organic-accent-hover);
-  --accent-wash: var(--organic-surface-warm);
-  --accent-glow: var(--organic-accent-glow);
-  --gradient-accent: var(--organic-accent);
-  --gradient-claude: var(--organic-sage);
-  --accent-claude: var(--organic-sage);
-  --surface-claude: var(--organic-surface-sage);
-  --border-claude: var(--organic-sage-track);
-  --state-success: var(--organic-sage);
-  --state-error: var(--organic-accent);
-  --state-error-soft: var(--organic-accent-text);
-  --state-warn: var(--organic-accent);
-  --state-warn-bright: var(--organic-accent-text);
-  --state-info: var(--organic-accent);
-  --text-primary: var(--organic-text);
-  --text-secondary: var(--organic-text-secondary);
-  --text-muted: var(--organic-text-muted);
-  --text-bright: var(--organic-text);
-  --text-on-option: var(--organic-text);
-  --font-ui: var(--organic-font-body);
-  --font-heading: var(--organic-font-heading);
-  --font-xs: var(--organic-font-label);
-  --font-sm: var(--organic-font-body-sm);
-  --font-md: var(--organic-font-body-md);
-  --font-lg: var(--organic-font-body-lg);
-  --font-xl: var(--organic-font-panel-title);
-  --font-label: var(--organic-font-label);
-  --font-body-sm: var(--organic-font-body-sm);
-  --font-body-md: var(--organic-font-body-md);
-  --font-body-lg: var(--organic-font-body-lg);
-  --font-heading-sm: var(--organic-font-heading-sm);
-  --font-heading-md: var(--organic-font-heading-md);
-  --font-panel-title: var(--organic-font-panel-title);
-  --font-display-sm: var(--organic-font-display-sm);
-  --font-display-md: var(--organic-font-display-md);
-  --space-1: var(--organic-space-1);
-  --space-2: var(--organic-space-2);
-  --space-3: var(--organic-space-3);
-  --space-4: var(--organic-space-4);
-  --space-5: var(--organic-space-5);
-  --radius-sm: var(--organic-radius-sm);
-  --radius-md: var(--organic-radius-md);
-  --radius-lg: var(--organic-radius-lg);
-  --shadow-panel: var(--organic-panel-shadow);
-  --shadow-raised: var(--organic-card-shadow);
-  --focus-ring-color: var(--organic-accent);
-  --focus-ring-offset: 2px;
-
+  /* 顏色、字型與形狀都來自 tokens.css 的語意層，不在這裡重新宣告別名。 */
   position: fixed;
   z-index: var(--z-system);
   inset: 0;
@@ -224,13 +163,14 @@
 
 .tool-action:hover:not(:disabled) {
   border-color: currentColor;
-  background: var(--organic-accent-on-hover);
+  background: var(--color-hover);
   color: inherit;
 }
 
+/* 文字放在實心強調色上時用 accentHover：onAccent 在其上保證 >= 4.5:1（在 accent 上只保證 3:1）。 */
 .tool-item.health-needs_install .install-action {
-  border-color: var(--organic-accent);
-  background: var(--organic-accent);
+  border-color: var(--organic-accent-hover);
+  background: var(--organic-accent-hover);
   color: var(--organic-accent-contrast);
   font-family: var(--font-heading);
   font-size: var(--font-body-md);
@@ -283,7 +223,8 @@
 
 .health-needs_install .tool-health,
 .health-needs_approval .tool-health {
-  background: var(--organic-accent-contrast);
+  /* accentText 在 surface 上 >= 4.5:1；在 onAccent 上沒有保證。 */
+  background: var(--organic-surface);
   color: var(--organic-accent-text);
 }
 
@@ -311,7 +252,7 @@
 .source-chip {
   padding: 2px 10px;
   border-radius: var(--radius-pill);
-  background: var(--organic-accent-on-hover);
+  background: var(--color-hover);
   color: inherit;
   font-size: var(--font-label);
   line-height: var(--leading-tight);

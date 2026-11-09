@@ -79,8 +79,9 @@ function onKeydown(event: KeyboardEvent): void {
   color: var(--text-primary);
 }
 
+/* 文字放在實心強調色上時用 accentHover：onAccent 在其上保證 >= 4.5:1（在 accent 上只保證 3:1）。 */
 .segment.active {
-  background: var(--accent);
+  background: var(--accent-hover);
   color: var(--accent-bright);
 }
 
@@ -105,9 +106,10 @@ function onKeydown(event: KeyboardEvent): void {
   line-height: 1.4;
 }
 
+/* 主動分頁上的數字徽章：accentHover 字在 onAccent 底上 >= 4.5:1（accent 只保證 3:1）。 */
 .segment.active .segment-badge {
   background: var(--accent-bright);
-  color: var(--accent);
+  color: var(--accent-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {

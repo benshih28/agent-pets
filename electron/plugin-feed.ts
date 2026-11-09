@@ -5,6 +5,8 @@ import type { PluginErrorCode, PluginFeedItem, PluginLocalizedText } from '../sr
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { isValidPluginNetworkHost } from './plugin-manifest.ts'
 import { normalizePresentationMessage } from './presentation-controller.ts'
+import { isPluginId, isSafeItemId } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_FEED_RATE_WINDOW_MS = 10 * 60 * 1_000
 export const PLUGIN_FEED_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1_000
@@ -80,19 +82,9 @@ type FeedInputResult =
   | { ok: true; value: NormalizedFeedInput }
   | { ok: false; error: Extract<PluginErrorCode, 'invalid_request' | 'host_not_allowed'> }
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
-const FEED_ID = /^[A-Za-z0-9_-]{8,80}$/
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const ICON_FORBIDDEN = /[\u0000-\u001f\u007f<>:"|?*%]/
 const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function normalizePluginId(value: unknown): value is string {
-  return typeof value === 'string' && PLUGIN_ID.test(value)
-}
 
 function normalizeLocalizedName(value: unknown): PluginLocalizedText | null {
   if (!isRecord(value)) return null
@@ -273,7 +265,7 @@ export class PluginFeedController {
 
   submit(pluginId: string, input: unknown): PluginFeedSubmitResult {
     const now = this.readNow()
-    if (now === null || !normalizePluginId(pluginId)) return { accepted: false, error: 'invalid_request' }
+    if (now === null || !isPluginId(pluginId)) return { accepted: false, error: 'invalid_request' }
     this.observeVisibility(now)
 
     const global = this.readGlobalState()
@@ -330,7 +322,7 @@ export class PluginFeedController {
   /** Adds a host-owned notice to the center without starting a plugin bubble or rate budget. */
   addSystemNotification(pluginId: unknown, pluginName: unknown, title: unknown, body: unknown): boolean {
     const now = this.readNow()
-    if (now === null || !normalizePluginId(pluginId)) return false
+    if (now === null || !isPluginId(pluginId)) return false
     const name = normalizeLocalizedName(pluginName)
     const safeTitle = normalizePresentationMessage(title)
     const safeBody = normalizePresentationMessage(body)
@@ -339,7 +331,7 @@ export class PluginFeedController {
     if (!Number.isSafeInteger(expiresAt)) return false
     let id: unknown
     try { id = this.createId() } catch { return false }
-    if (typeof id !== 'string' || !FEED_ID.test(id) || this.center.some(record => record.item.id === id)) return false
+    if (!isSafeItemId(id) || this.center.some(record => record.item.id === id)) return false
     this.addToCenter({
       id,
       pluginId,
@@ -356,7 +348,7 @@ export class PluginFeedController {
   /** Shares the same sliding per-plugin/global budget with non-feed RPCs such as reactions. */
   consumeRateLimit(pluginId: string): PluginFeedRateResult {
     const now = this.readNow()
-    if (now === null || !normalizePluginId(pluginId)) return { allowed: false, error: 'disabled' }
+    if (now === null || !isPluginId(pluginId)) return { allowed: false, error: 'disabled' }
     const global = this.readGlobalState()
     const plugin = this.readPluginState(pluginId)
     if (!global || !plugin || !global.pluginsEnabled || global.dndEnabled || !plugin.enabled) {
@@ -404,7 +396,7 @@ export class PluginFeedController {
   }
 
   listNotifications(pluginId?: string): PluginFeedNotification[] {
-    if (pluginId !== undefined && !normalizePluginId(pluginId)) return []
+    if (pluginId !== undefined && !isPluginId(pluginId)) return []
     return this.center
       .filter(record => pluginId === undefined || record.item.pluginId === pluginId)
       .slice()
@@ -423,7 +415,7 @@ export class PluginFeedController {
 
   /** Marks every unread record (optionally one plugin's) read and notifies once. */
   markAllRead(pluginId?: string): number {
-    if (pluginId !== undefined && !normalizePluginId(pluginId)) return 0
+    if (pluginId !== undefined && !isPluginId(pluginId)) return 0
     let marked = 0
     for (const record of this.center) {
       if (!record.read && (pluginId === undefined || record.item.pluginId === pluginId)) {
@@ -436,7 +428,7 @@ export class PluginFeedController {
   }
 
   clear(pluginId?: string): number {
-    if (pluginId !== undefined && !normalizePluginId(pluginId)) return 0
+    if (pluginId !== undefined && !isPluginId(pluginId)) return 0
     const initialCount = this.center.length
     for (let index = this.center.length - 1; index >= 0; index -= 1) {
       const record = this.center[index]
@@ -448,7 +440,7 @@ export class PluginFeedController {
   }
 
   unreadCount(pluginId?: string): number {
-    if (pluginId !== undefined && !normalizePluginId(pluginId)) return 0
+    if (pluginId !== undefined && !isPluginId(pluginId)) return 0
     return this.center.filter(record => !record.read
       && (pluginId === undefined || record.item.pluginId === pluginId)).length
   }
@@ -513,7 +505,7 @@ export class PluginFeedController {
     if (!Number.isSafeInteger(expiresAt)) return null
     let id: unknown
     try { id = this.createId() } catch { return null }
-    if (typeof id !== 'string' || !FEED_ID.test(id) || this.center.some(record => record.item.id === id)) return null
+    if (!isSafeItemId(id) || this.center.some(record => record.item.id === id)) return null
     return {
       id,
       pluginId,

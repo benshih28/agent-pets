@@ -303,9 +303,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* Sits ABOVE the sprite in the reserved headroom so the pet stays visible and
-   showing/hiding never resizes the pet window. */
+   showing/hiding never resizes the pet window. 高度不能超過預留空間：超出的部分會被視窗
+   裁掉，最先消失的就是來源列與風險徽章。所以上限是預留高度，指令細節區在裡面捲動，
+   標題、風險徽章、倒數與按鈕永遠看得到。 */
 .permission-request {
   position: absolute;
+  display: flex;
+  max-height: calc(var(--pet-bubble-headroom) - 4px);
+  flex-direction: column;
   bottom: calc(100% - 2px);
   left: 50%;
   transform-origin: 50% 100%;
@@ -323,6 +328,18 @@ onBeforeUnmount(() => {
   font-family: var(--font-ui);
   text-align: left;
   transform: translateX(-50%);
+}
+
+.permission-request > * {
+  flex: none;
+}
+
+/* 只有指令區會讓出高度：先縮短程式碼框（至少一行），再不夠就在區內捲動。 */
+.permission-request > .permission-details {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .permission-request.risk-high {
@@ -470,13 +487,13 @@ onBeforeUnmount(() => {
 }
 
 .permission-queue-risk {
-  color: var(--state-error-soft);
+  color: var(--text-danger);
   font-weight: var(--weight-bold);
 }
 
 .permission-queue-deny.confirming {
   border-color: var(--state-error);
-  color: var(--state-error-soft);
+  color: var(--text-danger);
 }
 
 .permission-request-hint {
@@ -509,7 +526,7 @@ onBeforeUnmount(() => {
 }
 
 .permission-request-error {
-  color: var(--state-error-soft);
+  color: var(--text-danger);
 }
 
 .permission-outcome-text {

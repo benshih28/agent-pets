@@ -66,6 +66,7 @@ The Host API and IPC result codes are declared in `src/types/plugin.ts` and `src
 | `filesystem_unsafe` | A plugin file path failed a safety check. |
 | `install_failed` | The plugin installation did not complete. |
 | `plugin_not_found` | The requested installed plugin does not exist. |
+| `invalid_panel_theme` | The package's `contributes.panelThemes` or its fonts/images break the panel theme rules (grammar, contrast, asset checks). |
 | `catalog_disabled` | The online catalog is disabled. |
 | `catalog_url_invalid` | The configured catalog URL is not allowed. |
 | `catalog_unavailable` | The catalog could not be reached. |
@@ -89,3 +90,10 @@ The Host API and IPC result codes are declared in `src/types/plugin.ts` and `src
 | `conflict` | The request conflicts with the current state. |
 | `invalid_project` | The project identifier is invalid. |
 | `invalid_pet` | The pet identifier is invalid. |
+| `theme_unavailable` | The panel theme (plugin, theme and mode) is not in the current catalog: not installed, disabled, plugins off, or removed. |
+| `image_invalid` | The chosen background image is not a static PNG, JPEG or WebP of at least 64 px, or could not be read safely. |
+| `image_too_large` | The chosen background image exceeds 20 MiB, 8192 px per side or 16.78 MP. |
+| `image_not_allowed` | The theme mode does not declare `userImage.allowed`. |
+| `theme_limit_reached` | Already 50 My themes; delete one before creating, duplicating or importing another. |
+| `theme_not_found` | No My theme with that id. |
+| `theme_import_invalid` | The chosen theme file is not a regular JSON file of at most 16 KiB in the Agent Pets export format. |

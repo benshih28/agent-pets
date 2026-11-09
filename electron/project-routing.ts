@@ -8,6 +8,7 @@ import type {
 } from '../src/types/project-pet.ts'
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { StatementCache } from './sqlite-statements.ts'
+import { isProjectId } from '../src/types/id-patterns.ts'
 
 type SqliteRow = Record<string, unknown>
 
@@ -44,7 +45,6 @@ const MAX_PROJECT_PATH_LENGTH = 4_096
 const MAX_TRACKED_PROJECTS = 1000
 const MAX_PROJECTS = 256
 const MAX_DISPLAY_NAME_LENGTH = 96
-const PROJECT_ID = /^[a-f0-9]{32}$/
 const DEFAULT_PET_ID = 'aang-airbender'
 // Every tool-call/state event on a session re-resolves the same raw path.
 // Without this cache, each one would pay a synchronous lstat/realpath round
@@ -80,7 +80,7 @@ function safeDisplayName(value: string): string {
 }
 
 function safeProjectId(value: unknown): string | null {
-  return typeof value === 'string' && PROJECT_ID.test(value) ? value : null
+  return isProjectId(value) ? value : null
 }
 
 function safePetId(value: unknown): string | null {

@@ -31,7 +31,7 @@ export class PluginSettingsStore {
   }
 
   set(pluginId: string, manifest: PluginManifest, value: unknown): Record<string, PluginSettingScalar> {
-    if (!isRecord(value)) throw codedError('settings_invalid')
+    if (!isPlainRecord(value)) throw codedError('settings_invalid')
     const definitions = manifest.contributes.settings?.properties ?? {}
     const secrets = new Set(manifest.permissions.secrets ?? [])
     const next: Record<string, PluginSettingScalar> = {}
@@ -84,7 +84,8 @@ export function isValidSettingValue(definition: PluginSettingDefinition, value: 
   return typeof value === 'boolean'
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** 只接受一般物件（原型為 Object.prototype 或 null）；設定值不能是類別實例或帶 getter 的代理。 */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null

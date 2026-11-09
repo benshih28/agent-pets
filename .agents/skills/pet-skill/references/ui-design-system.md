@@ -14,24 +14,25 @@ The floor for any user-facing text is `--font-xs` (11px). CJK glyphs lose stroke
 
 ## Token layers (DS-01)
 
-- **Palette** — `--organic-*` (panel cream/sage palette) and the dark base tokens (`--surface-*`, `--accent`, `--state-*`). Spacing and type steps are on the 4px grid / 5-step scale (no fractional values).
-- **Semantic** — `--color-bg/surface/surface-2/text/text-2/text-3/accent/accent-text/on-accent/border/border-strong/scrim` alias the organic palette. New panel-layer CSS uses these, not `--organic-*`.
-- **Pet layer** (DesktopPet, bubbles) uses the dark base tokens; **panel layer** (StatusPanel, SetupWizard, ProjectMcp, dialogs) uses the semantic aliases. `.status-panel` re-points the base tokens at the organic palette; do not add new component-level overrides of global tokens.
-- Compatibility aliases (`--accent-primary`, `--status-error`, `--text-danger/-success/-warning`, `--surface-secondary`, `--font-2xs`) exist only so legacy references resolve; use the canonical names in new code. Do not delete tokens: `tokens.css` is also served to plugin panels.
+- **Palette** — `--builtin-organic-*` holds the only literal colours in `src/**` (light on `:root`, dark on `:root[data-theme='dark']`), including host-fixed entries (`info-text`, `shadow`, `highlight`). `--organic-*` aliases it; a plugin theme re-points `--organic-*` inline on `<html>`. Spacing and type steps are on the 4px grid / 5-step scale.
+- **Semantic** — `--color-*` (`bg`, `surface`, `surface-2`, `overlay`, `sunken`, `text`, `text-2`, `text-3`, `text-faint`, `accent`, `accent-hover`, `accent-text`, `on-accent`, `border`, `border-strong`, `scrim`, `danger`, `success`, `warn`, `info`, `focus`, `shadow`, `highlight`) and the legacy names (`--surface-*`, `--text-*`, `--accent*`, `--border-*`, `--state-*`) are derived from the palette on `:root, .panel-theme-preview`. New CSS reads `--color-*`; never write a literal colour or `color-mix(…, black|white)` — mix with `--color-shadow` / `--color-highlight` / `--color-text` instead.
+- **Windows** — both windows use the same layers. `<html data-window>` is `panel` or `pet`; `data-theme` is the panel appearance in the panel window and the pet appearance in the pet window. Typography/spacing/radius aliases of the palette apply only in the panel window. The pet window's floating surfaces (`.desktop-pet`, bubbles, pill) are the palette `surface` at fixed alphas that the theme validator also checks over black and white desktops.
+- **State** — `STATE_COLORS` are `var(--state-*)`; `--state-*` derive from the hue-checked danger/success/warn colours, `accent-text` (thinking/tool) and the muted text levels. Never pass a hex colour from TS.
+- `tokens.css` is also served to plugin pages; its `--organic-*` colours read `--ap-*` first there, so the legacy names follow the user's theme. Do not delete a token documented in `docs/plugins/ux-guidelines.md`.
 
 ## Foreground/background pairs (DS-10)
 
-`scripts/check-contrast.mjs` (and `tests/design-contrast.test.mts`) assert these minimums from `tokens.css`; add a pair there when you add a token that carries text.
+`scripts/check-contrast.mjs` (and `tests/design-contrast.test.mts`) resolve `tokens.css` per context (panel light/dark, pet light/dark), follow `var()` and `color-mix()`, and judge translucent surfaces over the worse of a black and a white desktop. Add a pair there when you add a token that carries text. Plugin themes get the same guarantees from the validator's invariants (`panelThemeInvariantFailure`, spec R14).
 
 | Foreground | Background | Min | Notes |
 | --- | --- | --- | --- |
 | `--organic-text`, `-secondary`, `-muted` | `--organic-bg/surface/surface-2` | 4.5 | body and helper text |
-| `--organic-accent-text` | `--organic-surface` | 4.5 | accent used as text; never `--organic-accent` itself (3.3) |
-| `--organic-accent-contrast` | `--organic-accent-hover` | 4.5 | primary button (`Button` uses `--accent-hover` fill + `--accent-on` label) |
+| `--organic-accent-text` | `--organic-surface` | 4.5 | accent used as text; never `--organic-accent` itself |
+| `--organic-accent-contrast` | `--organic-accent-hover` | 4.5 | primary button (`Button` uses `--accent-hover` fill + `--accent-on` label; hover mixes 12% toward `--text-primary`) |
 | `--organic-text-faint` | `--organic-surface` | 3 | decorative only, never text |
-| `--organic-danger/success/warn-text` | surface, surface-2 | 4.5 | exposed as `--text-danger/-success/-warning` in panel scopes |
-| `--text-primary/-secondary/-muted`, `--accent`, `--state-idle` | dark base | 4.5 | pet layer |
-| `--focus-ring-color` / `--focus-ring-color-on-light` | dark base / cream surface | 3 | pick by layer |
+| `--organic-danger/success/warn-text`, `--color-info` | surface, surface-2 | 4.5 | `--text-danger/-success/-warning` |
+| `--color-focus` (= accent text) | bg, surface, surface-2, surface-warm | 3 | the one focus ring (`--focus-ring-color`); `Highlight` under forced colours |
+| pet bubble / pill text, quota fills, state dots | `--pet-bubble-surface`, `--organic-status-surface` over black and white | 4.5 / 3 | pet window |
 
 State is never conveyed by colour alone: pair status dots with a text label or shape.
 
@@ -58,7 +59,7 @@ Additional primitives (all backward compatible; existing props above are unchang
 
 | Component | Use for |
 | --- | --- |
-| `Dialog.vue` + `composables/useDialogA11y.ts` | Every modal. Props `open`, `title`, `description`, `role`, `initial-focus`, `show-close`, `size`; `#footer` slot; emits `close`. Provides Esc, Tab trap, initial focus, focus restore, `inert` siblings, `aria-labelledby/describedby`. `ConfirmDialog` is built on it. |
+| `Dialog.vue` + `composables/useDialogA11y.ts` | Every modal. Props `open`, `title`, `description`, `role`, `initial-focus`, `show-close`, `size` (`sm`/`md`/`lg`, or `full` for a full-panel tool such as the theme editor); `#footer` slot; `#overlay` slot for a dialog opened from inside this one (it stays in scope, so the outer dialog's keys step aside); emits `close`. Provides Esc, Tab trap, initial focus, focus restore, `inert` siblings, `aria-labelledby/describedby`. Inside the panel it teleports its scrim to the panel root (`StatusPanel` provides `DIALOG_HOST_KEY`, see `ui/dialog-host.ts`), so the scrim always covers the whole panel — header, search and tabs included — however deep the caller sits (a `position: relative` Card or a scroll frame would otherwise scope and clip it); a dialog nested in another dialog stays in place. `ConfirmDialog` is built on it. |
 | `Tabs.vue` + `TabPanel.vue` (+ `utils/tab-navigation.ts`) | Every tablist (dashboard tabs, settings nav). `v-model` id, `items`, `aria-label`, `orientation` (vertical uses up/down), `variant` underline/pill, `id-prefix` shared with `TabPanel` for `aria-controls/labelledby`. Roving tabindex, Home/End. Hidden panels use the `hidden` attribute. Wrap in `<nav>` for a landmark; never put `role="tablist"` on `<nav>`. |
 | `TextField.vue` | Pill-shaped text/search field with leading search icon, clear button and character counter (`v-model`, `search`, `clear-label`, `maxlength`, `error`). Use `Input.vue` for labelled form fields, `TextField` for search boxes and inline rename. |
 | `Input.vue` | Every text field. `v-model`, `label`, `help`, `error` (renders `role="alert"`, sets `aria-invalid` and `aria-describedby`), `ariaLabel` when there is no visible label. Extra attrs fall through to the `<input>`. |
@@ -67,7 +68,7 @@ Additional primitives (all backward compatible; existing props above are unchang
 | `Toast.vue` + `ToastHost.vue` + `composables/useToast.ts` | Transient messages. Push with `useToast().push({ tone, title, message, actionLabel, onAction, duration })`; mount `<ToastHost />` once near the app root. Danger toasts are `role="alert"`, the rest `role="status"`; max 3 visible. |
 | `EmptyState.vue` | "Nothing here yet": `icon`, `title`, `description`, default slot for actions, `compact` inside Cards. |
 | `Skeleton.vue` | Loading placeholder (`line` / `block` / `circle`, `lines`). Static under reduced motion; put `aria-busy="true"` on the loading region. |
-| `Tooltip.vue` | Replacement for native `title=` hints: hover (300ms) + focus, `aria-describedby`, Esc closes, clamped to the viewport. Wrap one focusable element. |
+| `Tooltip.vue` | Replacement for native `title=` hints: hover (300ms) + focus, `aria-describedby`, Esc closes (only the tooltip, not a surrounding dialog), clamped to the viewport. Wrap one focusable element, e.g. an icon button that explains a setting (the theme editor's "where is this colour used" hints). |
 
 New tokens for primitives: `--hit-min` (32px minimum hit area), `--z-*` scale (the only z-index values components may use), `--leading-tight/normal/relaxed`, `--ease-standard`.
 

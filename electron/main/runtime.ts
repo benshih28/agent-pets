@@ -1,6 +1,6 @@
 import { IPC_CHANNELS } from '../ipc/channels'
 import { sanitizePetId } from '../pet-id.ts'
-import { app, BrowserWindow, WebContentsView, screen, ipcMain, dialog, net, session, protocol, globalShortcut, powerMonitor, shell, safeStorage, Notification } from 'electron'
+import { app, BrowserWindow, WebContentsView, screen, ipcMain, dialog, net, session, protocol, globalShortcut, powerMonitor, shell, safeStorage, Notification, nativeTheme } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import { attachRendererRecovery, type RendererRecovery } from './renderer-recovery'
 import { logMain, mainLogger } from '../diagnostics/main-log'
@@ -17,10 +17,6 @@ import { request as httpRequest } from 'node:http'
 import { Readable } from 'node:stream'
 import * as fs from 'fs'
 import * as path from 'path'
-
-
-
-
 
 import { DesktopPreferencesStore } from '../desktop-preferences'
 import { createLoginItemAdapter } from '../login-item'
@@ -39,7 +35,6 @@ import { LocalUsageReader } from '../local-usage'
 import { createPresentationMcpServer } from '../presentation-mcp'
 import { listenOnLocalPort } from '../local-server-listen'
 import { normalizePresentationStatus, PresentationController } from '../presentation-controller'
-
 
 import { ProjectRoutingStore } from '../project-routing'
 import { PluginRegistry, PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES, PLUGIN_ARCHIVE_SKIN_MAX_BYTES } from '../plugin-registry'
@@ -90,14 +85,7 @@ import { availablePluginSkinPetIds } from '../plugin-skins.ts'
 import { EDGE_DWELL_MS, EDGE_REDOCK_AFTER_MS, EDGE_TRIGGER_DISTANCE_PX, clampWindowBounds, edgeWindowBounds, miniWindowBounds, nearestEdge, type WindowBounds } from '../pet-window-mode'
 import { IS_MAC, hookScriptDeployPath, readWindowState, syncClaudePermissionRespondOptIn, writeWindowState } from '../setup'
 
-
 import { createWindowsFullscreenDetector, nativeWindowHandleToPointer, type WindowsFullscreenState } from '../windows-fullscreen-detector'
-
-
-
-
-
-
 
 import { registerPluginFeedIpc } from '../ipc/plugin-feed'
 import { createLatestValueCoalescer } from '../ipc/broadcast-coalescer.ts'
@@ -105,18 +93,23 @@ import { createProgressionChangeGate, createVisibleSender } from '../ipc/progres
 
 import { type IntegrationTestSource } from '../ipc/integrations'
 
-
-
 import { registerPluginPanelUiIpc } from '../ipc/plugin-panel-ui'
 
 import { registerPluginSettingsIpc } from '../ipc/plugin-settings'
 import { registerPluginPreferencesIpc } from '../ipc/plugin-preferences'
 import { registerPluginCatalogIpc } from '../ipc/plugin-catalog'
 import { registerPluginInstallIpc } from '../ipc/plugin-install'
+import { registerPanelThemeIpc } from '../ipc/panel-theme'
+import { registerUserPanelThemeIpc } from '../ipc/panel-theme-user'
+import { readUserPanelThemeImportFile, writeUserPanelThemeExportFile } from '../panel-theme-user-store'
+import { PanelThemeRuntime } from './panel-theme-runtime'
+import { emptyPanelThemeState } from '../plugin-panel-themes'
+import { deleteUserImage, prepareUserImage, readUserImageSource, storeUserImage } from '../panel-theme-images'
 import { mainState, type PluginSkinFallbackInfo } from './state'
 import { EMPTY_ATTENTION } from '../attention-tracker'
 import { attachHotkeyInfo, PermissionHotkeys } from '../permission-hotkeys'
 import { PANEL_GAP, PANEL_WIDTH, PANEL_BLUR_HIDE_DELAY_MS, clampPanelSize, clampRectToWorkArea, computePanelPlacement, effectivePanelSize, panelMaxSize, panelMinSize, shouldHidePanelOnBlur } from '../../src/utils/panel-layout'
+import { isRecord } from '../value-guards.ts'
 
 let permissionHotkeys: PermissionHotkeys | null = null
 
@@ -370,7 +363,6 @@ export async function pluginPanelSnapshot(): Promise<PluginPanelResult<PluginPan
   }
 }
 
-
 export { sanitizePetId }
 
 export function safeJoin(base: string, ...parts: string[]): string | null {
@@ -469,6 +461,11 @@ export function configureSecureProtocol(): void {
             return data && type ? { data, contentType: type } : null
           },
         })
+      }
+      if (url.hostname === 'panel-theme') {
+        return mainState.panelThemeRuntime
+          ? await mainState.panelThemeRuntime.handleRequest(request.url, request.method)
+          : new Response('Not found', { status: 404 })
       }
       if (url.hostname === 'app') {
         const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
@@ -669,9 +666,28 @@ export function broadcastPluginSkinsChanged(removedPetIds: string[]): void {
   }
 }
 
+export function syncPanelThemes(): void {
+  mainState.panelThemeRuntime?.sync({
+    registry: mainState.pluginRegistry?.list() ?? [],
+    contexts: mainState.pluginRuntimeContexts,
+    pluginsEnabled: mainState.pluginPreferencesSnapshot?.pluginsEnabled === true,
+  })
+}
+
+/** 受信任的面板渲染端來源（字型會從 agent-pets://panel-theme 跨來源抓取）。 */
+function panelRendererOrigin(): string | null {
+  try {
+    if (process.env.VITE_DEV_SERVER_URL && !app.isPackaged) return new URL(process.env.VITE_DEV_SERVER_URL).origin
+  } catch {
+    return null
+  }
+  return 'agent-pets://app'
+}
+
 export async function syncPluginHost(): Promise<void> {
   const previousSkins = enabledPluginSkinRecords()
   await refreshPluginRuntimeContexts()
+  syncPanelThemes()
   const currentSkins = enabledPluginSkinRecords()
   const removedPetIds: string[] = []
   for (const [petId, info] of previousSkins) {
@@ -851,10 +867,6 @@ export function requestPluginNetwork(
   })
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 export function decodeCatalogBase64(value: unknown): Uint8Array {
   if (typeof value !== 'string' || value.length === 0 || value.length > 36_000_000
     || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
@@ -916,7 +928,7 @@ export function checkPluginCatalogUpdates(): Promise<number> {
       || !isPluginCatalogUrl(preferences.catalogUrl)) throw new Error('Plugin catalog auto-check disabled')
     const result = await createMainPluginCatalogGateway().load(preferences.catalogUrl)
     if (!result.ok) throw new Error('Plugin catalog check failed')
-    const items = buildPluginCatalogPanelItems(result.value, mainState.pluginRegistry.list())
+    const items = buildPluginCatalogPanelItems(result.value, mainState.pluginRegistry.list(), app.getVersion())
     return items.filter(item => item.updateAvailable).length
   })()
 }
@@ -1008,6 +1020,27 @@ export async function createPluginServices(): Promise<void> {
     },
   })
   await refreshPluginRuntimeContexts()
+  mainState.panelThemeRuntime = new PanelThemeRuntime({
+    userDataDirectory,
+    pluginRoot: (pluginId, version) => resolve(userDataDirectory, 'plugins', pluginId, version),
+    readRegularFileWithin,
+    send: state => {
+      const window = mainState.panelWindow
+      if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.panelThemeChanged, state)
+    },
+    rendererOrigin: panelRendererOrigin,
+    sendPetStatus: state => {
+      const window = mainState.petWindow
+      if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.panelThemePetStatusChanged, state)
+    },
+    sendPluginTheme: snapshot => {
+      mainState.pluginHostWindow?.notifyThemeChanged(snapshot)
+      mainState.pluginPanelViewController?.notifyThemeChanged(snapshot)
+    },
+    initialMode: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
+  })
+  try { mainState.panelThemeRuntime.sweep() } catch {}
+  syncPanelThemes()
   mainState.pluginFeedController = new PluginFeedController({
     emit: item => {
       if (mainState.petWindow && !mainState.petWindow.isDestroyed()) {
@@ -1126,6 +1159,7 @@ export async function createPluginServices(): Promise<void> {
       return mainState.pluginAgentStatusController?.getStatus() ?? { ok: false, error: 'agent_status_unavailable' }
     },
     onAgentEmit: (pluginId, event) => mainState.pluginEventSourceController?.emit(pluginId, event) ?? { ok: false, error: 'disabled' },
+    onThemeGet: () => mainState.panelThemeRuntime?.getPluginTheme() ?? null,
     onBadgeSet: (pluginId, badge) => {
       const result = mainState.pluginBadgeController?.set(pluginId, badge)
       return result?.ok ? result.value : { ok: false, error: result?.error ?? 'disabled' }
@@ -1208,6 +1242,7 @@ export async function createPluginServices(): Promise<void> {
   mainState.pluginPanelViewController = new PluginPanelViewController({
     preloadPath: join(__dirname, 'plugin-ui-preload.js'),
     tokensCss,
+    getThemeSnapshot: () => mainState.panelThemeRuntime?.getPluginTheme() ?? null,
     getParentWindow: () => {
       const parent = mainState.panelWindow
       if (!parent || parent.isDestroyed()) return null
@@ -1378,9 +1413,9 @@ export async function createPluginServices(): Promise<void> {
     getCatalogCache: () => mainState.pluginCatalogCache,
     setCatalogCache: value => { mainState.pluginCatalogCache = value },
     createCatalogGateway: createMainPluginCatalogGateway,
-    buildCatalogItems: buildPluginCatalogPanelItems,
+    buildCatalogItems: (document, installed) => buildPluginCatalogPanelItems(document, installed, app.getVersion()),
     isPluginCatalogUrl,
-    selectLatestVersion: selectLatestCompatiblePluginVersion,
+    selectLatestVersion: (plugin, apiVersion) => selectLatestCompatiblePluginVersion(plugin, apiVersion, app.getVersion()),
     catalogFingerprintMatches,
     pendingPlanIds: mainState.pendingPluginPlanIds,
     pendingDeveloperFolders: mainState.pendingDeveloperFolders,
@@ -1416,6 +1451,44 @@ export async function createPluginServices(): Promise<void> {
     pluginPanelError,
     syncPluginHost,
     pluginPanelSnapshot,
+    onPluginRemoved: pluginId => mainState.panelThemeRuntime?.removePlugin(pluginId),
+  })
+
+  registerPanelThemeIpc({
+    ipcMain,
+    assertPluginPanelSender,
+    assertPetSender: event => assertTrustedIpcSender(event, mainState.petWindow),
+    setPanelAppearance: appearance => mainState.panelThemeRuntime?.setPanelAppearance(appearance),
+    getPetStatus: () => mainState.panelThemeRuntime?.getPetStatus() ?? { light: null, dark: null },
+    getStore: () => mainState.panelThemeRuntime?.store ?? null,
+    getSources: () => mainState.panelThemeRuntime?.getSources() ?? [],
+    getState: () => mainState.panelThemeRuntime?.getState() ?? emptyPanelThemeState(),
+    publish: () => mainState.panelThemeRuntime?.publish(),
+    getPanelWindow: () => mainState.panelWindow,
+    isDialogOpen: () => mainState.dialogOpen,
+    setDialogOpen: value => { mainState.dialogOpen = value },
+    showOpenDialog: (window, options) => dialog.showOpenDialog(window, options),
+    translate: key => t(key),
+    readUserImage: readUserImageSource,
+    prepareUserImage,
+    storeUserImage: (pluginId, prepared) => storeUserImage(app.getPath('userData'), pluginId, prepared),
+    deleteUserImage: (pluginId, file) => deleteUserImage(app.getPath('userData'), pluginId, file),
+    pluginPanelError,
+    now: Date.now,
+  })
+
+  registerUserPanelThemeIpc({
+    ipcMain,
+    assertPluginPanelSender,
+    getRuntime: () => mainState.panelThemeRuntime,
+    getPanelWindow: () => mainState.panelWindow,
+    isDialogOpen: () => mainState.dialogOpen,
+    setDialogOpen: value => { mainState.dialogOpen = value },
+    showOpenDialog: (window, options) => dialog.showOpenDialog(window, options),
+    showSaveDialog: (window, options) => dialog.showSaveDialog(window, options),
+    translate: key => t(key),
+    readImportFile: readUserPanelThemeImportFile,
+    writeExportFile: writeUserPanelThemeExportFile,
   })
 
 }
@@ -2159,7 +2232,6 @@ export async function openPluginPanelViewForPlugin(
 
 // Status-line count can flap as agents come and go, so coalesce the writes
 // instead of hitting disk on every resize.
-
 
 export function persistPetBounds(x: number, y: number, width: number, height: number) {
   if (mainState.persistBoundsHandle) clearTimeout(mainState.persistBoundsHandle)
@@ -3239,7 +3311,6 @@ export async function availablePetIds(): Promise<Set<string>> {
   ids.add('aang-airbender')
   return ids
 }
-
 
 export const AVAILABLE_PET_IDS_CACHE_MS = 5_000
 let availablePetIdsLoad: Promise<Set<string>> | null = null

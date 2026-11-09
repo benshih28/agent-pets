@@ -7,8 +7,6 @@ import type { PluginHostGrantController } from '../plugin-host-grants.ts'
 import type { PluginPreferencesStore } from '../plugin-preferences.ts'
 import type { PluginRegistry } from '../plugin-registry.ts'
 import type { PluginSecretsStore } from '../plugin-secrets.ts'
-import { PLUGIN_ARCHIVE_SKIN_MAX_BYTES } from '../plugin-registry.ts'
-import { isPluginPanelInstallConfirmation, isPluginPanelPluginId } from '../plugin-panel-validation.ts'
 import { rememberPluginPlan } from './plugin-catalog.ts'
 import { handleWithSenderGuard } from './trusted.ts'
 import { IPC_CHANNELS } from './channels.ts'
@@ -46,6 +44,8 @@ export interface PluginInstallIpcDependencies {
   pluginPanelError(error: unknown): string
   syncPluginHost(): void | Promise<void>
   pluginPanelSnapshot(): PluginPanelResult<PluginPanelSnapshot> | Promise<PluginPanelResult<PluginPanelSnapshot>>
+  /** 刪除主機擁有、但不屬於插件資料的各插件狀態（面板主題插槽與圖片）。 */
+  onPluginRemoved?(pluginId: string): void
 }
 
 export function registerPluginInstallIpc(deps: PluginInstallIpcDependencies): void {
@@ -119,7 +119,9 @@ export function registerPluginInstallIpc(deps: PluginInstallIpcDependencies): vo
       const sourceFolder = selection.filePaths[0]
       if (!sourceFolder) return { ok: false, error: 'invalid_archive' }
       const planned = await registry.planInstallDirectory(sourceFolder)
-      if (!planned.ok) return { ok: false, error: planned.error }
+      if (!planned.ok) {
+        return { ok: false, error: planned.error, ...(planned.diagnostic ? { diagnostic: planned.diagnostic } : {}) }
+      }
       if (planned.value.pluginId && planned.value.kind !== 'incompatible') {
         rememberPluginPlan(deps.pendingPlanIds, deps.pendingDeveloperFolders, planned.value.token, planned.value.pluginId)
         deps.pendingDeveloperFolders.set(planned.value.token, sourceFolder)
@@ -182,6 +184,7 @@ export function registerPluginInstallIpc(deps: PluginInstallIpcDependencies): vo
     deps.getDeveloperModeWatcher()?.unwatch(pluginId)
     deps.getPluginBroker()?.removePlugin(pluginId, keepData)
     deps.getPluginHostGrantController()?.clearPlugin(pluginId)
+    deps.onPluginRemoved?.(pluginId)
     if (!keepData) {
       try { preferences.removePlugin(pluginId) } catch (error) {
         return { ok: false, error: deps.pluginPanelError(error) }
@@ -206,7 +209,3 @@ export function registerPluginInstallIpc(deps: PluginInstallIpcDependencies): vo
     }
   })
 }
-
-export const pluginInstallMaxArchiveBytes = PLUGIN_ARCHIVE_SKIN_MAX_BYTES
-export const isPluginInstallConfirmation = isPluginPanelInstallConfirmation
-export const isPluginIdForInstall = isPluginPanelPluginId

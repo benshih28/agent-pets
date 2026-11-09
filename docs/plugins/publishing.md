@@ -34,6 +34,8 @@ The root document has `schemaVersion: 1` and a `plugins` array. Each plugin id i
 }
 ```
 
+Versions may set `minAppVersion` (for example `"1.12.0"`). Agent Pets skips versions that need a newer app and shows "Requires Agent Pets X or later" in Explore when no version fits; apps older than 1.12.0 hide such versions. It is required (≥ `1.12.0`) for packages that contribute `panelThemes`.
+
 The index is limited to 1 MiB, 500 plugins, and 20 versions per plugin. Packages are limited to 25 MiB. `sha256` is 64 lowercase hexadecimal characters and `size` is the archive size in bytes. The fingerprint is the first 16 lowercase hexadecimal characters of SHA-256 over the raw Ed25519 public key. Do not change a published version's package, digest, URL, or signing key in place; publish a new version instead.
 
 ## Submit for review

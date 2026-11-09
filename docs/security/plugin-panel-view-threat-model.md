@@ -60,6 +60,7 @@
 
 - 插件安裝時已由 PluginRegistry 驗證 manifest、包內 HTML 位置與一般檔案；本功能仍須在載入時重新套用 token、路徑與 session 白名單，不把安裝驗證當成 renderer 權限。
 - 所有外部網路存取只可由 Main 的 `net.fetch` 白名單代理提供，且面板 preload 不含 `net.requestHost`；頁面本身不取得網路權限。`links.openExternal` 只請系統瀏覽器開啟已宣告 HTTPS 網址，不把回應或瀏覽器能力交回插件。
+- 宿主在面板頁 `<html>` 上寫入 `--ap-*` 主題 token，並以 `plugin-panel-theme-changed` 推送更新。值由主程序產生，preload 依固定名稱與 `rgb()`／`px`／字族／數字格式驗證後只用 `style.setProperty` 寫入；快照對所有插件相同，不含插件或主題 id、字型別名、圖片或路徑，因此 `theme.get` 不需要權限。插件可修改自己頁面的這些屬性，但影響不到宿主外框。
 - 面板頁可能嘗試繪製仿冒介面；宿主無法阻止插件在其內容區顯示任意圖像與文字，因此安全訊號必須是內容區外、始終可見的宿主外框與「插件內容」標記。
 - WebContentsView 的程序隔離不等於每插件硬體資源隔離。若沒有可靠的單 view 配額，不能宣稱 memory／CPU DoS 已被完全阻止；關閉 view 只能限制持續影響。
 - 以隔離 Electron、全新 userData 與測試插件驗證網路、導覽、視窗、父頁、權限、下載、拖放、訊息與仿冒 UI 攻擊。任何實機測試若會執行 secrets 路徑，須在 Main 啟動 secrets 前確認已替換為假的可逆 `safeStorage`；本 Phase 測試不觸碰真實 macOS Keychain。

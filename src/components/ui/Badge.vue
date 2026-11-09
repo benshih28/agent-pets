@@ -63,17 +63,17 @@ withDefaults(defineProps<{
 }
 
 .tone-success {
-  background: color-mix(in srgb, var(--state-success) 16%, transparent);
+  background: color-mix(in srgb, var(--state-success) 12%, transparent);
   color: var(--text-success);
 }
 
 .tone-warn {
-  background: color-mix(in srgb, var(--state-warn-bright) 18%, transparent);
+  background: color-mix(in srgb, var(--state-warn-bright) 12%, transparent);
   color: var(--text-warning);
 }
 
 .tone-danger {
-  background: color-mix(in srgb, var(--state-error) 16%, transparent);
+  background: color-mix(in srgb, var(--state-error) 12%, transparent);
   color: var(--text-danger);
 }
 

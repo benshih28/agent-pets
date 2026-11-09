@@ -160,7 +160,11 @@ test('the geometry and fonts match DesktopPet.css and the tokens', () => {
   has('.quota-readout', `font-size: var(${readout.sizeVar});`)
   has('.quota-readout', `font-weight: ${readout.weight};`)
   for (const font of Object.values(STATUS_TEXT_FONTS)) {
-    assert.ok(tokens.includes(`${font.sizeVar}: ${font.sizeFallback};`), `${font.sizeVar} fallback`)
+    // 主題化的 organic token 經由 --builtin-* 取得內建值；兩種寫法都要對得上 sizeFallback。
+    const builtin = `--builtin-${font.sizeVar.slice(2)}`
+    const direct = tokens.includes(`${font.sizeVar}: ${font.sizeFallback};`)
+    const viaBuiltin = tokens.includes(`${font.sizeVar}: var(${builtin});`) && tokens.includes(`${builtin}: ${font.sizeFallback};`)
+    assert.ok(direct || viaBuiltin, `${font.sizeVar} fallback`)
   }
 })
 
@@ -168,10 +172,13 @@ test('quota colours are chosen in CSS by data-quota-tier, not built as strings i
   const css = readFileSync(new URL('../src/components/DesktopPet.css', import.meta.url), 'utf8')
   const vue = readFileSync(new URL('../src/components/DesktopPet.vue', import.meta.url), 'utf8')
   const tiers: Record<string, string> = {
-    low: '--organic-quota-error', warning: '--organic-quota-warning', claude: '--organic-accent', normal: '--organic-quota-sage',
+    low: '--organic-quota-error', warning: '--organic-quota-warning', claude: '--organic-quota-accent', normal: '--organic-quota-sage',
   }
   for (const [tier, token] of Object.entries(tiers)) {
-    assert.match(css, new RegExp(`\\.status-line\\[data-quota-tier='${tier}'\\] \\{\\n  --quota-color: var\\(${token}\\);`), tier)
+    // 一般與低額度可由插件主題的 --pet-status-* 覆寫；危急（low）一律用內建 token。
+    const themed = { warning: '--pet-status-quota-warn', claude: '--pet-status-quota-fill', normal: '--pet-status-quota-fill' }[tier]
+    const value = themed ? `var\\(${themed}, var\\(${token}\\)\\)` : `var\\(${token}\\)`
+    assert.match(css, new RegExp(`\\.status-line\\[data-quota-tier='${tier}'\\] \\{\\n  --quota-color: ${value};`), tier)
     assert.match(vue, new RegExp(`return [^\\n]*'${tier}'`), `quotaTier returns ${tier}`)
   }
   assert.equal(vue.match(/:data-quota-tier="quotaTier\(line\.key\)"/g)?.length, 2)

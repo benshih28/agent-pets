@@ -252,7 +252,10 @@ app.commandLine.appendSwitch('experimental-sqlite')
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'agent-pets',
-    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+    // corsEnabled 讓面板能從 agent-pets://panel-theme 載入主題字型
+    // （字型一律是 CORS 請求）。只有這條路由會送出
+    // Access-Control-Allow-Origin 標頭，而且只給受信任的面板來源。
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
   },
 ])
 

@@ -1,0 +1,201 @@
+{
+  "id": "ok-panel-theme",
+  "name": {
+    "zh-TW": "面板主題測試插件",
+    "en-US": "Panel Theme Fixture"
+  },
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "author": "Agent Pets Test Fixture",
+  "permissions": {},
+  "contributes": {
+    "panelThemes": [
+      {
+        "id": "aurora",
+        "displayName": {
+          "zh-TW": "極光",
+          "en-US": "Aurora"
+        },
+        "description": {
+          "zh-TW": "淺色使用圖片背景，深色使用漸層。",
+          "en-US": "Image background by day, gradient at night."
+        },
+        "fonts": [
+          {
+            "id": "fixture",
+            "src": "fonts/fixture-stub.woff2",
+            "weight": 400,
+            "style": "normal"
+          }
+        ],
+        "typography": {
+          "body": [
+            "@fixture",
+            "Avenir Next",
+            "PingFang TC",
+            "system-ui",
+            "sans-serif"
+          ],
+          "heading": [
+            "ui-serif",
+            "Georgia",
+            "serif"
+          ],
+          "scale": 1.05
+        },
+        "shape": {
+          "radiusSm": 6,
+          "radiusMd": 12,
+          "radiusLg": 20
+        },
+        "modes": {
+          "light": {
+            "colors": {
+              "bg": "#eef6f6",
+              "surface": "#f8fcfc",
+              "surface2": "#e2eeee",
+              "text": "#10282c",
+              "textSecondary": "#2f4a4f",
+              "textMuted": "#3d585c",
+              "accent": "#1f7a80",
+              "accentText": "#135a5f",
+              "onAccent": "#ffffff",
+              "border": "rgb(16 40 44 / 0.18)"
+            },
+            "background": {
+              "type": "image",
+              "src": "backgrounds/aurora-light.webp",
+              "fit": "cover",
+              "position": "top-right",
+              "opacity": 1,
+              "blur": 0,
+              "overlay": {
+                "color": "#eef6f6",
+                "opacity": 0.88
+              }
+            },
+            "userImage": {
+              "allowed": true,
+              "fit": "cover",
+              "overlay": {
+                "color": "#eef6f6",
+                "opacity": 0.88
+              }
+            },
+            "petStatus": {
+              "background": "rgb(248 252 252 / 0.92)",
+              "text": "#10282c",
+              "quotaFill": "#0e4f54"
+            }
+          },
+          "dark": {
+            "colors": {
+              "bg": "#0d1b22",
+              "surface": "#13252e",
+              "surface2": "#1b313b",
+              "text": "#e6f4f5",
+              "textSecondary": "#c0d8db",
+              "textMuted": "#a3c0c4",
+              "accent": "#4fc3c9",
+              "accentText": "#8adfe3",
+              "onAccent": "#0d1b22",
+              "border": "rgb(230 244 245 / 0.18)"
+            },
+            "background": {
+              "type": "gradient",
+              "kind": "linear",
+              "angle": 160,
+              "stops": [
+                {
+                  "color": "#0d1b22",
+                  "at": 0
+                },
+                {
+                  "color": "#1a2238",
+                  "at": 100
+                }
+              ]
+            },
+            "userImage": {
+              "allowed": true,
+              "overlay": {
+                "color": "#0d1b22",
+                "opacity": 0.88
+              }
+            },
+            "petStatus": {
+              "background": "rgb(13 27 34 / 0.9)",
+              "border": "rgb(79 195 201 / 0.5)",
+              "text": "#e6f4f5",
+              "textMuted": "#a3c0c4",
+              "quotaFill": "#4fc3c9",
+              "quotaTrack": "rgb(230 244 245 / 0.2)",
+              "quotaWarn": "#f0c866"
+            }
+          }
+        }
+      },
+      {
+        "id": "loud",
+        "displayName": {
+          "zh-TW": "高彩度",
+          "en-US": "Loud"
+        },
+        "description": {
+          "zh-TW": "高彩度配色，用來確認權限提示在主機不變量下仍然清楚。",
+          "en-US": "Saturated colours that check permission prompts stay legible under the host invariants."
+        },
+        "shape": {
+          "radiusSm": 0,
+          "radiusMd": 0,
+          "radiusLg": 0
+        },
+        "modes": {
+          "light": {
+            "colors": {
+              "bg": "#fff0f8",
+              "surface": "#ffffff",
+              "surface2": "#ffe0f0",
+              "text": "#3a0030",
+              "textSecondary": "#5a0050",
+              "textMuted": "#6a1060",
+              "accent": "#d0006f",
+              "accentText": "#a00055",
+              "onAccent": "#ffffff",
+              "border": "rgb(58 0 48 / 0.4)"
+            },
+            "background": {
+              "type": "gradient",
+              "kind": "radial",
+              "position": "top-left",
+              "stops": [
+                {
+                  "color": "#fff0f8",
+                  "at": 0
+                },
+                {
+                  "color": "#ffd6ec",
+                  "at": 100
+                }
+              ]
+            }
+          },
+          "dark": {
+            "colors": {
+              "bg": "#1a0016",
+              "surface": "#260020",
+              "surface2": "#33002b",
+              "text": "#ffe6f6",
+              "textSecondary": "#ffc2e6",
+              "textMuted": "#f0a6d6",
+              "accent": "#ff4fae",
+              "accentText": "#ff8fcb",
+              "onAccent": "#1a0016",
+              "border": "rgb(255 230 246 / 0.3)"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

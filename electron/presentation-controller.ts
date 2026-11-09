@@ -11,6 +11,8 @@ import type {
 import { PRESENTATION_REACTIONS, type PresentationReaction } from '../src/types/presentation.ts'
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import { isPluginId, isSafeItemId } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PRESENTATION_MIN_TTL_MS = 1_000
 export const PRESENTATION_MAX_TTL_MS = 15_000
@@ -56,18 +58,11 @@ export type PresentationValidationResult = {
   error: Extract<PresentationError, 'invalid_request' | 'invalid_message' | 'invalid_reaction' | 'invalid_pet'>
 }
 
-const SAFE_ID = /^[A-Za-z0-9_-]{8,80}$/
 const SAFE_NAME_LENGTH = 64
 const SAFE_MESSAGE_CONTROL = /[\u0000-\u001f\u007f]/g
 const SAFE_MESSAGE_MARKUP = /[<>]/g
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-export function isPresentationClientId(value: unknown): value is string {
-  return typeof value === 'string' && SAFE_ID.test(value)
-}
+export const isPresentationClientId = isSafeItemId
 
 export function sanitizePresentationClientId(value: unknown): string | null {
   return isPresentationClientId(value) ? value : null
@@ -267,7 +262,7 @@ export class PresentationController {
 
   submitPluginReaction(pluginId: string, input: unknown): PresentationIntentResult {
     this.cleanupExpired()
-    if (!/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(pluginId)) return { accepted: false, error: 'invalid_request' }
+    if (!isPluginId(pluginId)) return { accepted: false, error: 'invalid_request' }
     const status = normalizePresentationStatus(this.getStatusSnapshot())
     if (status.dnd) return { accepted: false, error: 'dnd_enabled' }
     const normalized = normalizePresentationInput({

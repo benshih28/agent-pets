@@ -39,6 +39,7 @@ function collectPreloadApis() {
     const content = source(path)
     if (path.endsWith('plugin-ui-preload.ts')) {
       apis.set('plugin-panel-api', ['agentPets (createPluginPanelPublicApi)'])
+      apis.set('plugin-panel-theme-initial', ['pluginPanelThemeInitial (sendSync, plugin-ui-preload)'])
       continue
     }
     const properties = [...content.matchAll(/^\s{2}([A-Za-z_$][\w$]*):/gm)]
@@ -72,8 +73,16 @@ function compareRendererTypes() {
   }
 }
 
+const GUARD_SENDERS = {
+  assertPluginPanelSender: '設定面板 main frame（共用 sender guard）',
+  assertPetSender: '寵物視窗 main frame（共用 sender guard）',
+}
+
 function senderSummary(channel, block) {
   if (channel === 'plugin-panel-api') return 'panelView 主 frame；active WebContents 二次比對'
+  // 共用 sender guard 的第三個參數就是實際的 guard；依名稱標示允許的視窗，未知名稱才退回通用描述。
+  const guard = block.match(/(?:handle|on)WithSenderGuard\(\s*deps\.ipcMain,\s*IPC_CHANNELS\.[A-Za-z_$][\w$]*,\s*deps\.([A-Za-z_$][\w$]*)/)?.[1]
+  if (guard && GUARD_SENDERS[guard]) return GUARD_SENDERS[guard]
   if (block.includes('handleTrusted(') || block.includes('handleWithSenderGuard(') || block.includes('onWithSenderGuard(')) {
     return '設定面板 main frame（共用 sender guard）'
   }
@@ -98,7 +107,7 @@ function validationSummary(block) {
     .map(match => match[1])
     .filter(name => !['isTrustedIpcSender', 'isArray', 'isSafeInteger', 'isNaN', 'isFinite', 'isDestroyed', 'isVisible', 'isEnabled'].includes(name)))].slice(0, 3)
   if (helpers.length) checks.push(helpers.join(', '))
-  const hasPayload = /\(event\s*,/.test(block)
+  const hasPayload = /\(_?event\s*,/.test(block)
   if (!hasPayload) return '無 payload；檢查 sender 並回傳受限狀態'
   if (checks.length === 0) return 'handler／controller 驗證 payload；拒絕無效輸入'
   return `${checks.join('；')}；無效輸入回安全預設或錯誤`

@@ -60,7 +60,7 @@ const label = computed(() => t(LABEL_KEYS[props.risk]))
   font-weight: var(--weight-medium);
 }
 
-.risk-high { color: var(--state-error-soft); }
+.risk-high { color: var(--text-danger); }
 .risk-medium { color: var(--state-warn-bright); }
 .risk-low { color: var(--state-success); }
 .risk-unknown { color: var(--text-secondary); }

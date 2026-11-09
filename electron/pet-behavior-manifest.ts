@@ -1,3 +1,4 @@
+import { isRecord } from './value-guards.ts'
 export interface SanitizedPetBehaviorDefinition {
   row: number
   frames?: number
@@ -11,10 +12,6 @@ const MAX_ROW = 10
 const MAX_FRAMES = 16
 const MIN_FRAME_MS = 60
 const MAX_FRAME_MS = 3_000
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function parseDefinition(value: unknown): SanitizedPetBehaviorDefinition | undefined {
   if (!isRecord(value)) return undefined

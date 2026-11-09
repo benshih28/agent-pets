@@ -1,6 +1,7 @@
 import { constants as fsConstants } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import { isPluginId, isUuidV4 } from '../src/types/id-patterns.ts'
 
 export const PLUGIN_CONTENT_SECURITY_POLICY = "default-src 'none'; script-src agent-pets://plugin; worker-src agent-pets://plugin; connect-src 'none'; img-src agent-pets://plugin; style-src agent-pets://plugin; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
 export const PLUGIN_WORKER_CONTENT_SECURITY_POLICY = "default-src 'none'; script-src agent-pets://plugin; worker-src 'none'; connect-src 'none'; img-src agent-pets://plugin; style-src agent-pets://plugin; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
@@ -35,7 +36,6 @@ export interface PluginProtocolRequestLike {
   method?: string
 }
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 
 function isPathInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate)
@@ -164,7 +164,7 @@ export function createPluginPanelProtocolHandler(options: PluginPanelProtocolOpt
           || Buffer.byteLength(options.tokensCss, 'utf8') > 256 * 1024) return new Response('Not found', { status: 404 })
         return pluginPanelResponse('tokens.css', new TextEncoder().encode(options.tokensCss))
       }
-      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(scope ?? '')
+      if (!isUuidV4(scope ?? '')
         || !PLUGIN_PANEL_ALLOWED_EXTENSIONS.has(path.posix.extname(relativePath).toLowerCase())) {
         return new Response('Not found', { status: 404 })
       }
@@ -197,7 +197,7 @@ async function handlePluginHostProtocolRequest(requestUrl: string, options: Plug
         relativePath === 'worker-bootstrap.js',
       )
     }
-    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(tokenOrHost)) {
+    if (!isUuidV4(tokenOrHost)) {
       return new Response('Not found', { status: 404 })
     }
     const root = options.pluginRootForToken(tokenOrHost)
@@ -244,7 +244,7 @@ export async function handlePluginProtocolRequest(requestUrl: string, options: P
       const source = options.hostAssets[relativePath as keyof PluginProtocolAssets]
       return pluginResponse(relativePath, new TextEncoder().encode(source))
     }
-    if (!PLUGIN_ID.test(id)) return new Response('Not found', { status: 404 })
+    if (!isPluginId(id)) return new Response('Not found', { status: 404 })
     const root = options.pluginRootForId(id)
     if (!root) return new Response('Not found', { status: 404 })
     const skinAsset = await options.pluginSkinAssetForId?.(id, relativePath)

@@ -45,6 +45,7 @@ import {
   sanitizeToolName,
   type StoredSessionFinalState,
 } from './history-sessions.ts'
+import { isProjectId } from '../src/types/id-patterns.ts'
 
 type SqliteRow = Record<string, unknown>
 
@@ -93,7 +94,6 @@ const LOCAL_USAGE_CUTOFF_KEY = 'local_usage_cutoff_at'
 const HISTORY_RANGES: readonly number[] = [7, 30, 90]
 const ACTIVE_STATES = new Set<AgentState>(['thinking', 'tool-running'])
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,256}$/
-const PROJECT_ID = /^[a-f0-9]{32}$/
 // 模型 id 只允許常見識別字元，最多一個 `provider/model` 斜線段；`<synthetic>` 之類的佔位值、
 // 含空白、`..`、磁碟代號或看起來像本機路徑（Users/、home/…）的字串一律視為未知，避免路徑外洩到 UI 或匯出。
 const MODEL_SEGMENT = '[A-Za-z0-9][A-Za-z0-9._:@+-]{0,63}'
@@ -410,7 +410,7 @@ export class HistoryStore {
     const agentId = safeText(event.source, 'unknown')
     const externalId = safeText(event.sessionId).slice(0, MAX_SESSION_ID_LENGTH)
     if (!externalId) return false
-    const projectId = typeof event.projectId === 'string' && PROJECT_ID.test(event.projectId)
+    const projectId = isProjectId(event.projectId)
       ? event.projectId
       : event.project ? digest(event.project) : ''
     // A CLI may reuse a session ID in different workspaces. Keep their
@@ -779,7 +779,7 @@ export class HistoryStore {
       ? Math.min(record.occurredAt, safeReceivedAt)
       : safeReceivedAt
     const localDate = this.localDate(occurredAt)
-    const projectId = typeof record.projectId === 'string' && PROJECT_ID.test(record.projectId)
+    const projectId = isProjectId(record.projectId)
       ? record.projectId
       : ''
     const sessionId = typeof record.sessionId === 'string' && record.sessionId.length > 0
@@ -954,7 +954,7 @@ export class HistoryStore {
   getSummary(petId = DEFAULT_PET_ID, projectId?: string, rangeDays: number = 7): HistorySummary {
     this.flushQueued()
     const safePet = safePetId(petId)
-    const safeProject = typeof projectId === 'string' && PROJECT_ID.test(projectId) ? projectId : null
+    const safeProject = isProjectId(projectId) ? projectId : null
     const span = HISTORY_RANGES.includes(rangeDays) ? rangeDays : 7
     const today = this.localDate(this.now())
     const dates = Array.from({ length: span }, (_, index) => dateOffset(today, index - (span - 1)))
@@ -1334,7 +1334,7 @@ export class HistoryStore {
         const projectId = safeText(row.project_id)
         if (!adapterId || !source || !sessionId) continue
         const petId = safePetId(typeof row.pet_id === 'string' ? row.pet_id : undefined)
-        const achievementProjectId = PROJECT_ID.test(projectId) ? projectId : 'unbound'
+        const achievementProjectId = isProjectId(projectId) ? projectId : 'unbound'
         const identity = digest(`${petId}:${source}:${sessionId}:${achievementProjectId}`)
         if (seen.has(identity)) continue
         seen.add(identity)

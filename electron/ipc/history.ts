@@ -13,6 +13,7 @@ import { t } from '../../src/i18n.ts'
 import { historyDaysToCsv, historyExportFileName } from '../history-export.ts'
 import { isHistorySessionId, normalizeSessionQuery } from '../history-sessions.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { isProjectId } from '../../src/types/id-patterns.ts'
 
 type HistoryExportDialogOptions = {
   title: string
@@ -117,7 +118,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
     const input = request && typeof request === 'object' ? request as Record<string, unknown> : {}
     const format: HistoryExportFormat = input.format === 'csv' ? 'csv' : 'json'
     const rangeDays = input.rangeDays === 30 || input.rangeDays === 90 ? input.rangeDays : 7
-    const projectId = typeof input.projectId === 'string' && /^[a-f0-9]{32}$/.test(input.projectId)
+    const projectId = isProjectId(input.projectId)
       ? input.projectId
       : undefined
     // Freshen local-log totals, but never let a slow scan hold the Save dialog.

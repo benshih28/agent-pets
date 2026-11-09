@@ -1,6 +1,6 @@
 import type { PluginManifest } from '../types/plugin'
 
-export type PluginCapability = 'panel' | 'commands' | 'tray' | 'badge' | 'skins' | 'eventSource' | 'schedule' | 'feed' | 'reaction'
+export type PluginCapability = 'panel' | 'commands' | 'tray' | 'badge' | 'skins' | 'panelThemes' | 'eventSource' | 'schedule' | 'feed' | 'reaction'
 
 /** 卡片上的「提供：…」標籤來源：manifest 的貢獻點與排程權限，順序固定。 */
 export function pluginCapabilities(manifest: Pick<PluginManifest, 'contributes' | 'permissions'> | null | undefined): PluginCapability[] {
@@ -12,6 +12,7 @@ export function pluginCapabilities(manifest: Pick<PluginManifest, 'contributes' 
   if (c.tray?.commands.length) result.push('tray')
   if (c.badge) result.push('badge')
   if (c.skins?.length) result.push('skins')
+  if (c.panelThemes?.length) result.push('panelThemes')
   if (c.eventSource) result.push('eventSource')
   if (c.feed) result.push('feed')
   if (c.reaction) result.push('reaction')

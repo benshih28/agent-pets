@@ -4,6 +4,7 @@ import type { PluginFeedController } from '../plugin-feed.ts'
 import type { PluginEventSourceController } from '../plugin-event-source.ts'
 import { isPluginPanelNotificationId } from '../plugin-panel-validation.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { isSafeItemId } from '../../src/types/id-patterns.ts'
 
 export interface PluginFeedIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -47,7 +48,7 @@ export function registerPluginFeedIpc(deps: PluginFeedIpcDependencies): void {
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginFeedComplete, (event, itemId: unknown) => {
     deps.assertTrustedIpcSender(event, deps.getPetWindow())
-    if (typeof itemId !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(itemId)) return false
+    if (!isSafeItemId(itemId)) return false
     return deps.getPluginFeedController()?.complete(itemId) ?? false
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginNotificationsList, event => {
@@ -91,7 +92,7 @@ export function registerPluginFeedIpc(deps: PluginFeedIpcDependencies): void {
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginFeedOpenLink, async (event, itemId: unknown) => {
     deps.assertTrustedIpcSender(event)
-    if (typeof itemId !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(itemId)) return false
+    if (!isSafeItemId(itemId)) return false
     const item = deps.getPluginFeedController()?.listNotifications().find(record => record.item.id === itemId)?.item
     if (!item?.link || !deps.hasPluginContext(item.pluginId)) return false
     let url: URL

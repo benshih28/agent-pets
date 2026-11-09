@@ -1,8 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { renameSyncWithRetry } from './fs-rename.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 
 export class PluginDataFileError extends Error {
   readonly code = 'plugin_data_unsafe'
@@ -26,7 +26,7 @@ function requireDirectory(directory: string, create: boolean): void {
 }
 
 export function ensurePluginDataDirectory(userDataDirectory: string, pluginId: string, create: boolean): string {
-  if (!path.isAbsolute(userDataDirectory) || !PLUGIN_ID.test(pluginId)) throw new TypeError('Plugin data path is invalid')
+  if (!path.isAbsolute(userDataDirectory) || !isPluginId(pluginId)) throw new TypeError('Plugin data path is invalid')
   const pluginsDirectory = path.join(userDataDirectory, 'plugins')
   const pluginDirectory = path.join(pluginsDirectory, pluginId)
   const dataDirectory = path.join(pluginDirectory, 'data')

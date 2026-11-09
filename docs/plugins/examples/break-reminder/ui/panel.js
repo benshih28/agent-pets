@@ -2,6 +2,11 @@ const api = window.agentPetsPlugin
 const count = document.querySelector('#count')
 const status = document.querySelector('#status')
 
+// Native controls (scrollbars, form widgets) follow the theme's light/dark mode.
+const applyMode = (theme) => { document.documentElement.style.colorScheme = theme.mode }
+api.theme.onDidChange(applyMode)
+api.theme.get().then(applyMode).catch(() => {})
+
 api.ui.onMessage((message) => {
   if (message?.type !== 'break:state') return
   count.textContent = `Reminders sent: ${message.count}`

@@ -6,7 +6,8 @@ import App from '@/App.vue'
 import RendererErrorBoundary from '@/components/RendererErrorBoundary.vue'
 import { initTheme } from '@/composables/useTheme'
 
-initTheme()
+// 面板視窗載入 #panel；其餘（寵物視窗）用寵物外觀（useTheme.ts）。
+initTheme(window.location.hash === '#panel' ? 'panel' : 'pet')
 if (import.meta.env.MODE === 'gpu-safe') document.documentElement.dataset.gpuSafe = ''
 
 type ErrorKind = 'vue' | 'unhandledrejection' | 'error'

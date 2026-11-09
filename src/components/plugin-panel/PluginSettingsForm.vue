@@ -162,7 +162,7 @@ const busyNow = () => loading.value || isBusy(`plugin:${selectedPluginId.value}`
 
 .field-error {
   margin: 0;
-  color: var(--state-error-soft);
+  color: var(--text-danger);
   font-size: var(--font-xs);
 }
 

@@ -1,6 +1,6 @@
 # Agent Pets 插件開發者手冊
 
-插件在隔離的背景 Worker 執行，也可選擇在設定的插件區加入沙箱頁面。插件能顯示寵物通知、要求寵物反應、加入由使用者觸發的面板／Tray 指令、顯示狀態徽章、提供寵物外觀、讀取已授權的 Agent 狀態，並發布清楚標示來源的唯讀狀態。插件也能使用受控網路、密鑰、設定、排程與私有儲存。插件不能使用 Node.js、檔案系統、shell、任意網路或其他插件的資料。Host API 主版本為 `apiVersion: "1"`。
+插件在隔離的背景 Worker 執行，也可選擇在設定的插件區加入沙箱頁面。插件能顯示寵物通知、要求寵物反應、加入由使用者觸發的面板／Tray 指令、顯示狀態徽章、提供寵物外觀與面板主題、讀取已授權的 Agent 狀態，並發布清楚標示來源的唯讀狀態。插件也能使用受控網路、密鑰、設定、排程與私有儲存。插件不能使用 Node.js、檔案系統、shell、任意網路或其他插件的資料。Host API 主版本為 `apiVersion: "1"`。
 
 使用者在**設定 → 整合與進階 → 插件**安裝 `.agentpet-plugin` 套件；開發時開啟開發者模式即可直接載入資料夾。插件是不受信任的程式碼，安裝前一定會列出它要求的權限。
 
@@ -20,6 +20,8 @@
 - [Manifest 欄位](manifest.zh-TW.md)與 [JSON Schema](plugin.schema.json)
 - [Host API 參考](api-reference.zh-TW.md)與 [TypeScript 宣告](agent-pets-plugin.d.ts)
 - [畫面貢獻點](contribution-points.zh-TW.md)
+- [面板主題](panel-themes.zh-TW.md)
+- [1.12 新功能](whats-new-1.12.zh-TW.md)
 - [權限與同意畫面](permissions.zh-TW.md)
 - [沙箱](sandbox.zh-TW.md)
 - [資源與速率限制](limits.zh-TW.md)

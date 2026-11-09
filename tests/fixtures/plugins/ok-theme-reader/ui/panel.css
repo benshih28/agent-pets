@@ -1,0 +1,34 @@
+:root {
+  color: var(--ap-text, CanvasText);
+  background: var(--ap-bg, Canvas);
+  font: calc(13px * var(--ap-font-scale, 1)) / 1.4 var(--ap-font-body, system-ui, sans-serif);
+}
+
+body { margin: 0; padding: 16px; }
+main { display: grid; gap: 10px; }
+h1 { margin: 0; font: 600 18px var(--ap-font-heading, serif); }
+p { margin: 0; }
+.muted { color: var(--ap-text-muted, GrayText); }
+.primary {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--ap-radius-md, 8px);
+  /* 強調填色上的文字放在 accent-hover：on-accent 在其上保證 4.5:1（在 accent 上只有 3:1）。 */
+  color: var(--ap-on-accent, ButtonText);
+  background: var(--ap-accent-hover, ButtonFace);
+}
+.primary:focus-visible { outline: 2px solid var(--ap-focus, Highlight); outline-offset: 2px; }
+ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  border: 1px solid var(--ap-border, GrayText);
+  border-radius: var(--ap-radius-lg, 12px);
+  background: var(--ap-surface, Canvas);
+}
+li { display: flex; gap: 8px; align-items: center; font: 11px ui-monospace, monospace; }
+.swatch { width: 14px; height: 14px; flex: none; border: 1px solid var(--ap-border-soft, GrayText); border-radius: var(--ap-radius-sm, 4px); }

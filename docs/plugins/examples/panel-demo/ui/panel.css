@@ -1,17 +1,24 @@
+/* Colours, radii and fonts come from the host-injected --ap-* theme tokens (they follow the user's panel theme
+   and light/dark mode live). The fallbacks are the built-in dark palette for previewing the file on its own. */
 :root {
-  color: var(--text-primary, CanvasText);
-  background: var(--surface-panel, Canvas);
-  font: 14px system-ui, sans-serif;
+  color: var(--ap-text, #f3ede4);
+  background: var(--ap-bg, #1f1b16);
+  font: calc(14px * var(--ap-font-scale, 1)) var(--ap-font-body, system-ui, sans-serif);
 }
 
 body { margin: 0; padding: 24px; }
 main { display: grid; gap: 16px; max-width: 480px; }
 h1, p { margin: 0; }
+h1 { font-family: var(--ap-font-heading, serif); }
+#status { color: var(--ap-text-secondary, #cfc5b6); }
 button {
   min-height: 40px;
-  border: 1px solid var(--border-subtle, ButtonBorder);
-  border-radius: 8px;
-  color: var(--text-primary, ButtonText);
-  background: var(--surface-raised, ButtonFace);
+  border: 1px solid var(--ap-border, rgb(243 237 228 / 0.18));
+  border-radius: var(--ap-radius-sm, 8px);
+  color: var(--ap-text, #f3ede4);
+  background: var(--ap-surface, #292420);
+  font: inherit;
   cursor: pointer;
 }
+button:hover { background: var(--ap-surface-2, #342e28); }
+button:focus-visible { outline: 2px solid var(--ap-focus, #f0b48a); outline-offset: 2px; }

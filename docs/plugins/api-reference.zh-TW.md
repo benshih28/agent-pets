@@ -24,6 +24,8 @@
 | `agent.emit(event)` | `contributes.eventSource`；`{accepted:true}` | `invalid_request`, `rate_limited`, `not_permitted`, `disabled`。`await api.agent.emit({sessionId:'build-1',state:'thinking'})` |
 | `ui.postMessage(data)` | `contributes.panelView`；`{delivered:boolean}` | `invalid_request`, `too_large`, `rate_limited`, `disabled`。`const result = await api.ui.postMessage({type:'refresh'})` |
 | `ui.onMessage(fn)` | `contributes.panelView`；解除訂閱函式 | 立即同步拋 `invalid_request`。`const off = api.ui.onMessage(message => api.log.info(message.type))` |
+| `theme.get()` | 不需要權限（Worker 與面板頁）；`{apiVersion:1, mode, tokens}` | `invalid_request`, `disabled`。`const { mode, tokens } = await api.theme.get()` |
+| `theme.onDidChange(fn)` | 不需要權限（Worker 與面板頁）；解除訂閱函式 | 立即同步拋 `invalid_request`。`const off = api.theme.onDidChange(t => api.log.info(t.mode))` |
 
 `net.fetch` 的 method 為 `GET`、`POST`、`PUT`、`DELETE`、`PATCH`；可送出的 header 僅 `accept`、`authorization`、`content-type`、`if-modified-since`、`if-none-match`、`x-api-key`。Request body 最多 256 KB。回應只保留 `content-type`、`etag`、`last-modified`、`retry-after`；二進位 body 以 base64 字串回傳並設 `isBase64Encoded: true`。`requestHost` 的 reason 為 1–120 字。
 
@@ -32,6 +34,8 @@
 `log.*` 會依插件保留（200 筆、每筆最多 1000 字元）供**診斷**分頁顯示，也會經過遮蔽後寫入 App 紀錄，頻道為 `plugin:<plugin-id>`；見[測試與除錯](debugging.zh-TW.md)。
 
 `agent.emit` 僅接受 `{sessionId, state}`。狀態為 `thinking`、`tool-running`、`idle`、`done`、`error`；`done` 與 `error` 是終態，要開始新工作階段必須用新 id。接收時間由宿主指定，並在獨立清單固定標示「來自插件：<插件名稱>」。這些狀態是未驗證的插件聲明，不會成為內建 Agent 事件，也不會觸發 Permission、XP、成就、History、quota 或通知。
+
+`theme.get` 回傳使用者目前看到的主題（面板的淺色或深色模式）的 `--ap-*` token，沒有主題時回傳內建色盤。變更事件會合併為 100 ms 內一次，且不會重複送出與上一份相同的快照。每個插件拿到的快照都相同，不含插件 id、圖片或路徑。面板頁另外會在 `<html>` 上收到同一組 CSS 自訂屬性；token 表與保證見[面板主題](panel-themes.zh-TW.md#在插件中讀取主題--ap-host-api-theme)。
 
 `ui.postMessage` 與 `ui.onMessage` 在插件 Worker 和已開啟的面板頁之間交換 JSON 資料。每則訊息最多 256 KB；每個插件、每個方向每秒最多 20 則。面板關閉時 Worker 訊息會以 `{delivered:false}` 成功回傳且不排隊。面板頁 API 子集與瀏覽器限制見[自訂面板頁](panel-view.zh-TW.md)。
 

@@ -32,6 +32,7 @@ import type {
   PetImportPreview,
   PetImportWarning,
 } from '../src/types/pet-import.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PET_IMPORT_STAGING_DIRNAME = '.pet-import-staging'
 export const PET_IMPORT_TOKEN_PATTERN = /^[0-9a-f]{32}$/
@@ -89,10 +90,6 @@ const ZIP_ERROR_MESSAGES: Record<ZipInspectError, string> = {
   compression_ratio_exceeded: 'Zip compression ratio is too high to be a sprite kit',
   overlapping_entries: 'Invalid zip archive',
   checksum_mismatch: 'Zip entry is corrupted (CRC mismatch)',
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function cleanText(value: unknown, maxLength: number): string {

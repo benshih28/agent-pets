@@ -157,6 +157,21 @@ if (typeof app.setAppPath === 'function') app.setAppPath(${JSON.stringify(appRoo
 const calls = { isEncryptionAvailable: 0, encryptString: 0, decryptString: 0 }
 const shellOpenExternalCalls = []
 shell.openExternal = async (url) => { shellOpenExternalCalls.push(String(url)) }
+// 原生檔案對話框無法透過 CDP 操作；測試把絕對路徑排進這裡
+// （globalThis.__agentPetsE2E.dialogQueue.push(path)），下一個開啟的對話框
+// 會回傳第一個。佇列為空時則改用真正的對話框。
+const { dialog } = require('electron')
+const dialogQueue = []
+const realShowOpenDialog = dialog.showOpenDialog.bind(dialog)
+dialog.showOpenDialog = async (...args) => (dialogQueue.length > 0
+  ? { canceled: false, filePaths: [String(dialogQueue.shift())] }
+  : realShowOpenDialog(...args))
+// 儲存對話框（主題匯出）同理：saveDialogQueue 的第一個路徑當作使用者選的檔案。
+const saveDialogQueue = []
+const realShowSaveDialog = dialog.showSaveDialog.bind(dialog)
+dialog.showSaveDialog = async (...args) => (saveDialogQueue.length > 0
+  ? { canceled: false, filePath: String(saveDialogQueue.shift()) }
+  : realShowSaveDialog(...args))
 safeStorage.isEncryptionAvailable = () => { calls.isEncryptionAvailable += 1; return true }
 safeStorage.encryptString = (value) => { calls.encryptString += 1; return Buffer.from('agent-pets-e2e:' + value, 'utf8') }
 safeStorage.decryptString = (value) => {
@@ -210,6 +225,8 @@ globalThis.__agentPetsE2E = {
   tamperedArchivePath: ${JSON.stringify(tamperedArchivePath)},
   pluginIssueReportBaseUrl: 'https://github.com/example/agent-pets-plugins/issues/new',
   shellOpenExternalCalls,
+  dialogQueue,
+  saveDialogQueue,
   panelViewBlockedRequests: 0,
 }
 console.log('AGENT_PETS_E2E_READY ' + JSON.stringify({ root, userData: app.getPath('userData'), home: require('node:os').homedir(), fakeSafeStorage: fake }))
@@ -225,7 +242,9 @@ const child = spawn(electronBinary, [
   cwd: repoRoot,
   // Only pass what Electron needs; never the user's tokens, account ids or agent settings.
   env: {
-    ...Object.fromEntries(['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'DISPLAY', 'XDG_RUNTIME_DIR', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP']
+    ...Object.fromEntries(['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'DISPLAY', 'XDG_RUNTIME_DIR', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP',
+      // 連接埠覆寫（僅限 dev build），讓已安裝的 Agent Pets 能保有 17373–17375。
+      'AGENT_PETS_EVENT_PORT', 'AGENT_PETS_PERMISSION_PORT', 'AGENT_PETS_PRESENTATION_PORT']
       .filter(key => process.env[key] !== undefined)
       .map(key => [key, process.env[key]])),
     HOME: join(root, 'home'),

@@ -63,7 +63,8 @@ jobs:
     if: needs.version.outputs.release == 'true'
     timeout-minutes: 45
     strategy:
-      fail-fast: true
+      # 一個平台失敗不要取消其他平台：重跑時只需重跑失敗的那個。發布仍要等全部成功。
+      fail-fast: false
       matrix:
         include:
           # Apple Silicon 與 Intel 拆成兩個平行 job，不再於同一台機器上依序打包
@@ -112,7 +113,45 @@ jobs:
       - name: Check plugin panel tokens bundle
         run: pnpm check:bundle
 
-      - run: pnpm exec electron-builder ${{ matrix.builder-args }} --publish never
+      # electron-builder 打包時會從 GitHub releases 下載 Electron 與工具。GitHub 有時對特定
+      # 檔案（例如 SHASUMS256.txt）持續回 504，但同一個檔案經 API 下載正常。第一次失敗後
+      # 改用 scripts/release-asset-mirror.mjs（只聽 127.0.0.1，經 GitHub API 下載）再試兩次，
+      # 間隔 30、60 秒。checksum 仍由打包工具照原本方式驗證。
+      - name: Package
+        shell: bash
+        env:
+          BUILDER_ARGS: ${{ matrix.builder-args }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          build() {
+            # BUILDER_ARGS 是 matrix 內的固定參數，需要拆成多個引數，所以不加引號。
+            # shellcheck disable=SC2086
+            pnpm exec electron-builder $BUILDER_ARGS --publish never
+          }
+          build && exit 0
+
+          node scripts/release-asset-mirror.mjs > "$RUNNER_TEMP/asset-mirror.log" 2>&1 &
+          for _ in $(seq 1 50); do
+            port=$(sed -n 's/^port=//p' "$RUNNER_TEMP/asset-mirror.log")
+            [ -n "$port" ] && break
+            sleep 0.2
+          done
+          if [ -z "$port" ]; then
+            cat "$RUNNER_TEMP/asset-mirror.log"
+            exit 1
+          fi
+          export ELECTRON_MIRROR="http://127.0.0.1:$port/electron/"
+          export ELECTRON_BUILDER_BINARIES_MIRROR="http://127.0.0.1:$port/builder/"
+          export ELECTRON_BUILDER_BINARIES_ALLOW_HTTP=true
+
+          for attempt in 2 3; do
+            delay=$((30 * (attempt - 1)))
+            echo "::warning::electron-builder failed; retrying through the API download mirror in ${delay}s (attempt $attempt of 3)"
+            sleep "$delay"
+            build && exit 0
+          done
+          cat "$RUNNER_TEMP/asset-mirror.log"
+          exit 1
 
       - uses: actions/upload-artifact@v7
         with:

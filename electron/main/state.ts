@@ -40,6 +40,7 @@ import type { PresentationStatusSnapshot } from '../../src/types/presentation'
 import type { WindowBounds } from '../pet-window-mode'
 import type { WindowsFullscreenDetector, WindowsFullscreenState } from '../windows-fullscreen-detector'
 import type { PluginAgentStatusController } from '../plugin-agent-status.ts'
+import type { PanelThemeRuntime } from './panel-theme-runtime.ts'
 
 import type { ServerHealthTracker } from './server-health'
 import { SessionSnapshotStore } from './session-snapshot'
@@ -120,6 +121,7 @@ export const mainState = {
   pluginRuntimeContexts: new Map<string, PluginBrokerContext & { muted: boolean; rateLimitPer10Min: number; targetPetId: string | null; grantedHosts: string[] }>(),
   pluginPreferencesSnapshot: null as ReturnType<PluginPreferencesStore['get']> | null,
   pluginDeveloperModeWatcher: null as PluginDeveloperModeWatcher | null,
+  panelThemeRuntime: null as PanelThemeRuntime | null,
   presentationStatusProjection: { activePets: [], dnd: false, enabled: true } as PresentationStatusSnapshot,
   desktopPreferences: null as DesktopPreferencesStore | null,
   desktopNotifications: null as DesktopNotificationService | null,

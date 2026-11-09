@@ -32,11 +32,11 @@
 <script type="module" src="./panel.js"></script>
 ```
 
-共用樣式就是 App 自己的 `tokens.css`。頁面不會收到 App 的淺色／深色切換，使用預設的深色色盤（請設定 `color-scheme: dark`），且在內容繪製前頁面檢視是透明的。請搭配 fallback 使用 `--surface-panel`、`--text-primary`、`--border-subtle` 等 token 以便在瀏覽器預覽，完整清單與玻璃規則見 [UX 指南](ux-guidelines.zh-TW.md)。使用者關閉面板頁或切換離開時，宿主會銷毀該頁；要保留狀態請用 `api.storage`，背景工作交給插件 Worker。
+你的第一個腳本執行前，`--ap-*` 主題 token 就已經設定在頁面的根元素上（`<html>` 建立後也會以 inline 方式寫一份），並在使用者的面板主題或淺色／深色模式變更時更新；顏色、圓角與字型請用它們（見[面板主題](panel-themes.zh-TW.md#在插件中讀取主題--ap-host-api-theme)）。共用樣式是 App 自己的 `tokens.css`。從 1.12 起，它的顏色 token（包括 `--surface-raised`、`--text-primary` 等舊名稱）在有對應 `--ap-*` 時由 `--ap-*` 推導（否則是內建值），所以也會跟著主題變化；顏色請優先用 `--ap-*`，`tokens.css` 用在間距、字級與互動 token。內容繪製前頁面檢視是透明的。請為 token 提供 fallback 以便在瀏覽器預覽，完整清單與玻璃規則見 [UX 指南](ux-guidelines.zh-TW.md)。使用者關閉面板頁或切換離開時，宿主會銷毀該頁；要保留狀態請用 `api.storage`，背景工作交給插件 Worker。
 
 ## 面板 API
 
-面板頁透過 `window.agentPetsPlugin` 取得 API。可用方法為 `feed.notify`、`pet.status`、`storage.get/set/remove`、`settings.get`、`log.info/warn/error`、`net.fetch`、`links.openExternal`、`ui.postMessage/onMessage`。面板頁沒有 `secrets.get` 或 `net.requestHost`。`links.openExternal` 需要宣告精確 HTTPS 網域，且必須有目前這次可信任的點擊或 Enter／Space 操作；它只把網址交給系統瀏覽器，不會給面板導覽權。直接網路 API（例如 `fetch`、`XMLHttpRequest`、`WebSocket`）會被封鎖；`net.fetch` 仍受插件宣告或使用者核准的 HTTPS 網域限制。
+面板頁透過 `window.agentPetsPlugin` 取得 API。可用方法為 `feed.notify`、`pet.status`、`storage.get/set/remove`、`settings.get`、`log.info/warn/error`、`net.fetch`、`links.openExternal`、`ui.postMessage/onMessage`、`theme.get/onDidChange`。面板頁沒有 `secrets.get` 或 `net.requestHost`。`links.openExternal` 需要宣告精確 HTTPS 網域，且必須有目前這次可信任的點擊或 Enter／Space 操作；它只把網址交給系統瀏覽器，不會給面板導覽權。直接網路 API（例如 `fetch`、`XMLHttpRequest`、`WebSocket`）會被封鎖；`net.fetch` 仍受插件宣告或使用者核准的 HTTPS 網域限制。
 
 呼叫成功時直接回傳值。失敗時會 reject 一個帶有 `code` 的 `Error`，例如 `not_permitted`、`host_not_allowed`、`rate_limited`、`too_large` 或 `disabled`。
 

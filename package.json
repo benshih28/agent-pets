@@ -1,6 +1,6 @@
 {
   "name": "agent-pets",
-  "version": "1.11.5",
+  "version": "1.12.0",
   "description": "Desktop pet that shows the status of AI coding agents",
   "author": "Upfloor5",
   "license": "MIT",
@@ -25,7 +25,7 @@
     "bench:lag": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bench/event-loop-lag.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:design": "node scripts/check-design-tokens.mjs",
-    "check:design:strict": "node scripts/check-design-tokens.mjs --strict",
+    "check:design:strict": "node scripts/check-design-tokens.mjs --strict --raw-colors=fail",
     "bench": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bench/phase-18.mjs",
     "preview": "vite preview",
     "electron:dev": "vite --config vite.config.mts",

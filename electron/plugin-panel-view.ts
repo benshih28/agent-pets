@@ -1,20 +1,18 @@
 import { createPluginPanelProtocolHandler, type PluginProtocolRequestLike } from './plugin-protocol.ts'
-import type { PluginPanelApiMethod } from './plugin-panel-view-bridge.ts'
+import { PLUGIN_PANEL_API_METHODS } from './plugin-panel-view-bridge.ts'
 import type { PluginPanelViewClosedEvent, PluginPanelViewCloseReason } from '../src/types/plugin.ts'
 import { isIpcErrorCode, PLUGIN_PANEL_IPC_ERROR_CODES } from '../src/types/ipc.ts'
 import { dispatchPluginUiMessage, PLUGIN_UI_MESSAGE_MAX_BYTES, PluginUiMessageGuard } from './plugin-ui-messages.ts'
+import { IPC_CHANNELS } from './ipc/channels.ts'
+import type { PluginThemeSnapshot } from '../src/types/plugin-theme.ts'
 import { layoutPluginPanelView, type PluginPanelInsets, type PluginPanelSize } from './plugin-panel-window.ts'
+import { isPluginId, isUuidV4 } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_PANEL_PARTITION_PREFIX = 'plugin-ui-'
 export const PLUGIN_PANEL_MESSAGE_MAX_BYTES = PLUGIN_UI_MESSAGE_MAX_BYTES
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
-const UUID_TOKEN = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
-const PANEL_ENTRY_METHODS = new Set<PluginPanelApiMethod>([
-  'feed.notify', 'pet.status', 'storage.get', 'storage.set', 'storage.remove',
-  'settings.get', 'log.info', 'log.warn', 'log.error', 'net.fetch', 'ui.postMessage',
-  'links.openExternal',
-])
+const PANEL_ENTRY_METHODS: ReadonlySet<string> = new Set(PLUGIN_PANEL_API_METHODS)
 const PANEL_ERROR_CODES: ReadonlySet<string> = new Set(PLUGIN_PANEL_IPC_ERROR_CODES)
 
 export interface PluginPanelViewDescriptor {
@@ -87,6 +85,8 @@ export interface PluginPanelViewControllerOptions {
   pluginRootForToken: (token: string) => string | null
   messageGuard: PluginUiMessageGuard
   onApiRequest: (pluginId: string, request: { id: string; method: string; args: unknown[] }) => unknown | Promise<unknown>
+  /** 目前給插件的主題快照（頁面載入時同步取得）。 */
+  getThemeSnapshot?: () => PluginThemeSnapshot | null
   onClosed?: (event: PluginPanelViewClosedEvent) => void
   onBlockedRequest?: (url: string) => void
   ackTimeoutMs?: number
@@ -105,10 +105,6 @@ interface ActivePanelView {
   insets: PluginPanelInsets | null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 function isPanelEntry(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 512 || value.startsWith('/')
     || value.includes('\\') || value.includes(':')) return false
@@ -118,7 +114,7 @@ function isPanelEntry(value: unknown): value is string {
 }
 
 function safePanelUrl(urlValue: string, token: string | null): boolean {
-  if (!token || !UUID_TOKEN.test(token)) return false
+  if (!token || !isUuidV4(token)) return false
   try {
     const url = new URL(urlValue)
     if (url.protocol !== 'agent-pets:' || url.hostname !== 'plugin' || url.username || url.password || url.port
@@ -171,7 +167,7 @@ export class PluginPanelViewController {
   }
 
   async open(descriptor: PluginPanelViewDescriptor): Promise<{ ok: true; value: { opened: true; openToken: number } } | { ok: false; error: string }> {
-    if (!isRecord(descriptor) || typeof descriptor.pluginId !== 'string' || !PLUGIN_ID.test(descriptor.pluginId)
+    if (!isRecord(descriptor) || !isPluginId(descriptor.pluginId)
       || !isPanelEntry(descriptor.entry) || !Number.isSafeInteger(descriptor.openToken)
       || (descriptor.openToken as number) <= this.lastOpenToken || !isValidBounds(descriptor.bounds)) return errorResult('invalid_request')
     const parent = this.options.getParentWindow()
@@ -184,7 +180,7 @@ export class PluginPanelViewController {
     const pluginId = descriptor.pluginId
     let token: string
     try { token = this.options.createToken(pluginId) } catch { return errorResult('disabled') }
-    if (!UUID_TOKEN.test(token)) {
+    if (!isUuidV4(token)) {
       try { this.options.revokeToken(pluginId, token) } catch {}
       return errorResult('disabled')
     }
@@ -344,8 +340,22 @@ export class PluginPanelViewController {
       value: data,
       guard: this.options.messageGuard,
       targetAvailable: available,
-      deliver: value => active!.view.webContents.send('plugin-panel-ui-message', value),
+      deliver: value => active!.view.webContents.send(IPC_CHANNELS.pluginPanelUiMessage, value),
     })
+  }
+
+  /** 只送給目前開啟中的頁面；快照對所有插件相同，所以不需要依插件過濾。 */
+  notifyThemeChanged(snapshot: PluginThemeSnapshot): void {
+    const contents = this.active?.view.webContents
+    if (!contents || contents.isDestroyed()) return
+    try { contents.send(IPC_CHANNELS.pluginPanelThemeChanged, snapshot) } catch {}
+  }
+
+  /** 頁面 preload 的第一份主題快照：只回給目前開啟中的 view，其他寄件者一律 null。 */
+  initialTheme(sender: unknown): PluginThemeSnapshot | null {
+    const active = this.active
+    if (!active || active.view.webContents !== sender || active.view.webContents.isDestroyed()) return null
+    return this.options.getThemeSnapshot?.() ?? null
   }
 
   activePluginId(): string | null {
@@ -355,7 +365,7 @@ export class PluginPanelViewController {
   async handleApiRequest(sender: unknown, method: unknown, args: unknown): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
     const active = this.active
     if (!active || active.view.webContents !== sender || active.view.webContents.isDestroyed()) return errorResult('not_permitted')
-    if (typeof method !== 'string' || !PANEL_ENTRY_METHODS.has(method as PluginPanelApiMethod)
+    if (typeof method !== 'string' || !PANEL_ENTRY_METHODS.has(method)
       || !Array.isArray(args) || args.length > 32 || !isJsonValue(args)) return errorResult('not_permitted')
     if (method === 'ui.postMessage' && args.length !== 1) return errorResult('invalid_request')
     if (method === 'links.openExternal' && args.length !== 2) return errorResult('invalid_request')

@@ -1,12 +1,11 @@
 import type { IpcErrorCode } from '../src/types/ipc.ts'
 import { isPluginErrorCode } from '../src/types/plugin.ts'
-export function isPluginPanelPluginId(value: unknown): value is string {
-  return typeof value === 'string' && /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(value)
-}
+import { isPluginId, isSafeItemId } from '../src/types/id-patterns.ts'
 
-export function isPluginPanelNotificationId(value: unknown): value is string {
-  return typeof value === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(value)
-}
+/** IPC 處理器以依賴注入取得的插件 id 檢查；與 manifest 同一份規則（src/types/id-patterns.ts）。 */
+export const isPluginPanelPluginId = isPluginId
+
+export const isPluginPanelNotificationId = isSafeItemId
 
 export function isPluginPanelPreferencePatch(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false

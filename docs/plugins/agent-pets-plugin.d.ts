@@ -79,6 +79,119 @@ export interface PluginSettingsSchema {
   properties: Record<string, PluginSettingDefinition>
 }
 
+/** sRGB colour string: #hex, rgb()/rgba(), hsl()/hsla() or oklch(). No url(), var(), calc() or named colours. */
+export type PluginPanelThemeColor = string
+export type PluginPanelThemeMode = 'light' | 'dark'
+export type PluginPanelThemeFit = 'cover' | 'contain' | 'tile'
+export type PluginPanelThemePosition =
+  | 'center' | 'top' | 'bottom' | 'left' | 'right'
+  | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+export interface PluginPanelThemeColors {
+  bg: PluginPanelThemeColor
+  surface: PluginPanelThemeColor
+  surface2: PluginPanelThemeColor
+  text: PluginPanelThemeColor
+  textSecondary: PluginPanelThemeColor
+  textMuted: PluginPanelThemeColor
+  accent: PluginPanelThemeColor
+  accentText: PluginPanelThemeColor
+  onAccent: PluginPanelThemeColor
+  border: PluginPanelThemeColor
+  surfaceWarm?: PluginPanelThemeColor
+  surfaceSage?: PluginPanelThemeColor
+  surfaceSageSoft?: PluginPanelThemeColor
+  surfaceOff?: PluginPanelThemeColor
+  textFaint?: PluginPanelThemeColor
+  accentHover?: PluginPanelThemeColor
+  accentGlow?: PluginPanelThemeColor
+  accentTrack?: PluginPanelThemeColor
+  accentOnHover?: PluginPanelThemeColor
+  sage?: PluginPanelThemeColor
+  sageDeep?: PluginPanelThemeColor
+  sageDark?: PluginPanelThemeColor
+  sageTrack?: PluginPanelThemeColor
+  borderSoft?: PluginPanelThemeColor
+  /** @deprecated 1.12.0: accepted for compatibility and ignored; no surface reads it. */
+  borderOnAccent?: PluginPanelThemeColor
+  dangerText?: PluginPanelThemeColor
+  successText?: PluginPanelThemeColor
+  warnText?: PluginPanelThemeColor
+  scrim?: PluginPanelThemeColor
+  /** Opaque informational (blue) text; OKLCH hue 200–290°. Defaults to the built-in value for the mode. */
+  infoText?: PluginPanelThemeColor
+  /** Opaque shadow colour, relative luminance ≤ 0.05. Defaults to the built-in value for the mode. */
+  shadow?: PluginPanelThemeColor
+  /** Opaque glass highlight colour, relative luminance ≥ 0.7. Defaults to white. */
+  highlight?: PluginPanelThemeColor
+}
+
+export interface PluginPanelThemeOverlay { color: PluginPanelThemeColor; opacity: number }
+export interface PluginPanelThemeGradientStop { color: PluginPanelThemeColor; at: number }
+
+export type PluginPanelThemeBackground =
+  | { type: 'solid' }
+  | { type: 'gradient'; kind: 'linear'; angle?: number; stops: PluginPanelThemeGradientStop[] }
+  | { type: 'gradient'; kind: 'radial'; position?: PluginPanelThemePosition; stops: PluginPanelThemeGradientStop[] }
+  | {
+      type: 'image'
+      /** Package-relative .png or .webp path. */
+      src: string
+      fit?: PluginPanelThemeFit
+      position?: PluginPanelThemePosition
+      opacity?: number
+      blur?: number
+      overlay: PluginPanelThemeOverlay
+    }
+
+export interface PluginPanelThemeUserImage {
+  allowed: true
+  fit?: PluginPanelThemeFit
+  overlay: PluginPanelThemeOverlay
+}
+
+/** Colours of the pet's status pill only (bubbles, permission UI and state dots stay built-in). */
+export interface PluginPanelThemePetStatus {
+  /** Alpha 0.85–1. */
+  background: PluginPanelThemeColor
+  text: PluginPanelThemeColor
+  /** Alpha 0.08–1. Default: text at alpha 0.18. */
+  border?: PluginPanelThemeColor
+  /** Default: mix(text, opaque background, 0.25). */
+  textMuted?: PluginPanelThemeColor
+  /** Default: the mode's accent. */
+  quotaFill?: PluginPanelThemeColor
+  /** Alpha 0.1–1. Default: text at alpha 0.18. */
+  quotaTrack?: PluginPanelThemeColor
+  /** Below 50% remaining. Default: the built-in amber, moved toward text until it reaches 3:1. */
+  quotaWarn?: PluginPanelThemeColor
+}
+
+export interface PluginPanelThemeModeDefinition {
+  colors: PluginPanelThemeColors
+  background?: PluginPanelThemeBackground
+  userImage?: PluginPanelThemeUserImage
+  petStatus?: PluginPanelThemePetStatus
+}
+
+export interface PluginPanelThemeFontFace {
+  id: string
+  /** Package-relative .woff2 path. */
+  src: string
+  weight?: 400 | 600 | 700
+  style?: 'normal' | 'italic'
+}
+
+export interface PluginPanelThemeContribution {
+  id: string
+  displayName: PluginLocalizedText
+  description?: PluginLocalizedText
+  fonts?: PluginPanelThemeFontFace[]
+  typography?: { body?: string[]; heading?: string[]; scale?: number }
+  shape?: { radiusSm?: number; radiusMd?: number; radiusLg?: number }
+  modes: Partial<Record<PluginPanelThemeMode, PluginPanelThemeModeDefinition>>
+}
+
 export interface PluginContributions {
   feed?: boolean
   reaction?: boolean
@@ -89,6 +202,7 @@ export interface PluginContributions {
   badge?: boolean
   skins?: PluginSkinContribution[]
   eventSource?: PluginEventSourceContribution
+  panelThemes?: PluginPanelThemeContribution[]
 }
 
 export interface PetStatusChange {
@@ -119,6 +233,42 @@ export interface PluginSettings {
 }
 
 export type PluginJsonValue = string | number | boolean | null | PluginJsonValue[] | { [key: string]: PluginJsonValue }
+
+/** Public theme tokens (apiVersion 1). Names and value formats are stable; new tokens may be added. */
+export type PluginThemeToken =
+  | '--ap-bg' | '--ap-surface' | '--ap-surface-2'
+  | '--ap-text' | '--ap-text-secondary' | '--ap-text-muted'
+  | '--ap-accent' | '--ap-accent-hover' | '--ap-accent-text' | '--ap-on-accent'
+  | '--ap-border' | '--ap-border-soft' | '--ap-focus'
+  | '--ap-danger' | '--ap-success' | '--ap-warn' | '--ap-info'
+  | '--ap-scrim' | '--ap-shadow' | '--ap-highlight'
+  | '--ap-radius-sm' | '--ap-radius-md' | '--ap-radius-lg'
+  | '--ap-font-body' | '--ap-font-heading' | '--ap-font-scale'
+
+/**
+ * The theme the user currently sees. Colours are `rgb(R G B / A)`, radii `Npx`, font lists contain only local and
+ * generic families, `--ap-font-scale` is a unitless number. Identical for every plugin; no ids, images or paths.
+ */
+export interface PluginThemeSnapshot {
+  readonly apiVersion: 1
+  readonly mode: 'light' | 'dark'
+  readonly tokens: Readonly<Record<PluginThemeToken, string>>
+}
+
+/** Read and follow the active theme. No permission required. */
+export interface PluginThemeApi {
+  /**
+   * Read the current theme snapshot. Rejects: invalid_request, disabled.
+   * Example: `const { mode, tokens } = await api.theme.get()`
+   */
+  get(): Promise<PluginThemeSnapshot>
+  /**
+   * Subscribe to theme or light/dark changes. Events are coalesced (one per 100 ms burst) and never repeat the previous
+   * snapshot. Returns an unsubscribe function. Throws coded error immediately: invalid_request.
+   * Example: `const off = api.theme.onDidChange(theme => api.log.info(theme.mode))`
+   */
+  onDidChange(callback: (theme: PluginThemeSnapshot) => void): () => void
+}
 
 export interface AgentPetsPluginApi {
   agent: {
@@ -269,6 +419,7 @@ export interface AgentPetsPluginApi {
      */
     onMessage(callback: (data: PluginJsonValue) => void): () => void
   }
+  theme: PluginThemeApi
 }
 
 /** API exposed by `window.agentPetsPlugin` inside a contributed panel page. */
@@ -298,6 +449,8 @@ export interface AgentPetsPluginPanelApi {
     postMessage(data: PluginJsonValue): Promise<{ delivered: boolean }>
     onMessage(callback: (data: PluginJsonValue) => void): () => void
   }
+  /** Same as the Worker API. The page also receives every token as a CSS custom property on `<html>`, updated live. */
+  theme: PluginThemeApi
 }
 
 declare global {

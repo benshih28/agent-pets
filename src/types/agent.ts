@@ -103,15 +103,17 @@ export const STATE_LABELS_SHORT: Record<AgentState, string> = {
   error: 'Error',
 }
 
+// 狀態色是 tokens.css 語意層的 CSS 變數（不寫死顏色）：跟著色盤與主題走，
+// 成功/錯誤/等待的色相由驗證器限制（spec R12），而且狀態一律搭配文字標籤。
 export const STATE_COLORS: Record<AgentState, string> = {
-  offline: '#757575',
-  idle: '#8a8a8a',
-  thinking: '#8b9cf7',
-  'tool-running': '#8b9cf7',
-  'waiting-permission': '#c8b450',
-  'waiting-input': '#c8b450',
-  success: '#50c878',
-  error: '#ff6b6b',
+  offline: 'var(--state-offline)',
+  idle: 'var(--state-idle)',
+  thinking: 'var(--state-active)',
+  'tool-running': 'var(--state-active)',
+  'waiting-permission': 'var(--state-warn)',
+  'waiting-input': 'var(--state-warn)',
+  success: 'var(--state-success)',
+  error: 'var(--state-error)',
 }
 
 export const SOURCE_LABELS: Record<AgentSource, string> = {

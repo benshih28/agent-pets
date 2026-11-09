@@ -224,5 +224,15 @@
   "plugins.dashTabSettings": "插件設定",
   "plugins.dashTabFeedEmpty": "這個插件最近沒有通知。",
   "plugins.dashTabScrollPrev": "向左捲動分頁",
-  "plugins.dashTabScrollNext": "向右捲動分頁"
+  "plugins.dashTabScrollNext": "向右捲動分頁",
+  "plugins.hintPanelThemes": "插件提供面板主題（顏色、字型、背景），可在插件的「面板主題」區塊選用。主題會套用到整個 App，包含權限與風險提示；Agent Pets 只接受讓每個標籤都清楚、危險／成功／警告／資訊色仍可辨識的主題。",
+  "plugins.hintPanelThemeFonts": "主題附帶字型檔，只有在選用這些主題時面板才會載入。",
+  "plugins.presencePanelThemes": "提供 {count} 個面板主題，在此插件的「面板主題」區塊選用",
+  "plugins.presencePanelThemesOpen": "開啟面板主題",
+  "plugins.cap.panelThemes": "面板主題",
+  "plugins.errInvalidPanelTheme": "插件的面板主題無效（顏色、對比或素材不符規定）。",
+  "plugins.catalogRequiresApp": "需要 Agent Pets {version} 或更新版本",
+  "plugins.sectionPanelThemes": "面板主題",
+  "plugins.cap.panelThemesCount": "面板主題（{count}）",
+  "plugins.cap.panelThemesActive": "面板主題使用中"
 }

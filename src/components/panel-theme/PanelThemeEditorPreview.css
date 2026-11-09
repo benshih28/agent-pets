@@ -1,0 +1,255 @@
+/* 主題編輯器的預覽：只讀語意層 token（在 .panel-theme-preview 上依草稿重新解析），
+   不寫任何顏色字面值；懸停狀態與 Button.vue 相同，往文字色混 12%。 */
+/* 預覽欄：父層用 max-height 給高度上限（none = 只依欄寬縮放），縮圖置中。 */
+.ep-slot {
+  display: flex;
+  min-width: 0;
+  max-height: var(--ep-max-height, none);
+  justify-content: center;
+}
+
+.editor-preview {
+  --panel-theme-background: initial;
+
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--organic-radius-lg);
+  background: var(--panel-theme-background, var(--color-bg));
+  color: var(--color-text);
+  font-family: var(--organic-font-body);
+  font-size: var(--organic-font-body-sm);
+}
+
+/* 寬度由元件以 inline style 固定（STAGE_WIDTH），再以 zoom 縮放；兩欄讓縮圖接近面板的比例。 */
+.ep-content {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.ep-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ep-card,
+.ep-permission {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--organic-radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--organic-card-shadow);
+}
+
+.ep-heading {
+  overflow: hidden;
+  font-family: var(--organic-font-heading);
+  font-size: var(--organic-font-heading-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-row,
+.ep-permission-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ep-permission-head {
+  justify-content: space-between;
+}
+
+.ep-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--state-success);
+}
+
+.ep-text,
+.ep-muted,
+.ep-info,
+.ep-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-muted {
+  color: var(--color-text-3);
+}
+
+.ep-info {
+  color: var(--color-info);
+}
+
+.ep-link {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+}
+
+.ep-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ep-chip {
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-pill);
+}
+
+.ep-success {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
+.ep-warn {
+  background: color-mix(in srgb, var(--color-warn) 12%, transparent);
+  color: var(--color-warn);
+}
+
+.ep-buttons,
+.ep-permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ep-permission-actions {
+  justify-content: flex-end;
+}
+
+.ep-button {
+  padding: 3px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--organic-radius-sm);
+  /* 與 Button.vue 相同：按鈕標籤用內文字體。 */
+  font-family: var(--organic-font-body);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.ep-primary {
+  border-color: var(--color-accent-hover);
+  background: var(--color-accent-hover);
+  color: var(--color-on-accent);
+}
+
+.ep-primary.ep-hover {
+  border-color: color-mix(in srgb, var(--color-accent-hover) 88%, var(--color-text));
+  background: color-mix(in srgb, var(--color-accent-hover) 88%, var(--color-text));
+}
+
+.ep-secondary {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.ep-focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.ep-disabled {
+  opacity: 0.55;
+}
+
+.ep-deny {
+  color: var(--color-danger);
+}
+
+.ep-menu,
+.ep-toast,
+.ep-dialog {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--organic-radius-sm);
+  background: var(--color-overlay);
+  box-shadow: var(--organic-card-shadow);
+}
+
+.ep-menu {
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+}
+
+.ep-menu-item {
+  overflow: hidden;
+  padding: 2px var(--space-1);
+  border-radius: var(--organic-radius-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-menu-hover {
+  background: var(--color-hover);
+}
+
+.ep-menu-danger {
+  color: var(--color-danger);
+}
+
+.ep-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1);
+  color: var(--color-success);
+}
+
+.ep-toast span {
+  overflow: hidden;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-scrim {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2);
+  border-radius: var(--organic-radius-md);
+  background: var(--color-scrim);
+}
+
+.ep-dialog {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+}
+
+.ep-dialog-title {
+  overflow: hidden;
+  font-family: var(--organic-font-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-command {
+  overflow: hidden;
+  padding: 2px var(--space-1);
+  border-radius: var(--organic-radius-sm);
+  background: var(--color-sunken);
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

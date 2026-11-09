@@ -38,8 +38,9 @@ export function parsePermissionUnit(unit: string): PermissionEntry {
   if (kind === 'secrets') return entry('data', 'high')
   if (kind === 'storage' || kind === 'schedule' || kind === 'agentStatus') return entry('data', 'medium')
   if (kind === 'contributes') {
-    const name = detail.startsWith('skins:') ? 'skins' : detail
-    if (name === 'skins' || KNOWN_CONTRIBUTIONS.has(name)) return entry('display', 'low')
+    if (detail === 'panelThemeFonts') return entry('display', 'medium')
+    const name = /^(?:skins|panelThemes):[1-9]\d*$/.test(detail) ? detail.slice(0, detail.indexOf(':')) : detail
+    if (name === 'skins' || name === 'panelThemes' || KNOWN_CONTRIBUTIONS.has(name)) return entry('display', 'low')
   }
   // 不認得的單位一律當成高風險資料類，避免新權限被悄悄降級顯示。
   return entry('data', 'high', false)
@@ -62,6 +63,9 @@ export function permissionUnitsOfPlan(plan: Pick<PluginInstallPlan, 'permissions
   if (plan.contributes?.badge) units.push('contributes:badge')
   if (plan.contributes?.skins?.length) units.push(`contributes:skins:${plan.contributes.skins.length}`)
   if (plan.contributes?.eventSource) units.push('contributes:eventSource')
+  const panelThemes = plan.contributes?.panelThemes ?? []
+  if (panelThemes.length) units.push(`contributes:panelThemes:${panelThemes.length}`)
+  if (panelThemes.some(theme => theme.fonts.length > 0)) units.push('contributes:panelThemeFonts')
   return units
 }
 

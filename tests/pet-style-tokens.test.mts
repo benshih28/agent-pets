@@ -43,3 +43,20 @@ test('the quota tooltip does not nest a backdrop-filter inside the glass status 
   const tooltip = css.slice(css.indexOf('.quota-tooltip {'), css.indexOf('.quota-tooltip-row {'))
   assert.doesNotMatch(tooltip, /backdrop-filter/)
 })
+
+test('the pet permission bubble never grows past the reserved headroom, so the source and risk badge stay on screen', async () => {
+  const { QUOTA_TOOLTIP_HEADROOM_H } = await import('../src/utils/pet-window-height.ts')
+  const runtime = readFileSync('electron/main/runtime.ts', 'utf8')
+  assert.match(runtime, new RegExp(`PET_WINDOW_TOP_HEADROOM = ${QUOTA_TOOLTIP_HEADROOM_H}\\b`))
+  assert.match(readFileSync('src/styles/tokens.css', 'utf8'), new RegExp(`--pet-bubble-headroom: ${QUOTA_TOOLTIP_HEADROOM_H}px;`))
+  const bubble = readFileSync('src/components/permission/PermissionBubble.vue', 'utf8')
+  assert.match(bubble, /\.permission-request \{[^}]*max-height: calc\(var\(--pet-bubble-headroom\) - 4px\);[^}]*flex-direction: column;/)
+  // 只有指令細節區會縮短或捲動；標題、風險徽章、倒數與按鈕不縮。
+  assert.match(bubble, /\.permission-request > \* \{\n {2}flex: none;\n\}/)
+  assert.match(bubble, /\.permission-request > \.permission-details \{[^}]*min-height: 0;[^}]*overflow-y: auto;/)
+})
+
+test('state dots stay visible under forced colors (the shape still carries the state)', () => {
+  assert.match(readFileSync('src/components/DesktopPet.css', 'utf8'), /@media \(forced-colors: active\) \{\n {2}\.line-dot \{\n {4}background: CanvasText !important;/)
+  assert.match(readFileSync('src/components/StatusPanel.css', 'utf8'), /@media \(forced-colors: active\) \{\n {2}\.status-panel :deep\(\.session-status-dot\) \{\n {4}background: CanvasText;/)
+})

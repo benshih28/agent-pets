@@ -6,6 +6,9 @@ import { PRESENTATION_REACTIONS, type PresentationReaction } from '../src/types/
 import { writeJsonAtomic } from './desktop-preferences.ts'
 import type { PluginFeedController } from './plugin-feed.ts'
 import type { PluginNetLimits, PluginNetworkClient } from './plugin-net.ts'
+import { clonePluginThemeSnapshot, type PluginThemeSnapshot } from '../src/types/plugin-theme.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_RPC_MAX_BYTES = 256 * 1024
 export const PLUGIN_RPC_ID_MAX_LENGTH = 64
@@ -56,6 +59,8 @@ export interface PluginBrokerOptions {
   onAgentStatusGet?: (pluginId: string) => unknown | { ok: false; error: PluginErrorCode }
   onAgentEmit?: (pluginId: string, event: unknown) => unknown | { ok: false; error: PluginErrorCode }
   onBadgeSet?: (pluginId: string, badge: unknown) => unknown | { ok: false; error: PluginErrorCode }
+  /** 目前的插件主題快照；所有插件拿到相同內容，不需要權限（見 docs/plugins/panel-themes.md）。 */
+  onThemeGet?: () => PluginThemeSnapshot | null
 }
 
 type RpcResponse = { id: string; ok: true; value: unknown } | { id: string; ok: false; error: PluginErrorCode }
@@ -67,16 +72,8 @@ interface PluginStorageState {
   maxBytes: number
 }
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 const STORAGE_KEY_FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor'])
-const KNOWN_METHODS = new Set([
-  'feed.notify', 'pet.react', 'pet.status', 'agent.emit', 'badge.set', 'storage.get', 'storage.set', 'storage.remove',
-  'log.info', 'log.warn', 'log.error', 'net.fetch', 'net.requestHost', 'secrets.get', 'settings.get',
-])
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
+type BrokerMethodHandler = (pluginId: string, context: PluginBrokerContext, args: unknown[], method: string) => unknown
 
 function isJsonValue(value: unknown, depth = 0, seen = new Set<object>()): boolean {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
@@ -146,6 +143,7 @@ export class PluginBroker {
   private readonly onAgentStatusGet: PluginBrokerOptions['onAgentStatusGet']
   private readonly onAgentEmit: PluginBrokerOptions['onAgentEmit']
   private readonly onBadgeSet: PluginBrokerOptions['onBadgeSet']
+  private readonly onThemeGet: PluginBrokerOptions['onThemeGet']
   private readonly now: () => number
   private readonly onLog: PluginBrokerOptions['onLog']
   private readonly storage = new Map<string, PluginStorageState>()
@@ -166,6 +164,7 @@ export class PluginBroker {
     this.onAgentStatusGet = options.onAgentStatusGet
     this.onAgentEmit = options.onAgentEmit
     this.onBadgeSet = options.onBadgeSet
+    this.onThemeGet = options.onThemeGet
     this.now = options.now ?? Date.now
     this.onLog = options.onLog
   }
@@ -174,7 +173,7 @@ export class PluginBroker {
     const id = isRecord(rawRequest) && typeof rawRequest.id === 'string' && rawRequest.id.length <= PLUGIN_RPC_ID_MAX_LENGTH
       ? rawRequest.id
       : null
-    if (!PLUGIN_ID.test(pluginId) || !isRecord(rawRequest)) {
+    if (!isPluginId(pluginId) || !isRecord(rawRequest)) {
       this.recordDiagnostic(pluginId, 'invalid_request')
       return { ok: false, error: 'invalid_request' }
     }
@@ -189,7 +188,7 @@ export class PluginBroker {
     }
     if (!isJsonValue(rawRequest) || !id || id.length === 0
       || Object.keys(rawRequest).some(key => !['id', 'method', 'args'].includes(key))
-      || typeof rawRequest.method !== 'string' || !KNOWN_METHODS.has(rawRequest.method)
+      || typeof rawRequest.method !== 'string' || !Object.hasOwn(this.handlers, rawRequest.method)
       || !Array.isArray(rawRequest.args) || rawRequest.args.length > 32) {
       this.recordDiagnostic(pluginId, 'invalid_request', typeof rawRequest.method === 'string' ? rawRequest.method : undefined)
       return id ? { id, ok: false, error: 'invalid_request' } : { ok: false, error: 'invalid_request' }
@@ -224,12 +223,12 @@ export class PluginBroker {
   }
 
   listLogs(pluginId: string): PluginBrokerLogEntry[] {
-    if (!PLUGIN_ID.test(pluginId)) return []
+    if (!isPluginId(pluginId)) return []
     return (this.logs.get(pluginId) ?? []).map(entry => ({ ...entry }))
   }
 
   listDiagnostics(pluginId: string): PluginBrokerDiagnostic[] {
-    if (!PLUGIN_ID.test(pluginId)) return []
+    if (!isPluginId(pluginId)) return []
     return (this.diagnostics.get(pluginId) ?? []).map(entry => ({ ...entry }))
   }
 
@@ -242,7 +241,7 @@ export class PluginBroker {
   }
 
   flushStorage(pluginId: string): boolean {
-    if (!PLUGIN_ID.test(pluginId)) return false
+    if (!isPluginId(pluginId)) return false
     const state = this.storage.get(pluginId)
     if (!state?.loaded || !state.available) return false
     let maxBytes = state.maxBytes
@@ -287,14 +286,20 @@ export class PluginBroker {
   }
 
   private dispatch(pluginId: string, context: PluginBrokerContext, method: string, args: unknown[]): unknown {
-    if (method === 'feed.notify') {
+    const handler = this.handlers[method]
+    return handler ? handler(pluginId, context, args, method) : { ok: false, error: 'invalid_request' }
+  }
+
+  // 方法名稱 → 處理函式的查表；同時是 handle() 的方法白名單，新增方法只需要加在這裡。
+  private readonly handlers: Readonly<Record<string, BrokerMethodHandler>> = Object.freeze({
+    'feed.notify': (pluginId, context, args) => {
       if (!context.manifest.contributes.feed || args.length !== 1) return { ok: false, error: 'not_permitted' }
       const result = this.feed.submit(pluginId, args[0])
       return result.accepted
         ? { itemId: result.itemId, delivery: result.delivery }
         : { ok: false, error: result.error }
-    }
-    if (method === 'pet.react') {
+    },
+    'pet.react': (pluginId, context, args) => {
       if (!context.manifest.contributes.reaction) return { ok: false, error: 'not_permitted' }
       if (context.dndEnabled) return { ok: false, error: 'disabled' }
       const request = normalizeReactionArgs(args)
@@ -303,87 +308,100 @@ export class PluginBroker {
       if (!rate.allowed) return { ok: false, error: rate.error }
       const result = this.onReaction(pluginId, request)
       return result.ok ? { accepted: true } : { ok: false, error: result.error ?? 'invalid_request' }
-    }
-    if (method === 'pet.status') {
+    },
+    'pet.status': (pluginId, context, args) => {
       if (!context.manifest.permissions.agentStatus) return { ok: false, error: 'not_permitted' }
       if (args.length !== 0) return { ok: false, error: 'invalid_request' }
       return this.onAgentStatusGet?.(pluginId) ?? { ok: false, error: 'agent_status_unavailable' }
-    }
-    if (method === 'agent.emit') {
+    },
+    'agent.emit': (pluginId, context, args) => {
       if (!context.manifest.contributes.eventSource) return { ok: false, error: 'not_permitted' }
       if (args.length !== 1) return { ok: false, error: 'invalid_request' }
       return this.onAgentEmit?.(pluginId, args[0]) ?? { ok: false, error: 'disabled' }
-    }
-    if (method === 'badge.set') {
+    },
+    'badge.set': (pluginId, context, args) => {
       if (!context.manifest.contributes.badge) return { ok: false, error: 'not_permitted' }
       if (args.length !== 1) return { ok: false, error: 'invalid_request' }
       return this.onBadgeSet?.(pluginId, args[0]) ?? { ok: false, error: 'disabled' }
-    }
-    if (method === 'net.fetch') {
+    },
+    'net.fetch': (pluginId, context, args) => {
       if (!context.manifest.permissions.network) return { ok: false, error: 'not_permitted' }
       if (args.length < 1 || args.length > 2 || !this.network || !context.netLimits) {
         return { ok: false, error: !this.network || !context.netLimits ? 'disabled' : 'invalid_request' }
       }
       return this.network.fetch(pluginId, args[0], args[1], context.grantedHosts ?? context.manifest.permissions.network.hosts, context.netLimits)
         .then(result => result.ok ? result.value : { ok: false, error: result.error })
-    }
-    if (method === 'net.requestHost') {
+    },
+    'net.requestHost': (pluginId, context, args) => {
       if (!context.manifest.permissions.network?.userGranted) return { ok: false, error: 'not_permitted' }
       if (args.length !== 2) return { ok: false, error: 'invalid_request' }
       if (!this.onRequestHost) return { ok: false, error: 'disabled' }
       return this.onRequestHost(pluginId, args[0], args[1])
-    }
-    if (method === 'secrets.get') {
+    },
+    'secrets.get': (pluginId, context, args) => {
       const declared = context.manifest.permissions.secrets ?? []
       if (args.length !== 1 || typeof args[0] !== 'string') return { ok: false, error: 'invalid_request' }
       if (!declared.includes(args[0])) return { ok: false, error: 'not_permitted' }
       return this.onSecretGet?.(pluginId, args[0]) ?? { ok: false, error: 'secret_unavailable' }
-    }
-    if (method === 'settings.get') {
+    },
+    'settings.get': (pluginId, context, args) => {
       if (args.length !== 0) return { ok: false, error: 'invalid_request' }
       if (!context.manifest.contributes.settings) return { ok: false, error: 'not_permitted' }
       return this.onSettingsGet?.(pluginId) ?? { ok: false, error: 'disabled' }
+    },
+    // 顯示用資料，與使用者在畫面上看到的相同；不含任何插件 id、圖片或路徑，所以不需要權限。
+    'theme.get': (_pluginId, _context, args) => {
+      if (args.length !== 0) return { ok: false, error: 'invalid_request' }
+      const snapshot = this.onThemeGet?.()
+      return snapshot ? clonePluginThemeSnapshot(snapshot) : { ok: false, error: 'disabled' }
+    },
+    'storage.get': (pluginId, context, args, method) => this.handleStorage(pluginId, context, method, args),
+    'storage.set': (pluginId, context, args, method) => this.handleStorage(pluginId, context, method, args),
+    'storage.remove': (pluginId, context, args, method) => this.handleStorage(pluginId, context, method, args),
+    'log.info': (pluginId, _context, args, method) => this.handleLog(pluginId, method, args),
+    'log.warn': (pluginId, _context, args, method) => this.handleLog(pluginId, method, args),
+    'log.error': (pluginId, _context, args, method) => this.handleLog(pluginId, method, args),
+  })
+
+  private handleStorage(pluginId: string, context: PluginBrokerContext, method: string, args: unknown[]): unknown {
+    if (!context.manifest.permissions.storage || args.length !== (method === 'storage.set' ? 2 : 1)) {
+      return { ok: false, error: context.manifest.permissions.storage ? 'invalid_request' : 'not_permitted' }
     }
-    if (method.startsWith('storage.')) {
-      if (!context.manifest.permissions.storage || args.length !== (method === 'storage.set' ? 2 : 1)) {
-        return { ok: false, error: context.manifest.permissions.storage ? 'invalid_request' : 'not_permitted' }
-      }
-      if (!safeLimit(context.storageBytesPerPlugin)) return { ok: false, error: 'disabled' }
-      const key = args[0]
-      if (!safeStorageKey(key)) return { ok: false, error: 'invalid_request' }
-      const state = this.loadStorage(pluginId, context.storageBytesPerPlugin)
-      if (!state.available) return { ok: false, error: 'disabled' }
-      if (method === 'storage.get') return { found: Object.hasOwn(state.values, key), value: state.values[key] ?? null }
-      const next = { ...state.values }
-      if (method === 'storage.remove') {
-        const removed = Object.hasOwn(next, key)
-        delete next[key]
-        state.values = next
-        if (removed) this.scheduleStorageFlush(pluginId)
-        return { removed }
-      }
-      const value = args[1]
-      if (!isJsonValue(value)) return { ok: false, error: 'invalid_request' }
-      next[key] = JSON.parse(JSON.stringify(value)) as unknown
-      if (Buffer.byteLength(JSON.stringify(next), 'utf8') > context.storageBytesPerPlugin) return { ok: false, error: 'too_large' }
+    if (!safeLimit(context.storageBytesPerPlugin)) return { ok: false, error: 'disabled' }
+    const key = args[0]
+    if (!safeStorageKey(key)) return { ok: false, error: 'invalid_request' }
+    const state = this.loadStorage(pluginId, context.storageBytesPerPlugin)
+    if (!state.available) return { ok: false, error: 'disabled' }
+    if (method === 'storage.get') return { found: Object.hasOwn(state.values, key), value: state.values[key] ?? null }
+    const next = { ...state.values }
+    if (method === 'storage.remove') {
+      const removed = Object.hasOwn(next, key)
+      delete next[key]
       state.values = next
-      this.scheduleStorageFlush(pluginId)
-      return { stored: true }
+      if (removed) this.scheduleStorageFlush(pluginId)
+      return { removed }
     }
-    if (method.startsWith('log.')) {
-      if (args.length !== 1 || !Array.isArray(args[0]) || args[0].length > 32) return { ok: false, error: 'invalid_request' }
-      const level = method.slice('log.'.length) as PluginBrokerLogEntry['level']
-      const values = args[0].map(normalizeLogText)
-      if (values.some(value => value === null)) return { ok: false, error: 'invalid_request' }
-      const entry: PluginBrokerLogEntry = { at: this.safeNow(), level, message: (values as string[]).join(' ').slice(0, PLUGIN_LOG_MESSAGE_MAX_LENGTH) }
-      const records = this.logs.get(pluginId) ?? []
-      records.push(entry)
-      while (records.length > PLUGIN_LOG_MAX_ENTRIES) records.shift()
-      this.logs.set(pluginId, records)
-      try { this.onLog?.(pluginId, entry) } catch {}
-      return { logged: true }
-    }
-    return { ok: false, error: 'invalid_request' }
+    const value = args[1]
+    if (!isJsonValue(value)) return { ok: false, error: 'invalid_request' }
+    next[key] = JSON.parse(JSON.stringify(value)) as unknown
+    if (Buffer.byteLength(JSON.stringify(next), 'utf8') > context.storageBytesPerPlugin) return { ok: false, error: 'too_large' }
+    state.values = next
+    this.scheduleStorageFlush(pluginId)
+    return { stored: true }
+  }
+
+  private handleLog(pluginId: string, method: string, args: unknown[]): unknown {
+    if (args.length !== 1 || !Array.isArray(args[0]) || args[0].length > 32) return { ok: false, error: 'invalid_request' }
+    const level = method.slice('log.'.length) as PluginBrokerLogEntry['level']
+    const values = args[0].map(normalizeLogText)
+    if (values.some(value => value === null)) return { ok: false, error: 'invalid_request' }
+    const entry: PluginBrokerLogEntry = { at: this.safeNow(), level, message: (values as string[]).join(' ').slice(0, PLUGIN_LOG_MESSAGE_MAX_LENGTH) }
+    const records = this.logs.get(pluginId) ?? []
+    records.push(entry)
+    while (records.length > PLUGIN_LOG_MAX_ENTRIES) records.shift()
+    this.logs.set(pluginId, records)
+    try { this.onLog?.(pluginId, entry) } catch {}
+    return { logged: true }
   }
 
   private loadStorage(pluginId: string, maxBytes: number): PluginStorageState {
@@ -456,22 +474,13 @@ export class PluginBroker {
     this.storageTimers.set(pluginId, timer)
   }
 
-  private safeContext(pluginId: string): PluginBrokerContext | null {
-    try {
-      const context = this.getContext(pluginId)
-      return context && context.pluginsEnabled && context.enabled ? context : null
-    } catch {
-      return null
-    }
-  }
-
   private reject(pluginId: string, id: string, error: PluginErrorCode, method?: string): RpcResponse {
     this.recordDiagnostic(pluginId, error, method)
     return { id, ok: false, error }
   }
 
   private recordDiagnostic(pluginId: string, code: PluginErrorCode, method?: string): void {
-    if (!PLUGIN_ID.test(pluginId)) return
+    if (!isPluginId(pluginId)) return
     const records = this.diagnostics.get(pluginId) ?? []
     records.push({ at: this.safeNow(), code, ...(method ? { method: method.slice(0, 64) } : {}) })
     while (records.length > PLUGIN_LOG_MAX_ENTRIES) records.shift()

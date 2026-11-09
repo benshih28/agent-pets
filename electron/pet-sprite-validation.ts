@@ -186,6 +186,44 @@ export function readImageOrientation(bytes: Uint8Array): number {
   return 1
 }
 
+function isPngAnimated(bytes: Uint8Array): boolean {
+  // APNG：acTL chunk 必須出現在第一個 IDAT 之前。
+  let offset = 8
+  while (offset + 12 <= bytes.length) {
+    const length = u32be(bytes, offset)
+    const type = String.fromCharCode(bytes[offset + 4]!, bytes[offset + 5]!, bytes[offset + 6]!, bytes[offset + 7]!)
+    if (type === 'acTL') return true
+    if (type === 'IDAT' || type === 'IEND' || offset + 12 + length > bytes.length) return false
+    offset += 12 + length
+  }
+  return false
+}
+
+function isWebpAnimated(bytes: Uint8Array): boolean {
+  if (bytes.length >= 21 && String.fromCharCode(bytes[12]!, bytes[13]!, bytes[14]!, bytes[15]!) === 'VP8X'
+    && (bytes[20]! & 0x02) !== 0) return true
+  let offset = 12
+  while (offset + 8 <= bytes.length) {
+    const type = String.fromCharCode(bytes[offset]!, bytes[offset + 1]!, bytes[offset + 2]!, bytes[offset + 3]!)
+    if (type === 'ANIM' || type === 'ANMF') return true
+    const length = (bytes[offset + 4]! | (bytes[offset + 5]! << 8) | (bytes[offset + 6]! << 16) | (bytes[offset + 7]! << 24)) >>> 0
+    if (offset + 8 + length > bytes.length) return false
+    offset += 8 + length + (length & 1)
+  }
+  return false
+}
+
+/**
+ * 動畫的檔頭走訪：PNG 的 `acTL` 在 `IDAT` 之前；WebP 的 VP8X 動畫
+ * 旗標（byte 20、bit 0x02）或 ANIM/ANMF chunk。JPEG 永遠不是動畫。
+ * O(chunks)；不做任何解碼。
+ */
+export function readImageAnimated(bytes: Uint8Array): boolean {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50) return isPngAnimated(bytes)
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57) return isWebpAnimated(bytes)
+  return false
+}
+
 export function readImageSize(bytes: Uint8Array): ImageSize | null {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50) return readPngSize(bytes)
   if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57) return readWebpSize(bytes)

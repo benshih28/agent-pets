@@ -13,6 +13,7 @@ type PanelViewControllerPort = {
   close(reason: 'closed' | 'renderer_unavailable', openToken?: number): void
   setLayout(openToken: number, insets: PluginPanelInsets, windowSize: PluginPanelSize): boolean
   handleApiRequest(sender: WebContents, method: unknown, args: unknown): unknown
+  initialTheme(sender: WebContents): unknown
 }
 type PluginPanelContextPort = {
   pluginsEnabled: boolean
@@ -103,6 +104,19 @@ export function registerPluginPanelUiIpc(deps: PluginPanelUiIpcDependencies): vo
   onWithSenderGuard(deps.ipcMain, IPC_CHANNELS.pluginPanelViewClose, deps.assertPluginPanelSender, (_event, openToken: unknown) => {
     if (typeof openToken === 'number' && Number.isSafeInteger(openToken)) {
       deps.getPluginPanelViewController()?.close('closed', openToken)
+    }
+  })
+  // 插件頁面的 preload 以 sendSync 取第一份 `--ap-*` 快照，頁面的 script 執行前就生效。一定要設定
+  // returnValue（否則頁面會卡住）；只回給開啟中 panelView 的主 frame，其他一律 null。
+  deps.ipcMain.on(IPC_CHANNELS.pluginPanelThemeInitial, event => {
+    if (event.senderFrame !== event.sender.mainFrame) {
+      event.returnValue = null
+      return
+    }
+    try {
+      event.returnValue = deps.getPluginPanelViewController()?.initialTheme(event.sender) ?? null
+    } catch {
+      event.returnValue = null
     }
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginPanelApi, (event, method: unknown, args: unknown) => {

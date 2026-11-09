@@ -169,8 +169,9 @@ function percent(item: AchievementView): number {
   margin-left: var(--space-2);
   padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--text-bright);
+  /* 文字放在實心強調色上用 accentHover／onAccent（驗證器保證 >= 4.5:1）。 */
+  background: var(--accent-hover);
+  color: var(--accent-on);
   font-size: var(--font-xs);
   font-style: normal;
 }

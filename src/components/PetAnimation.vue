@@ -129,7 +129,12 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const auraInnerRef = ref<HTMLCanvasElement | null>(null)
 const auraOuterRef = ref<HTMLCanvasElement | null>(null)
 const imgRef = ref<HTMLImageElement | null>(null)
-let auraTint = 'rgb(235, 242, 255)'
+// 光暈色由 sprite 像素算出；算不出來時用色盤的高光色（--organic-highlight），不寫死顏色。
+function paletteHighlight(): string {
+  if (typeof document === 'undefined') return 'transparent'
+  return getComputedStyle(document.documentElement).getPropertyValue('--organic-highlight').trim() || 'transparent'
+}
+let auraTint = paletteHighlight()
 let frameTimerId: ReturnType<typeof setTimeout> | null = null
 let animationFinished = false
 let currentFrame = 0

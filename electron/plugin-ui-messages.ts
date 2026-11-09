@@ -1,4 +1,5 @@
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
 
 export const PLUGIN_UI_MESSAGE_MAX_BYTES = 256 * 1024
 export const PLUGIN_UI_MESSAGE_LIMIT_PER_SECOND = 20
@@ -40,7 +41,7 @@ export class PluginUiMessageGuard {
   }
 
   consume(pluginId: string, direction: PluginUiMessageDirection, value: unknown): PluginUiMessageError | null {
-    if (!/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(pluginId) || !isJsonValue(value)) return 'invalid_request'
+    if (!isPluginId(pluginId) || !isJsonValue(value)) return 'invalid_request'
     let serialized: string
     try { serialized = JSON.stringify(value) } catch { return 'invalid_request' }
     if (Buffer.byteLength(serialized, 'utf8') > PLUGIN_UI_MESSAGE_MAX_BYTES) return 'too_large'

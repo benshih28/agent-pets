@@ -107,9 +107,12 @@ function decide(decision: PermissionDecisionValue): void {
   flex-direction: column;
   gap: var(--organic-space-3, var(--space-3));
   padding: 15px var(--organic-space-4, var(--space-4));
+  border: 2px solid var(--accent);
   border-radius: var(--organic-radius-md, var(--radius-md));
-  background: var(--accent);
-  color: var(--accent-bright);
+  /* 以浮層表面承載內容、強調色只做外框：提示、倒數與風險徽章的文字都放在
+     驗證器保證 >= 4.5:1 的表面上（舊版放在強調色填色上，淺色只有 3.29:1 甚至更低）。 */
+  background: var(--surface-overlay);
+  color: var(--text-primary);
   box-shadow: var(--shadow-hero, var(--shadow-panel));
 }
 
@@ -140,7 +143,7 @@ function decide(decision: PermissionDecisionValue): void {
   overflow: hidden;
   font-size: var(--font-body-sm, var(--font-sm));
   line-height: 1.45;
-  opacity: 0.86;
+  color: var(--text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -158,7 +161,7 @@ function decide(decision: PermissionDecisionValue): void {
 
 .inline-permission-warning {
   margin: 0;
-  color: var(--accent-bright);
+  color: var(--text-danger);
   font-size: var(--font-body-sm, var(--font-sm));
   font-weight: var(--weight-medium);
   line-height: 1.45;
@@ -186,25 +189,26 @@ function decide(decision: PermissionDecisionValue): void {
 }
 
 .permission-allow {
-  border-color: var(--accent-bright);
-  background: var(--accent-bright);
-  color: var(--accent-text, var(--text-primary));
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--accent-on);
 }
 
+/* 與 Button 的主要按鈕相同：往文字色混 12%，onAccent 對比只增不減。 */
 .permission-allow:hover:not(:disabled) {
-  border-color: var(--accent-soft);
-  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent-hover) 88%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent-hover) 88%, var(--text-primary));
 }
 
 .permission-deny {
-  border-color: var(--border-on-accent, var(--border-strong));
+  border-color: var(--border-strong);
   background: transparent;
-  color: var(--accent-bright);
+  color: var(--text-primary);
 }
 
 .permission-deny:hover:not(:disabled) {
-  border-color: var(--accent-bright);
-  background: var(--accent-on-hover, var(--surface-raised-hover));
-  color: var(--accent-bright);
+  border-color: var(--text-primary);
+  background: var(--surface-raised-hover);
+  color: var(--text-primary);
 }
 </style>

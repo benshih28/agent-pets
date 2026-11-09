@@ -1,5 +1,7 @@
+import { PLUGIN_ID_SOURCE } from '../types/id-patterns.ts'
+
 const REGULAR_PET_ID_PATTERN = /^[A-Za-z0-9._-]+$/
-const PLUGIN_SKIN_PET_ID_PATTERN = /^plugin:([a-z0-9-]{3,48}):([a-z0-9-]{1,32})$/
+const PLUGIN_SKIN_PET_ID_PATTERN = new RegExp(`^plugin:(${PLUGIN_ID_SOURCE}):([a-z0-9-]{1,32})$`)
 
 export interface PluginSkinPetIdParts {
   pluginId: string

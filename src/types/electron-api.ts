@@ -14,6 +14,8 @@ import type { AgentSession } from './agent'
 import type { AgentAdapterId } from './agent-adapter'
 import type { LocalServerHealthSnapshot, LocalServerId } from './reliability'
 import type { PresentationIntent, PresentationStatusUpdate } from './presentation'
+import type { PanelThemeIpcResult, PanelThemeMode, PanelThemeRef, PanelThemeState, PanelThemeUserImageOptions, PetThemeState } from './panel-theme'
+import type { PanelThemeValidateIpcResult, UserPanelThemeDefinition, UserPanelThemeIpcResult } from './panel-theme-user'
 import type {
   PluginBadgeView,
   PluginBrokerDiagnostic,
@@ -68,6 +70,25 @@ export interface ElectronAPI {
       onPluginEventSourceChanged: (callback: (statuses: PluginEventSourceStatusView[]) => void) => () => void
       onPluginSkinsChanged: (callback: (removedPetIds: string[]) => void) => () => void
       notifyPluginSkinFallback: (petIds: string[]) => Promise<number>
+      getPanelThemeState: () => Promise<PanelThemeIpcResult>
+      setPanelThemeAppearance: (appearance: { mode: PanelThemeMode; forcedColors: boolean }) => void
+      setPanelThemeSlot: (mode: PanelThemeMode, ref: PanelThemeRef | null) => Promise<PanelThemeIpcResult>
+      importPanelThemeUserImage: (ref: PanelThemeRef, mode: PanelThemeMode) => Promise<PanelThemeIpcResult>
+      clearPanelThemeUserImage: (ref: PanelThemeRef, mode: PanelThemeMode) => Promise<PanelThemeIpcResult>
+      setPanelThemeUserImageOptions: (ref: PanelThemeRef, mode: PanelThemeMode, options: PanelThemeUserImageOptions) => Promise<PanelThemeIpcResult>
+      validatePanelTheme: (definition: unknown) => Promise<PanelThemeValidateIpcResult>
+      listUserPanelThemes: () => Promise<UserPanelThemeIpcResult>
+      createUserPanelTheme: (name: string, definition: UserPanelThemeDefinition) => Promise<UserPanelThemeIpcResult>
+      /** 有 `name` 時名稱與內容在主程序中一次寫入（原子性的存檔）。 */
+      updateUserPanelTheme: (id: string, definition: UserPanelThemeDefinition, name?: string) => Promise<UserPanelThemeIpcResult>
+      renameUserPanelTheme: (id: string, name: string) => Promise<UserPanelThemeIpcResult>
+      duplicateUserPanelTheme: (id: string, name: string) => Promise<UserPanelThemeIpcResult>
+      deleteUserPanelTheme: (id: string) => Promise<UserPanelThemeIpcResult>
+      exportUserPanelTheme: (id: string) => Promise<UserPanelThemeIpcResult>
+      importUserPanelTheme: () => Promise<UserPanelThemeIpcResult>
+      getPetStatusTheme: () => Promise<PetThemeState>
+      onPetStatusThemeChanged: (callback: (state: PetThemeState) => void) => () => void
+      onPanelThemeChanged: (callback: (state: PanelThemeState) => void) => () => void
       completePluginFeed: (itemId: string) => Promise<boolean>
       openPluginFeedLink: (itemId: string) => Promise<boolean>
       getPluginPanelSnapshot: () => Promise<PluginPanelResult<PluginPanelSnapshot>>

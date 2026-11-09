@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { t } from '@/i18n'
+import { t, type TranslationKey } from '@/i18n'
 import { useAgentStore } from '@/stores/agentStore'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Select from '@/components/ui/Select.vue'
 import ToggleRow from '@/components/ui/ToggleRow.vue'
+import SettingsPanelTheme from '@/components/status-panel/SettingsPanelTheme.vue'
+import MyPanelThemes from '@/components/panel-theme/MyPanelThemes.vue'
 import { type PetThemePreference, PET_THEME_PREFERENCES, THEME_PREFERENCES, petThemePreference, setPetThemePreference, setThemePreference, themePreference } from '@/composables/useTheme'
 
 const store = useAgentStore()
 const resetPanelSize = () => window.electronAPI?.resetPanelSize?.()
-const petLabel = (option: PetThemePreference) =>
-  option === 'light' ? t('design.theme.petLight') : option === 'follow' ? t('design.theme.petFollow') : t('design.theme.petDark')
+const PET_LABEL: Record<PetThemePreference, TranslationKey> = { light: 'design.theme.petLight', follow: 'design.theme.petFollow', dark: 'design.theme.petDark' }
+const petLabel = (option: PetThemePreference) => t(PET_LABEL[option])
 const SCALES = [
   { value: 0.6, label: 'panel.sizeSmall' }, { value: 0.8, label: 'panel.sizeMedium' }, { value: 1.0, label: 'panel.sizeLarge' },
   { value: 1.2, label: 'panel.sizeXLarge' }, { value: 1.5, label: 'panel.sizeXXLarge' },
@@ -44,6 +46,12 @@ const scaleModel = computed({
         <option v-for="option in PET_THEME_PREFERENCES" :key="option" :value="option">{{ petLabel(option) }}</option>
       </Select>
     </div>
+  </Card>
+
+  <SettingsPanelTheme />
+
+  <Card :title="t('design.themeEditor.myThemes')" data-testid="appearance-my-themes">
+    <MyPanelThemes />
   </Card>
 
   <Card :title="t('petSize')">

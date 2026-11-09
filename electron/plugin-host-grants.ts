@@ -1,6 +1,7 @@
 import { isIP } from 'node:net'
 import { isValidPluginNetworkHost } from './plugin-manifest.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
 
 export const PLUGIN_HOST_REQUEST_LIMIT = 3
 export const PLUGIN_HOST_REQUEST_WINDOW_MS = 10 * 60 * 1_000
@@ -40,7 +41,7 @@ export class PluginHostGrantController {
 
   begin(pluginId: string, rawHost: unknown, rawReason: unknown, grantedHosts: readonly string[]): PluginHostGrantDecision {
     const host = normalizePluginHostRequest(rawHost)
-    if (!/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(pluginId) || !host || !normalizeReason(rawReason)) {
+    if (!isPluginId(pluginId) || !host || !normalizeReason(rawReason)) {
       return { ok: false, error: 'invalid_request' }
     }
     if (grantedHosts.some(item => item.toLowerCase() === host)) return { ok: true, host, alreadyGranted: true }

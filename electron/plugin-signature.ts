@@ -1,4 +1,6 @@
 import { createHash, createPublicKey, verify } from 'node:crypto'
+import { isRecord } from './value-guards.ts'
+import { isKeyFingerprint } from '../src/types/id-patterns.ts'
 
 export const PLUGIN_SIGNATURE_FILENAME = 'signature.json'
 export const PLUGIN_SIGNATURE_MAX_BYTES = 4 * 1024
@@ -15,10 +17,6 @@ export type PluginSignatureResult =
   | { status: 'unsigned' }
   | { status: 'valid'; fingerprint: string }
   | { status: 'invalid' }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function decodeCanonicalBase64(value: unknown, expectedBytes: number): Uint8Array | null {
   if (typeof value !== 'string' || value.length > 128 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null
@@ -63,7 +61,7 @@ export function pluginPublicKeyFingerprint(publicKey: Uint8Array): string | null
 }
 
 export function formatPluginKeyFingerprint(fingerprint: unknown): string | null {
-  if (typeof fingerprint !== 'string' || !/^[a-f0-9]{16}$/.test(fingerprint)) return null
+  if (!isKeyFingerprint(fingerprint)) return null
   return fingerprint.match(/.{4}/g)?.join(' ') ?? null
 }
 

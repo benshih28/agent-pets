@@ -7,6 +7,8 @@ import { isValidPluginNetworkHost } from './plugin-manifest.ts'
 import { isPluginCatalogUrl } from './plugin-catalog.ts'
 import { DEFAULT_PLUGIN_CATALOG_URL } from '../src/types/plugin-catalog.ts'
 import { writeJsonAtomic } from './desktop-preferences.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_PREFERENCES_FILENAME = 'plugin-preferences.json'
 export const PLUGIN_PREFERENCES_MAX_BYTES = 1024 * 1024
@@ -58,17 +60,8 @@ export const DEFAULT_PLUGIN_PREFERENCES = Object.freeze({
   plugins: Object.freeze({}),
 }) as PluginPreferences
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 const RESOURCE_KEYS = Object.keys(PLUGIN_RESOURCE_BOUNDS) as (keyof PluginResourceLimits)[]
 const PLUGIN_PREFERENCE_KEYS = new Set(['enabled', 'muted', 'rateLimitPer10Min', 'targetPetId', 'grantedHosts'])
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isPluginId(value: unknown): value is string {
-  return typeof value === 'string' && PLUGIN_ID.test(value)
-}
 
 function clonePluginPreferences(value: PluginPreferences): PluginPreferences {
   const plugins: Record<string, PluginInstancePreferences> = {}

@@ -4,7 +4,7 @@ export const PLUGIN_REGISTRY_ERROR_CODES = Object.freeze([
   'archive_too_large', 'invalid_archive', 'invalid_manifest', 'incompatible', 'missing_entry', 'missing_icon',
   'missing_panel_entry', 'invalid_html_location', 'invalid_icon', 'registry_unavailable', 'plan_not_found',
   'permission_reconsent_required', 'signature_invalid', 'signature_confirmation_required', 'filesystem_unsafe',
-  'install_failed', 'plugin_not_found',
+  'install_failed', 'plugin_not_found', 'invalid_panel_theme',
 ] as const)
 
 export type PluginRegistryError = typeof PLUGIN_REGISTRY_ERROR_CODES[number]
@@ -42,6 +42,13 @@ const ipcErrorCodeEntries = [
   'conflict',
   'invalid_project',
   'invalid_pet',
+  'theme_unavailable',
+  'image_invalid',
+  'image_too_large',
+  'image_not_allowed',
+  'theme_limit_reached',
+  'theme_not_found',
+  'theme_import_invalid',
 ] as const
 
 export const IPC_ERROR_CODES = Object.freeze([...new Set(ipcErrorCodeEntries)])

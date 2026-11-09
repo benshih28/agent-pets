@@ -1,4 +1,7 @@
 import type { PluginProtocolAssets } from './plugin-protocol.ts'
+import { PLUGIN_COMMAND_ID_PATTERN, PLUGIN_ID_PATTERN } from '../src/types/id-patterns.ts'
+
+// Worker 宿主的原始碼是字串；插件 id 與命令 id 規則以 RegExp 字面值內插進去，與主程序同一份來源。
 
 export const pluginHostAssets: PluginProtocolAssets = {
   'index.html': '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src agent-pets://plugin; worker-src agent-pets://plugin; connect-src \'none\'; img-src agent-pets://plugin; style-src agent-pets://plugin; frame-src \'none\'; object-src \'none\'; base-uri \'none\'; form-action \'none\'"></head><body><script type="module" src="agent-pets://plugin/_host/host.js"></script></body></html>',
@@ -17,7 +20,7 @@ window.addEventListener('message', (event) => {
       if (data.type === 'start' && typeof data.pluginId === 'string' && typeof data.entry === 'string') {
         const pluginId = data.pluginId
         const token = data.token
-        if (!/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(pluginId)
+        if (!${PLUGIN_ID_PATTERN}.test(pluginId)
           || typeof token !== 'string' || !/^[a-f0-9-]{36}$/.test(token) || workers.has(pluginId)) return
         try {
           const worker = new Worker('agent-pets://plugin/_host/worker-bootstrap.js', { type: 'module', name: pluginId })
@@ -73,7 +76,7 @@ window.addEventListener('message', (event) => {
       } else if (data.type === 'rpc-result' && typeof data.pluginId === 'string') {
         workers.get(data.pluginId)?.postMessage({ type: 'rpc-result', result: data.result })
       } else if (data.type === 'invoke-command' && typeof data.pluginId === 'string' && workers.has(data.pluginId)
-        && typeof data.commandId === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(data.commandId)) {
+        && typeof data.commandId === 'string' && ${PLUGIN_COMMAND_ID_PATTERN}.test(data.commandId)) {
         workers.get(data.pluginId)?.postMessage({ type: 'command-invoke', commandId: data.commandId })
       } else if (data.type === 'ui-message' && typeof data.pluginId === 'string' && workers.has(data.pluginId)) {
         workers.get(data.pluginId)?.postMessage({ type: 'ui-message', value: data.value })
@@ -82,6 +85,8 @@ window.addEventListener('message', (event) => {
         workers.get(data.pluginId)?.postMessage({ type: 'settings-changed', value: data.value })
       } else if (data.type === 'status-changed' && typeof data.pluginId === 'string' && Array.isArray(data.value)) {
         workers.get(data.pluginId)?.postMessage({ type: 'status-changed', value: data.value })
+      } else if (data.type === 'theme-changed' && data.value && typeof data.value === 'object' && !Array.isArray(data.value)) {
+        for (const worker of workers.values()) worker.postMessage({ type: 'theme-changed', value: data.value })
       }
   }
 })
@@ -102,6 +107,7 @@ const settingsListeners = new Set()
 const statusListeners = new Set()
 const uiListeners = new Set()
 const commandListeners = new Set()
+const themeListeners = new Set()
 let scheduleSequence = 0
 const blockedApis = [
   'indexedDB', 'caches', 'BroadcastChannel', 'Worker', 'SharedWorker', 'WebSocket',
@@ -242,6 +248,14 @@ const api = Object.freeze({
       return () => commandListeners.delete(callback)
     },
   }),
+  theme: Object.freeze({
+    get: () => rpc('theme.get', []),
+    onDidChange: (callback) => {
+      if (typeof callback !== 'function') throw Object.assign(new Error('invalid_request'), { code: 'invalid_request' })
+      themeListeners.add(callback)
+      return () => themeListeners.delete(callback)
+    },
+  }),
   ui: Object.freeze({
     postMessage: (value) => rpc('ui.postMessage', [value]),
     onMessage: (callback) => {
@@ -257,7 +271,7 @@ scope.onmessage = async ({ data }) => {
     const id = data.pluginId
     const entry = data.entry
     const token = data.token
-    if (typeof id !== 'string' || !/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(id)
+    if (typeof id !== 'string' || !${PLUGIN_ID_PATTERN}.test(id)
       || typeof token !== 'string' || !/^[a-f0-9-]{36}$/.test(token)
       || typeof entry !== 'string' || !/^(?!\/)(?!.*(?:^|\/)\.\.?\/)[^\\:]+\.js$/.test(entry)) return
     pluginId = id
@@ -280,8 +294,13 @@ scope.onmessage = async ({ data }) => {
     for (const item of data.value) {
       for (const listener of statusListeners) callSafely('pet.onStatusChange', listener, item)
     }
-  } else if (data.type === 'command-invoke' && typeof data.commandId === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(data.commandId)) {
+  } else if (data.type === 'command-invoke' && typeof data.commandId === 'string' && ${PLUGIN_COMMAND_ID_PATTERN}.test(data.commandId)) {
     for (const listener of commandListeners) callSafely('commands.onInvoke', listener, data.commandId)
+  } else if (data.type === 'theme-changed' && data.value && typeof data.value === 'object' && !Array.isArray(data.value)) {
+    // 每個回呼拿到各自的凍結複本，一個插件回呼改動內容不會影響下一個。
+    for (const listener of themeListeners) {
+      callSafely('theme.onDidChange', listener, Object.freeze({ ...data.value, tokens: Object.freeze({ ...data.value.tokens }) }))
+    }
   } else if (data.type === 'ui-message') {
     for (const listener of uiListeners) callSafely('ui.onMessage', listener, data.value)
   } else if (data.type === 'ping' && Number.isSafeInteger(data.at)) {
@@ -304,6 +323,7 @@ scope.onmessage = async ({ data }) => {
     clearSchedules()
     uiListeners.clear()
     commandListeners.clear()
+    themeListeners.clear()
     try {
       if (typeof pluginModule?.default?.deactivate === 'function') await pluginModule.default.deactivate()
     } catch {}

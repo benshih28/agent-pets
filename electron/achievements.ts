@@ -17,6 +17,7 @@ import {
 import { localDateKey, localHour as localHourOf } from '../src/utils/local-date.ts'
 import { applyWalPragmas, type SqlitePragmaState } from './sqlite-pragmas.ts'
 import { StatementCache } from './sqlite-statements.ts'
+import { isProjectId } from '../src/types/id-patterns.ts'
 
 type SqliteRow = Record<string, unknown>
 
@@ -50,7 +51,6 @@ export interface AchievementCompletedSessionFact {
 }
 
 const DEFAULT_PET_ID = 'aang-airbender'
-const PROJECT_ID = /^[a-f0-9]{32}$/
 const ADAPTER_ID = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_EVENT_ID_LENGTH = 256
 const MAX_TOKEN_COUNT = 1_000_000_000_000
@@ -142,7 +142,7 @@ function eventTimestamp(event: AgentStatusEvent, fallback: number): number {
 }
 
 function eventProjectId(event: AgentStatusEvent): string {
-  return typeof event.projectId === 'string' && PROJECT_ID.test(event.projectId)
+  return isProjectId(event.projectId)
     ? event.projectId
     : 'unbound'
 }
@@ -307,7 +307,7 @@ export class AchievementStore {
         const adapterId = safeAdapterId(fact.adapterId)
         const completedAt = Number.isFinite(fact.completedAt) ? fact.completedAt : this.now()
         if (!sessionId) continue
-        const projectId = typeof fact.projectId === 'string' && PROJECT_ID.test(fact.projectId)
+        const projectId = isProjectId(fact.projectId)
           ? fact.projectId
           : 'unbound'
         const sessionKey = completedSessionKey(source, sessionId, projectId, petId)

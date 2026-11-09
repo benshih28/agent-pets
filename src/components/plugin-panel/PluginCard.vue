@@ -10,6 +10,7 @@ import ToggleRow from '@/components/ui/ToggleRow.vue'
 import { pluginCapabilities } from '@/utils/plugin-capabilities'
 import { usePluginController } from '@/composables/plugin/context'
 import type { PluginPanelPlugin } from '@/types/plugin'
+import { panelThemeState } from '@/composables/usePanelTheme'
 
 const props = defineProps<{ plugin: PluginPanelPlugin }>()
 
@@ -24,6 +25,8 @@ const hasSettings = computed(() => Boolean(props.plugin.manifest?.contributes.se
 const catalogItem = computed(() => catalogItemFor(props.plugin.id))
 const localOnly = computed(() => catalogCheckComplete.value && !catalogItem.value)
 const capabilities = computed(() => pluginCapabilities(props.plugin.manifest))
+const panelThemeActive = computed(() => (['light', 'dark'] as const)
+  .some(mode => panelThemeState.value?.slots[mode].status === 'active' && panelThemeState.value.slots[mode].ref?.pluginId === props.plugin.id))
 const hasPanel = computed(() => Boolean(props.plugin.manifest?.contributes.panelView))
 const needsAttention = computed(() => tone.value === 'warn')
 const menuItems = computed(() => [
@@ -57,7 +60,8 @@ function onMenu(id: string): void {
       </Chip>
     </div>
     <ul v-if="capabilities.length" class="card-capabilities" :aria-label="t('plugins.provides')">
-      <li v-for="capability in capabilities" :key="capability"><Chip>{{ t(`plugins.cap.${capability}`) }}</Chip></li>
+      <li v-for="capability in capabilities" :key="capability"><Chip>{{ capability === 'panelThemes' ? t('plugins.cap.panelThemesCount', { count: plugin.manifest?.contributes.panelThemes?.length ?? 0 }) : t(`plugins.cap.${capability}`) }}</Chip></li>
+      <li v-if="panelThemeActive"><Chip tone="success" icon="check">{{ t('plugins.cap.panelThemesActive') }}</Chip></li>
     </ul>
     <p v-if="catalogItem" class="card-description">{{ catalogItem.plugin.description[locale] }}</p>
     <div v-if="localOnly || catalogItem?.updateAvailable" class="card-update">

@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import { t } from '@/i18n'
 import { useProgressionLabels } from '@/composables/useProgressionLabels'
 import type { PluginEventSourceStatusView } from '@/types/plugin'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
+import { DIALOG_HOST_KEY } from '@/components/ui/dialog-host'
 import ActionMenu, { type ActionMenuItem } from '@/components/ui/ActionMenu.vue'
 import { type ThemePreference, nextThemePreference, setThemePreference, themePreference } from '@/composables/useTheme'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import InlinePermissionCard from '@/components/ui/InlinePermissionCard.vue'
 import PermissionOutcomeNotice from '@/components/permission/PermissionOutcomeNotice.vue'
 import PetAnimation from '@/components/PetAnimation.vue'
+import PanelThemeBackdrop from '@/components/PanelThemeBackdrop.vue'
+import { usePanelTheme } from '@/composables/usePanelTheme'
 import ServerHealthBanner from '@/components/status-panel/ServerHealthBanner.vue'
 import StatusPanelHistory from '@/components/status-panel/StatusPanelHistory.vue'
 import StatusPanelSessions from '@/components/status-panel/StatusPanelSessions.vue'
@@ -19,12 +22,18 @@ import StatusPanelUsage from '@/components/status-panel/StatusPanelUsage.vue'
 import PluginTabContent from '@/components/status-panel/PluginTabContent.vue'
 import { usePluginTabs } from '@/composables/usePluginTabs'
 import { isBuiltInDashboardTab, parseStoredDashboardTab, pluginIdOfTab, resolveDashboardTab } from '@/utils/plugin-tabs'
-import { requestPluginDetail } from '@/utils/plugin-detail-request'
+import { requestPluginDetail, type PluginDetailRequestSection } from '@/utils/plugin-detail-request'
+import { panelThemeTargetRequest } from '@/utils/settings-navigation'
+import { closePanelThemeEditor, panelThemeEditorRequest } from '@/composables/useMyPanelThemes'
 import { countByBucket } from '@/utils/session-view'
 import { DEFAULT_SETTINGS_GROUP, SETTINGS_GROUPS, isSettingsGroupId, type SettingsGroupId } from '@/utils/settingsRegistry'
 
 const store = useAgentStore()
 const panelRoot = ref<HTMLElement | null>(null)
+// 面板內的對話框都掛到面板根元素，遮罩才會蓋住整個面板（見 dialog-host.ts）。
+provide(DIALOG_HOST_KEY, panelRoot)
+// 插件面板主題：只在此元素上以 inline 設定 --organic-*（spec §7.3）。
+const { backdrop: panelThemeBackdrop } = usePanelTheme()
 const settingsShortcut = /Mac/i.test(navigator.platform) ? '\u2318,' : 'Ctrl+,'
 
 const themeLabel = (preference: ThemePreference) =>
@@ -79,6 +88,8 @@ let removePanelSettingsListener: (() => void) | null = null
 let cleanupPluginEventSourceChanged: (() => void) | null = null
 
 const SettingsPage = defineAsyncComponent(() => import('@/components/status-panel/SettingsPage.vue'))
+// 編輯器連同驗證器與色盤產生器只在第一次開啟時載入（獨立 chunk，不增加面板啟動大小）。
+const PanelThemeEditor = defineAsyncComponent(() => import('@/components/panel-theme/PanelThemeEditor.vue'))
 
 const settingsGroupLabel = computed(() => {
   const group = SETTINGS_GROUPS.find(item => item.id === settingsGroup.value)
@@ -173,10 +184,22 @@ function selectDashboardTab(tab: DashboardTab): void {
   if (tab === 'sessions' || tab === 'usage') void store.refreshQuota()
 }
 
-function openPluginTabSettings(pluginId: string, section: 'overview' | 'settings' = 'settings'): void {
+function openPluginTabSettings(pluginId: string, section: PluginDetailRequestSection = 'settings'): void {
   requestPluginDetail(pluginId, section)
   openPluginSettings()
 }
+
+// 主題設定的目的地：有分頁就回到儀表板並切到該插件的分頁，否則開詳情頁的面板主題。
+watch(panelThemeTargetRequest, request => {
+  if (!request) return
+  const tab = pluginTabs.tabs.value.find(candidate => candidate.pluginId === request.pluginId && candidate.sections.panelThemes)
+  if (!tab) {
+    openPluginTabSettings(request.pluginId, 'themes')
+    return
+  }
+  if (store.panelView === 'settings') store.backToSessions()
+  selectDashboardTab(tab.value)
+})
 
 // Restore the remembered tab once the plugin list is known, but only if it still qualifies;
 // a plugin tab that disappears later (disabled, removed, crashed) falls back to Sessions.
@@ -260,6 +283,7 @@ onUnmounted(() => {
 
 <template>
   <div ref="panelRoot" class="status-panel" :inert="store.showWizard || store.showProjectMcpPanel" @click.stop>
+    <PanelThemeBackdrop :backdrop="panelThemeBackdrop" />
     <div class="panel-header">
       <Button v-if="store.panelView === 'settings'" variant="ghost" icon-only :title="t('back')" :aria-label="t('back')" @click="store.backToSessions()">
         <Icon name="back" />
@@ -338,10 +362,13 @@ onUnmounted(() => {
         :loading="pluginTabs.loading.value"
         @open-settings="openPluginTabSettings($event, 'settings')"
         @open-detail="openPluginTabSettings($event, 'overview')"
+        @open-themes="openPluginTabSettings($event, 'themes')"
       />
     </template>
 
     <SettingsPage v-else v-model:group="settingsGroup" :requested-plugin-id="requestedPluginViewId" :requested-plugin-nonce="pluginViewRequestNonce" />
+    <!-- 主題編輯器（全面板對話框）：外觀設定與主題插件分頁共用這一個實例；nonce 讓每次開啟都是新的草稿。 -->
+    <PanelThemeEditor v-if="panelThemeEditorRequest" :key="panelThemeEditorRequest.nonce" :request="panelThemeEditorRequest" @close="closePanelThemeEditor()" />
   </div>
 </template>
 

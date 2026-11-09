@@ -91,7 +91,11 @@ export function t(key: TranslationKey, params: TranslationParams = {}): string {
 }
 
 export function tForLocale(targetLocale: AppLocale, key: TranslationKey, params: TranslationParams = {}): string {
-  const template = targetLocale === 'en-US' ? englishMessages[key] : messages[key]
+  return fillTemplate(targetLocale === 'en-US' ? englishMessages[key] : messages[key], params)
+}
+
+/** `{name}` 佔位符代換；延後載入的文案領域（例如主題編輯器）共用同一個規則。 */
+export function fillTemplate(template: string, params: TranslationParams = {}): string {
   return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`))
 }
 

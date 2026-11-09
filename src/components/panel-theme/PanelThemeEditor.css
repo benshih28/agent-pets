@@ -1,0 +1,147 @@
+/* 主題編輯器的版面：只有 .editor 捲動（對話框本身不捲動）。寬度足夠時預覽固定在捲動區頂端，
+   修改任何值時都看得到結果；預覽是完整顯示的縮圖（高度上限 --ep-max-height），自己不捲動。 */
+.editor {
+  /* 欄寬判斷（預覽並排或堆疊）以編輯區本身的寬度為準，不是視窗寬度。 */
+  container: editor / inline-size;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+  /* 留出焦點框的空間（捲動容器會裁掉超出內距的外框）。 */
+  padding: var(--space-1);
+  /* 鍵盤移動焦點或捲到錯誤時，不要讓目標停在固定的預覽後面（WCAG 2.4.11）；
+     --editor-sticky-height 由元件依預覽實際高度設定，預覽不固定時為 0。 */
+  scroll-padding-top: calc(var(--editor-sticky-height, 0px) + var(--space-2));
+}
+
+.editor > * {
+  flex: none;
+}
+
+.editor-top {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12em, 1fr));
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.editor-previews {
+  --ep-max-height: 30vh;
+
+  position: sticky;
+  /* 貼齊捲動區的上緣（抵銷 .editor 的上內距），捲過去的內容不會從預覽上方露出來。 */
+  top: calc(-1 * var(--space-1));
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--space-1));
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-raised);
+}
+
+/* 窄的編輯區（例如 360 px 寬的面板）：預覽改為上下堆疊、不固定，依欄寬完整顯示；
+   可以用「隱藏預覽」收起來，把空間留給欄位。 */
+@container editor (width < 22rem) {
+  .editor-previews {
+    --ep-max-height: none;
+
+    position: static;
+    grid-template-columns: minmax(0, 1fr);
+    box-shadow: none;
+  }
+}
+
+.editor-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.editor-mode-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.editor-summary-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.editor-summary {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-danger);
+  font-size: var(--font-xs);
+}
+
+.editor-summary.ok {
+  color: var(--text-success);
+}
+
+.editor-generate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.editor-seed {
+  width: var(--hit-min);
+  height: var(--hit-min);
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.editor-seed:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.editor-live {
+  min-height: 1em;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.editor-error {
+  margin: 0;
+  color: var(--text-danger);
+  font-size: var(--font-xs);
+}
+
+.editor-footer {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.editor-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.editor-footer-spacer {
+  flex: 1 1 auto;
+}

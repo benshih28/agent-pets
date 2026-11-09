@@ -1,15 +1,22 @@
-export type PluginPanelApiMethod =
-  | 'feed.notify' | 'pet.status' | 'storage.get' | 'storage.set' | 'storage.remove'
-  | 'settings.get' | 'log.info' | 'log.warn' | 'log.error' | 'net.fetch' | 'ui.postMessage'
-  | 'links.openExternal'
-
 import { isPluginErrorCode, type PluginErrorCode } from '../src/types/plugin.ts'
+import { clonePluginThemeSnapshot, isPluginThemeSnapshot, type PluginThemeSnapshot } from '../src/types/plugin-theme.ts'
+import { isRecord } from './value-guards.ts'
+
+// 面板頁可呼叫的方法白名單；preload 與主程序的 PluginPanelViewController 共用同一份。
+export const PLUGIN_PANEL_API_METHODS = Object.freeze([
+  'feed.notify', 'pet.status', 'storage.get', 'storage.set', 'storage.remove',
+  'settings.get', 'log.info', 'log.warn', 'log.error', 'net.fetch', 'ui.postMessage',
+  'links.openExternal', 'theme.get',
+] as const)
+export type PluginPanelApiMethod = typeof PLUGIN_PANEL_API_METHODS[number]
 
 export type PluginPanelApiErrorCode = PluginErrorCode
 
 export interface PluginPanelApiTransport {
   invoke: (method: PluginPanelApiMethod, args: unknown[]) => Promise<unknown>
   onMessage: (listener: (data: unknown) => void) => () => void
+  /** 主程序推送的主題快照（未驗證，橋接層負責檢查）。 */
+  onThemeChange?: (listener: (snapshot: unknown) => void) => () => void
   consumeUserActivation?: () => boolean
 }
 
@@ -33,21 +40,16 @@ export interface PluginPanelPublicApi {
     postMessage: (data: unknown) => Promise<{ delivered: boolean }>
     onMessage: (callback: (data: unknown) => void) => () => void
   }
+  theme: {
+    get: () => Promise<PluginThemeSnapshot>
+    onDidChange: (callback: (snapshot: PluginThemeSnapshot) => void) => () => void
+  }
 }
 
-const PANEL_METHODS = new Set<PluginPanelApiMethod>([
-  'feed.notify', 'pet.status', 'storage.get', 'storage.set', 'storage.remove',
-  'settings.get', 'log.info', 'log.warn', 'log.error', 'net.fetch', 'ui.postMessage',
-  'links.openExternal',
-])
-
+const PANEL_METHODS: ReadonlySet<string> = new Set(PLUGIN_PANEL_API_METHODS)
 
 function codedError(code: PluginPanelApiErrorCode): Error & { code: PluginPanelApiErrorCode } {
   return Object.assign(new Error(code), { code })
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function unwrapResponse(response: unknown): unknown {
@@ -94,6 +96,21 @@ export function createPluginPanelPublicApi(transport: PluginPanelApiTransport): 
         if (typeof callback !== 'function') throw codedError('invalid_request')
         return transport.onMessage(data => {
           try { callback(data) } catch {}
+        })
+      },
+    }),
+    theme: Object.freeze({
+      get: async () => {
+        const value = await invoke('theme.get', [])
+        if (!isPluginThemeSnapshot(value)) throw codedError('invalid_request')
+        return clonePluginThemeSnapshot(value)
+      },
+      onDidChange: (callback: (snapshot: PluginThemeSnapshot) => void) => {
+        if (typeof callback !== 'function') throw codedError('invalid_request')
+        if (!transport.onThemeChange) return () => {}
+        return transport.onThemeChange(value => {
+          if (!isPluginThemeSnapshot(value)) return
+          try { callback(clonePluginThemeSnapshot(value)) } catch {}
         })
       },
     }),

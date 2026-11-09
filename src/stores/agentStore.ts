@@ -75,6 +75,7 @@ import {
   createToastCountdown,
   type ToastCountdown,
 } from '@/utils/toast-countdown'
+import { isPluginId, isSafeItemId } from '@/types/id-patterns'
 
 export interface PetEntry {
   id: string
@@ -669,8 +670,8 @@ export const useAgentStore = defineStore('agent', () => {
   function normalizePluginFeedItem(value: unknown): PluginFeedItem | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null
     const raw = value as Record<string, unknown>
-    if (typeof raw.id !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(raw.id)
-      || typeof raw.pluginId !== 'string' || !/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(raw.pluginId)
+    if (!isSafeItemId(raw.id)
+      || !isPluginId(raw.pluginId)
       || !raw.pluginName || typeof raw.pluginName !== 'object' || Array.isArray(raw.pluginName)
       || typeof raw.title !== 'string' || raw.title.length === 0 || raw.title.length > 60
       || typeof raw.body !== 'string' || raw.body.length === 0 || raw.body.length > 240

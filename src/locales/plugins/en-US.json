@@ -224,5 +224,15 @@
   "plugins.dashTabSettings": "Plugin settings",
   "plugins.dashTabFeedEmpty": "This plugin has no recent notifications.",
   "plugins.dashTabScrollPrev": "Scroll tabs left",
-  "plugins.dashTabScrollNext": "Scroll tabs right"
+  "plugins.dashTabScrollNext": "Scroll tabs right",
+  "plugins.hintPanelThemes": "The plugin provides panel themes (colours, fonts, backgrounds) you can choose in its Panel themes section. Themes apply to the whole app, including permission and risk prompts; Agent Pets only accepts themes that keep every label readable and danger, success, warning and info colours recognisable.",
+  "plugins.hintPanelThemeFonts": "The themes include font files that the panel loads only while one of these themes is selected.",
+  "plugins.presencePanelThemes": "Provides {count} panel themes, chosen in this plugin's Panel themes section",
+  "plugins.presencePanelThemesOpen": "Open Panel themes",
+  "plugins.cap.panelThemes": "Panel themes",
+  "plugins.errInvalidPanelTheme": "The plugin's panel theme is invalid (colours, contrast or assets).",
+  "plugins.catalogRequiresApp": "Requires Agent Pets {version} or later",
+  "plugins.sectionPanelThemes": "Panel themes",
+  "plugins.cap.panelThemesCount": "Panel themes ({count})",
+  "plugins.cap.panelThemesActive": "Panel theme in use"
 }

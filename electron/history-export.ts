@@ -1,4 +1,5 @@
 import type { HistoryDailyStat, HistoryExportFormat } from '../src/types/history.ts'
+import { isProjectId } from '../src/types/id-patterns.ts'
 
 const CSV_HEADER = [
   'date',
@@ -33,6 +34,6 @@ export function historyExportFileName(
   localDate: string,
   projectId?: string,
 ): string {
-  const project = projectId && /^[a-f0-9]{32}$/.test(projectId) ? `-${projectId.slice(0, 8)}` : ''
+  const project = projectId && isProjectId(projectId) ? `-${projectId.slice(0, 8)}` : ''
   return `agent-pets-history-${rangeDays}d${project}-${localDate}.${format}`
 }

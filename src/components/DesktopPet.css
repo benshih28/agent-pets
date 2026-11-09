@@ -76,7 +76,7 @@
   border: 2px solid var(--surface-panel);
   border-radius: 50%;
   background: var(--mini-ring, var(--state-idle));
-  color: var(--surface-panel);
+  color: var(--color-bg);
 }
 
 .mini-status-badge.pulse {
@@ -125,7 +125,7 @@
   inset: 0;
   border: 1px solid var(--border-strong);
   background:
-    linear-gradient(145deg, var(--surface-raised-hover), transparent 58%),
+    linear-gradient(145deg, var(--pet-gloss), transparent 58%),
     var(--surface-panel);
   box-shadow: var(--shadow-edge-handle);
   backdrop-filter: var(--surface-blur);
@@ -138,7 +138,7 @@
 .edge-peek-handle:hover {
   border-color: var(--border-accent-strong);
   background:
-    linear-gradient(145deg, var(--surface-raised-hover), transparent 58%),
+    linear-gradient(145deg, var(--pet-gloss), transparent 58%),
     var(--surface-panel);
   transform: scale(1.03);
 }
@@ -204,7 +204,7 @@
   border: 1px solid var(--surface-panel);
   border-radius: var(--radius-pill);
   background: var(--state-success);
-  color: var(--surface-panel);
+  color: var(--color-bg);
   cursor: pointer;
   font: 700 var(--font-xs)/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   animation: unread-pop 0.28s ease-out;
@@ -235,7 +235,7 @@
   border: 1px solid var(--surface-panel);
   border-radius: var(--radius-pill);
   background: var(--state-success);
-  color: var(--surface-panel);
+  color: var(--color-bg);
   font: 700 var(--font-xs)/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
@@ -255,7 +255,7 @@
   border: 1px solid var(--surface-panel);
   border-radius: var(--radius-pill);
   background: var(--status-error);
-  color: white;
+  color: var(--color-bg);
   font: 700 var(--font-xs)/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
@@ -377,16 +377,17 @@
   /* A solid dark layer under the sheen keeps text legible over any
      wallpaper/video behind the transparent pet window — the glass read
      comes from the blur + highlight line, not from true see-through. */
+  /* --pet-status-*：選用的插件主題顏色（僅限膠囊；spec §3.7）。 */
   background:
-    linear-gradient(160deg, var(--surface-raised-hover) 0%, transparent 55%),
-    var(--organic-status-surface);
-  border: 1px solid var(--organic-status-border);
+    linear-gradient(160deg, var(--pet-gloss) 0%, transparent 55%),
+    var(--pet-status-background, var(--organic-status-surface));
+  border: 1px solid var(--pet-status-border, var(--organic-status-border));
   backdrop-filter: var(--blur-bubble);
   -webkit-backdrop-filter: var(--blur-bubble);
   box-shadow:
     var(--organic-status-shadow),
     var(--organic-status-highlight);
-  color: var(--organic-status-text);
+  color: var(--pet-status-text, var(--organic-status-text));
   font-family: var(--organic-font-body);
   text-shadow: var(--text-shadow-panel);
   font-size: var(--font-sm);
@@ -395,7 +396,8 @@
   border-radius: var(--organic-status-radius);
 }
 
-/* Quota 顏色依剩餘比例分級（DesktopPet.vue 的 quotaTier）；沒有 Quota 時維持透明。 */
+/* Quota 顏色依剩餘比例分級（DesktopPet.vue 的 quotaTier）；沒有 Quota 時維持透明。
+   徽章文字用 --color-bg：狀態色在 bg 上 >= 4.5:1（對比對稱），所以反過來也成立。 */
 .status-line {
   --quota-color: transparent;
 }
@@ -405,15 +407,15 @@
 }
 
 .status-line[data-quota-tier='warning'] {
-  --quota-color: var(--organic-quota-warning);
+  --quota-color: var(--pet-status-quota-warn, var(--organic-quota-warning));
 }
 
 .status-line[data-quota-tier='claude'] {
-  --quota-color: var(--organic-accent);
+  --quota-color: var(--pet-status-quota-fill, var(--organic-quota-accent));
 }
 
 .status-line[data-quota-tier='normal'] {
-  --quota-color: var(--organic-quota-sage);
+  --quota-color: var(--pet-status-quota-fill, var(--organic-quota-sage));
 }
 
 .status-line:hover {
@@ -426,8 +428,20 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+/* 套用主題的膠囊在檢查對比時不含深色文字陰影，且次要文字
+   為完全不透明。插件徽章維持內建外觀。 */
+:root[data-pet-status-theme] .desktop-pet .status-line {
+  text-shadow: none;
+}
+
+:root[data-pet-status-theme] .desktop-pet .status-line .line-sep,
+:root[data-pet-status-theme] .desktop-pet .status-line .line-project {
+  color: var(--pet-status-text-muted);
+  opacity: 1;
+}
+
 .status-line.has-quota {
-  border-color: color-mix(in srgb, var(--quota-color) 25%, var(--border-subtle));
+  border-color: color-mix(in srgb, var(--quota-color) 25%, var(--pet-status-border, var(--border-subtle)));
   box-shadow:
     var(--organic-status-shadow),
     var(--organic-status-highlight),
@@ -571,7 +585,7 @@
      tooltip floats over an unpredictable backdrop, so legibility takes
      priority over true see-through transparency. */
   background:
-    linear-gradient(160deg, var(--surface-raised-hover) 0%, transparent 50%),
+    linear-gradient(160deg, var(--pet-gloss) 0%, transparent 50%),
     var(--organic-status-tooltip-surface);
   /* No backdrop-filter here: the tooltip sits inside the glass status line, and
      a nested backdrop cannot sample through its parent (glass-on-glass). The
@@ -679,7 +693,7 @@
   height: 4px;
   overflow: hidden;
   border-radius: 0 0 var(--organic-status-radius) var(--organic-status-radius);
-  background: var(--organic-status-track);
+  background: var(--pet-status-quota-track, var(--organic-status-track));
   pointer-events: none;
 }
 
@@ -841,6 +855,12 @@
     border-color: var(--organic-status-text);
     background: var(--organic-status-surface-fallback);
   }
+
+  .status-line,
+  .status-line.has-quota {
+    border-color: var(--pet-status-text, var(--organic-status-text));
+    background: var(--pet-status-background-opaque, var(--organic-status-surface-fallback));
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -850,6 +870,10 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
+
+  .status-line {
+    background: var(--pet-status-background-opaque, var(--organic-status-surface-fallback));
+  }
 }
 
 .line-dot {
@@ -858,6 +882,16 @@
   border-radius: 50%;
   flex-shrink: 0;
   box-shadow: 0 0 4px currentColor;
+}
+
+/* 高對比（forced colors）會把背景換成 Canvas，點與它的形狀就看不見了；改用系統文字色，
+   狀態仍由形狀與文字表達（inline 的 STATE_COLORS 需要 !important 才蓋得過）。 */
+@media (forced-colors: active) {
+  .line-dot {
+    background: CanvasText !important;
+    box-shadow: none;
+    forced-color-adjust: none;
+  }
 }
 
 /* State is also carried by shape, not colour alone. */

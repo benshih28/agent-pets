@@ -141,7 +141,7 @@ function revert(): void {
 }
 
 .field-error {
-  color: var(--state-error-soft);
+  color: var(--text-danger);
   font-size: var(--font-xs);
   line-height: 1.4;
 }

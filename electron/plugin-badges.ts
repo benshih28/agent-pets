@@ -1,6 +1,7 @@
 import type { PluginBadgeTone, PluginBadgeView, PluginErrorCode } from '../src/types/plugin.ts'
 import { normalizePresentationMessage } from './presentation-controller.ts'
 import { PLUGIN_BADGE_MAX_CODE_POINTS } from '../src/utils/plugin-badges.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
 
 export const PLUGIN_BADGE_RATE_LIMIT_MS = 1_000
 export const PLUGIN_BADGE_MAX_PER_PET = 2
@@ -25,7 +26,6 @@ export type PluginBadgeSetResult =
   | { ok: true; value: { set: boolean } }
   | { ok: false; error: PluginErrorCode }
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 const VALID_TONES = new Set<PluginBadgeTone>(['neutral', 'info', 'warning'])
 
 function normalizeBadge(value: unknown): { text: string; tone: PluginBadgeTone } | null {
@@ -54,7 +54,7 @@ export class PluginBadgeController {
   }
 
   set(pluginId: string, rawBadge: unknown): PluginBadgeSetResult {
-    if (!PLUGIN_ID.test(pluginId)) return { ok: false, error: 'invalid_request' }
+    if (!isPluginId(pluginId)) return { ok: false, error: 'invalid_request' }
     let context: PluginBadgeContext | null = null
     try { context = this.getContext(pluginId) } catch {}
     if (!context || !context.pluginsEnabled || !context.enabled) return { ok: false, error: 'disabled' }

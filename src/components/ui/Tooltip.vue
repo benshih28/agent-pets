@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
 // Styled, keyboard-reachable replacement for the native `title=` tooltip
 // (slow, unstyleable, unavailable to touch and keyboard). Shows on hover
@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<{
   delay: 300,
 })
 
-const id = `tooltip-${Math.random().toString(36).slice(2, 9)}`
+const id = `tooltip-${useId()}`
 const anchor = ref<HTMLElement | null>(null)
 const bubble = ref<HTMLElement | null>(null)
 const open = ref(false)

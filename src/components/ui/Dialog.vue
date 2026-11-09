@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, toRef, useId } from 'vue'
+import { computed, inject, provide, ref, toRef, useId } from 'vue'
 import { t } from '@/i18n'
 import { useDialogA11y } from '@/composables/useDialogA11y'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
+import { DIALOG_HOST_KEY, DIALOG_NESTED_KEY, dialogTeleportTarget } from '@/components/ui/dialog-host'
 
 // The one modal shell: scrim, titled surface, optional description and
 // footer, with Esc / Tab trap / initial focus / focus restore / inert
@@ -20,7 +21,8 @@ const props = withDefaults(defineProps<{
   initialFocus?: string
   showClose?: boolean
   dismissOnScrim?: boolean
-  size?: 'sm' | 'md' | 'lg'
+  /** `full` fills the panel (theme editor); the others cap the width. */
+  size?: 'sm' | 'md' | 'lg' | 'full'
 }>(), {
   role: 'dialog',
   showClose: false,
@@ -46,40 +48,51 @@ useDialogA11y({
 })
 
 const describedBy = computed(() => (props.description ? descriptionId : undefined))
+
+// 遮罩掛到面板根元素（見 dialog-host.ts），不受所在卡片或捲動區的範圍限制。
+const host = inject(DIALOG_HOST_KEY, null)
+const nested = inject(DIALOG_NESTED_KEY, false)
+provide(DIALOG_NESTED_KEY, true)
+const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
 </script>
 
 <template>
-  <Transition name="dialog">
-    <div v-if="open" ref="scopeRef" class="scrim" @click.self="dismissOnScrim && emit('close')">
-      <div
-        ref="dialogRef"
-        class="dialog"
-        :class="`size-${size}`"
-        :role="role"
-        aria-modal="true"
-        tabindex="-1"
-        :aria-labelledby="titleId"
-        :aria-describedby="describedBy"
-      >
-        <header class="head">
-          <h2 :id="titleId" class="title">{{ title }}</h2>
-          <Button
-            v-if="showClose"
-            variant="ghost"
-            size="sm"
-            icon-only
-            :aria-label="t('close')"
-            @click="emit('close')"
-          >
-            <Icon name="close" :size="14" />
-          </Button>
-        </header>
-        <p v-if="description" :id="descriptionId" class="description">{{ description }}</p>
-        <slot />
-        <footer v-if="$slots.footer" class="footer"><slot name="footer" /></footer>
+  <Teleport :to="teleportTarget ?? 'body'" :disabled="!teleportTarget">
+    <Transition name="dialog">
+      <div v-if="open" ref="scopeRef" class="scrim" @click.self="dismissOnScrim && emit('close')">
+        <div
+          ref="dialogRef"
+          class="dialog"
+          :class="`size-${size}`"
+          :role="role"
+          aria-modal="true"
+          tabindex="-1"
+          :aria-labelledby="titleId"
+          :aria-describedby="describedBy"
+        >
+          <header class="head">
+            <h2 :id="titleId" class="title">{{ title }}</h2>
+            <Button
+              v-if="showClose"
+              variant="ghost"
+              size="sm"
+              icon-only
+              :aria-label="t('close')"
+              @click="emit('close')"
+            >
+              <Icon name="close" :size="14" />
+            </Button>
+          </header>
+          <p v-if="description" :id="descriptionId" class="description">{{ description }}</p>
+          <slot />
+          <footer v-if="$slots.footer" class="footer"><slot name="footer" /></footer>
+        </div>
+        <!-- A dialog opened from inside this one: inside the scope (so its siblings go inert and this
+             dialog's key handling steps aside) but outside the trapped surface. -->
+        <slot name="overlay" />
       </div>
-    </div>
-  </Transition>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -117,6 +130,13 @@ const describedBy = computed(() => (props.description ? descriptionId : undefine
 .size-sm { max-width: 300px; }
 .size-md { max-width: 420px; }
 .size-lg { max-width: 560px; }
+/* 全面板的工具（主題編輯器）：對話框本身不捲動，標題與底部按鈕一直看得到，也不會出現兩層
+   捲軸。內容自己是捲動區（min-height: 0; flex: 1 1 auto; overflow-y: auto）。 */
+.size-full {
+  max-width: none;
+  height: 100%;
+  overflow: hidden;
+}
 
 .head {
   display: flex;

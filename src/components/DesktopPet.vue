@@ -27,6 +27,7 @@ import { statusLineText, type StatusLineSource } from '@/utils/session-attention
 import { fitStatusLine, statusLineContentWidth, STATUS_TEXT_FONTS, type MeasureText, type StatusLineFit, type StatusLinePart } from '@/utils/status-line-fit'
 import { resolvedPetTheme } from '@/composables/useTheme'
 import PermissionBubble from '@/components/permission/PermissionBubble.vue'
+import { usePetTheme } from '@/composables/usePetTheme'
 import PermissionNoticeBubble from '@/components/permission/PermissionNoticeBubble.vue'
 import { formatDateParts } from '@/utils/intl-format'
 
@@ -426,7 +427,7 @@ const sayTargetStyle = usePetBubbleAnchor(
   () => store.presentationSay?.petId,
 )
 
-// Quota 顏色由 CSS 依 data-quota-tier 選 token（DesktopPet.css），可隨主題調整，也讓 token 檢查看得到用處。
+// Quota 顏色由 CSS 依 data-quota-tier 選 token（DesktopPet.css），插件主題可透過 --pet-status-* 重新上色一般與低額度填色（危急 < 20% 維持內建），也讓 token 檢查看得到用處。
 type QuotaTier = 'low' | 'warning' | 'claude' | 'normal'
 
 function quotaTier(familyKey: string): QuotaTier | undefined {
@@ -436,6 +437,8 @@ function quotaTier(familyKey: string): QuotaTier | undefined {
   if (quota.remainingPercent < 50) return 'warning'
   return familyKey === 'claude' ? 'claude' : 'normal'
 }
+
+usePetTheme()
 
 function quotaFillStyle(familyKey: string): Record<string, string> {
   const quota = store.quotaByFamily[familyKey]
@@ -883,7 +886,7 @@ watch(() => store.levelUpEvent, (event) => {
   <div
     class="desktop-pet"
     :class="[`mode-${store.petWindowMode.mode}`, store.petWindowMode.edge ? `edge-${store.petWindowMode.edge}` : '']"
-:data-pet-mode="store.petWindowMode.mode"
+    :data-pet-mode="store.petWindowMode.mode"
     :style="{ '--mini-scale': miniScale }"
   >
     <div

@@ -19,6 +19,7 @@ import type {
   ProjectMcpSetupSummary,
 } from '../src/types/project-mcp.ts'
 import { PROJECT_MCP_CLIENTS } from '../src/types/project-mcp.ts'
+import { isRecord } from './value-guards.ts'
 
 const MAX_CONFIG_BYTES = 1024 * 1024
 const SERVER_NAME = 'agent-pets'
@@ -50,10 +51,6 @@ class ProjectMcpConfigError extends Error {
 
 interface JsonRecord {
   [key: string]: unknown
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function isAbsoluteFile(value: string): boolean {

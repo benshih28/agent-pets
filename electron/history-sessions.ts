@@ -8,6 +8,7 @@ import {
   type HistorySessionOutcome,
   type HistorySessionQuery,
 } from '../src/types/history.ts'
+import { isProjectId } from '../src/types/id-patterns.ts'
 
 // 工作階段清單的純函式：輸入驗證、SQL 組裝與資料列轉換。與 HistoryStore 分開，
 // 讓 IPC 驗證與 SQL 形狀可以單獨測試，history.ts 只負責交易與寫入。
@@ -28,7 +29,6 @@ export const MAX_PERMISSION_WAIT_MS = 6 * 60 * 60 * 1000
 // so the id is only bounded, control-free and hash-suffixed (it is always bound).
 const SESSION_ID = /^[^\u0000-\u001f\u007f]{1,400}:[a-f0-9]{24}$/
 const ADAPTER_ID = /^[A-Za-z0-9._:-]{1,64}$/
-const PROJECT_ID = /^[a-f0-9]{32}$/
 const TOOL_NAME_UNSAFE = /[^A-Za-z0-9._:/@+ -]/g
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 const MAX_TOOL_NAME_LENGTH = 64
@@ -109,7 +109,7 @@ export function normalizeSessionQuery(input: unknown, now: number): HistorySessi
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}
   const maxTime = now + MAX_FUTURE_SKEW_MS
   const query: HistorySessionQuery & { limit: number } = { limit: HISTORY_SESSION_PAGE_DEFAULT }
-  if (typeof raw.projectId === 'string' && PROJECT_ID.test(raw.projectId)) query.projectId = raw.projectId
+  if (isProjectId(raw.projectId)) query.projectId = raw.projectId
   if (typeof raw.adapterId === 'string' && ADAPTER_ID.test(raw.adapterId)) query.adapterId = raw.adapterId
   const from = finiteTimestamp(raw.from, maxTime)
   const to = finiteTimestamp(raw.to, maxTime)

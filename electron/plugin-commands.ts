@@ -1,4 +1,5 @@
 import type { PluginErrorCode } from '../src/types/plugin.ts'
+import { isPluginId, isPluginCommandId } from '../src/types/id-patterns.ts'
 
 export interface PluginCommandContext {
   enabled: boolean
@@ -14,8 +15,6 @@ export interface PluginCommandControllerOptions {
   now?: () => number
 }
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
-const COMMAND_ID = /^[a-z][a-z0-9-]{0,31}$/
 const COMMAND_RATE_LIMIT_MS = 1_000
 
 /** Accepts only user-originated command requests that match the current enabled manifest. */
@@ -32,8 +31,8 @@ export class PluginCommandController {
   }
 
   invoke(pluginId: unknown, commandId: unknown): PluginCommandResult {
-    if (typeof pluginId !== 'string' || !PLUGIN_ID.test(pluginId)
-      || typeof commandId !== 'string' || !COMMAND_ID.test(commandId)) {
+    if (!isPluginId(pluginId)
+      || !isPluginCommandId(commandId)) {
       return { ok: false, error: 'invalid_request' }
     }
     let context: PluginCommandContext | null = null

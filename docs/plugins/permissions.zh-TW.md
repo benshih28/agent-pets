@@ -16,11 +16,15 @@
 | `contributes.tray` | `在 Tray 選單新增項目` |
 | `contributes.badge: true` | `在寵物狀態列顯示徽章` |
 | `contributes.skins` | `提供 N 個寵物外觀`（依 manifest 數量代入） |
+| `contributes.panelThemes` | `提供 N 個面板主題`（低風險；數量是單位的一部分，新增主題會重新詢問） |
+| `contributes.panelThemeFonts` | `附帶面板用的自訂字型`（中風險；任一主題附帶 `.woff2` 字型時顯示） |
 | `contributes.eventSource` | `在獨立狀態列顯示插件回報的工作狀態` |
 
 `network.hosts` 是預先同意清單。若也設 `userGranted: true`，插件可呼叫 `api.net.requestHost(host, reason)`；host 是不含萬用字元的 DNS 名稱，reason 為 1–120 字。每次申請都會先檢查公開 DNS，再顯示原生確認框。使用者拒絕同一網域後 24 小時內不會再提示；每插件最多每 10 分鐘申請 3 次。通過的動態網域會出現在設定面板，可撤銷。即使已同意，HTTP、IP literal、localhost、私有／保留 IP 或 DNS 解析到非公開位址的請求仍會被拒絕。
 
 `links.hosts` 是供面板頁呼叫 `links.openExternal()` 的獨立精確網域白名單，不會賦予網路存取能力。只有目前這次可信任的點擊或 Enter／Space 鍵盤操作才能開啟；網址必須是 HTTPS、不得含帳密或自訂 port，每插件每分鐘最多嘗試 5 次，且不接受萬用字元。
+
+`theme.get()`、`theme.onDidChange()` 與面板頁上的 `--ap-*` token 不需要權限，安裝確認也不會多出項目；它們只提供使用者已經看得到的顯示數值（見[面板主題](panel-themes.zh-TW.md#在插件中讀取主題--ap-host-api-theme)）。
 
 ## 安裝畫面會顯示什麼
 

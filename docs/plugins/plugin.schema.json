@@ -4,15 +4,44 @@
   "title": "Agent Pets plugin manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "name", "version", "apiVersion", "author", "permissions", "contributes"],
+  "required": [
+    "id",
+    "name",
+    "version",
+    "apiVersion",
+    "author",
+    "permissions",
+    "contributes"
+  ],
   "properties": {
-    "id": { "type": "string", "minLength": 3, "maxLength": 48, "pattern": "^(?!_host$|_shared$)[a-z0-9-]+$" },
-    "name": { "$ref": "#/$defs/localizedText" },
-    "version": { "type": "string", "maxLength": 50, "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
-    "apiVersion": { "const": "1" },
-    "author": { "type": "string", "minLength": 1, "maxLength": 64 },
-    "entry": { "$ref": "#/$defs/javascriptPath" },
-    "icon": { "$ref": "#/$defs/iconPath" },
+    "id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 48,
+      "pattern": "^(?!_host$|_shared$)[a-z0-9-]+$"
+    },
+    "name": {
+      "$ref": "#/$defs/localizedText"
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 50,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "apiVersion": {
+      "const": "1"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "entry": {
+      "$ref": "#/$defs/javascriptPath"
+    },
+    "icon": {
+      "$ref": "#/$defs/iconPath"
+    },
     "permissions": {
       "type": "object",
       "additionalProperties": false,
@@ -20,99 +49,948 @@
         "network": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["hosts"],
+          "required": [
+            "hosts"
+          ],
           "properties": {
-            "hosts": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/networkHost" } },
-            "userGranted": { "type": "boolean" }
+            "hosts": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/networkHost"
+              }
+            },
+            "userGranted": {
+              "type": "boolean"
+            }
           }
         },
         "links": {
           "description": "HTTPS hosts a panel page may open in the user's system browser after a trusted user gesture.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["hosts"],
+          "required": [
+            "hosts"
+          ],
           "properties": {
-            "hosts": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/linkHost" } }
+            "hosts": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/linkHost"
+              }
+            }
           }
         },
-        "secrets": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$" } },
-        "schedule": { "type": "object", "additionalProperties": false, "required": ["minIntervalSec"], "properties": { "minIntervalSec": { "type": "integer", "minimum": 30, "maximum": 3600 } } },
-        "storage": { "type": "boolean" },
-        "agentStatus": { "type": "boolean" }
+        "secrets": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$"
+          }
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "minIntervalSec"
+          ],
+          "properties": {
+            "minIntervalSec": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3600
+            }
+          }
+        },
+        "storage": {
+          "type": "boolean"
+        },
+        "agentStatus": {
+          "type": "boolean"
+        }
       }
     },
     "contributes": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "feed": { "type": "boolean" },
-        "reaction": { "type": "boolean" },
+        "feed": {
+          "type": "boolean"
+        },
+        "reaction": {
+          "type": "boolean"
+        },
         "settings": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "properties"],
+          "required": [
+            "type",
+            "properties"
+          ],
           "properties": {
-            "type": { "const": "object" },
-            "properties": { "type": "object", "maxProperties": 20, "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" }, "additionalProperties": { "$ref": "#/$defs/setting" } }
+            "type": {
+              "const": "object"
+            },
+            "properties": {
+              "type": "object",
+              "maxProperties": 20,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/setting"
+              }
+            }
           }
         },
         "panelView": {
           "description": "Optional HTML page rendered in a separate sandboxed host view. The page can load files from this plugin package and the read-only shared tokens stylesheet.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["entry", "title"],
+          "required": [
+            "entry",
+            "title"
+          ],
           "properties": {
-            "entry": { "$ref": "#/$defs/htmlPath" },
-            "title": { "$ref": "#/$defs/localizedText" },
+            "entry": {
+              "$ref": "#/$defs/htmlPath"
+            },
+            "title": {
+              "$ref": "#/$defs/localizedText"
+            },
             "preferredSize": {
               "description": "Optional initial window size. Runtime clamps width to 320–960 px and height to 240–800 px, then limits it to the display work area.",
-              "type": "object", "additionalProperties": false, "required": ["width", "height"],
-              "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } }
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "width",
+                "height"
+              ],
+              "properties": {
+                "width": {
+                  "type": "integer"
+                },
+                "height": {
+                  "type": "integer"
+                }
+              }
             }
           }
         },
-        "commands": { "type": "array", "maxItems": 10, "items": { "type": "object", "additionalProperties": false, "required": ["id", "title"], "properties": { "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" }, "title": { "$ref": "#/$defs/commandTitle" } } } },
-        "tray": { "type": "object", "additionalProperties": false, "required": ["commands"], "properties": { "commands": { "type": "array", "maxItems": 5, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" } } } },
-        "badge": { "type": "boolean" },
-        "skins": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "type": "object", "additionalProperties": false, "required": ["id", "displayName", "spritesheet", "kind"], "properties": { "id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" }, "displayName": { "$ref": "#/$defs/localizedText" }, "spritesheet": { "$ref": "#/$defs/iconPath" }, "kind": { "enum": ["person", "animal"] }, "behaviorManifest": { "type": "object" } } } },
+        "commands": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,31}$"
+              },
+              "title": {
+                "$ref": "#/$defs/commandTitle"
+              }
+            }
+          }
+        },
+        "tray": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commands"
+          ],
+          "properties": {
+            "commands": {
+              "type": "array",
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,31}$"
+              }
+            }
+          }
+        },
+        "badge": {
+          "type": "boolean"
+        },
+        "skins": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "displayName",
+              "spritesheet",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{1,32}$"
+              },
+              "displayName": {
+                "$ref": "#/$defs/localizedText"
+              },
+              "spritesheet": {
+                "$ref": "#/$defs/iconPath"
+              },
+              "kind": {
+                "enum": [
+                  "person",
+                  "animal"
+                ]
+              },
+              "behaviorManifest": {
+                "type": "object"
+              }
+            }
+          }
+        },
         "eventSource": {
           "description": "Observe-only plugin status shown in a separate list. It is never converted into built-in Agent events.",
-          "type": "object", "additionalProperties": false, "required": ["family", "displayName"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "family",
+            "displayName"
+          ],
           "properties": {
-            "family": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[A-Za-z0-9]+(?:[._\\s-]+[A-Za-z0-9]+)*$" },
-            "displayName": { "$ref": "#/$defs/eventSourceDisplayName" }
+            "family": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9]+(?:[._\\s-]+[A-Za-z0-9]+)*$"
+            },
+            "displayName": {
+              "$ref": "#/$defs/eventSourceDisplayName"
+            }
+          }
+        },
+        "panelThemes": {
+          "description": "Declarative panel themes. Data only; validated and normalised by the host. Requires Agent Pets 1.12.0+.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/panelTheme"
           }
         }
       }
     }
   },
   "$defs": {
-    "commandTitle": { "type": "object", "additionalProperties": false, "required": ["zh-TW", "en-US"], "properties": { "zh-TW": { "type": "string", "minLength": 1, "maxLength": 32 }, "en-US": { "type": "string", "minLength": 1, "maxLength": 32 } } },
+    "commandTitle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zh-TW",
+        "en-US"
+      ],
+      "properties": {
+        "zh-TW": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "en-US": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
     "localizedText": {
-      "type": "object", "additionalProperties": false, "required": ["zh-TW", "en-US"],
-      "properties": { "zh-TW": { "type": "string", "minLength": 1, "maxLength": 48 }, "en-US": { "type": "string", "minLength": 1, "maxLength": 48 } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zh-TW",
+        "en-US"
+      ],
+      "properties": {
+        "zh-TW": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48
+        },
+        "en-US": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48
+        }
+      }
     },
     "eventSourceDisplayName": {
-      "type": "object", "additionalProperties": false, "required": ["zh-TW", "en-US"],
-      "properties": { "zh-TW": { "type": "string", "minLength": 1, "maxLength": 80 }, "en-US": { "type": "string", "minLength": 1, "maxLength": 80 } }
-    },
-    "relativePath": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\)(?!.*[:<>\"|?*])(?!.*(?:^|/)[^/]*[. ](?:/|$)).+$" },
-    "javascriptPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.[jJ][sS]$" }] },
-    "htmlPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.[hH][tT][mM][lL]$" }] },
-    "iconPath": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "\\.(?:[pP][nN][gG]|[wW][eE][bB][pP])$" }] },
-    "networkHost": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", "not": { "pattern": "\\.[0-9]+$" } },
-    "linkHost": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", "not": { "pattern": "\\.[0-9]+$" } },
-    "setting": {
-      "type": "object", "additionalProperties": false, "required": ["type"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zh-TW",
+        "en-US"
+      ],
       "properties": {
-        "type": { "enum": ["string", "number", "boolean"] },
-        "title": { "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 48 }, { "$ref": "#/$defs/localizedText" }] },
-        "enum": { "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": { "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": "number" }, { "type": "boolean" }] } },
-        "maxLength": { "type": "integer", "minimum": 0, "maximum": 4096 },
-        "minimum": { "type": "number" },
-        "maximum": { "type": "number" },
-        "format": { "const": "secret" },
-        "default": { "oneOf": [{ "type": "string", "maxLength": 4096 }, { "type": "number" }, { "type": "boolean" }] }
+        "zh-TW": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "en-US": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\)(?!.*[:<>\"|?*])(?!.*(?:^|/)[^/]*[. ](?:/|$)).+$"
+    },
+    "javascriptPath": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/relativePath"
+        },
+        {
+          "type": "string",
+          "pattern": "\\.[jJ][sS]$"
+        }
+      ]
+    },
+    "htmlPath": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/relativePath"
+        },
+        {
+          "type": "string",
+          "pattern": "\\.[hH][tT][mM][lL]$"
+        }
+      ]
+    },
+    "iconPath": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/relativePath"
+        },
+        {
+          "type": "string",
+          "pattern": "\\.(?:[pP][nN][gG]|[wW][eE][bB][pP])$"
+        }
+      ]
+    },
+    "networkHost": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+      "not": {
+        "pattern": "\\.[0-9]+$"
+      }
+    },
+    "linkHost": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+      "not": {
+        "pattern": "\\.[0-9]+$"
+      }
+    },
+    "setting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        },
+        "title": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 48
+            },
+            {
+              "$ref": "#/$defs/localizedText"
+            }
+          ]
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "format": {
+          "const": "secret"
+        },
+        "default": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 4096
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        }
+      }
+    },
+    "panelThemeDescription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zh-TW",
+        "en-US"
+      ],
+      "properties": {
+        "zh-TW": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "en-US": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+    "panelThemeColor": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 64,
+      "pattern": "^(?:#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgba?|hsla?|oklch)\\([0-9a-z.%,/ ]{1,56}\\))$"
+    },
+    "panelThemeWoff2Path": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/relativePath"
+        },
+        {
+          "type": "string",
+          "pattern": "\\.[wW][oO][fF][fF]2$"
+        }
+      ]
+    },
+    "panelThemeFamilyList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "pattern": "^(?:@[a-z0-9-]{1,32}|[A-Za-z0-9](?:[A-Za-z0-9 -]{0,46}[A-Za-z0-9])?)$"
+      }
+    },
+    "panelThemePosition": {
+      "enum": [
+        "center",
+        "top",
+        "bottom",
+        "left",
+        "right",
+        "top-left",
+        "top-right",
+        "bottom-left",
+        "bottom-right"
+      ]
+    },
+    "panelThemeFit": {
+      "enum": [
+        "cover",
+        "contain",
+        "tile"
+      ]
+    },
+    "panelThemeOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "color",
+        "opacity"
+      ],
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 0.95
+        }
+      }
+    },
+    "panelThemeColors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bg",
+        "surface",
+        "surface2",
+        "text",
+        "textSecondary",
+        "textMuted",
+        "accent",
+        "accentText",
+        "onAccent",
+        "border"
+      ],
+      "properties": {
+        "bg": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "surface": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "surface2": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "surfaceWarm": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "surfaceSage": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "surfaceSageSoft": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "surfaceOff": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "text": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "textSecondary": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "textMuted": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "textFaint": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "accent": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "accentHover": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "accentText": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "onAccent": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "accentGlow": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "accentTrack": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "accentOnHover": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "sage": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "sageDeep": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "sageDark": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "sageTrack": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "border": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "borderSoft": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "borderOnAccent": {
+          "description": "Deprecated in 1.12.0 and ignored: no surface reads it. Still accepted (and grammar-checked) so existing manifests stay valid.",
+          "deprecated": true,
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "dangerText": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "successText": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "warnText": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "scrim": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "infoText": {
+          "description": "Opaque informational (blue) text. Optional; defaults to the built-in value for the mode. OKLCH hue 200–290°, chroma ≥ 0.05.",
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "shadow": {
+          "description": "Opaque shadow colour (relative luminance ≤ 0.05). Optional; defaults to the built-in value for the mode.",
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "highlight": {
+          "description": "Opaque glass highlight colour (relative luminance ≥ 0.7). Optional; defaults to white.",
+          "$ref": "#/$defs/panelThemeColor"
+        }
+      }
+    },
+    "panelThemeStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "color",
+        "at"
+      ],
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "panelThemeBackground": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "solid"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "kind",
+            "stops"
+          ],
+          "properties": {
+            "type": {
+              "const": "gradient"
+            },
+            "kind": {
+              "const": "linear"
+            },
+            "angle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 359
+            },
+            "stops": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/panelThemeStop"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "kind",
+            "stops"
+          ],
+          "properties": {
+            "type": {
+              "const": "gradient"
+            },
+            "kind": {
+              "const": "radial"
+            },
+            "position": {
+              "$ref": "#/$defs/panelThemePosition"
+            },
+            "stops": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/panelThemeStop"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "src",
+            "overlay"
+          ],
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "src": {
+              "$ref": "#/$defs/iconPath"
+            },
+            "fit": {
+              "$ref": "#/$defs/panelThemeFit"
+            },
+            "position": {
+              "$ref": "#/$defs/panelThemePosition"
+            },
+            "opacity": {
+              "type": "number",
+              "minimum": 0.2,
+              "maximum": 1
+            },
+            "blur": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "overlay": {
+              "$ref": "#/$defs/panelThemeOverlay"
+            }
+          }
+        }
+      ]
+    },
+    "panelThemeMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "colors"
+      ],
+      "properties": {
+        "colors": {
+          "$ref": "#/$defs/panelThemeColors"
+        },
+        "background": {
+          "$ref": "#/$defs/panelThemeBackground"
+        },
+        "userImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "allowed",
+            "overlay"
+          ],
+          "properties": {
+            "allowed": {
+              "const": true
+            },
+            "fit": {
+              "$ref": "#/$defs/panelThemeFit"
+            },
+            "overlay": {
+              "$ref": "#/$defs/panelThemeOverlay"
+            }
+          }
+        },
+        "petStatus": {
+          "$ref": "#/$defs/panelThemePetStatus"
+        }
+      }
+    },
+    "panelTheme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "modes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        },
+        "displayName": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/panelThemeDescription"
+        },
+        "fonts": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "src"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{1,32}$"
+              },
+              "src": {
+                "$ref": "#/$defs/panelThemeWoff2Path"
+              },
+              "weight": {
+                "enum": [
+                  400,
+                  600,
+                  700
+                ]
+              },
+              "style": {
+                "enum": [
+                  "normal",
+                  "italic"
+                ]
+              }
+            }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "$ref": "#/$defs/panelThemeFamilyList"
+            },
+            "heading": {
+              "$ref": "#/$defs/panelThemeFamilyList"
+            },
+            "scale": {
+              "type": "number",
+              "minimum": 0.92,
+              "maximum": 1.15
+            }
+          }
+        },
+        "shape": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "radiusSm": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16
+            },
+            "radiusMd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "radiusLg": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            }
+          }
+        },
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "light": {
+              "$ref": "#/$defs/panelThemeMode"
+            },
+            "dark": {
+              "$ref": "#/$defs/panelThemeMode"
+            }
+          }
+        }
+      }
+    },
+    "panelThemePetStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "text"
+      ],
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "border": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "text": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "textMuted": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "quotaFill": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "quotaTrack": {
+          "$ref": "#/$defs/panelThemeColor"
+        },
+        "quotaWarn": {
+          "$ref": "#/$defs/panelThemeColor"
+        }
       }
     }
   }

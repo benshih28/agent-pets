@@ -4,7 +4,8 @@ import { ref } from 'vue'
 // The desktop-pet layer (bubbles, status lines, handle) has its own
 // preference: 'dark' (default), 'light', or 'follow' the resolved panel theme.
 //   preference: 'system' follows the OS, 'light' / 'dark' force it.
-// Applied as <html data-theme="light|dark">; tokens.css supplies the values.
+// Applied as <html data-theme="light|dark"> — the panel window uses the panel
+// preference, the pet window its pet preference; tokens.css supplies the values.
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
@@ -66,12 +67,17 @@ function readStoredPet(): PetThemePreference {
   }
 }
 
+/** 視窗種類：決定 <html data-window> 與色盤模式（tokens.css 依此選擇區塊）。 */
+export type ThemeWindowKind = 'panel' | 'pet'
+let windowKind: ThemeWindowKind = 'panel'
+
 function apply(): void {
   resolvedTheme.value = resolveTheme(themePreference.value, systemPrefersDark())
   resolvedPetTheme.value = resolvePetTheme(petThemePreference.value, resolvedTheme.value)
   if (typeof document === 'undefined') return
-  document.documentElement.dataset.theme = resolvedTheme.value
-  document.documentElement.dataset.petTheme = resolvedPetTheme.value
+  document.documentElement.dataset.window = windowKind
+  // 寵物視窗的色盤模式就是寵物外觀；面板視窗用面板外觀。
+  document.documentElement.dataset.theme = windowKind === 'pet' ? resolvedPetTheme.value : resolvedTheme.value
 }
 
 export function setPetThemePreference(value: unknown): PetThemePreference {
@@ -95,9 +101,10 @@ export function setThemePreference(value: unknown): ThemePreference {
 let initialized = false
 
 /** Call once before mounting. Idempotent. */
-export function initTheme(): void {
+export function initTheme(kind: ThemeWindowKind = 'panel'): void {
   if (initialized || typeof window === 'undefined') return
   initialized = true
+  windowKind = kind
   themePreference.value = readStored()
   petThemePreference.value = readStoredPet()
   apply()

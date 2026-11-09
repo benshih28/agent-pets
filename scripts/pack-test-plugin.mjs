@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pluginId = process.argv[2]
 const outputPath = process.argv[3]
 
-if (!pluginId || !/^(?!_host$|_shared$)[a-z0-9-]{3,48}$/.test(pluginId) || !outputPath) {
+if (!pluginId || !/^[a-z0-9-]{3,48}$/.test(pluginId) || !outputPath) {
   throw new Error('Usage: node scripts/pack-test-plugin.mjs <plugin-id> <output.agentpet-plugin>')
 }
 
@@ -25,8 +25,13 @@ function collect(directory, relativeDirectory = '') {
 }
 
 collect(sourceDirectory)
-if (!files['plugin.json'] || !files['dist/main.js'] || !files['assets/icon.png']) {
-  throw new Error(`Fixture ${pluginId} must contain plugin.json, dist/main.js, and assets/icon.png`)
+if (!files['plugin.json']) throw new Error(`Fixture ${pluginId} must contain plugin.json`)
+// 無 Worker 的 fixture（skins、panelThemes）沒有 entry；只要求 manifest 有列出的檔案。
+const manifest = JSON.parse(Buffer.from(files['plugin.json']).toString('utf8'))
+for (const required of [manifest.entry, manifest.icon]) {
+  if (typeof required === 'string' && !files[required]) {
+    throw new Error(`Fixture ${pluginId} is missing ${required}, which plugin.json references`)
+  }
 }
 
 const target = path.resolve(outputPath)

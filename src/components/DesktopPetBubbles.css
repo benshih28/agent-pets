@@ -102,8 +102,8 @@
 
 .plugin-feed-source {
   overflow: hidden;
-  color: color-mix(in srgb, var(--pet-bubble-plugin-text) 64%, transparent);
-  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  color: var(--color-text-3);
+  font-size: max(var(--font-floor), calc(11px * var(--pet-scale, 1)));
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -126,13 +126,13 @@
 }
 
 .plugin-feed-message strong {
-  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  font-size: max(var(--font-floor), calc(11px * var(--pet-scale, 1)));
   font-weight: 700;
 }
 
 .plugin-feed-message span {
-  color: color-mix(in srgb, var(--pet-bubble-plugin-text) 84%, transparent);
-  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  color: var(--color-text-2);
+  font-size: max(var(--font-floor), calc(11px * var(--pet-scale, 1)));
   font-weight: 500;
 }
 
@@ -155,7 +155,7 @@
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: max(var(--font-xs), calc(11px * var(--pet-scale, 1)));
+  font-size: max(var(--font-floor), calc(11px * var(--pet-scale, 1)));
 }
 
 .pet-toast .plugin-feed-open-panel:hover {
@@ -172,7 +172,7 @@
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: color-mix(in srgb, var(--pet-bubble-plugin-text) 72%, transparent);
+  color: var(--color-text-3);
   cursor: pointer;
   font: 600 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -229,7 +229,7 @@
 }
 
 .permission-notice-copy span {
-  color: color-mix(in srgb, var(--pet-bubble-warn-text) 82%, transparent);
+  color: var(--color-text-2);
   font-size: var(--font-xs);
   font-weight: 500;
   line-height: 1.3;

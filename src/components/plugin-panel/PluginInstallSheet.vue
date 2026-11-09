@@ -328,7 +328,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, true))
 }
 
 .notice-danger {
-  color: var(--state-error-soft);
+  color: var(--text-danger);
 }
 
 .fingerprint,
@@ -341,7 +341,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, true))
 }
 
 .note-danger {
-  color: var(--state-error-soft);
+  color: var(--text-danger);
   font-weight: var(--weight-medium);
 }
 

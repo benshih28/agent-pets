@@ -13,6 +13,7 @@ import {
   UNSUPPORTED_DESKTOP_VISIBILITY_CAPABILITIES,
   type DesktopVisibilityCapabilities,
 } from '../src/types/desktop-visibility.ts'
+import { isRecord } from './value-guards.ts'
 
 export function readBoundedJson(filePath: string, maxBytes = 64 * 1024): unknown | null {
   try {
@@ -151,10 +152,6 @@ function isWaitSeconds(value: unknown): value is number {
     && Number.isInteger(value)
     && value >= CLAUDE_PERMISSION_WAIT_MIN_SECONDS
     && value <= CLAUDE_PERMISSION_WAIT_MAX_SECONDS
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function sanitizeStored(value: unknown): Partial<StoredDesktopPreferences> {

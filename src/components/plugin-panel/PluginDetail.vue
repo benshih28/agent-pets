@@ -15,6 +15,7 @@ import PluginDiagnostics from '@/components/plugin-panel/PluginDiagnostics.vue'
 import PluginHostTable from '@/components/plugin-panel/PluginHostTable.vue'
 import PluginSettingsForm from '@/components/plugin-panel/PluginSettingsForm.vue'
 import { usePluginController } from '@/composables/plugin/context'
+import PluginPanelThemes from '@/components/plugin-panel/PluginPanelThemes.vue'
 import type { PluginDetailSection } from '@/composables/usePluginPanelController'
 
 const {
@@ -29,11 +30,12 @@ const trayCount = computed(() => plugin.value?.manifest?.contributes.tray?.comma
 const trayOverflow = computed(() => diagnostics.value.some(entry => entry.code === 'too_many_enabled' && entry.method === 'plugin.tray'))
 const badge = computed(() => liveBadges.value.find(item => item.pluginId === plugin.value?.id))
 const skinCount = computed(() => plugin.value?.manifest?.contributes.skins?.length ?? 0)
+const panelThemeCount = computed(() => plugin.value?.manifest?.contributes.panelThemes?.length ?? 0)
 const eventSource = computed(() => {
   const names = plugin.value?.manifest?.name
   return names ? eventSourceStatuses.value.find(item => item.pluginName['zh-TW'] === names['zh-TW'] && item.pluginName['en-US'] === names['en-US']) : undefined
 })
-const hasPresence = computed(() => trayCount.value > 0 || Boolean(plugin.value?.manifest?.contributes.badge) || skinCount.value > 0 || Boolean(plugin.value?.manifest?.contributes.eventSource))
+const hasPresence = computed(() => trayCount.value > 0 || Boolean(plugin.value?.manifest?.contributes.badge) || skinCount.value > 0 || panelThemeCount.value > 0 || Boolean(plugin.value?.manifest?.contributes.eventSource))
 const name = computed(() => (plugin.value ? pluginName(plugin.value) : ''))
 const tone = computed(() => (plugin.value ? pluginStatusTone(plugin.value) : 'neutral'))
 const commands = computed(() => plugin.value?.manifest?.contributes.commands ?? [])
@@ -43,6 +45,7 @@ const sections = computed(() => [
   { id: 'overview', label: t('plugins.sectionOverview') },
   ...(hasSettings.value ? [{ id: 'settings', label: t('plugins.sectionSettings') }] : []),
   ...(commands.value.length ? [{ id: 'commands', label: t('plugins.sectionCommands') }] : []),
+  ...(panelThemeCount.value ? [{ id: 'themes', label: t('plugins.sectionPanelThemes') }] : []),
   { id: 'diagnostics', label: t('plugins.sectionDiagnostics') },
 ])
 const section = computed({
@@ -182,6 +185,10 @@ watch(plugin, async (value, previous) => {
             <li v-if="trayCount">{{ t('plugins.presenceTray', { count: trayCount }) }}<template v-if="trayOverflow"> · {{ t('plugins.presenceTrayOverflow') }}</template></li>
             <li v-if="plugin.manifest?.contributes.badge">{{ badge ? t('plugins.presenceBadge', { text: badge.text }) : t('plugins.presenceBadgeNone') }}</li>
             <li v-if="skinCount">{{ t('plugins.presenceSkins', { count: skinCount }) }}</li>
+            <li v-if="panelThemeCount">
+              {{ t('plugins.presencePanelThemes', { count: panelThemeCount }) }}
+              <Button variant="ghost" size="sm" @click="section = 'themes'">{{ t('plugins.presencePanelThemesOpen') }}</Button>
+            </li>
             <li v-if="plugin.manifest?.contributes.eventSource">{{ eventSource ? t('plugins.presenceEventSource', { name: eventSource.displayName[locale] }) : t('plugins.presenceEventSourceNone') }}</li>
           </ul>
         </Card>
@@ -208,6 +215,10 @@ watch(plugin, async (value, previous) => {
             {{ invokingCommandId === command.id ? t('plugins.commandRunning') : commandTitle(command) }}
           </Button>
         </div>
+      </Card>
+
+      <Card v-else-if="section === 'themes'" :title="t('plugins.sectionPanelThemes')">
+        <PluginPanelThemes :plugin-id="plugin.id" :plugin-enabled="enabledGlobally && plugin.preference.enabled" />
       </Card>
 
       <Card v-else :title="t('pluginDiagnosticsHeading')">

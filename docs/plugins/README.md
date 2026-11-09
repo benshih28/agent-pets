@@ -1,6 +1,6 @@
 # Agent Pets plugin developer handbook
 
-Plugins run in an isolated background Worker and can optionally add a sandboxed page to the plugin area of Settings. They can show pet notifications, request reactions, add user-triggered panel and Tray commands, show status badges, provide pet skins, read authorized Agent status, and publish clearly labeled observe-only statuses. They can also use controlled network, secrets, settings, schedule, and private storage APIs. They get no Node.js, filesystem or shell access, no arbitrary network access, and no access to another plugin's data. The Host API major version is `apiVersion: "1"`.
+Plugins run in an isolated background Worker and can optionally add a sandboxed page to the plugin area of Settings. They can show pet notifications, request reactions, add user-triggered panel and Tray commands, show status badges, provide pet skins and panel themes, read authorized Agent status, and publish clearly labeled observe-only statuses. They can also use controlled network, secrets, settings, schedule, and private storage APIs. They get no Node.js, filesystem or shell access, no arbitrary network access, and no access to another plugin's data. The Host API major version is `apiVersion: "1"`.
 
 Users install a `.agentpet-plugin` package from **Settings → Integrations → Plugins**; with Developer mode on you can load a plain folder while developing. Plugins are untrusted code and always shown with their requested permissions before installing.
 
@@ -20,6 +20,8 @@ Users install a `.agentpet-plugin` package from **Settings → Integrations → 
 - [Manifest fields](manifest.md) and [JSON Schema](plugin.schema.json)
 - [Host API reference](api-reference.md) and [TypeScript declarations](agent-pets-plugin.d.ts)
 - [Contribution points](contribution-points.md)
+- [Panel themes](panel-themes.md)
+- [What's new in 1.12](whats-new-1.12.md)
 - [Permissions and consent](permissions.md)
 - [Sandbox](sandbox.md)
 - [Resource and rate limits](limits.md)

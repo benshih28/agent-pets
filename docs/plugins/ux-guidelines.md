@@ -17,7 +17,7 @@ The **detail page** has four sections: **Overview** (notification routing: targe
 
 ### The dashboard tab
 
-An enabled plugin also gets its own tab in the control panel, after Sessions, Quota and History. It appears only while plugins are globally on and your plugin is installed, enabled and not crashed, and it disappears the moment any of that stops being true. The tab shows your manifest `name` (truncated when long), your `icon` (or a generic plugin icon) and a badge with your unread notification count or `badge` text. If you contribute a `panelView`, it is embedded in the tab under the same frame, sandbox and size rules as the Settings plugin page, and it is closed whenever the user switches tabs or hides the panel, so keep your page responsive and stateless between opens. Without a `panelView`, the tab shows your recent notifications and your `commands` as buttons, with links to your settings and details.
+An enabled plugin also gets its own tab in the control panel, after Sessions, Quota and History. It appears only while plugins are globally on and your plugin is installed, enabled and not crashed, and it disappears the moment any of that stops being true. The tab shows your manifest `name` (truncated when long), your `icon` (or a generic plugin icon) and a badge with your unread notification count or `badge` text. If you contribute a `panelView`, it is embedded in the tab under the same frame, sandbox and size rules as the Settings plugin page, and it is closed whenever the user switches tabs or hides the panel, so keep your page responsive and stateless between opens. Without a `panelView`, the tab shows only the sections you contribute: your panel themes (the same list as the detail page, the main place users choose them), your `commands` as buttons, your recent notifications (only with `contributes.feed`), a settings link (only with a non-empty `settings` schema) and a details link. A plugin with a `panelView` and `panelThemes` gets a **Panel themes** button in the tab header that opens the detail page section. A plugin with none of `panelView`, `panelThemes`, `feed`, `commands` or `settings` (for example skins only) gets no tab.
 
 ### The install sheet
 
@@ -51,8 +51,11 @@ Write the zh-TW text natively rather than translating word for word, and keep bo
 The host draws the glass: the frame is the functional layer. Your page is the **content layer**, so:
 
 - Do not add `backdrop-filter` or your own blur; glass inside glass is rejected by the design contract. Use flat fills.
-- Load `agent-pets://plugin/_shared/tokens.css` (the app's own token file, read-only) and style with tokens only, with fallbacks for standalone preview. The page does not receive the app's light/dark switch, so it gets the default dark palette; set `color-scheme: dark`.
-- The page view starts transparent. Give `body` `background: var(--surface-panel)` (translucent dark) for a self-contained look, or leave it unpainted to show the host surface.
+- Colour, radius and font come from the host-injected `--ap-*` tokens, which follow the user's panel theme and light/dark mode live (table in [Panel themes](panel-themes.md#reading-the-theme-in-your-plugin---ap--host-api-theme)). Give each a fallback for standalone preview, e.g. `var(--ap-text, #f3ede4)`, and set `color-scheme` from `api.theme.get()` / `onDidChange` if you use native form controls.
+- `agent-pets://plugin/_shared/tokens.css` (the app's own token file, read-only) still provides spacing, type sizes and interaction tokens. Its colour tokens below are aliases of the `--ap-*` theme the user sees (light or dark, plugin theme or built-in), so they follow it too; `--ap-*` stays the documented colour contract.
+- The page view starts transparent and sits on the themed panel surface, which can be light. Give `body` `background: var(--ap-bg)` for a self-contained look, or leave it unpainted and use `--ap-*` text colours so text stays legible in both modes.
+
+Shared stylesheet tokens (colour rows follow `--ap-*`):
 
 | Need | Tokens |
 |---|---|

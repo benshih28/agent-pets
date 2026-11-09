@@ -1,7 +1,9 @@
 import { isIP } from 'node:net'
 import { parsePetBehaviorManifest } from './pet-behavior-manifest.ts'
 import { normalizePluginEventSourceFamily } from './plugin-event-source.ts'
+import { PanelThemeValidationError, parsePanelThemes } from './plugin-panel-themes.ts'
 import { PLUGIN_CONTRIBUTION_REGISTRY } from '../src/types/plugin.ts'
+import { isPluginId, isPluginCommandId, isSemverCore } from '../src/types/id-patterns.ts'
 import type {
   PluginLocalizedText,
   PluginManifest,
@@ -9,11 +11,10 @@ import type {
   PluginSettingScalar,
   PluginSettingsSchema,
 } from '../src/types/plugin.ts'
+import { isRecord } from './value-guards.ts'
 
-const PLUGIN_ID_PATTERN = /^[a-z0-9-]{3,48}$/
 const SECRET_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
 const PROPERTY_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/
-const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const MAX_RELATIVE_PATH_LENGTH = 512
 const MAX_SETTING_ENUM_ITEMS = 50
@@ -32,26 +33,26 @@ export type PluginManifestError =
   | 'invalid_host'
   | 'invalid_settings'
   | 'invalid_contributions'
+  | 'invalid_panel_theme'
 
 export type PluginManifestParseResult =
   | { ok: true; manifest: PluginManifest }
-  | { ok: false; error: string }
+  /** `diagnostic` 是經過清理、最多 200 字元的作者提示（僅限面板主題）。 */
+  | { ok: false; error: string; diagnostic?: string }
 
 class ManifestValidationError extends Error {
   readonly code: PluginManifestError
+  readonly diagnostic?: string
 
-  constructor(code: PluginManifestError) {
+  constructor(code: PluginManifestError, diagnostic?: string) {
     super(code)
     this.code = code
+    if (diagnostic) this.diagnostic = diagnostic
   }
 }
 
-function reject(code: PluginManifestError): never {
-  throw new ManifestValidationError(code)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+function reject(code: PluginManifestError, diagnostic?: string): never {
+  throw new ManifestValidationError(code, diagnostic)
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
@@ -133,7 +134,7 @@ export function isValidPluginNetworkHost(value: unknown, allowWildcard = true): 
 }
 
 function parseVersion(value: unknown): string | null {
-  if (typeof value !== 'string' || !VERSION_PATTERN.test(value)) return null
+  if (!isSemverCore(value)) return null
   const parts = value.split('.').map(Number)
   return parts.every(Number.isSafeInteger) ? value : null
 }
@@ -219,7 +220,7 @@ function parseManifest(value: unknown): PluginManifest {
     'id', 'name', 'version', 'apiVersion', 'author', 'entry', 'icon', 'permissions', 'contributes',
   ])) reject('invalid_manifest')
 
-  if (typeof value.id !== 'string' || !PLUGIN_ID_PATTERN.test(value.id) || value.id === '_host' || value.id === '_shared') {
+  if (!isPluginId(value.id)) {
     reject('invalid_id')
   }
   const name = parseLocalizedText(value.name, 48)
@@ -335,7 +336,7 @@ function parseManifest(value: unknown): PluginManifest {
     const ids = new Set<string>()
     for (const command of commands) {
       if (!isRecord(command) || !hasOnlyKeys(command, ['id', 'title'])
-        || typeof command.id !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(command.id) || ids.has(command.id)) {
+        || !isPluginCommandId(command.id) || ids.has(command.id)) {
         reject('invalid_contributions')
       }
       const title = parseLocalizedText(command.title, 32)
@@ -393,14 +394,24 @@ function parseManifest(value: unknown): PluginManifest {
     if (!family || !displayName) reject('invalid_contributions')
     contributes.eventSource = { family, displayName }
   }
+  if (value.contributes.panelThemes !== undefined) {
+    try {
+      contributes.panelThemes = parsePanelThemes(value.contributes.panelThemes).contributions
+    } catch (error) {
+      reject('invalid_panel_theme', error instanceof PanelThemeValidationError ? error.diagnostic : undefined)
+    }
+  }
   if (!entry) {
-    const workerlessContributionIds = Object.entries(PLUGIN_CONTRIBUTION_REGISTRY)
+    // 無 Worker：沒有權限，且宣告的每項貢獻都是
+    // 無 Worker 類型（skins、panelThemes）並至少含一個項目。
+    const workerlessContributionIds = new Set(Object.entries(PLUGIN_CONTRIBUTION_REGISTRY)
       .filter(([, definition]) => 'allowsWorkerlessPlugin' in definition && definition.allowsWorkerlessPlugin === true)
-      .map(([id]) => id)
-    const onlySkinContribution = Object.keys(value.contributes).length === 1
-      && Object.keys(value.contributes).every(key => workerlessContributionIds.includes(key))
-      && (contributes.skins?.length ?? 0) > 0
-    if (!onlySkinContribution || Object.keys(value.permissions).length > 0) reject('invalid_contributions')
+      .map(([id]) => id))
+    const declaredKeys = Object.keys(value.contributes)
+    const workerlessOnly = declaredKeys.length > 0
+      && declaredKeys.every(key => workerlessContributionIds.has(key)
+        && Array.isArray(contributes[key as 'skins' | 'panelThemes']) && (contributes[key as 'skins' | 'panelThemes']?.length ?? 0) > 0)
+    if (!workerlessOnly || Object.keys(value.permissions).length > 0) reject('invalid_contributions')
   }
 
   return {
@@ -420,9 +431,9 @@ export function parsePluginManifest(value: unknown): PluginManifestParseResult {
   try {
     return { ok: true, manifest: parseManifest(value) }
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof ManifestValidationError ? error.code : 'invalid_manifest',
+    if (error instanceof ManifestValidationError) {
+      return { ok: false, error: error.code, ...(error.diagnostic ? { diagnostic: error.diagnostic } : {}) }
     }
+    return { ok: false, error: 'invalid_manifest' }
   }
 }

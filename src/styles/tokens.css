@@ -9,15 +9,8 @@
    the same palette. */
 
 :root {
-  /* ── Surfaces ─────────────────────────────────────────────────────────
-     Three materials, app-wide. `panel` is the glass window itself, `raised`
-     is anything sitting on it (cards, rows), `overlay` is a modal above it. */
-  --surface-panel: rgba(18, 18, 26, 0.86);
-  --surface-raised: rgba(255, 255, 255, 0.05);
-  --surface-raised-hover: rgba(255, 255, 255, 0.08);
-  --surface-sunken: rgba(8, 10, 18, 0.18);
-  --surface-overlay: rgba(25, 25, 35, 0.98);
-  --surface-scrim: rgba(0, 0, 0, 0.5);
+  /* 顏色一律來自下方的主題色盤（--builtin-organic-* → --organic-*）與其語意層
+     （--color-* 與舊名稱別名，見「語意層」區塊）；這裡只放與顏色無關的材質參數。 */
   --surface-blur: blur(24px) saturate(165%);
   /* Three blur strengths app-wide. Components must use these, never a literal
      blur(). `html[data-gpu-safe]` (dev:safe) and reduced-transparency turn
@@ -25,51 +18,6 @@
   --blur-chip: blur(8px) saturate(140%);
   --blur-bubble: blur(14px) saturate(160%);
   --blur-scrim: blur(4px);
-
-  /* Native <option> popups are painted by the OS, not by us — they need an
-     opaque colour or Windows/macOS fall back to their own light palette. */
-  --surface-option: #1b1b29;
-
-  /* ── Borders ──────────────────────────────────────────────────────────── */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --border-accent: rgba(139, 156, 247, 0.22);
-  --border-accent-strong: rgba(139, 156, 247, 0.4);
-
-  /* ── Accent ───────────────────────────────────────────────────────────── */
-  --accent: #8b9cf7;
-  --accent-bright: #cdd4ff;
-  /* Text/icon colour on a solid --accent fill (>= 4.5:1). Panel scopes re-point it. */
-  --accent-on: #12121a;
-  --accent-wash: rgba(139, 156, 247, 0.08);
-  --accent-soft: rgba(139, 156, 247, 0.15);
-  --accent-strong: rgba(139, 156, 247, 0.25);
-  --accent-glow: rgba(139, 156, 247, 0.14);
-
-  /* Provider-tinted fills. Claude keeps its own hue so the two providers stay
-     distinguishable in the Usage view at a glance. */
-  --gradient-accent: linear-gradient(90deg, #667eea, #8b9cf7);
-  --gradient-claude: linear-gradient(90deg, #b56ee2, #d59bff);
-  --accent-claude: #d59bff;
-  --border-claude: rgba(213, 155, 255, 0.13);
-  --surface-claude: rgba(213, 155, 255, 0.04);
-
-  /* ── Semantic state colours (mirrors STATE_COLORS in types/agent.ts) ──── */
-  --state-success: #50c878;
-  --state-error: #ff6b6b;
-  --state-error-soft: #ff9a9a;
-  --state-warn: #c8b450;
-  --state-warn-bright: #ffe37c;
-  --state-info: #9dd8ff;
-  --state-idle: #8a8a8a;
-  --state-offline: #757575;
-
-  /* ── Text — four levels, nothing in between ───────────────────────────── */
-  --text-primary: #e8ecfa;
-  --text-secondary: #a4a8b4;
-  --text-muted: #858b9b;
-  --text-bright: #f1f3ff;
-  --text-on-option: #ddd;
 
   /* ── Type scale — five steps, floor at 11px ───────────────────────────
      The old stylesheets ran down to 8px; anything below --font-xs is a bug.
@@ -87,6 +35,8 @@
   --weight-bold: 700;
 
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-ui);
+  --font-body: var(--font-ui);
 
   /* ── Spacing — 4px base ───────────────────────────────────────────────── */
   --space-1: 4px;
@@ -101,27 +51,11 @@
   --radius-lg: 16px;
   --radius-pill: 999px;
 
-  /* ── Elevation ────────────────────────────────────────────────────────── */
-  --shadow-panel:
-    0 18px 40px rgba(0, 0, 0, 0.4),
-    0 2px 6px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    inset 0 -18px 30px -20px rgba(0, 0, 0, 0.35);
-  --shadow-raised: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --shadow-edge-handle:
-    0 4px 12px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  --text-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.55);
-
   /* ── Focus ────────────────────────────────────────────────────────────
      One ring, applied by the ui/ primitives so it never has to be
-     hand-written per component again. */
+     hand-written per component again. 顏色在語意層（--color-focus）。 */
   --focus-ring-width: 2px;
-  --focus-ring-color: var(--state-info);
-  /* The light-blue ring is ~1.5:1 on cream; panel scopes use this one (5.8:1). */
-  --focus-ring-color-on-light: #1b5fb0;
-  --focus-ring-offset: 1px;
+  --focus-ring-offset: 2px;
 
   /* ── Hit target, layering, leading ────────────────────────────────────
      --hit-min: every clickable element is at least this big (WCAG 2.5.8
@@ -144,79 +78,58 @@
   --transition-slow: 0.35s ease;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
-  /* ── Organic panel theme (palette layer) ──────────────────────────────
-     --organic-* is the PALETTE of the panel layer. Spacing and type steps
-     below sit on the same 4px grid / 5-step scale as the base tokens (no
-     fractional values). New component CSS should reference the semantic
-     --color-* aliases defined at the end of this block, not --organic-*
-     directly, so a theme swap only has to re-point one layer.
-     Layers: pet layer (DesktopPet, bubbles) = base tokens (dark);
-             panel layer (StatusPanel, SetupWizard, ProjectMcp, dialogs) =
-             --organic-* palette via the --color-* semantic aliases.
-     The desktop pet keeps the original dark presentation layer. The panel
-     and its modal surfaces opt into this warm, opaque theme locally so a
-     bright wallpaper can never reduce text contrast behind the controls. */
-  --organic-bg: #f5ead8;
-  --organic-surface: #f9f4ed;
-  --organic-surface-2: #eee7db;
-  --organic-surface-warm: #ffe1d0;
-  --organic-surface-sage: #e1eecc;
-  --organic-surface-sage-soft: #f0fae1;
-  --organic-surface-off: #dcd3c4;
-  --organic-accent: #c67139;
-  --organic-accent-hover: #a85a28; /* text-on-accent >= 4.5:1 with --organic-accent-contrast */
-  --organic-accent-text: #8c491a;
-  --organic-accent-contrast: #fff2eb;
-  --organic-sage: #7a8a5e;
-  --organic-sage-deep: #56633f;
-  --organic-sage-dark: #3d472b;
-  --organic-text: #201e1d;
-  --organic-text-secondary: #645c50;
-  --organic-text-muted: #6b6354;
-  --organic-text-faint: #8a8070; /* decorative only (>= 3:1); never for text */
-  --organic-border: rgba(32, 30, 29, 0.16);
-  --organic-border-soft: rgba(32, 30, 29, 0.1);
-  --organic-border-on-accent: rgba(255, 242, 235, 0.55);
-  --organic-sage-track: rgba(61, 71, 43, 0.16);
-  --organic-accent-track: rgba(32, 30, 29, 0.08);
-  --organic-accent-glow: rgba(198, 113, 57, 0.2);
-  --organic-accent-on-hover: rgba(32, 30, 29, 0.05);
-  --organic-scrim: rgba(46, 43, 37, 0.42);
-  --organic-panel-shadow: 0 12px 32px rgba(46, 43, 37, 0.32);
-  --organic-card-shadow: 0 1px 2px rgba(46, 43, 37, 0.14);
-  --organic-hero-shadow: 0 3px 10px rgba(46, 43, 37, 0.16);
-  --organic-thumb-shadow: 0 1px 2px rgba(46, 43, 37, 0.24);
-  /* Compact desktop-pet status pills use the same Organic palette while
-     retaining an opaque dark presentation layer for arbitrary wallpapers. */
-  --organic-status-surface: rgba(46, 43, 37, 0.88);
-  --organic-status-surface-fallback: #241d16;
-  --organic-status-border: rgba(255, 225, 208, 0.14);
-  --organic-status-text: #f2eee8;
-  --organic-status-tooltip-surface: rgba(46, 43, 37, 0.94);
-  --organic-status-tooltip-border: rgba(198, 113, 57, 0.36);
-  --organic-status-tooltip-text: #f4ede6;
-  --organic-status-tooltip-muted: rgba(246, 237, 226, 0.8);
-  --organic-status-track: rgba(20, 16, 12, 0.38);
-  --organic-status-grid: rgba(7, 10, 12, 0.42);
-  --organic-status-flash: rgba(255, 255, 255, 0.92);
-  --organic-status-sheen: rgba(255, 255, 255, 0.72);
-  --organic-status-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  --organic-status-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  --organic-status-tooltip-shadow: 0 5px 16px rgba(0, 0, 0, 0.38);
+  /* ── 主題色盤（palette layer）─────────────────────────────────────────
+     兩個視窗（面板與寵物）、所有介面的唯一顏色來源。--builtin-organic-* 是
+     凍結的內建值（淺色在此、深色在 :root[data-theme='dark']），也是 src/ 裡
+     唯一允許寫死顏色的地方（check:design:strict --raw-colors=fail）。
+     --organic-* 指向它；插件主題只在 <html> 上以 inline 方式重新指向
+     --organic-*（spec §3.1、§16），所以每個衍生 token 都跟著主題走。
+     沒有「保護區域」：權限與風險介面也跟著主題，安全性改由主機強制的不變量
+     保證（驗證器的對比矩陣與狀態色色相規則，spec R14）。
+     視窗的模式：面板視窗＝面板外觀；寵物視窗＝寵物外觀（useTheme.ts）。 */
+  --builtin-organic-bg: #f5ead8;
+  --builtin-organic-surface: #f9f4ed;
+  --builtin-organic-surface-2: #eee7db;
+  --builtin-organic-surface-warm: #ffe1d0;
+  --builtin-organic-surface-sage: #e1eecc;
+  --builtin-organic-surface-sage-soft: #f0fae1;
+  --builtin-organic-surface-off: #dcd3c4;
+  --builtin-organic-accent: #c67139;
+  --builtin-organic-accent-hover: #a85a28; /* text-on-accent >= 4.5:1 with --organic-accent-contrast */
+  --builtin-organic-accent-text: #8c491a;
+  --builtin-organic-accent-contrast: #fff2eb;
+  --builtin-organic-sage: #7a8a5e;
+  --builtin-organic-sage-deep: #56633f;
+  --builtin-organic-sage-dark: #3d472b;
+  --builtin-organic-text: #201e1d;
+  --builtin-organic-text-secondary: #645c50;
+  --builtin-organic-text-muted: #6b6354;
+  --builtin-organic-text-faint: #8a8070; /* decorative only (>= 3:1); never for text */
+  --builtin-organic-border: rgba(32, 30, 29, 0.16);
+  --builtin-organic-border-soft: rgba(32, 30, 29, 0.1);
+  --builtin-organic-sage-track: rgba(61, 71, 43, 0.16);
+  --builtin-organic-accent-track: rgba(32, 30, 29, 0.08);
+  --builtin-organic-accent-glow: rgba(198, 113, 57, 0.2);
+  --builtin-organic-accent-on-hover: rgba(32, 30, 29, 0.05);
+  --builtin-organic-scrim: rgba(46, 43, 37, 0.42);
+  /* 擴充組（manifest 鍵 infoText、shadow、highlight，省略時用這裡的值）：
+     info-text 是資訊色（藍，色相受限並與危險/成功/警告及強調色保持 OKLab 距離）；
+     shadow 是陰影色（必須夠暗）、highlight 是玻璃高光（必須夠亮）。
+     與 electron/plugin-panel-themes.ts PANEL_THEME_COLOR_TOKENS 的內建值相同（有測試比對）。 */
+  --builtin-organic-info-text: #2e5b8c;
+  --builtin-organic-shadow: #2e2b25;
+  --builtin-organic-highlight: #ffffff;
   --organic-status-radius: 14px;
   --organic-status-tooltip-radius: 12px;
-  --organic-quota-warning: #e3b64f;
-  --organic-quota-error: #d64a3a;
-  --organic-quota-sage: #8fa073;
   /* Status text on cream surfaces (checked >= 4.5:1 by check-contrast). */
-  --organic-danger-text: #a62f1e;
-  --organic-success-text: #3f5a1c;
-  --organic-warn-text: #7a5200;
+  --builtin-organic-danger-text: #a62f1e;
+  --builtin-organic-success-text: #3f5a1c;
+  --builtin-organic-warn-text: #7a5200;
   /* Georgia only ships old-style figures ("0" reads as "o"), and it has no
      lnum feature, so digits are routed to the UI font via the 'Lining Digits'
      face defined in base.css. */
-  --organic-font-heading: 'Lining Digits', Georgia, 'Times New Roman', serif; /* Caprasimo was never bundled */
-  --organic-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --builtin-organic-font-heading: 'Lining Digits', Georgia, 'Times New Roman', serif; /* Caprasimo was never bundled */
+  --builtin-organic-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --organic-space-1: 4px;
   --organic-space-2: 8px;
@@ -224,147 +137,357 @@
   --organic-space-4: 16px;
   --organic-space-5: 24px;
   --organic-space-6: 32px;
-  --organic-radius-sm: 8px;
-  --organic-radius-md: 16px;
-  --organic-radius-lg: 28px;
-  --organic-font-label: 12px;
-  --organic-font-body-sm: 12px;
-  --organic-font-body-md: 13px;
-  --organic-font-body-lg: 15px;
-  --organic-font-heading-sm: 15px;
-  --organic-font-heading-md: 18px;
-  --organic-font-panel-title: 18px;
-  --organic-font-display-sm: 22px;
-  --organic-font-display-md: 22px;
+  --builtin-organic-radius-sm: 8px;
+  --builtin-organic-radius-md: 16px;
+  --builtin-organic-radius-lg: 28px;
+  --builtin-organic-font-label: 12px;
+  --builtin-organic-font-body-sm: 12px;
+  --builtin-organic-font-body-md: 13px;
+  --builtin-organic-font-body-lg: 15px;
+  --builtin-organic-font-heading-sm: 15px;
+  --builtin-organic-font-heading-md: 18px;
+  --builtin-organic-font-panel-title: 18px;
+  --builtin-organic-font-display-sm: 22px;
+  --builtin-organic-font-display-md: 22px;
 
-  /* ── Semantic layer (panel) ───────────────────────────────────────────
-     The names new panel-layer CSS should use. Each is an alias of the
-     palette above so a theme only re-points these. */
+  /* 可套主題的色盤：--organic-* 指向上方凍結的內建副本（--builtin-organic-*），
+     插件主題在 <html> 上以 inline 方式重新指向它們（spec §3.6、§16）。
+     這個檔案也以 agent-pets://plugin/_shared/tokens.css 提供給插件頁面：有對應
+     --ap-* 的顏色先讀 --ap-*（主機注入到插件頁面 <html> 的目前主題），所以頁面上的
+     --text-primary、--surface-raised 等舊名稱也跟著使用者看到的主題與模式。App 的
+     視窗不會有 --ap-*，一律退回內建值。 */
+  --organic-bg: var(--ap-bg, var(--builtin-organic-bg));
+  --organic-surface: var(--ap-surface, var(--builtin-organic-surface));
+  --organic-surface-2: var(--ap-surface-2, var(--builtin-organic-surface-2));
+  --organic-surface-warm: var(--builtin-organic-surface-warm);
+  --organic-surface-sage: var(--builtin-organic-surface-sage);
+  --organic-surface-sage-soft: var(--builtin-organic-surface-sage-soft);
+  --organic-surface-off: var(--builtin-organic-surface-off);
+  --organic-text: var(--ap-text, var(--builtin-organic-text));
+  --organic-text-secondary: var(--ap-text-secondary, var(--builtin-organic-text-secondary));
+  --organic-text-muted: var(--ap-text-muted, var(--builtin-organic-text-muted));
+  --organic-text-faint: var(--builtin-organic-text-faint);
+  --organic-accent: var(--ap-accent, var(--builtin-organic-accent));
+  --organic-accent-hover: var(--ap-accent-hover, var(--builtin-organic-accent-hover));
+  --organic-accent-text: var(--ap-accent-text, var(--builtin-organic-accent-text));
+  --organic-accent-contrast: var(--ap-on-accent, var(--builtin-organic-accent-contrast));
+  --organic-accent-glow: var(--builtin-organic-accent-glow);
+  --organic-accent-track: var(--builtin-organic-accent-track);
+  --organic-accent-on-hover: var(--builtin-organic-accent-on-hover);
+  --organic-sage: var(--builtin-organic-sage);
+  --organic-sage-deep: var(--builtin-organic-sage-deep);
+  --organic-sage-dark: var(--builtin-organic-sage-dark);
+  --organic-sage-track: var(--builtin-organic-sage-track);
+  --organic-border: var(--ap-border, var(--builtin-organic-border));
+  --organic-border-soft: var(--ap-border-soft, var(--builtin-organic-border-soft));
+  --organic-danger-text: var(--ap-danger, var(--builtin-organic-danger-text));
+  --organic-success-text: var(--ap-success, var(--builtin-organic-success-text));
+  --organic-warn-text: var(--ap-warn, var(--builtin-organic-warn-text));
+  --organic-scrim: var(--ap-scrim, var(--builtin-organic-scrim));
+  --organic-font-body: var(--builtin-organic-font-body);
+  --organic-font-heading: var(--builtin-organic-font-heading);
+  --organic-font-label: var(--builtin-organic-font-label);
+  --organic-font-body-sm: var(--builtin-organic-font-body-sm);
+  --organic-font-body-md: var(--builtin-organic-font-body-md);
+  --organic-font-body-lg: var(--builtin-organic-font-body-lg);
+  --organic-font-heading-sm: var(--builtin-organic-font-heading-sm);
+  --organic-font-heading-md: var(--builtin-organic-font-heading-md);
+  --organic-font-panel-title: var(--builtin-organic-font-panel-title);
+  --organic-font-display-sm: var(--builtin-organic-font-display-sm);
+  --organic-font-display-md: var(--builtin-organic-font-display-md);
+  --organic-radius-sm: var(--builtin-organic-radius-sm);
+  --organic-radius-md: var(--builtin-organic-radius-md);
+  --organic-radius-lg: var(--builtin-organic-radius-lg);
+  --organic-info-text: var(--ap-info, var(--builtin-organic-info-text));
+  --organic-shadow: var(--ap-shadow, var(--builtin-organic-shadow));
+  --organic-highlight: var(--ap-highlight, var(--builtin-organic-highlight));
+
+}
+
+/* ── 語意層 ──────────────────────────────────────────────────────────────
+   每個介面讀這一層（或下方的舊名稱別名），不直接讀 --organic-*。全部由色盤
+   衍生，所以主題換色盤時每個表面都跟著換。宣告在 :root 與
+   .panel-theme-preview 上：預覽以 inline 方式帶入另一組色盤，別名必須在該
+   元素重新解析（繼承下來的別名已經被代換，spec §3.6）。 */
+:root,
+.panel-theme-preview {
   --color-bg: var(--organic-bg);
   --color-surface: var(--organic-surface);
   --color-surface-2: var(--organic-surface-2);
+  --color-overlay: var(--organic-surface); /* 對話框、選單、彈出框、提示、通知 */
+  --color-sunken: var(--organic-surface-2);
   --color-text: var(--organic-text);
   --color-text-2: var(--organic-text-secondary);
   --color-text-3: var(--organic-text-muted);
+  --color-text-faint: var(--organic-text-faint); /* 只用於裝飾（>= 3:1） */
   --color-accent: var(--organic-accent);
+  --color-accent-hover: var(--organic-accent-hover);
   --color-accent-text: var(--organic-accent-text);
   --color-on-accent: var(--organic-accent-contrast);
   --color-border: var(--organic-border-soft);
   --color-border-strong: var(--organic-border);
   --color-scrim: var(--organic-scrim);
+  /* 狀態色：危險/成功/警告由驗證器限制色相與色差（spec R12），資訊色由主機固定。 */
+  --color-danger: var(--organic-danger-text);
+  --color-success: var(--organic-success-text);
+  --color-warn: var(--organic-warn-text);
+  --color-info: var(--organic-info-text);
+  /* 焦點環用強調文字色：它在每個表面上都 >= 4.5:1，強調填色在淺色表面只有約 2.9:1。 */
+  --color-focus: var(--organic-accent-text);
+  --color-shadow: var(--organic-shadow);
+  --color-highlight: var(--organic-highlight);
+  /* 懸停／晶片的淡色底（文字繼承自所在列；驗證器檢查每個文字色疊在 surface、surface2、bg 上的結果）。 */
+  --color-hover: var(--organic-accent-on-hover);
 
-  /* ── Compatibility aliases ────────────────────────────────────────────
-     Names that components referenced before they were defined (they
-     silently resolved to nothing). Defined once here so those references
-     work; prefer the canonical name in new code. */
-  --accent-primary: var(--accent);
-  --status-error: var(--state-error);
-  /* Status text colours. Dark pet layer uses the bright state hues; the
-     panel layer (see the .status-panel scope below) swaps in darker values
-     that keep >= 4.5:1 on the cream surfaces. */
-  --text-danger: var(--state-error-soft);
-  --text-success: var(--state-success);
-  --text-warning: var(--state-warn-bright);
-  --surface-secondary: var(--surface-raised-hover);
-  --font-2xs: var(--font-xs); /* floor is 11px; there is no smaller step */
-  --font-heading: var(--font-ui);
-  --font-body: var(--font-ui);
+  /* 舊名稱：元件與插件頁面（_shared/tokens.css）仍使用這些名稱，一律指向語意層。 */
+  --surface-panel: var(--color-bg);
+  --surface-raised: var(--color-surface);
+  --surface-raised-hover: var(--color-surface-2);
+  --surface-sunken: var(--color-sunken);
+  --surface-overlay: var(--color-overlay);
+  --surface-scrim: var(--color-scrim);
+  /* 原生 <option> 由作業系統繪製，需要不透明色。 */
+  --surface-option: var(--color-surface);
+  --border-subtle: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --border-accent: var(--color-accent);
+  --border-accent-strong: var(--color-accent);
+  --accent: var(--color-accent);
+  --accent-hover: var(--color-accent-hover);
+  --accent-text: var(--color-accent-text);
+  /* 實心強調色上的文字/圖示。 */
+  --accent-on: var(--color-on-accent);
+  --accent-bright: var(--color-on-accent);
+  --accent-soft: var(--organic-surface-warm);
+  --accent-wash: var(--organic-surface-warm);
+  --accent-glow: var(--organic-accent-glow);
+  --gradient-accent: var(--color-accent);
+  /* 供應商識別色：Claude 用色盤的鼠尾草色系，與 Codex 的強調色區分；
+     一律搭配供應商名稱文字，所以不承載狀態語意，主題可以隨色盤調整。 */
+  --accent-claude: var(--organic-sage);
+  --gradient-claude: var(--organic-sage);
+  /* 代理狀態（狀態點、迷你環、工作階段列；STATE_COLORS 讀這些名稱）：
+     成功/錯誤/等待取自受色相限制的狀態色，思考/工具＝強調文字色（強調填色在淺色膠囊上不到 3:1），
+     閒置/離線＝弱化文字。
+     主題無法直接設定 --state-*，只能透過受驗證的色盤，所以語意不會被改掉；
+     狀態也一律搭配文字標籤或形狀，不只靠顏色。 */
+  --state-success: var(--color-success);
+  --state-error: var(--color-danger);
+  --state-warn: var(--color-warn);
+  --state-warn-bright: var(--color-warn);
+  --state-info: var(--color-info);
+  --state-active: var(--color-accent-text);
+  --state-idle: var(--color-text-3);
+  --state-offline: var(--color-text-faint);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-2);
+  --text-muted: var(--color-text-3);
+  --text-bright: var(--color-text);
+  --text-on-option: var(--color-text);
+  --text-danger: var(--color-danger);
+  --text-success: var(--color-success);
+  --text-warning: var(--color-warn);
+  --status-error: var(--color-danger);
+  --focus-ring-color: var(--color-focus);
+  --toggle-off: var(--organic-surface-off);
+  --scrollbar-thumb: color-mix(in srgb, var(--color-text) 28%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--color-text) 45%, transparent);
+  --organic-panel-shadow: 0 12px 32px color-mix(in srgb, var(--color-shadow) var(--elevation-panel), transparent);
+  --organic-card-shadow: 0 1px 2px color-mix(in srgb, var(--color-shadow) var(--elevation-card), transparent);
+  --organic-hero-shadow: 0 3px 10px color-mix(in srgb, var(--color-shadow) var(--elevation-hero), transparent);
+  --organic-thumb-shadow: 0 1px 2px color-mix(in srgb, var(--color-shadow) var(--elevation-thumb), transparent);
+  --shadow-raised: var(--organic-card-shadow);
+  --shadow-hero: var(--organic-hero-shadow);
+  --shadow-panel: var(--organic-panel-shadow);
+  --toggle-thumb-shadow: var(--organic-thumb-shadow);
 }
 
-/* ── Pet bubbles ───────────────────────────────────────────────────────
-   One material for every bubble the pet shows (result toast, say, plugin feed,
-   notices). The pet layer is dark by default; `data-pet-theme='light'` (below) swaps in a
-   light palette. The
-   opaque surface is the fallback for reduced-transparency / high contrast. */
-:root {
-  --pet-bubble-surface: rgba(30, 30, 40, 0.93);
-  --pet-bubble-surface-opaque: #1d1b24;
-  --pet-bubble-border: rgba(255, 255, 255, 0.12);
-  --pet-bubble-sheen: linear-gradient(155deg, rgba(255, 255, 255, 0.1), transparent 54%);
-  --pet-bubble-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  --pet-bubble-text: #f2f2f2;
-  --pet-bubble-success-text: #a6f0c0;
-  --pet-bubble-error-text: #ffb3b3;
-  --pet-bubble-warn-border: rgba(232, 198, 91, 0.58);
-  --pet-bubble-warn-text: #fff4c4;
-  --pet-bubble-info-border: rgba(157, 176, 255, 0.56);
-  --pet-bubble-info-text: #e1e6ff;
-  --pet-bubble-info-accent: #aab8ff;
-  --pet-bubble-plugin-border: rgba(112, 189, 158, 0.56);
-  --pet-bubble-plugin-text: #e4fff3;
-  --pet-bubble-warn-accent: #ffe37c;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.34);
-  --pet-drag-shadow: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.35));
-}
-
-/* Light pet appearance (Settings -> Appearance -> Pet). Bubble tokens apply
-   globally; the surface tokens the pet's own status lines, handle and badges
-   read are re-pointed only inside .desktop-pet so the panel window is
-   untouched. The *-opaque / high-contrast fallbacks keep working because
-   they read the same tokens. */
-:root[data-pet-theme='light'] {
-  --pet-bubble-surface: rgba(252, 249, 243, 0.94);
-  --pet-bubble-surface-opaque: #fbf7f0;
-  --pet-bubble-border: rgba(32, 30, 29, 0.16);
-  --pet-bubble-sheen: linear-gradient(155deg, rgba(255, 255, 255, 0.7), transparent 54%);
-  --pet-bubble-shadow:
-    0 6px 18px rgba(46, 43, 37, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --pet-bubble-text: #2a2622;
-  --pet-bubble-success-text: #17683a;
-  --pet-bubble-error-text: #a3261f;
-  --pet-bubble-warn-border: rgba(150, 100, 0, 0.55);
-  --pet-bubble-warn-text: #6e4600;
-  --pet-bubble-warn-accent: #7a4f00;
-  --pet-bubble-info-border: rgba(63, 81, 181, 0.5);
-  --pet-bubble-info-text: #2c3a96;
-  --pet-bubble-info-accent: #3a4bb5;
-  --pet-bubble-plugin-border: rgba(30, 120, 90, 0.5);
-  --pet-bubble-plugin-text: #145a45;
-  --scrollbar-thumb: rgba(32, 30, 29, 0.28);
-  --scrollbar-thumb-hover: rgba(32, 30, 29, 0.45);
-  --pet-drag-shadow: drop-shadow(0 10px 14px rgba(46, 43, 37, 0.28));
-}
-
-:root[data-pet-theme='light'] .desktop-pet {
-  --surface-panel: rgba(252, 249, 243, 0.92);
-  --surface-overlay: rgba(252, 249, 243, 0.98);
-  --surface-raised-hover: rgba(255, 255, 255, 0.6);
-  --border-strong: rgba(32, 30, 29, 0.2);
-  --text-primary: #2a2622;
+/* ── 陰影與高光強度（依模式）──────────────────────────────────────────────
+   同一個陰影色／高光色，依模式用不同比例（與 1.11.5 的內建外觀相同）：淺色的陰影淡、
+   玻璃高光亮；深色的陰影濃、高光只有一點，且寵物文字下有一道深色文字陰影。
+   宣告在 .panel-theme-preview[data-mode] 上：預覽要用「被預覽的模式」，而不是面板目前的
+   模式（上方與寵物區塊的組合 token 在預覽元素上重新解析）。 */
+:root,
+.panel-theme-preview[data-mode='light'] {
+  --elevation-panel: 32%;
+  --elevation-card: 14%;
+  --elevation-hero: 16%;
+  --elevation-thumb: 24%;
+  --pet-sheen-strength: 70%;
+  --pet-gloss-strength: 60%;
+  --pet-bubble-shadow-strength: 20%;
+  --pet-bubble-highlight-strength: 80%;
+  --pet-drag-shadow-strength: 28%;
+  --pet-status-shadow-strength: 16%;
+  --pet-status-highlight-strength: 80%;
+  --pet-tooltip-shadow-strength: 24%;
+  --pet-handle-shadow-strength: 22%;
+  --pet-handle-highlight-strength: 80%;
   --text-shadow-panel: none;
-  --organic-status-surface: rgba(252, 249, 243, 0.92);
-  --organic-status-surface-fallback: #fbf7f0;
-  --organic-status-border: rgba(32, 30, 29, 0.16);
-  --organic-status-text: #2a2622;
-  --organic-status-tooltip-surface: rgba(252, 249, 243, 0.97);
-  --organic-status-tooltip-border: rgba(168, 92, 40, 0.4);
-  --organic-status-tooltip-text: #2a2622;
-  --organic-status-tooltip-muted: rgba(42, 38, 34, 0.78);
-  --organic-status-track: rgba(32, 30, 29, 0.14);
-  --organic-status-shadow: 0 2px 8px rgba(46, 43, 37, 0.16);
-  --organic-status-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --organic-status-tooltip-shadow: 0 5px 16px rgba(46, 43, 37, 0.24);
-  --shadow-edge-handle: 0 3px 12px rgba(46, 43, 37, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-/* Panel layer: the status panel and plugin pages render on cream surfaces,
-   so status text must use the darker values. */
-.status-panel {
-  --text-danger: var(--organic-danger-text);
-  --text-success: var(--organic-success-text);
-  --text-warning: var(--organic-warn-text);
+:root[data-theme='dark'],
+.panel-theme-preview[data-mode='dark'] {
+  --elevation-panel: 50%;
+  --elevation-card: 40%;
+  --elevation-hero: 40%;
+  --elevation-thumb: 50%;
+  --pet-sheen-strength: 10%;
+  --pet-gloss-strength: 8%;
+  --pet-bubble-shadow-strength: 34%;
+  --pet-bubble-highlight-strength: 14%;
+  --pet-drag-shadow-strength: 35%;
+  --pet-status-shadow-strength: 25%;
+  --pet-status-highlight-strength: 18%;
+  --pet-tooltip-shadow-strength: 38%;
+  --pet-handle-shadow-strength: 28%;
+  --pet-handle-highlight-strength: 12%;
+  /* 淺色文字浮在任意桌面上時的深色描邊（套用 petStatus 的膠囊不使用，見 DesktopPet.css）。 */
+  --text-shadow-panel: 0 1px 2px color-mix(in srgb, var(--color-shadow) 55%, transparent);
 }
 
-/* Every organic-themed surface: solid accent fills carry light text. */
-.status-panel,
-.setup-overlay,
-.mcp-overlay {
-  --accent-on: var(--organic-accent-contrast);
-  --focus-ring-color: var(--focus-ring-color-on-light);
+/* ── 面板視窗的字型與形狀 ────────────────────────────────────────────────
+   主題的字族、字級倍率與圓角只用在面板視窗（與預覽）；寵物視窗維持固定的
+   字級與幾何（status-line-fit 依此量測），也不載入主題字型。 */
+:root[data-window='panel'],
+.panel-theme-preview {
+  --surface-blur: none;
+  --font-ui: var(--organic-font-body);
+  --font-heading: var(--organic-font-heading);
+  --font-body: var(--organic-font-body);
+  --font-xs: var(--organic-font-label);
+  --font-sm: var(--organic-font-body-sm);
+  --font-md: var(--organic-font-body-md);
+  --font-lg: var(--organic-font-body-lg);
+  --font-label: var(--organic-font-label);
+  --font-body-sm: var(--organic-font-body-sm);
+  --font-body-md: var(--organic-font-body-md);
+  --font-body-lg: var(--organic-font-body-lg);
+  --font-heading-sm: var(--organic-font-heading-sm);
+  --font-heading-md: var(--organic-font-heading-md);
+  --font-panel-title: var(--organic-font-panel-title);
+  --font-display-sm: var(--organic-font-display-sm);
+  --font-display-md: var(--organic-font-display-md);
+  --space-1: var(--organic-space-1);
+  --space-2: var(--organic-space-2);
+  --space-3: var(--organic-space-3);
+  --space-4: var(--organic-space-4);
+  --space-5: var(--organic-space-5);
+  --radius-sm: var(--organic-radius-sm);
+  --radius-md: var(--organic-radius-md);
+  --radius-lg: var(--organic-radius-lg);
+}
+
+/* ── 插件頁面的主題掛鉤 ─────────────────────────────────────────────
+   預設不設定（guaranteed-invalid）：App 視窗的色盤退回內建值；插件頁面由主機在
+   <html> 上以 inline 方式注入 --ap-*（docs/plugins/panel-themes.md），inline 值優先。 */
+:root {
+  --ap-bg: initial;
+  --ap-surface: initial;
+  --ap-surface-2: initial;
+  --ap-text: initial;
+  --ap-text-secondary: initial;
+  --ap-text-muted: initial;
+  --ap-accent: initial;
+  --ap-accent-hover: initial;
+  --ap-accent-text: initial;
+  --ap-on-accent: initial;
+  --ap-border: initial;
+  --ap-border-soft: initial;
+  --ap-danger: initial;
+  --ap-success: initial;
+  --ap-warn: initial;
+  --ap-info: initial;
+  --ap-scrim: initial;
+  --ap-shadow: initial;
+  --ap-highlight: initial;
+}
+
+/* ── 寵物狀態膠囊主題掛鉤 ─────────────────────────────────────────
+   預設不設定（guaranteed-invalid），讓每個 var() 都退回由色盤衍生的
+   --organic-status-*。插件主題的 petStatus 可以在寵物視窗的 <html> 上設定它們；
+   只有 .status-line 會讀取（spec §3.7）。 */
+:root {
+  --pet-status-background: initial;
+  --pet-status-background-opaque: initial;
+  --pet-status-border: initial;
+  --pet-status-text: initial;
+  --pet-status-text-muted: initial;
+  --pet-status-quota-fill: initial;
+  --pet-status-quota-track: initial;
+  --pet-status-quota-warn: initial;
+}
+
+/* ── 寵物視窗：泡泡、狀態膠囊與玻璃層 ────────────────────────────────────
+   全部由語意層衍生；寵物視窗的模式是寵物外觀（useTheme.ts 把它寫進 data-theme）。
+   泡泡與膠囊浮在任意桌面上：表面是 surface 以 0.93／0.92 疊上去，驗證器以同樣
+   比例在黑、白桌面上檢查每個文字 token（PET_BUBBLE_SURFACE_ALPHA、
+   PET_PILL_SURFACE_ALPHA）。不透明版本是減少透明度／高對比時的退路。
+   在 .panel-theme-preview 上重新解析，讓主題預覽裡的膠囊用預覽的色盤。 */
+:root,
+.panel-theme-preview {
+  --pet-bubble-surface: color-mix(in srgb, var(--color-surface) 93%, transparent);
+  --pet-bubble-surface-opaque: var(--color-surface);
+  --pet-bubble-border: var(--color-border-strong);
+  --pet-bubble-sheen: linear-gradient(155deg, color-mix(in srgb, var(--color-highlight) var(--pet-sheen-strength), transparent), transparent 54%);
+  /* 膠囊、提示與邊緣把手左上角的玻璃反光。 */
+  --pet-gloss: color-mix(in srgb, var(--color-highlight) var(--pet-gloss-strength), transparent);
+  --pet-bubble-shadow:
+    0 6px 18px color-mix(in srgb, var(--color-shadow) var(--pet-bubble-shadow-strength), transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-highlight) var(--pet-bubble-highlight-strength), transparent);
+  --pet-bubble-text: var(--color-text);
+  --pet-bubble-success-text: var(--color-success);
+  --pet-bubble-error-text: var(--color-danger);
+  --pet-bubble-warn-border: color-mix(in srgb, var(--color-warn) 58%, transparent);
+  --pet-bubble-warn-text: var(--color-text);
+  --pet-bubble-warn-accent: var(--color-warn);
+  --pet-bubble-info-border: color-mix(in srgb, var(--color-info) 56%, transparent);
+  --pet-bubble-info-text: var(--color-text);
+  --pet-bubble-info-accent: var(--color-info);
+  --pet-bubble-plugin-border: color-mix(in srgb, var(--organic-sage) 56%, transparent);
+  --pet-bubble-plugin-text: var(--color-text);
+  /* 寵物視窗頂端預留給提示與權限泡泡的高度（與 QUOTA_TOOLTIP_HEADROOM_H、PET_WINDOW_TOP_HEADROOM 相同）。 */
+  --pet-bubble-headroom: 190px;
+  --pet-drag-shadow: drop-shadow(0 10px 14px color-mix(in srgb, var(--color-shadow) var(--pet-drag-shadow-strength), transparent));
+  --organic-status-surface: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  --organic-status-surface-fallback: var(--color-surface);
+  --organic-status-border: var(--color-border-strong);
+  --organic-status-text: var(--color-text);
+  --organic-status-tooltip-surface: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  --organic-status-tooltip-border: color-mix(in srgb, var(--color-accent) 38%, transparent);
+  --organic-status-tooltip-text: var(--color-text);
+  --organic-status-tooltip-muted: var(--color-text-2);
+  --organic-status-track: color-mix(in srgb, var(--color-text) 14%, transparent);
+  --organic-status-grid: color-mix(in srgb, var(--color-shadow) 42%, transparent);
+  --organic-status-flash: color-mix(in srgb, var(--color-highlight) 92%, transparent);
+  --organic-status-sheen: color-mix(in srgb, var(--color-highlight) 72%, transparent);
+  --organic-status-shadow: 0 2px 8px color-mix(in srgb, var(--color-shadow) var(--pet-status-shadow-strength), transparent);
+  --organic-status-highlight: inset 0 1px 0 color-mix(in srgb, var(--color-highlight) var(--pet-status-highlight-strength), transparent);
+  --organic-status-tooltip-shadow: 0 5px 16px color-mix(in srgb, var(--color-shadow) var(--pet-tooltip-shadow-strength), transparent);
+  /* 額度條：一般＝ sageDeep、Claude ＝ accentText、低額度＝警告色、危急＝危險色；
+     驗證器保證四者在膠囊與軌道上 >= 3:1。 */
+  --organic-quota-sage: var(--organic-sage-deep);
+  --organic-quota-accent: var(--color-accent-text);
+  --organic-quota-warning: var(--color-warn);
+  --organic-quota-error: var(--color-danger);
+}
+
+/* 寵物視窗的玻璃層：浮在桌面上的元素（邊緣把手、權限泡泡、選單）用半透明的
+   色盤表面；卡片與列用文字色的淡色調，不疊第二層玻璃（liquid-glass.md）。 */
+.desktop-pet {
+  --surface-panel: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  --surface-overlay: color-mix(in srgb, var(--color-surface) 98%, transparent);
+  --surface-raised: color-mix(in srgb, var(--color-text) 5%, transparent);
+  --surface-raised-hover: color-mix(in srgb, var(--color-text) 9%, transparent);
+  --shadow-panel:
+    0 18px 40px color-mix(in srgb, var(--color-shadow) 40%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-shadow) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-highlight) 18%, transparent);
+  --shadow-raised: inset 0 1px 0 color-mix(in srgb, var(--color-highlight) 6%, transparent);
+  --shadow-edge-handle:
+    0 4px 12px color-mix(in srgb, var(--color-shadow) var(--pet-handle-shadow-strength), transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-highlight) var(--pet-handle-highlight-strength), transparent);
+  --focus-ring-offset: 1px;
 }
 
 /* ── Dark theme (panel layer) ───────────────────────────────────────────
@@ -378,54 +501,48 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --organic-bg: #1f1b16;
-  --organic-surface: #292420;
-  --organic-surface-2: #342e28;
-  --organic-surface-warm: #4a3022;
-  --organic-surface-sage: #2e3622;
-  --organic-surface-sage-soft: #263019;
-  --organic-surface-off: #3f372e;
-  --organic-accent: #d98652;
-  --organic-accent-hover: #e39a6b;
-  --organic-accent-text: #f0b48a;
-  --organic-accent-contrast: #201e1d;
-  --organic-sage: #9db07b;
-  --organic-sage-deep: #aebf8c;
-  --organic-sage-dark: #c9d6ad;
-  --organic-text: #f3ede4;
-  --organic-text-secondary: #cfc5b6;
-  --organic-text-muted: #b0a592;
-  --organic-text-faint: #8d8374;
-  --organic-border: rgba(243, 237, 228, 0.18);
-  --organic-border-soft: rgba(243, 237, 228, 0.1);
-  --organic-border-on-accent: rgba(32, 30, 29, 0.4);
-  --organic-sage-track: rgba(201, 214, 173, 0.18);
-  --organic-accent-track: rgba(243, 237, 228, 0.1);
-  --organic-accent-glow: rgba(217, 134, 82, 0.28);
-  --organic-accent-on-hover: rgba(243, 237, 228, 0.06);
-  --organic-scrim: rgba(0, 0, 0, 0.55);
-  --organic-panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  --organic-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --organic-hero-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-  --organic-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --organic-danger-text: #ff9a8a;
-  --organic-success-text: #b6d48a;
-  --organic-warn-text: #f0c866;
-  --focus-ring-color-on-light: #9dd8ff;
+  --builtin-organic-bg: #1f1b16;
+  --builtin-organic-surface: #292420;
+  --builtin-organic-surface-2: #342e28;
+  --builtin-organic-surface-warm: #4a3022;
+  --builtin-organic-surface-sage: #2e3622;
+  --builtin-organic-surface-sage-soft: #263019;
+  --builtin-organic-surface-off: #3f372e;
+  --builtin-organic-accent: #d98652;
+  --builtin-organic-accent-hover: #e39a6b;
+  --builtin-organic-accent-text: #f0b48a;
+  --builtin-organic-accent-contrast: #201e1d;
+  --builtin-organic-sage: #9db07b;
+  --builtin-organic-sage-deep: #aebf8c;
+  --builtin-organic-sage-dark: #c9d6ad;
+  --builtin-organic-text: #f3ede4;
+  --builtin-organic-text-secondary: #cfc5b6;
+  --builtin-organic-text-muted: #b0a592;
+  --builtin-organic-text-faint: #8d8374;
+  --builtin-organic-border: rgba(243, 237, 228, 0.18);
+  --builtin-organic-border-soft: rgba(243, 237, 228, 0.1);
+  --builtin-organic-sage-track: rgba(201, 214, 173, 0.18);
+  --builtin-organic-accent-track: rgba(243, 237, 228, 0.1);
+  --builtin-organic-accent-glow: rgba(217, 134, 82, 0.28);
+  --builtin-organic-accent-on-hover: rgba(243, 237, 228, 0.06);
+  --builtin-organic-scrim: rgba(0, 0, 0, 0.55);
+  --builtin-organic-shadow: #000000;
+  --builtin-organic-info-text: #9cc3f0;
+  --builtin-organic-danger-text: #ff9a8a;
+  --builtin-organic-success-text: #b6d48a;
+  --builtin-organic-warn-text: #f0c866;
 }
 
 /* More contrast: stronger borders in both themes. */
 @media (prefers-contrast: more) {
   :root {
-    --organic-border: rgba(32, 30, 29, 0.6);
-    --organic-border-soft: rgba(32, 30, 29, 0.4);
-    --border-strong: rgba(255, 255, 255, 0.5);
-    --border-subtle: rgba(255, 255, 255, 0.3);
+    --builtin-organic-border: rgba(32, 30, 29, 0.6);
+    --builtin-organic-border-soft: rgba(32, 30, 29, 0.4);
   }
 
   :root[data-theme='dark'] {
-    --organic-border: rgba(243, 237, 228, 0.65);
-    --organic-border-soft: rgba(243, 237, 228, 0.45);
+    --builtin-organic-border: rgba(243, 237, 228, 0.65);
+    --builtin-organic-border-soft: rgba(243, 237, 228, 0.45);
   }
 }
 
@@ -442,9 +559,8 @@
 /* Windows high-contrast / forced colours: the ring must use a system colour. */
 @media (forced-colors: active) {
   :root,
-  .status-panel,
-  .setup-overlay,
-  .mcp-overlay {
+  .panel-theme-preview,
+  .desktop-pet {
     --focus-ring-color: Highlight;
   }
 }

@@ -519,5 +519,7 @@
   "pluginHostRequestDenied": "You denied this host request. It will not be shown again for 24 hours.",
   "pluginHostRequestLimited": "A plugin can request network access up to 3 times in 10 minutes.",
   "pluginHostRequestNotPublic": "This host did not resolve to a public address, so the request was denied.",
-  "system": "System & startup"
+  "system": "System & startup",
+  "pluginPermissionPanelThemes": "Provide {count} panel themes",
+  "pluginPermissionPanelThemeFonts": "Include custom fonts for the panel"
 }

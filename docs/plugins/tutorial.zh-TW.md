@@ -117,7 +117,7 @@ document.querySelector('#remind').addEventListener('click', () => api.ui.postMes
 await api.ui.postMessage({ type: 'break:get' }).catch(() => {})
 ```
 
-完整檔案（含錯誤處理與以 token 為主的樣式）在範例資料夾。請用共用 token 設計樣式（見 [UX 指南](ux-guidelines.zh-TW.md)），不要依賴外部網址。
+完整檔案（含錯誤處理）在範例資料夾。`ui/panel.css` 的顏色、圓角與字族全部取自宿主寫在 `<html>` 上的 `--ap-*` 主題 token（會即時跟著使用者的面板主題與淺色／深色模式），只有間距與字級取自共用的 `tokens.css`；`ui/panel.js` 依 `api.theme.get()`／`onDidChange` 設定 `color-scheme`。見[面板主題](panel-themes.zh-TW.md)與 [UX 指南](ux-guidelines.zh-TW.md)，不要依賴外部網址。
 
 ## 4. 載入並試用
 

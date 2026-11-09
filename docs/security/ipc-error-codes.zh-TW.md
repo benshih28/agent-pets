@@ -66,6 +66,7 @@ Host API 與 IPC 結果錯誤碼分別定義於 `src/types/plugin.ts` 和 `src/t
 | `filesystem_unsafe` | 插件檔案路徑未通過安全檢查。 |
 | `install_failed` | 插件安裝未完成。 |
 | `plugin_not_found` | 找不到要求的已安裝插件。 |
+| `invalid_panel_theme` | 封裝的 `contributes.panelThemes` 或其字型、圖片違反面板主題規則（語法、對比或素材檢查）。 |
 | `catalog_disabled` | 線上目錄已停用。 |
 | `catalog_url_invalid` | 目錄網址不允許使用。 |
 | `catalog_unavailable` | 無法連線到目錄。 |
@@ -89,3 +90,10 @@ Host API 與 IPC 結果錯誤碼分別定義於 `src/types/plugin.ts` 和 `src/t
 | `conflict` | 請求與目前狀態衝突。 |
 | `invalid_project` | 專案識別碼無效。 |
 | `invalid_pet` | 寵物識別碼無效。 |
+| `theme_unavailable` | 面板主題（插件、主題與模式）不在目前目錄中：未安裝、已停用、插件功能關閉或已移除。 |
+| `image_invalid` | 選擇的背景圖片不是至少 64 px 的靜態 PNG、JPEG 或 WebP，或無法安全讀取。 |
+| `image_too_large` | 選擇的背景圖片超過 20 MiB、每邊 8192 px 或 16.78 MP。 |
+| `image_not_allowed` | 主題的此模式沒有宣告 `userImage.allowed`。 |
+| `theme_limit_reached` | 「我的主題」已達 50 個；新增、複製或匯入前請先刪除一個。 |
+| `theme_not_found` | 找不到這個 id 的「我的主題」。 |
+| `theme_import_invalid` | 選擇的主題檔不是 16 KiB 以內、Agent Pets 匯出格式的一般 JSON 檔。 |

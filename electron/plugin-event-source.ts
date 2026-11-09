@@ -4,6 +4,8 @@ import type {
   PluginLocalizedText,
 } from '../src/types/plugin.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import { isPluginId } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_EVENT_SOURCE_WINDOW_MS = 60_000
 export const PLUGIN_EVENT_SOURCE_RATE_PER_PLUGIN = 30
@@ -23,7 +25,6 @@ export const PLUGIN_EVENT_SOURCE_RESERVED_FAMILIES = new Set([
   'generic-http', 'agent-pets', 'plugin', 'system',
 ])
 
-const PLUGIN_ID = /^(?!_host$|_shared$)[a-z0-9-]{3,48}$/
 const SESSION_ID = /^[\x21-\x7e]{1,64}$/
 const EVENT_STATES = new Set<PluginEventSourceState>(['thinking', 'tool-running', 'idle', 'done', 'error'])
 const TERMINAL_STATES = new Set<PluginEventSourceState>(['done', 'error'])
@@ -61,10 +62,6 @@ interface PluginEventSourceControllerOptions {
   wallNow?: () => number
   schedule?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   cancel?: (timer: ReturnType<typeof setTimeout>) => void
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function normalizeSafeLocalizedText(value: PluginLocalizedText): PluginLocalizedText | null {
@@ -114,7 +111,7 @@ export class PluginEventSourceController {
   }
 
   emit(pluginId: string, rawEvent: unknown): PluginEventSourceEmitResult {
-    if (!PLUGIN_ID.test(pluginId) || !isRecord(rawEvent)
+    if (!isPluginId(pluginId) || !isRecord(rawEvent)
       || Object.keys(rawEvent).length !== 2 || !Object.hasOwn(rawEvent, 'sessionId') || !Object.hasOwn(rawEvent, 'state')) {
       return { ok: false, error: 'invalid_request' }
     }
