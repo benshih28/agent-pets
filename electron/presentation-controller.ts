@@ -9,6 +9,7 @@ import type {
   PresentationStatusSnapshot,
 } from '../src/types/presentation.ts'
 import { PRESENTATION_REACTIONS, type PresentationReaction } from '../src/types/presentation.ts'
+import { FAMILY_ADAPTER_IDS, type AgentFamilyAdapterId } from '../src/types/agent.ts'
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
 import { isPluginId, isSafeItemId } from '../src/types/id-patterns.ts'
@@ -61,6 +62,13 @@ export type PresentationValidationResult = {
 const SAFE_NAME_LENGTH = 64
 const SAFE_MESSAGE_CONTROL = /[\u0000-\u001f\u007f]/g
 const SAFE_MESSAGE_MARKUP = /[<>]/g
+// agentFamily 是插件看得到的公開契約（PresentationPetStatus／PetStatusChange 的字面型別）；
+// 家族 registry 多出契約沒有的 adapter id 時，這裡的泛型會讓編譯失敗，契約要先更新。
+const PRESENTATION_AGENT_FAMILIES: ReadonlySet<string> = new Set<NonNullable<PresentationPetStatus['agentFamily']>>(FAMILY_ADAPTER_IDS)
+
+function isAgentFamilyAdapterId(value: unknown): value is AgentFamilyAdapterId {
+  return typeof value === 'string' && PRESENTATION_AGENT_FAMILIES.has(value)
+}
 
 export const isPresentationClientId = isSafeItemId
 
@@ -167,8 +175,7 @@ export function normalizePresentationStatus(value: unknown): PresentationStatusS
       activePets.push({
         petId,
         name: name || petId,
-        agentFamily: candidate.agentFamily === 'codex' || candidate.agentFamily === 'claude-code' || candidate.agentFamily === 'opencode'
-          ? candidate.agentFamily : null,
+        agentFamily: isAgentFamilyAdapterId(candidate.agentFamily) ? candidate.agentFamily : null,
         mood: normalizeMood(candidate.mood),
         level: clampLevel(candidate.level),
         visibleState: normalizeVisibleState(candidate.visibleState),

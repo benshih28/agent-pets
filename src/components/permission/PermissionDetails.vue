@@ -47,6 +47,7 @@ async function copy(): Promise<void> {
       {{ t('permissionWarning', { count: request.truncatedChars, source: permissionSourceName(request.agentId) }) }}
     </p>
     <div class="permission-details-tools">
+      <!-- raw-control: 權限泡泡內的文字連結；有框的 Button 會和允許／拒絕按鈕搶視覺層級 -->
       <button
         v-if="canExpand"
         type="button"
@@ -57,6 +58,7 @@ async function copy(): Promise<void> {
       >
         {{ expanded ? t('permission.collapse') : t('permission.expand') }}
       </button>
+      <!-- raw-control: 權限泡泡內的文字連結；有框的 Button 會和允許／拒絕按鈕搶視覺層級 -->
       <button
         type="button"
         class="permission-details-link"

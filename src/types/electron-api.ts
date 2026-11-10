@@ -10,7 +10,7 @@ import type { HistoryClearResult, HistoryCommandResult, HistoryExportRequest, Hi
 import type { PetWindowMode, PetWindowModeState } from './pet-window'
 import type { PetBehaviorManifest, PluginSkinPetSource } from './pet'
 import type { PetImportCommitResult, PetImportDecision, PetImportPrepareResult } from './pet-import'
-import type { AgentSession } from './agent'
+import type { AgentSession, AgentSource, QuotaFamilyKey } from './agent'
 import type { AgentAdapterId } from './agent-adapter'
 import type { LocalServerHealthSnapshot, LocalServerId } from './reliability'
 import type { PresentationIntent, PresentationStatusUpdate } from './presentation'
@@ -176,7 +176,7 @@ export interface ElectronAPI {
       getQuotaUsage: (force?: boolean) => Promise<{
         updatedAt: string
         providers: Array<{
-          id: 'codex' | 'claude'
+          id: QuotaFamilyKey
           name: string
           plan?: string
           windows: Array<{
@@ -209,7 +209,7 @@ export interface ElectronAPI {
       exportHistory: (request?: HistoryExportRequest) => Promise<HistoryCommandResult>
       revealHistoryExport: () => Promise<boolean>
       onHistoryUpdated: (callback: () => void) => () => void
-      testIntegration: (source: 'opencode-cli' | 'opencode-desktop' | 'codex' | 'codex-desktop' | 'claude' | 'claude-desktop') => Promise<{
+      testIntegration: (source: AgentSource) => Promise<{
         ok: boolean
         verifiedAt?: number
         error?: string

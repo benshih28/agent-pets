@@ -123,7 +123,7 @@ withDefaults(defineProps<{
   border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: var(--radius-pill);
-  animation: btn-spin 0.8s linear infinite;
+  animation: btn-spin var(--duration-spin) linear infinite;
 }
 
 @keyframes btn-spin {

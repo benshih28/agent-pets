@@ -77,6 +77,7 @@ function commitOklch(): void {
 <template>
   <div class="color-field" :class="{ invalid: issues.length > 0 }" :data-testid="`color-field-${testId}`">
     <div class="color-row">
+      <!-- raw-control: 原生色彩選擇器，系統色盤只能由 input type=color 開啟，ui/ 沒有對應元件 -->
       <input
         class="color-swatch"
         type="color"
@@ -90,10 +91,11 @@ function commitOklch(): void {
         <span v-if="alphaText" class="color-alpha">{{ alphaText }}</span>
       </span>
       <Tooltip :text="usage">
-        <button type="button" class="color-usage" :aria-label="te('themeEditor.usageButton', { key: label })">
+        <Button variant="ghost" size="sm" icon-only :aria-label="te('themeEditor.usageButton', { key: label })">
           <Icon name="info" :size="14" />
-        </button>
+        </Button>
       </Tooltip>
+      <!-- raw-control: 與色票同列的精簡色碼欄位；Input.vue 是含標籤／說明／錯誤列的直式欄位，錯誤已由下方 color-issues 呈現 -->
       <input
         v-model="text"
         class="color-text"
@@ -167,7 +169,7 @@ function commitOklch(): void {
   width: var(--hit-min);
   height: var(--hit-min);
   flex: none;
-  padding: 2px;
+  padding: var(--space-0-5);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
@@ -175,7 +177,6 @@ function commitOklch(): void {
 }
 
 .color-swatch:focus-visible,
-.color-usage:focus-visible,
 .color-text:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -201,25 +202,6 @@ function commitOklch(): void {
   flex: none;
   color: var(--text-muted);
   font-size: var(--font-xs);
-}
-
-.color-usage {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--hit-min);
-  height: var(--hit-min);
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: help;
-}
-
-.color-usage:hover {
-  background: var(--color-hover);
-  color: var(--text-primary);
 }
 
 .color-text {
@@ -259,7 +241,7 @@ function commitOklch(): void {
 .color-issue-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   margin: 0;
   padding: 0;
   list-style: none;

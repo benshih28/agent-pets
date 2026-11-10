@@ -4,13 +4,15 @@ import { useAgentStore } from '@/stores/agentStore'
 import DesktopPet from '@/components/DesktopPet.vue'
 import GrowthCelebration from '@/components/growth/GrowthCelebration.vue'
 import ToastHost from '@/components/ui/ToastHost.vue'
-import { playCue, setSoundVolume, type SoundCue } from '@/utils/sound'
+import type { SoundCue } from '@/types/sound'
+import { playCue, setSoundVolume } from '@/utils/sound'
 import { shouldPlayCue } from '@/utils/sound-policy'
 import type { DesktopPreferences } from '@/types/desktop'
 import type { AchievementSnapshot, AchievementUnlock } from '@/types/achievement'
 import { setLocale as applyLocale } from '@/i18n'
 import { EDGE_HOVER_EXPAND_MS } from '@/utils/pet-edge'
 import { HIT_DILATE_PX, decidePassthrough, hasOpaquePixel } from '@/utils/pet-hit-test'
+import { PET_CELL_WIDTH } from '@/types/pet-atlas'
 
 // Panel-only surfaces load on demand so the pet window, which shares this
 // bundle, starts without them.
@@ -267,12 +269,7 @@ function handleStorage(e: StorageEvent) {
       void store.setProgressionPet(e.newValue as string)
     })
   } else if (e.key === 'agent-pet-family-map') {
-    try {
-      const parsed = e.newValue ? JSON.parse(e.newValue) : {}
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        store.familyPetIds = parsed
-      }
-    } catch {}
+    store.syncFamilyPetIds(e.newValue)
   } else if (e.key === 'agent-pet-sound') {
     store.soundEnabled = e.newValue === '1'
   } else if (e.key === 'agent-pet-multi') {
@@ -329,6 +326,8 @@ onMounted(() => {
   store.setCueSink(playCueIfAllowed)
   document.documentElement.style.setProperty('--pet-scale', String(store.petScale))
   document.documentElement.style.setProperty('--pet-w', store.scaledW + 'px')
+  // CSS 裡的 sprite 格寬也從 types/pet-atlas.ts 來，不另外寫死。
+  document.documentElement.style.setProperty('--pet-cell-w', `${PET_CELL_WIDTH}px`)
 
   const electronAPI = (window as any).electronAPI
   if (electronAPI?.onAgentStatusEvent) {

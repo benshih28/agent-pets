@@ -91,13 +91,17 @@ test('renderer panel and extracted component files stay below the 500-line targe
 
 test('pet animation cadence and terminal frame behavior stay fixed', () => {
   const source = read('../src/components/PetAnimation.vue')
+  const atlas = read('../src/types/pet-atlas.ts')
   for (const cadence of [
-    'idle: { name: \'idle\', row: 0, frameDurations: [280, 110, 110, 140, 140, 320] }',
-    'waving: { name: \'waving\', row: 3, frameDurations: [140, 140, 140, 280] }',
-    'jumping: { name: \'jumping\', row: 4, frameDurations: [140, 140, 140, 140, 280] }',
-  ]) assert.ok(source.includes(cadence), `missing animation cadence: ${cadence}`)
-  assert.ok(source.includes('hold their final'))
-  assert.ok(source.includes('frame until the store reports the next state'))
+    'idle: motion(\'idle\', 0, [280, 110, 110, 140, 140, 320])',
+    'waving: motion(\'waving\', 3, [140, 140, 140, 280])',
+    'jumping: motion(\'jumping\', 4, [140, 140, 140, 140, 280])',
+  ]) assert.ok(atlas.includes(cadence), `missing animation cadence: ${cadence}`)
+  // 動作表只有一份：PetAnimation 從 types/pet-atlas.ts 匯入，不再自己定義。
+  assert.match(source, /from '@\/types\/pet-atlas'/)
+  assert.doesNotMatch(source, /const motions\b|const CELL_[WH]\b/)
+  assert.ok(source.includes('刻意停在最後一格'))
+  assert.ok(source.includes('等 store 回報下一個狀態'))
   assert.match(source, /function frameDelay\(\): number/)
   assert.match(source, /frameTimerId = setTimeout\(animationStep, frameDelay\(\)\)/)
   assert.match(source, /document\.addEventListener\('visibilitychange', handleDocumentVisibilityChange\)/)

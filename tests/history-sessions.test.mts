@@ -305,12 +305,17 @@ test('v9 migration backfills existing sessions additively and is idempotent', (t
   assert.deepEqual(second.getSessionDetail('aang-airbender', migrated.id)!.timeline, [])
   second.close()
 
+  // 不能用 t.after 關閉：after hook 依註冊順序執行，會先刪暫存資料夾，
+  // Windows 上 SQLite 檔案仍被開著就會 EPERM。
   const third = new HistoryStore(filePath, { now: () => NOW })
-  t.after(() => third.close())
-  const db = (third as unknown as { database: RawDb }).database
-  assert.equal(Number(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 9').get()!.count), 1)
-  assert.equal(Number(db.prepare('SELECT COUNT(*) AS count FROM session_model_usage').get()!.count), 1)
-  assert.equal(third.listSessions('aang-airbender', {}).items[1]!.tokenInput, 40)
+  try {
+    const db = (third as unknown as { database: RawDb }).database
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 9').get()!.count), 1)
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS count FROM session_model_usage').get()!.count), 1)
+    assert.equal(third.listSessions('aang-airbender', {}).items[1]!.tokenInput, 40)
+  } finally {
+    third.close()
+  }
 })
 
 test('retention prune and clear remove timelines and per-session usage with their sessions', (t) => {

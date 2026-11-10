@@ -69,12 +69,12 @@ const model = defineModel<string>({ required: true })
 }
 
 .size-md .select {
-  padding: 8px 30px 8px 13px;
+  padding: var(--space-2) 30px var(--space-2) 13px;
   font-size: var(--font-sm);
 }
 
 .size-sm .select {
-  padding: 6px 28px 6px 13px;
+  padding: var(--space-1-5) 28px var(--space-1-5) 13px;
   font-size: var(--font-xs);
 }
 

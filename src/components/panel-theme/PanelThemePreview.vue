@@ -121,7 +121,7 @@ const backdrop = computed(() => panelThemePreviewBackdrop(props.entry, props.mod
 
 .preview-button {
   align-self: flex-start;
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--organic-radius-sm);
   background: var(--organic-accent-hover);
   color: var(--organic-accent-contrast);

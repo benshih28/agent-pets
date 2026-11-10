@@ -27,18 +27,18 @@ description: Use for agent-pets project coding conventions and refactor planning
 ## 1. Import 路徑規則
 
 ### 現況（2026-08-14 更新）
-`tsconfig.json` 與 `vite.config.mts` 都已設定 `@/* → ./src/*`。此規則已在本輪重構中全面套用：`src/**` 內除了下方「重要例外」列出的 9 個測試會直接執行的檔案，其餘所有相對路徑（含同層 `./xxx`）都已改成 `@/`。
+`tsconfig.json` 與 `vite.config.mts` 都已設定 `@/* → ./src/*`。此規則已在本輪重構中全面套用：`src/**` 內除了下方「重要例外」列出的測試會直接執行的檔案，其餘所有相對路徑（含同層 `./xxx`）都已改成 `@/`。
 
 ### 規則
 ```typescript
 // ❌ 不要
 import { useAgentStore } from '../stores/agentStore'
-import { STATE_LABELS_SHORT } from '../types/agent'
+import { SOURCE_LABELS } from '../types/agent'
 import PetAnimation from './PetAnimation.vue'
 
 // ✅ 要
 import { useAgentStore } from '@/stores/agentStore'
-import { STATE_LABELS_SHORT } from '@/types/agent'
+import { SOURCE_LABELS } from '@/types/agent'
 import PetAnimation from '@/components/PetAnimation.vue'
 ```
 
@@ -56,9 +56,15 @@ import PetAnimation from '@/components/PetAnimation.vue'
 - `src/types/capabilities.ts`
 - `src/types/progression.ts`
 - `src/utils/desktop-effects.ts`
+- `src/utils/agent-state-presentation.ts`（狀態呈現 registry；執行期只相對匯入 `src/types/agent.ts` 與 `src/types/freeze.ts`，`@/` 只用在 `import type`，Node 執行時會整段拿掉）
 - `src/utils/toast-countdown.ts`
+- `src/types/pet-atlas.ts`（sprite 圖集規格；主程序也直接 import）。會被測試執行、又對它做值 import 的 `src/utils/pet-motion-plan.ts`、`src/utils/pet-atlas-preview.ts`、`src/utils/status-line-fit.ts` 也必須用相對路徑；只做 `import type` 的檔案不受影響（型別會被 strip 掉）
+- `src/types/freeze.ts`（registry 共用的 `deepFreeze`；`agent.ts`、`sound.ts`、`agent-state-presentation.ts` 都用相對路徑值 import 它，所以檔內不能有任何 import）
+- `src/types/sound.ts`（音效 registry；主程序 `electron/desktop-preferences.ts` 也直接 import，所以檔內唯一的執行期 import 是相對路徑的 `./freeze.ts`）。對它做值 import 的 `src/utils/sound.ts`（`tests/sound-registry.test.mts` 用假的 AudioContext 動態 import）與 `src/utils/sound-policy.ts` 也必須用相對路徑
 
-這份清單是目前测試檔案 import 的完整遞移閉包（這 9 個檔案彼此之間也不再 import 其他 src 檔案）。之後如果有新檔案被某個 `tests/*.test.mts` 直接 import，要先檢查它跟它遞移 import 的所有 src 檔案是否也在這份清單裡；不在的話一樣要維持相對路徑，否則要另外幫 Node 測試執行環境接上 `@/` 的 resolver（例如自訂 loader），目前專案沒有做這件事。
+這份清單只列跟 registry 相關、最容易改錯的檔案，不是完整閉包。2026-11-10 實算：測試在執行期載入的 src `.ts` 檔有 85 個，其中 24 個自己又值 import 其他 src 檔案（除了上面幾個，還有 `src/types/ipc.ts`、`src/types/plugin*.ts`、`src/utils/panel-theme-*.ts` 等），目前全部都是相對路徑。
+
+閉包內的規則：執行期 import 只能用相對路徑；`@/` 只能出現在 `import type`。新檔案被某個 `tests/*.test.mts` 直接或動態 import 時，它跟它遞移值 import 的所有 src 檔案都要遵守這條；否則要另外幫 Node 測試執行環境接上 `@/` 的 resolver（例如自訂 loader），目前專案沒有做這件事。`pnpm run test:unit` 出現 `ERR_MODULE_NOT_FOUND` 通常就是閉包裡有人用了 `@/`。
 
 ### Import 排序（沿用一般慣例）
 ```typescript
@@ -181,6 +187,15 @@ const ADAPTER_HANDLERS: Record<AgentAdapterId, () => void> = {
 }
 ADAPTER_HANDLERS[adapterId]?.()
 ```
+
+**D. 每個 `AgentState` 都要有的資料 → 寫進狀態 registry，不要另開 switch 或 Record**
+`AGENT_STATE_POLICY`（`src/types/agent.ts`，主程序也用：優先序、通知、歷史結局）與 `AGENT_STATE_PRESENTATION`（`src/utils/agent-state-presentation.ts`，renderer 專用：標籤、顏色、aria、狀態列文字、迷你徽章、音效 cue）都用 `as const satisfies Record<AgentState, …>`，新增狀態時漏一格就編譯失敗。帶轉換或 urgency 條件的邏輯（例如「進入 waiting-permission 時才播音」）留在原處，只從表裡取值。狀態 → 寵物動作（`src/utils/pet-motion-plan.ts`）就是這種例外：它要看前一個狀態、隨機與時間，所以維持 switch；新增狀態時這裡也要補一個 case。
+
+**E. 每個 `AgentSource`／工具家族都要有的資料 → 寫進來源 registry，不要再寫 `source === 'claude' || …` 或手寫來源清單**
+`AGENT_SOURCE_REGISTRY`（名稱、家族、CLI／Desktop）與 `AGENT_FAMILY_REGISTRY`（家族名稱、adapterId、quota、本機 token 紀錄）都在 `src/types/agent.ts`，主程序與 renderer 共用。`SOURCE_LABELS`、`SOURCE_FAMILIES`、`FAMILY_SOURCES`、各種白名單都由這兩張表推導。來源 → 家族直接查 `AGENT_SOURCE_REGISTRY[source].family` 或 `familyOfSource()`，是 O(1)，不要再用 `SOURCE_FAMILIES.find(f => f.sources.includes(s))`。不可信的字串先過 `isAgentSource`／`isAgentFamilyKey`／`isQuotaFamilyKey` 再查表。表裡的字串都是持久化或插件契約的值，不能改名。hook 檔案（`integrations/*`、`electron/setup.ts`、`electron/hook-config.ts`）保留自己的字串。清單見 `docs/dev/agent-sources.md`。
+
+**F. 每個音效 cue 都要有的資料 → 寫進 `SOUND_CUE_REGISTRY`（`src/types/sound.ts`）**
+音形、cue 開關、試聽按鈕都在這張 `as const satisfies Record<SoundCue, …>` 表；節流、包絡、音量範圍、持久化預設值是同檔的 `SOUND_POLICY`／`SOUND_ENVELOPE`／`SOUND_VOLUME`／`SOUND_DEFAULTS`。狀態 → cue 不要寫進這裡，那是 `AGENT_STATE_PRESENTATION.cue`。設定頁的開關列與試聽按鈕由 registry 產生，不要再手寫一列。
 
 ### 何時**不要**改
 - 條件涉及**不同變數**、非離散值判斷（範圍、正則、多個條件 AND/OR）→ 維持 `if`，硬套 `switch` 反而更難讀。

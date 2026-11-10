@@ -34,7 +34,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.panel-title), .status-panel :deep(.settings-panel-title) {
@@ -145,7 +145,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.inline-permission-notice strong) {
@@ -361,7 +361,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.session-title-line), .status-panel :deep(.session-detail) {
@@ -393,7 +393,7 @@
   display: inline-flex;
   align-items: center;
   max-width: 118px;
-  padding: 2px 10px;
+  padding: var(--space-0-5) var(--space-2-5);
   overflow: hidden;
   border: 0;
   border-radius: var(--radius-pill);
@@ -557,7 +557,7 @@
 }
 
 .status-panel :deep(.usage-plan), .status-panel :deep(.history-token-quality) {
-  padding: 2px 10px;
+  padding: var(--space-0-5) var(--space-2-5);
   border-radius: var(--radius-pill);
   background: var(--organic-surface-2);
   color: var(--text-secondary);
@@ -943,7 +943,7 @@
 }
 
 .status-panel :deep(.settings-section.flash) {
-  animation: settings-section-flash 1.4s ease-out;
+  animation: settings-section-flash var(--settings-flash-duration) ease-out;
 }
 
 @keyframes settings-section-flash {
@@ -999,7 +999,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.settings-result-label) {
@@ -1019,7 +1019,7 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   color: var(--text-muted);
   font-size: var(--font-label);
 }
@@ -1069,7 +1069,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.field-label), .status-panel :deep(.field-help) {
@@ -1175,7 +1175,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.achievement-copy strong), .status-panel :deep(.achievement-copy span), .status-panel :deep(.achievement-copy small) {
@@ -1323,7 +1323,7 @@
   min-width: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.pet-plugin-source) {
@@ -1337,7 +1337,7 @@
 .status-panel :deep(.pet-actions) {
   display: flex;
   flex: 0 0 auto;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .status-panel :deep(.family-pet-name) {

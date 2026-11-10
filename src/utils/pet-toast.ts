@@ -10,8 +10,6 @@ export const TOAST_WAITING_MS = 8_000
 export const WAITING_INPUT_DELAY_MS = 5_000
 /** No pet interaction for this long means the user was probably away. */
 export const UNREAD_AWAY_MS = 45_000
-/** Short tasks finish before anyone could look away, so they stay silent. */
-export const SUCCESS_SOUND_MIN_MS = 15_000
 
 export type ToastTone = 'success' | 'error' | 'waiting'
 
@@ -19,11 +17,6 @@ export function toastDurationFor(tone: ToastTone): number {
   if (tone === 'error') return TOAST_ERROR_MS
   if (tone === 'waiting') return TOAST_WAITING_MS
   return TOAST_SUCCESS_MS
-}
-
-/** Whether a finished task is worth a sound; unknown duration keeps the sound. */
-export function shouldPlaySuccessSound(elapsedMs: number | undefined): boolean {
-  return elapsedMs === undefined || !Number.isFinite(elapsedMs) || elapsedMs >= SUCCESS_SOUND_MIN_MS
 }
 
 /** "45s", "2m 14s", "1h 05m". Returns null when there is nothing worth showing. */

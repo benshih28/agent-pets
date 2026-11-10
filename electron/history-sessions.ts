@@ -1,4 +1,10 @@
-import type { AgentState } from '../src/types/agent.ts'
+import {
+  AGENT_STATE_POLICY,
+  AGENT_STATES,
+  LOCAL_USAGE_SOURCE_BY_ADAPTER,
+  type AgentState,
+  type AgentStateHistoryOutcome,
+} from '../src/types/agent.ts'
 import {
   HISTORY_SESSION_OUTCOMES,
   HISTORY_SESSION_PAGE_DEFAULT,
@@ -15,41 +21,37 @@ import { isProjectId } from '../src/types/id-patterns.ts'
 
 type SqliteRow = Record<string, unknown>
 
-/** Stored `sessions.final_state` values; `open` splits into active/incomplete at read time. */
+/** `sessions.final_state` 的儲存值；`open` 在讀取時才分成進行中／未完成。 */
 export type StoredSessionFinalState = 'success' | 'error' | 'cancelled' | 'open'
 
-/** An open session with no event for this long is shown as incomplete, not active. */
+/** open 的 session 超過這麼久沒有事件，就顯示為未完成而不是進行中。 */
 export const SESSION_ACTIVE_WINDOW_MS = 15 * 60 * 1000
-/** Rows kept per session; older transitions are dropped one by one as new ones arrive. */
+/** 每個 session 保留的列數；新的轉換進來時逐筆丟掉最舊的。 */
 export const SESSION_TIMELINE_STORED_MAX = 500
-/** A single permission wait longer than this is clamped (machine slept, app closed...). */
+/** 單次權限等待超過這個長度就截斷（電腦睡眠、App 關閉等）。 */
 export const MAX_PERMISSION_WAIT_MS = 6 * 60 * 60 * 1000
 
-// session_pk = `${adapterId}:${agentId}:${hash24}`; the agent part is free text,
-// so the id is only bounded, control-free and hash-suffixed (it is always bound).
+// session_pk = `${adapterId}:${agentId}:${hash24}`；agent 部分是自由文字，
+// 所以只檢查長度、不含控制字元且以雜湊結尾（它一律以參數綁定）。
 const SESSION_ID = /^[^\u0000-\u001f\u007f]{1,400}:[a-f0-9]{24}$/
 const ADAPTER_ID = /^[A-Za-z0-9._:-]{1,64}$/
 const TOOL_NAME_UNSAFE = /[^A-Za-z0-9._:/@+ -]/g
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 const MAX_TOOL_NAME_LENGTH = 64
 const MAX_PROJECT_LABEL_LENGTH = 128
-// Far-future bound for `to`; a session cannot be seen after "now", but clocks drift.
+// `to` 的未來上限：session 不可能在「現在」之後被看到，但時鐘會有誤差。
 const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000
 const OUTCOMES = new Set<string>(HISTORY_SESSION_OUTCOMES)
 
 /**
- * Local-log usage rows store `digest(adapter:agent:rawSessionId)` in
- * events.session_id, where the agent is the log reader's id, not the hook
- * source. This maps a hook adapter to that reader id so a hook session can be
- * joined to its local-log tokens without keeping the raw session id.
+ * 本機紀錄的用量列在 events.session_id 存 `digest(adapter:agent:rawSessionId)`，其中 agent 是
+ * 紀錄讀取器記帳用的來源，而不是 hook 實際的來源。對照表來自 AGENT_FAMILY_REGISTRY.localUsageSource，
+ * 讓 hook session 不必保留原始 session id 也能對上本機紀錄的 token。
  */
-const LOCAL_USAGE_AGENT_BY_ADAPTER: Readonly<Record<string, string>> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-}
-
 export function localUsageKeySource(adapterId: string, rawSessionId: string): string | null {
-  const agent = LOCAL_USAGE_AGENT_BY_ADAPTER[adapterId]
+  const agent = Object.hasOwn(LOCAL_USAGE_SOURCE_BY_ADAPTER, adapterId)
+    ? LOCAL_USAGE_SOURCE_BY_ADAPTER[adapterId as keyof typeof LOCAL_USAGE_SOURCE_BY_ADAPTER]
+    : undefined
   return agent ? `${adapterId}:${agent}:${rawSessionId}` : null
 }
 
@@ -57,13 +59,13 @@ export function isHistorySessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value)
 }
 
-/** Tool name only: arguments never reach history. Unsafe characters are dropped. */
+/** 只有工具名稱：參數絕不進歷史紀錄。不安全的字元會被丟掉。 */
 export function sanitizeToolName(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.replace(TOOL_NAME_UNSAFE, '').trim().slice(0, MAX_TOOL_NAME_LENGTH)
 }
 
-/** The workspace's last path segment, never a full path. */
+/** 工作區路徑的最後一段，絕不是完整路徑。 */
 export function sanitizeProjectLabel(value: unknown): string {
   if (typeof value !== 'string') return ''
   const segment = value.split(/[/\\]/).filter(Boolean).pop() ?? ''
@@ -71,29 +73,22 @@ export function sanitizeProjectLabel(value: unknown): string {
 }
 
 /**
- * The outcome describes the latest turn, not the first one: Claude Code and
- * Codex emit success (Stop) or error (StopFailure) at the end of every turn,
- * and a new prompt makes the same session active again. So any working or
- * waiting state reopens the session; idle keeps whatever the turn ended with.
+ * 結局描述的是最近一輪而不是第一輪：Claude Code 與 Codex 每一輪結束都會送 success（Stop）
+ * 或 error（StopFailure），新的提示又會讓同一個 session 再度進行。所以任何工作中或等待中的狀態
+ * 都會重新開啟 session，idle 則保留這一輪的結局。
  */
+// 每個事件都會呼叫 nextFinalState，所以模組載入時把狀態表攤平成一次 Map 查找。
+const HISTORY_OUTCOME_BY_STATE: ReadonlyMap<string, AgentStateHistoryOutcome> = new Map(
+  AGENT_STATES.map(state => [state, AGENT_STATE_POLICY[state].historyOutcome]),
+)
+
 export function nextFinalState(
   previous: StoredSessionFinalState | null,
   state: AgentState,
 ): StoredSessionFinalState {
-  switch (state) {
-    case 'success':
-    case 'error':
-      return state
-    case 'offline':
-      return 'cancelled'
-    case 'thinking':
-    case 'tool-running':
-    case 'waiting-permission':
-    case 'waiting-input':
-      return 'open'
-    default:
-      return previous ?? 'open'
-  }
+  // 不認得的狀態跟 idle 一樣沿用上一輪結果。
+  const outcome = HISTORY_OUTCOME_BY_STATE.get(state) ?? 'keep'
+  return outcome === 'keep' ? previous ?? 'open' : outcome
 }
 
 function finiteTimestamp(value: unknown, max: number): number | undefined {
@@ -102,8 +97,8 @@ function finiteTimestamp(value: unknown, max: number): number | undefined {
 }
 
 /**
- * Runtime validation of a renderer-supplied query. Unknown keys are ignored;
- * each known field is either valid or dropped, never passed through raw.
+ * renderer 傳來的查詢的執行期驗證。不認得的 key 一律忽略；
+ * 認得的欄位要嘛有效、要嘛丟掉，絕不原樣傳下去。
  */
 export function normalizeSessionQuery(input: unknown, now: number): HistorySessionQuery & { limit: number } {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}
@@ -115,7 +110,7 @@ export function normalizeSessionQuery(input: unknown, now: number): HistorySessi
   const to = finiteTimestamp(raw.to, maxTime)
   if (from !== undefined) query.from = from
   if (to !== undefined) query.to = to
-  // A reversed range (picked "to" before "from") means the same span, not all time.
+  // 起訖顛倒（先選了「到」才選「從」）代表同一段區間，而不是全部時間。
   if (query.from !== undefined && query.to !== undefined && query.from > query.to) {
     [query.from, query.to] = [query.to, query.from]
   }
@@ -140,11 +135,9 @@ function escapeLike(value: string): string {
 }
 
 /**
- * Picks the index whose equality prefix covers the most selective filter, so
- * the page is a range scan in ORDER BY order (no temp B-tree sort):
- * project → (pet, project, seen); else (pet, seen). The outcome has only four
- * values, so it stays a residual filter rather than a third index that every
- * heartbeat (which moves last_seen_at) would have to rewrite.
+ * 選等值前綴涵蓋最有鑑別度條件的索引，讓分頁是照 ORDER BY 順序的範圍掃描（不建暫存 B-tree 排序）：
+ * 有 project 用 (pet, project, seen)，否則 (pet, seen)。結局只有四種值，所以留作剩餘條件，
+ * 不另建第三個索引，否則每次心跳（會更新 last_seen_at）都要多改寫一個索引。
  */
 export function sessionListIndex(query: HistorySessionQuery): string {
   return query.projectId ? 'idx_history_sessions_pet_project_seen' : 'idx_history_sessions_pet_seen'
@@ -157,22 +150,19 @@ export const SESSION_LIST_COLUMNS = `
 `
 
 /**
- * Builds the keyset page query. Every value is a bound parameter; the only
- * interpolated fragments are fixed clauses chosen from validated fields. The
- * leading (pet_id[, project_id]) equality plus ORDER BY last_seen_at DESC,
- * session_pk DESC matches an index, so a page reads at most a page of rows
- * past the cursor and never sorts.
+ * 組出 keyset 分頁查詢。所有值都是綁定參數，唯一內插的片段是依已驗證欄位選出的固定子句。
+ * 開頭的 (pet_id[, project_id]) 等值加上 ORDER BY last_seen_at DESC, session_pk DESC 剛好對上索引，
+ * 所以一頁最多只讀游標之後一頁的列，而且不排序。
  */
 export function buildSessionListQuery(
   petId: string,
   query: HistorySessionQuery & { limit: number },
   now: number,
   limit = query.limit,
-  /** Search hits from the trigram index; replaces the LIKE scan and drives the lookup by primary key. */
+  /** trigram 索引的搜尋結果；取代 LIKE 掃描，改由主鍵帶動查詢。 */
   matchedIds?: readonly string[],
 ): { sql: string; params: unknown[] } {
-  // With search hits the primary key drives the lookup (at most a few thousand
-  // rows, then sorted); unary + keeps the planner off the pet/time indexes.
+  // 有搜尋結果時由主鍵帶動查詢（最多幾千列再排序）；一元 + 讓查詢規劃器不走 pet／時間索引。
   const noIndex = matchedIds ? '+' : ''
   const where = [`${noIndex}pet_id = ?`]
   const params: unknown[] = [petId]
@@ -250,7 +240,7 @@ export function outcomeFor(finalState: unknown, lastSeenAt: number, now: number)
   }
 }
 
-/** Folds session_model_usage rows (one per usage key and model) into per-key totals. */
+/** 把 session_model_usage 的列（每個用量 key 與模型一列）彙總成每個 key 的總數。 */
 export function foldSessionUsage(rows: readonly SqliteRow[]): Map<string, SessionUsageTotals> {
   const totals = new Map<string, SessionUsageTotals>()
   for (const row of rows) {

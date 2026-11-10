@@ -162,7 +162,7 @@ function onMenu(id: string): void {
   min-width: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .card-name {

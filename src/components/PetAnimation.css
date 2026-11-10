@@ -136,7 +136,7 @@
 .pet-canvas.pet-react-happy { animation: pet-react-happy 0.56s ease-out; }
 .pet-canvas.pet-react-curious { animation: pet-react-curious 0.76s ease-in-out; }
 .pet-canvas.pet-react-thinking { animation: pet-react-thinking 0.9s ease-in-out; }
-.pet-canvas.pet-react-surprised { animation: pet-react-surprised 0.42s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.pet-canvas.pet-react-surprised { animation: pet-react-surprised 0.42s var(--ease-overshoot); }
 .pet-canvas.pet-react-encouraging { animation: pet-react-encouraging 0.7s ease-in-out; }
 
 @keyframes pet-react-happy {
@@ -176,7 +176,7 @@
   z-index: calc(var(--z-base) + 4);
   color: var(--state-warn-bright);
   pointer-events: none;
-  animation: pet-mark-float 1.4s ease-out forwards;
+  animation: pet-mark-float var(--pet-mark-duration) ease-out forwards;
 }
 
 @keyframes pet-mark-float {
@@ -268,7 +268,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pet-reaction-mark {
-    animation: pet-mark-fade 1.4s ease-out forwards;
+    animation: pet-mark-fade var(--pet-mark-duration) ease-out forwards;
   }
 
   /* No shake, bounce, sway or glow: the sprite row itself carries the state. */

@@ -1,76 +1,72 @@
-// Short synthesized cues via Web Audio — no audio asset files to ship or
-// license, and the sounds stay tiny and instant.
+// 用 Web Audio 即時合成短音效：不必附帶或授權音檔，聲音也夠小、沒有載入延遲。
+// 音形、節流與音量範圍都在 src/types/sound.ts 的 registry；這裡只負責排程。
+// 測試會直接用 Node 執行這個檔案，執行期 import 必須是相對路徑（見 agent-pets-conventions §1）。
+import {
+  SOUND_CUE_REGISTRY,
+  SOUND_DEFAULTS,
+  SOUND_ENVELOPE,
+  SOUND_POLICY,
+  SOUND_VOLUME,
+  type SoundCue,
+  type SoundTone,
+} from '../types/sound.ts'
+
+type AudioContextConstructor = typeof AudioContext
+
 let ctx: AudioContext | null = null
 
 function getContext(): AudioContext | null {
   if (typeof window === 'undefined') return null
   if (!ctx) {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    const AudioCtx: AudioContextConstructor | undefined = window.AudioContext
+      || (window as Window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext
     if (!AudioCtx) return null
     ctx = new AudioCtx()
   }
   return ctx
 }
 
-let masterVolume = 0.6
-
-/** 0-100 from the desktop preference. */
-export function setSoundVolume(percent: number): void {
-  masterVolume = Math.min(1, Math.max(0, percent / 100))
+function volumeFraction(percent: number): number {
+  return Math.min(1, Math.max(0, percent / SOUND_VOLUME.max))
 }
 
-function beep(freq: number, startAt: number, duration: number, baseGain: number, type: OscillatorType = 'sine') {
-  const gain = baseGain * masterVolume * 1.6
-  const audio = getContext()
-  if (!audio) return
+let masterVolume = volumeFraction(SOUND_DEFAULTS.soundVolume)
+
+/** 桌面偏好設定的 0–100；非有限數值會讓 Web Audio 排程丟出例外，所以直接忽略。 */
+export function setSoundVolume(percent: number): void {
+  if (!Number.isFinite(percent)) return
+  masterVolume = volumeFraction(percent)
+}
+
+// Web Audio 的振盪器只能 start 一次，每個音一定要新建一組節點，不能重用。
+// 播放時間基準由呼叫端傳入：同一個 cue 的每個音都對齊同一個 currentTime。
+function scheduleTone(audio: AudioContext, now: number, tone: SoundTone): void {
+  const gain = tone.gain * masterVolume * SOUND_ENVELOPE.gainScale
+  const at = now + tone.startAt
   const osc = audio.createOscillator()
   const gainNode = audio.createGain()
-  osc.type = type
-  osc.frequency.value = freq
-  gainNode.gain.setValueAtTime(0, audio.currentTime + startAt)
-  gainNode.gain.linearRampToValueAtTime(gain, audio.currentTime + startAt + 0.01)
-  gainNode.gain.linearRampToValueAtTime(0, audio.currentTime + startAt + duration)
+  osc.type = tone.type
+  osc.frequency.value = tone.freq
+  gainNode.gain.setValueAtTime(0, at)
+  gainNode.gain.linearRampToValueAtTime(gain, at + SOUND_ENVELOPE.attackSec)
+  gainNode.gain.linearRampToValueAtTime(0, at + tone.duration)
   osc.connect(gainNode)
   gainNode.connect(audio.destination)
-  osc.start(audio.currentTime + startAt)
-  osc.stop(audio.currentTime + startAt + duration + 0.02)
+  osc.start(at)
+  osc.stop(at + tone.duration + SOUND_ENVELOPE.stopTailSec)
 }
 
-export type SoundCue = 'success' | 'error' | 'waiting-permission' | 'waiting-input'
-
-// Several requests arriving together must not stack into a burst of beeps.
-const CUE_THROTTLE_MS = 3_000
 const lastPlayed = new Map<SoundCue, number>()
 
-export function playCue(cue: SoundCue, options: { preview?: boolean } = {}) {
+export function playCue(cue: SoundCue, options: { preview?: boolean } = {}): void {
   const audio = getContext()
   if (!audio || masterVolume <= 0) return
   const nowMs = Date.now()
-  if (!options.preview && nowMs - (lastPlayed.get(cue) ?? 0) < CUE_THROTTLE_MS) return
+  if (!options.preview && nowMs - (lastPlayed.get(cue) ?? 0) < SOUND_POLICY.cueThrottleMs) return
   lastPlayed.set(cue, nowMs)
-  if (audio.state === 'suspended') audio.resume()
+  // 已關閉的 context 會拒絕 resume；沒接住會變成未處理的 rejection。
+  if (audio.state === 'suspended') audio.resume().catch(() => {})
 
-  switch (cue) {
-    case 'success':
-      beep(660, 0, 0.09, 0.12)
-      beep(880, 0.09, 0.13, 0.12)
-      break
-    case 'error':
-      // Two falling notes read as "oh no" rather than a single harsh buzz.
-      beep(330, 0, 0.12, 0.1, 'triangle')
-      beep(220, 0.13, 0.2, 0.1, 'triangle')
-      break
-    case 'waiting-input':
-      // A soft rising pair: the agent is asking, not alarming.
-      beep(440, 0, 0.08, 0.08)
-      beep(587, 0.1, 0.12, 0.08)
-      break
-    case 'waiting-permission':
-      // Rising-falling three-note figure, clearly different from the
-      // two-note rising success cue.
-      beep(988, 0, 0.09, 0.1, 'triangle')
-      beep(740, 0.12, 0.09, 0.1, 'triangle')
-      beep(988, 0.24, 0.14, 0.1, 'triangle')
-      break
-  }
+  const now = audio.currentTime
+  for (const tone of SOUND_CUE_REGISTRY[cue].tones) scheduleTone(audio, now, tone)
 }

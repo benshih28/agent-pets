@@ -115,7 +115,7 @@ function previewLabel(mode: PanelThemeMode): string {
   min-width: 0;
   flex: 1 1 12em;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .theme-title {

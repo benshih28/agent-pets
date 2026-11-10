@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import * as path from 'node:path'
 import type { PermissionDecisionValue, PermissionRisk } from '../src/types/permission'
+import { FAMILY_SOURCES, familySourceSet, type SourceOfFamily } from '../src/types/agent.ts'
 import {
   PermissionBroker,
   type AdapterPermissionDecision,
@@ -32,9 +33,14 @@ const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 // adapter only bounds how much it accepts so memory use stays predictable.
 const MAX_PATTERNS = 20
 const MAX_PATTERN_LENGTH = 1_000
-export type PermissionAdapterSource = 'opencode-cli' | 'opencode-desktop' | 'claude' | 'claude-desktop'
-const SOURCES: ReadonlySet<string> = new Set<PermissionAdapterSource>(['opencode-cli', 'opencode-desktop', 'claude', 'claude-desktop'])
-const CLAUDE_SOURCES: ReadonlySet<string> = new Set<PermissionAdapterSource>(['claude', 'claude-desktop'])
+// 只有 OpenCode（插件回覆）與 Claude Code（hook 回覆）能從寵物回答權限；來源清單由來源 registry 推導。
+export type PermissionAdapterSource = SourceOfFamily<'opencode' | 'claude'>
+export const PERMISSION_ADAPTER_SOURCES: readonly PermissionAdapterSource[] = Object.freeze([
+  ...FAMILY_SOURCES.opencode,
+  ...FAMILY_SOURCES.claude,
+])
+const SOURCES: ReadonlySet<string> = new Set(PERMISSION_ADAPTER_SOURCES)
+const CLAUDE_SOURCES = familySourceSet('claude')
 // Claude's hook waits at most this long, so a request must not outlive it.
 const MIN_CLAUDE_TTL_SECONDS = 15
 const MAX_CLAUDE_TTL_SECONDS = 120

@@ -1,3 +1,5 @@
+import type { PetMotionManifest } from './pet-atlas.ts'
+
 export type PluginLocalizedText = {
   'zh-TW': string
   'en-US': string
@@ -63,7 +65,7 @@ export interface PluginSkinContribution {
   displayName: PluginLocalizedText
   spritesheet: string
   kind: 'person' | 'animal'
-  behaviorManifest?: Record<string, { row: number; frames?: number; frameDurations?: number[] }>
+  behaviorManifest?: PetMotionManifest
 }
 
 export type PluginEventSourceState = 'thinking' | 'tool-running' | 'idle' | 'done' | 'error'

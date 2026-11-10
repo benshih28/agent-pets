@@ -17,8 +17,8 @@ import { join, resolve } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 import { ensureDirectoryWithin } from './ipc/pet-assets-fs.ts'
 import type { SanitizedPetBehaviorManifest } from './pet-behavior-manifest'
+import { PET_ATLAS_WALK_ROW, PET_MOTION_NAMES, petMotionFitsAtlas } from '../src/types/pet-atlas.ts'
 import {
-  SPRITE_ATLAS_WALK_ROW,
   SPRITE_ERROR_MESSAGES,
   detectSpriteAtlas,
   validateSpriteSheet,
@@ -196,20 +196,19 @@ export function parsePetZip(zipBytes: Uint8Array, options: ParsePetZipOptions): 
   const warnings: PetImportWarning[] = [...atlas.warnings]
   const declared = options.parsePetBehaviorManifest(petData.behaviorManifest)
   const behaviorManifest: SanitizedPetBehaviorManifest = {}
-  for (const name of ['walk', 'sleep'] as const) {
+  for (const name of PET_MOTION_NAMES) {
     const definition = declared?.[name]
     if (!definition) continue
-    if (definition.row >= atlas.rows) {
+    if (!petMotionFitsAtlas(definition, atlas)) {
       if (!warnings.includes('behavior-row-out-of-range')) warnings.push('behavior-row-out-of-range')
       continue
     }
     behaviorManifest[name] = definition
   }
   const autoBehaviors: Array<'walk'> = []
-  // v2 kits animate walking from the atlas's running-right row without a
-  // manifest. v1 kits keep the previous behaviour (walk falls back to idle).
+  // v2 素材沒宣告 manifest 也會用 running-right 列走路；v1 維持原本行為（走路回退成閒置）。
   if (atlas.version === 2 && !behaviorManifest.walk) {
-    behaviorManifest.walk = { row: SPRITE_ATLAS_WALK_ROW }
+    behaviorManifest.walk = { row: PET_ATLAS_WALK_ROW }
     autoBehaviors.push('walk')
   }
   const ignored = files.length - 2

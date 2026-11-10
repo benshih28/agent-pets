@@ -1,4 +1,4 @@
-import type { AgentSession, AgentSource } from '@/types/agent'
+import type { AgentFamilyKey, AgentSession, AgentSource } from '@/types/agent'
 import { SOURCE_FAMILIES, STATE_PRIORITY } from '../types/agent.ts'
 
 // States that wait on the user; among these the most recent one is shown first.
@@ -22,7 +22,7 @@ export function compareAttention(a: AgentSession, b: AgentSession): number {
 }
 
 export interface FamilyAttention<T extends AgentSession = AgentSession> {
-  key: string
+  key: AgentFamilyKey
   label: string
   /** Most urgent active session of the family (compareAttention order). */
   top: T

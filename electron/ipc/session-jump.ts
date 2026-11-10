@@ -1,11 +1,10 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-import { ALL_SOURCES } from '../../src/types/agent.ts'
+import { isAgentSource } from '../../src/types/agent.ts'
 import { isSessionJumpAction, type SessionJumpAction, type SessionJumpResult } from '../../src/types/session-jump.ts'
 import { sessionJumpKey } from '../session-jump.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
 const MAX_SESSION_ID_LENGTH = 256
-const SOURCES: ReadonlySet<string> = new Set(ALL_SOURCES)
 
 export interface SessionJumpIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -19,7 +18,7 @@ function isValidSessionJumpRequest(value: unknown): value is { action: SessionJu
   const raw = value as Record<string, unknown>
   if (Object.keys(raw).length !== 3) return false
   return isSessionJumpAction(raw.action)
-    && typeof raw.source === 'string' && SOURCES.has(raw.source)
+    && isAgentSource(raw.source)
     && typeof raw.sessionId === 'string' && raw.sessionId.length > 0 && raw.sessionId.length <= MAX_SESSION_ID_LENGTH
 }
 

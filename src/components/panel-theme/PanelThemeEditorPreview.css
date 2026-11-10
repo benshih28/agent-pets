@@ -184,13 +184,13 @@
 
 .ep-menu {
   margin: 0;
-  padding: 2px;
+  padding: var(--space-0-5);
   list-style: none;
 }
 
 .ep-menu-item {
   overflow: hidden;
-  padding: 2px var(--space-1);
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--organic-radius-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -233,7 +233,7 @@
   min-width: 0;
   max-width: 100%;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2);
 }
 
@@ -246,7 +246,7 @@
 
 .ep-command {
   overflow: hidden;
-  padding: 2px var(--space-1);
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--organic-radius-sm);
   background: var(--color-sunken);
   color: var(--color-text);

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { t, translateBackendError } from '@/i18n'
 import { useQuotaFormat } from '@/composables/useQuotaFormat'
 import { useAgentStore } from '@/stores/agentStore'
+import { AGENT_FAMILY_REGISTRY, isQuotaFamilyKey } from '@/types/agent'
 import type { HistoryUsageBlock } from '@/types/history'
 import { quotaWindowLabel } from '@/utils/format'
 import { quotaFreshness } from '@/utils/quota-math'
@@ -11,6 +12,7 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ProgressTrack from '@/components/ui/ProgressTrack.vue'
+import Spinner from '@/components/ui/Spinner.vue'
 import GrowthEmptyState from '@/components/growth/GrowthEmptyState.vue'
 import UsageBlockSummary from '@/components/growth/UsageBlockSummary.vue'
 
@@ -29,8 +31,10 @@ type UsageProvider = NonNullable<typeof store.quotaUsage>['providers'][number]
 const providers = computed(() => store.quotaUsage?.providers ?? [])
 
 // --- 本機 5 小時區塊（來自本機紀錄，與服務商額度並列） ------------------------
-// 服務商額度的 provider id 對應 History 的 adapter id；沒有對應卡片的區塊另外列出。
-const PROVIDER_ADAPTER: Record<string, string> = { claude: 'claude-code', codex: 'codex' }
+// 服務商額度的 provider id 就是家族 key，由家族 registry 對到 History 的 adapter id；沒有對應卡片的區塊另外列出。
+function providerAdapter(providerId: string): string | undefined {
+  return isQuotaFamilyKey(providerId) ? AGENT_FAMILY_REGISTRY[providerId].adapterId : undefined
+}
 const usageBlocks = ref<HistoryUsageBlock[]>([])
 const BLOCK_REFRESH_DEBOUNCE_MS = 1_000
 let blockRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -52,14 +56,14 @@ async function refreshBlocks(): Promise<void> {
 }
 
 function blockFor(provider: UsageProvider) {
-  const adapterId = PROVIDER_ADAPTER[provider.id]
+  const adapterId = providerAdapter(provider.id)
   return adapterId ? usageBlocks.value.find(block => block.adapterId === adapterId) : undefined
 }
 
 // Only blocks still running at this tick are shown.
 const activeBlocks = computed(() => usageBlocks.value.filter(block => usageBlockView(block, props.nowTick).active))
 const unmatchedBlocks = computed(() => {
-  const shown = new Set(providers.value.map(provider => PROVIDER_ADAPTER[provider.id]).filter(Boolean))
+  const shown = new Set(providers.value.map(provider => providerAdapter(provider.id)).filter(Boolean))
   return activeBlocks.value.filter(block => !shown.has(block.adapterId))
 })
 function activeBlockFor(provider: UsageProvider) {
@@ -233,7 +237,7 @@ onBeforeUnmount(() => {
       <div class="usage-footer">
         <span>{{ t('growth.autoRefreshNote') }}</span>
         <Button variant="secondary" size="sm" :disabled="store.quotaLoading" @click="refresh">
-          <span v-if="store.quotaLoading" class="usage-spinner" aria-hidden="true" />
+          <Spinner v-if="store.quotaLoading" class="usage-spinner" :size="12" />
           {{ store.quotaLoading ? t('refreshing') : t('growth.refreshNow') }}
         </Button>
       </div>
@@ -302,30 +306,12 @@ onBeforeUnmount(() => {
 }
 
 .usage-spinner {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
   margin-right: var(--space-2);
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--accent-bright);
-  border-radius: var(--radius-pill);
-  animation: usage-spin 0.9s linear infinite;
 }
 
 .usage-live {
   min-height: 1em;
   color: var(--text-muted);
   font-size: var(--font-xs);
-}
-
-@keyframes usage-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .usage-spinner {
-    animation: none;
-    border-top-color: var(--border-strong);
-  }
 }
 </style>

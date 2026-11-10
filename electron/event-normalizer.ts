@@ -1,27 +1,19 @@
 import type { AgentSource, AgentState, AgentStatusEvent, AgentTokenUsage } from '../src/types/agent'
-import type { PermissionNotice } from '../src/types/capabilities'
+import { AGENT_STATES, ALL_SOURCES } from '../src/types/agent.ts'
+import { EXTERNAL_ONLY_PERMISSION_NOTICE } from '../src/types/capabilities.ts'
 import { parseHostHints } from './host-app.ts'
-
-const EXTERNAL_ONLY_PERMISSION_NOTICE: Readonly<PermissionNotice> = Object.freeze({
-  responseMode: 'external_only',
-})
 
 const MAX_SESSION_ID_LENGTH = 256
 const MAX_TEXT_FIELD_LENGTH = 512
 const MAX_TOKEN_COUNT = 1_000_000_000_000
 
-const VALID_SOURCES = new Set([
-  'opencode-cli', 'opencode-desktop',
-  'opencode',
-  'codex', 'codex-desktop',
-  'claude', 'claude-desktop',
-])
+// 'opencode' 是舊版 OpenCode 插件送的來源，正規化成 opencode-cli；其餘來源以來源 registry 為準。
+const LEGACY_OPENCODE_SOURCE = 'opencode'
+const VALID_SOURCES: ReadonlySet<string> = new Set([...ALL_SOURCES, LEGACY_OPENCODE_SOURCE])
 
-const VALID_STATES = new Set([
-  'idle', 'thinking', 'tool-running',
-  'waiting-permission', 'waiting-input', 'waiting',
-  'success', 'error', 'offline',
-])
+// 'waiting' 是舊版 hook 送的狀態，下面正規化成 waiting-permission；其餘狀態以狀態 registry 為準。
+const LEGACY_WAITING_STATE = 'waiting'
+const VALID_STATES: ReadonlySet<string> = new Set([...AGENT_STATES, LEGACY_WAITING_STATE])
 
 export type EventNormalizationError =
   | 'event must be an object'
@@ -35,11 +27,11 @@ export type EventNormalizationResult =
   | { ok: false; error: EventNormalizationError }
 
 function normalizeSource(source: string): AgentSource {
-  return (source === 'opencode' ? 'opencode-cli' : source) as AgentSource
+  return (source === LEGACY_OPENCODE_SOURCE ? 'opencode-cli' : source) as AgentSource
 }
 
 function normalizeState(state: string): AgentState {
-  return (state === 'waiting' ? 'waiting-permission' : state) as AgentState
+  return (state === LEGACY_WAITING_STATE ? 'waiting-permission' : state) as AgentState
 }
 
 function optionalText(value: unknown): string | undefined {

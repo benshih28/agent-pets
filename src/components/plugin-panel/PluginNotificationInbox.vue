@@ -138,7 +138,7 @@ function when(record: PluginNotificationRecord): string {
   width: 8px;
   height: 8px;
   flex: 0 0 8px;
-  margin-top: 6px;
+  margin-top: var(--space-1-5);
   border-radius: 50%;
 }
 

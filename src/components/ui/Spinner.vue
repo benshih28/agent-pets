@@ -16,7 +16,7 @@ withDefaults(defineProps<{ size?: number }>(), { size: 14 })
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spinner-turn 0.8s linear infinite;
+  animation: spinner-turn var(--duration-spin) linear infinite;
 }
 
 @keyframes spinner-turn {

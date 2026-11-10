@@ -99,10 +99,10 @@ async function harness(options: {
     .replace('127.0.0.1:17373', `127.0.0.1:${portOf(eventServer)}`)
     .replace('127.0.0.1:17374', `127.0.0.1:${permissionPort}`)
     .replace('const MIN_WAIT_SECONDS = 15', 'const MIN_WAIT_SECONDS = 1')
-    // A loaded runner can miss the short per-call budgets; these tests check payloads, not latency.
-    .replace('AbortSignal.timeout(300)', 'AbortSignal.timeout(5000)')
-    .replace(/(lookup|\}), 1000\)/g, '$1, 5000)')
-  if ((patched.match(/, 5000\)/g) ?? []).length !== 6) {
+    // 負載高的 runner 可能錯過較短的時限；這些測試檢查的是內容，不是延遲（時限另見 agent-hook-delivery.test.mts）。
+    .replace('const SEND_DEADLINE_MS = 1500', 'const SEND_DEADLINE_MS = 5000')
+    .replace('const PERMISSION_ANSWER_DEADLINE_MS = 1000', 'const PERMISSION_ANSWER_DEADLINE_MS = 5000')
+  if (!patched.includes('const SEND_DEADLINE_MS = 5000') || !patched.includes('PERMISSION_ANSWER_DEADLINE_MS = 5000')) {
     // Close the servers first so a stale patch fails the test instead of hanging the run.
     await new Promise<void>(resolve => eventServer.close(() => resolve()))
     if (permissionServer) await new Promise<void>(resolve => permissionServer.close(() => resolve()))

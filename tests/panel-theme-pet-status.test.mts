@@ -87,7 +87,7 @@ test('the pet window receives exactly the palette properties its CSS reaches', (
   const files = ['src/components/DesktopPet.vue', 'src/components/DesktopPet.css', 'src/components/DesktopPetBubbles.css', 'src/components/PetAnimation.vue',
     'src/components/PetAnimation.css', 'src/components/permission/PermissionBubble.vue', 'src/components/permission/PermissionCountdown.vue',
     'src/components/permission/PermissionDetails.vue', 'src/components/permission/PermissionNoticeBubble.vue', 'src/components/permission/PermissionRiskBadge.vue',
-    'src/components/ui/Button.vue', 'src/components/ui/Icon.vue', 'src/types/agent.ts', 'src/styles/base.css']
+    'src/components/ui/Button.vue', 'src/components/ui/Icon.vue', 'src/utils/agent-state-presentation.ts', 'src/styles/base.css']
   const used = new Set(files.flatMap(file => [...readFileSync(file, 'utf8').matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]!)))
   const themable = new Set<string>(PANEL_THEME_COLOR_PROPERTIES)
   const reached = new Set<string>()

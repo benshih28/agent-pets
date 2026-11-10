@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
 .growth-card-row > div {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .growth-card-row span {
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
 }
 
 .growth-card-row :deep(.icon) {
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
   color: var(--accent-bright);
 }
 
@@ -189,11 +189,11 @@ onBeforeUnmount(() => {
 }
 
 .reward-badge {
-  animation: growth-badge 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 1;
+  animation: growth-badge 0.5s var(--ease-overshoot) 1;
 }
 
 .growth-xp-float {
-  padding: 2px var(--space-3);
+  padding: var(--space-0-5) var(--space-3);
   border-radius: var(--radius-pill);
   background: var(--surface-overlay);
   color: var(--state-success);

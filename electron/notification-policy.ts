@@ -1,7 +1,8 @@
 import type { AgentStatusEvent } from './event-server'
-import { t } from '../src/i18n.ts'
+import { t, type TranslationKey } from '../src/i18n.ts'
+import { AGENT_FAMILY_REGISTRY, AGENT_SOURCE_REGISTRY, AGENT_STATE_POLICY, isAgentSource, isAgentState, type NotifiableAgentState } from '../src/types/agent.ts'
 
-export type NotificationKind = 'waiting-permission' | 'waiting-input' | 'success' | 'error' | 'achievement' | 'summary'
+export type NotificationKind = NotifiableAgentState | 'achievement' | 'summary'
 
 export interface NotificationCandidate {
   key: string
@@ -9,20 +10,34 @@ export interface NotificationCandidate {
   title: string
   body: string
   terminal: boolean
-  /**
-   * Only for waiting-permission / waiting-input: the one session that is waiting for the user, so a
-   * click on that notification may switch to its app. Completions and errors never switch apps.
-   */
+  /** 只有非結束類（等待權限／等待輸入）才有：正在等使用者的那個 session，點通知時可切到它的 App。 */
   session?: { source: string; sessionId: string }
 }
 
-const SOURCE_NAMES: Record<string, string> = {
-  'opencode-cli': 'OpenCode',
-  'opencode-desktop': 'OpenCode',
-  codex: 'Codex',
-  'codex-desktop': 'Codex',
-  claude: 'Claude',
-  'claude-desktop': 'Claude',
+// 通知標題用家族名稱（CLI 與 Desktop 同名）；來源不在 registry 裡時退回通用字。
+function sourceName(source: unknown): string {
+  return isAgentSource(source) ? AGENT_FAMILY_REGISTRY[AGENT_SOURCE_REGISTRY[source].family].label : 'Agent'
+}
+
+// 哪些狀態要通知、是不是結束類由 AGENT_STATE_POLICY 決定；這裡只補主程序才有的標題文案。
+// 狀態表新增一個會通知的狀態時，這張表少一格就編譯失敗。
+const NOTIFICATION_TITLE_KEYS = {
+  'waiting-permission': 'notificationNeedsPermission',
+  'waiting-input': 'notificationWaitingInput',
+  success: 'notificationCompleted',
+  error: 'notificationFailed',
+} as const satisfies Record<NotifiableAgentState, TranslationKey>
+
+function isNotifiableState(state: unknown): state is NotifiableAgentState {
+  return isAgentState(state) && AGENT_STATE_POLICY[state].notification !== null
+}
+
+function notificationTitle(event: AgentStatusEvent, kind: NotifiableAgentState, source: string): string {
+  // Codex／Claude 的權限無法在 Agent Pets 裡回覆，標題要講明，免得使用者以為點通知就能核准。
+  if (kind === 'waiting-permission' && event.permissionNotice?.responseMode === 'external_only') {
+    return t('permission.notifyExternal', { source })
+  }
+  return t(NOTIFICATION_TITLE_KEYS[kind], { source })
 }
 
 function displayText(value: string | undefined, maxLength = 96): string {
@@ -35,54 +50,22 @@ function displayText(value: string | undefined, maxLength = 96): string {
 
 export function classifyNotification(event: AgentStatusEvent): NotificationCandidate | null {
   if (event.originalEvent === 'AgentPetsIntegrationTest') return null
+  if (!isNotifiableState(event.state)) return null
 
-  const source = SOURCE_NAMES[event.source] ?? 'Agent'
+  const source = sourceName(event.source)
   const project = displayText(event.project)
   const body = project || t('agentTask')
   const keyBase = `${event.source}:${event.sessionId}`
-  const session = { source: event.source, sessionId: event.sessionId }
 
-  switch (event.state) {
-    case 'waiting-permission':
-      return {
-        key: `${keyBase}:waiting-permission`,
-        kind: 'waiting-permission',
-        // Codex / Claude cannot be answered from Agent Pets; say so in the title so
-        // clicking the notification is not mistaken for a way to approve here.
-        title: event.permissionNotice?.responseMode === 'external_only'
-          ? t('permission.notifyExternal', { source })
-          : t('notificationNeedsPermission', { source }),
-        body,
-        terminal: false,
-        session,
-      }
-    case 'waiting-input':
-      return {
-        key: `${keyBase}:waiting-input`,
-        kind: 'waiting-input',
-        title: t('notificationWaitingInput', { source }),
-        body,
-        terminal: false,
-        session,
-      }
-    case 'success':
-      return {
-        key: `${keyBase}:success`,
-        kind: 'success',
-        title: t('notificationCompleted', { source }),
-        body,
-        terminal: true,
-      }
-    case 'error':
-      return {
-        key: `${keyBase}:error`,
-        kind: 'error',
-        title: t('notificationFailed', { source }),
-        body,
-        terminal: true,
-      }
-    default:
-      return null
+  const kind = event.state
+  const terminal = AGENT_STATE_POLICY[kind].notification.terminal
+  return {
+    key: `${keyBase}:${kind}`,
+    kind,
+    title: notificationTitle(event, kind, source),
+    body,
+    terminal,
+    ...(terminal ? {} : { session: { source: event.source, sessionId: event.sessionId } }),
   }
 }
 

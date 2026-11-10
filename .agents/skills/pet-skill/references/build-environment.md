@@ -47,10 +47,12 @@ Phase report 必須記錄每個 gate 的實際結果、未測平台與殘餘風�
 
 ## 自動發版
 
-- `.github/workflows/release.yml` 在 `main` 的 `package.json` 版本號變更、且 `v<version>` tag 尚不存在時觸發：Ubuntu 跑 `vue-tsc` 與單元測試，`macos-latest` 打包 arm64 + x64 dmg（`AgentPets-${version}-${arch}.dmg`），`windows-latest` 打包 portable exe，最後以 `gh release create` 建立 `v<version>` tag 與 Release。
+- `.github/workflows/release.yml` 在 `main` 的 `package.json` 版本號變更、且 `v<version>` tag 尚不存在時觸發：Ubuntu 跑 `vue-tsc` 與單元測試，`macos-latest`（arm64）與 `macos-15-intel`（x64）各自打包同架構的 dmg（`AgentPets-${version}-${arch}.dmg`），`windows-latest` 打包 portable exe，最後產生 `SHA256SUMS.txt` 並以 `gh release create` 建立 `v<version>` tag 與 Release。
 - 所以升版 commit 合併進 `main` 就等於發版；版本號仍須依 phase gate 在使用者確認後才改。
 - CI 直接呼叫 `vite build` 與 `electron-builder --publish never`，不經過 `pnpm build` 的程序清理 preflight。
-- 目前沒有簽章憑證，`CSC_IDENTITY_AUTO_DISCOVERY=false`，產出未簽章版本。
+- 目前沒有簽章憑證，`CSC_IDENTITY_AUTO_DISCOVERY=false`。`package.json` 的 `mac.identity` 是 `"-"`：electron-builder 26 在寫入 fuses 之後才簽章，所以整個 bundle 會被 ad-hoc 簽章並密封（沒有憑證、不公證）。不要改成 `afterPack` 自行簽章，那時 fuses 還沒寫入。
+- x64 不能在 arm64 runner 上打包：pnpm 只裝 host 架構的原生模組（`@koromix/koffi-darwin-*`），會把 arm64 的 `.node` 放進 x64 dmg。
+- 每個 mac job 打包後執行 `scripts/check-mac-bundle.mjs`（掛載 dmg）：`codesign --verify --deep --strict`、fuses 對照 `build.electronFuses`、每個 Mach-O 與 `*.node` 的 `lipo -archs`，不符就讓發版失敗。本機可對 `electron-builder --mac --<arch> --dir` 產出的 `.app` 執行同一支腳本；在 Intel Mac 上打 arm64 包會因為 koffi 是 x64 而失敗，這是預期結果。
 - 舊版 release 使用 `Windows_x.y.z`／`MacOS_x.y.z` 分開的 tag；自動化之後統一為 `v<version>` 單一 release。
 
 ## UI 語言要求

@@ -1,20 +1,16 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { IntegrationTarget } from '../setup'
+import { isAgentSource, type AgentSource } from '../../src/types/agent.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
-const INTEGRATION_TEST_SOURCES = [
-  'opencode-cli',
-  'opencode-desktop',
-  'codex',
-  'codex-desktop',
-  'claude',
-  'claude-desktop',
-] as const
+// 每個來源都能送測試事件，清單就是來源 registry。
+export type IntegrationTestSource = AgentSource
 
-export type IntegrationTestSource = typeof INTEGRATION_TEST_SOURCES[number]
+// 'claude' 是舊版面板送的安裝目標（跟 claudeCode 同義），setup.ts 仍接受，這裡不能拿掉。
+const INTEGRATION_TARGETS: ReadonlySet<string> = new Set<IntegrationTarget>(['opencode', 'codex', 'claude', 'claudeCode'])
 
 export function isIntegrationTarget(value: unknown): value is IntegrationTarget {
-  return value === 'opencode' || value === 'codex' || value === 'claude' || value === 'claudeCode'
+  return typeof value === 'string' && INTEGRATION_TARGETS.has(value)
 }
 
 export interface IntegrationIpcDependencies {
@@ -31,7 +27,7 @@ export interface IntegrationIpcDependencies {
 export function registerIntegrationIpc(deps: IntegrationIpcDependencies): void {
   deps.ipcMain.handle(IPC_CHANNELS.testIntegration, async (event, source: unknown) => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
-    if (typeof source !== 'string' || !INTEGRATION_TEST_SOURCES.includes(source as IntegrationTestSource)) {
+    if (!isAgentSource(source)) {
       return { ok: false, error: 'Unsupported integration source' }
     }
 
@@ -39,11 +35,11 @@ export function registerIntegrationIpc(deps: IntegrationIpcDependencies): void {
     try {
       const receipt = deps.waitForIntegrationTestReceipt(sessionId)
       await Promise.all([
-        deps.sendIntegrationTestEvent(source as IntegrationTestSource, sessionId, 'thinking'),
+        deps.sendIntegrationTestEvent(source, sessionId, 'thinking'),
         receipt,
       ])
       setTimeout(() => {
-        void deps.sendIntegrationTestEvent(source as IntegrationTestSource, sessionId, 'offline').catch(() => {})
+        void deps.sendIntegrationTestEvent(source, sessionId, 'offline').catch(() => {})
       }, 2_500)
       return { ok: true, verifiedAt: Date.now() }
     } catch (error) {

@@ -13,7 +13,9 @@ Download the latest build from the [Releases](https://github.com/Ponpon55837/age
 - **macOS** — `AgentPets-<version>-arm64.dmg` (Apple Silicon) or `AgentPets-<version>-x64.dmg` (Intel). Open it and drag the app to Applications.
 - **Windows** — `AgentPets-<version>.exe`, a portable app that needs no installer.
 
-Builds are not code-signed, so the OS warns the first time:
+Each release also has `SHA256SUMS.txt`; run `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` in the download folder to check the files.
+
+Builds have no developer certificate and are not notarized (the macOS app is only ad-hoc signed so its bundle is sealed), so the OS warns the first time:
 
 - **macOS (Gatekeeper)** — right-click the app in Applications, choose **Open**, then confirm. Or use **System Settings → Privacy & Security → Open Anyway**. As a last resort: `xattr -dr com.apple.quarantine "/Applications/Agent Pets.app"`.
 - **Windows (SmartScreen)** — choose **More info → Run anyway**.
@@ -68,9 +70,9 @@ Under **Settings → Pets**, use **+ Import asset** (`.webp`, `.png` or `.jpg` s
 
 Sprite requirements (checked on import):
 
-- Frame cell **192 × 208 px**; the image width and height must be multiples of that, and the sheet needs **at least 9 rows** (rows 0–8).
-- Rows used: 0 Idle / Offline, 5 Error, 6 Waiting Permission / Waiting Input, 7 Thinking / Tool Running, 8 Success.
-- A `pet.json` may declare an optional `behaviorManifest` for Shimeji, for example `{"behaviorManifest":{"walk":{"row":1},"sleep":{"row":5}}}` (row 0–10, up to 16 frames, frame durations 60–3000 ms). Missing definitions fall back to Idle.
+- Frame cell **192 × 208 px**; the image width and height must be multiples of that, and the sheet needs **at least 9 rows** (rows 0–8). The grid, rows and default timings live in one place, [`src/types/pet-atlas.ts`](src/types/pet-atlas.ts), shared by import validation and the renderer.
+- Default rows: 0 idle (Idle / Offline), 3 waving, 4 jumping (Success), 5 failed (Error), 6 waiting (Waiting Permission / Input), 7 running and 8 review (Thinking / Tool Running).
+- A `pet.json` (or a plugin skin) may declare a `behaviorManifest` that overrides any motion — `idle`, `waving`, `jumping`, `failed`, `waiting`, `running`, `review` — and adds the Shimeji motions `walk` and `sleep`, for example `{"behaviorManifest":{"idle":{"row":9,"frames":4},"walk":{"row":1},"sleep":{"row":5}}}`. Each entry is `row` (0–63), optional `frames` (1–16) and optional `frameDurations` (1–16 values, clamped to 60–3000 ms). An entry that is malformed, points past the sheet's rows, or has more frames than columns is dropped and that motion uses the built-in one; undeclared `walk`/`sleep` fall back to idle.
 
 ## Control panel
 
@@ -143,7 +145,7 @@ The panel keeps a list of configured projects with status Connected, Partially c
 
 ## Event server
 
-Hooks post status updates to `http://127.0.0.1:17373/v1/events` with the per-install `X-Agent-Pets-Token` header (read from `~/.desktop-pet/event-token`).
+Hooks post status updates to `http://127.0.0.1:17373/v1/events` with the per-install `X-Agent-Pets-Token` header (read from `~/.desktop-pet/event-token`). A hook spends at most 1.5 s getting the event out and 0.25 s waiting for the reply, and stops at once when the pet is not running, so an agent is never held up. While the pet is still starting (it leaves `~/.desktop-pet/event-port-17373.starting` until it is listening), a refused event is retried for up to 5 s instead of being lost ([docs/dev/hook-delivery.md](docs/dev/hook-delivery.md)).
 
 ```json
 { "source": "codex", "sessionId": "sess_abc123", "state": "thinking", "timestamp": 1735689600000 }
@@ -209,13 +211,19 @@ pnpm dev
 | `pnpm check:bundle-size` | Fails if a renderer chunk exceeds 250 KB (run after `vite build`) |
 | `pnpm check:bundle` | Verifies the plugin panel tokens bundle |
 | `pnpm check:contrast` | Design token contrast check (fails on violation) |
-| `pnpm check:design` / `check:design:strict` | Reports hard-coded colors and sizes; `--strict` fails on them |
+| `pnpm check:design` / `check:design:strict` | Reports hard-coded colors, sizes, spacing, transition durations and easings; `--strict` fails on them ([docs/dev/design-tokens.md](docs/dev/design-tokens.md)) |
 | `pnpm build` / `pnpm build:fast` | Type check, Vite build, then electron-builder into `release/` (`build:fast` skips compression) |
 | `pnpm bench`, `pnpm bench:lag` | Performance benchmarks |
 
-Both build commands first close project-owned Agent Pets processes. To check a change in a real Electron app without touching your data, run `pnpm exec vite build` then `node scripts/e2e-isolated-electron.mjs` (temporary home and userData, fake `safeStorage`, so macOS Keychain is never touched; its local ports default to 27373–27375 so an installed copy keeps 17373–17375 — `--hook-port-base` picks another range, `--real-hook-ports` uses the defaults; see [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)).
+Both build commands first close project-owned Agent Pets processes. To check a change in a real Electron app without touching your data, run `pnpm exec vite build` then `node scripts/e2e-isolated-electron.mjs` (temporary home and userData, fake `safeStorage`, so macOS Keychain is never touched; its local ports default to 27373–27375 so an installed copy keeps 17373–17375 — `--hook-port-base` picks another range, `--real-hook-ports` uses the defaults, `--reuse-root` restarts with an earlier run's home for cold-start tests; see [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)).
 
 **Dev port overrides** — unpackaged runs may set `AGENT_PETS_EVENT_PORT`, `AGENT_PETS_PERMISSION_PORT` and `AGENT_PETS_PRESENTATION_PORT` (1024–65535; defaults 17373, 17374, 17375) so they do not fight an installed copy. Packaged builds ignore them.
+
+**Agent states** — everything keyed by an agent state lives in two tables checked with `satisfies Record<AgentState, …>`: `AGENT_STATE_POLICY` in `src/types/agent.ts` (priority, desktop notification, history outcome; shared with the main process) and `AGENT_STATE_PRESENTATION` in `src/utils/agent-state-presentation.ts` (labels, colour, screen-reader text, status-line word, mini badge, sound cue). Adding a state fails the type check until both are filled in. The one exception is the sprite motion for each state: it depends on the previous state and on timing, so it stays as logic in `src/utils/pet-motion-plan.ts`.
+
+**Agent sources** — the six event sources (`claude`, `codex-desktop`, …) and the three tool families (Codex, Claude, OpenCode) are listed once, in `AGENT_SOURCE_REGISTRY` (label, family, CLI or Desktop) and `AGENT_FAMILY_REGISTRY` (name, adapter id, subscription quota, local token log) in `src/types/agent.ts`. Source labels, the status-line family order, the per-family pet, quota meters, notification names, the adapter source lists and the main-process allowlists (event sources, permission sources, names plugins may not use) are derived from them. The hook scripts and installers (`integrations/`, `electron/setup.ts`, `electron/hook-config.ts`) still spell out their own source strings. See [docs/dev/agent-sources.md](docs/dev/agent-sources.md) before adding a source.
+
+**Sound** — which state plays which cue is the `cue` column of `AGENT_STATE_PRESENTATION`. Everything else about sound lives in `src/types/sound.ts`, checked with `satisfies Record<SoundCue, …>` and deep-frozen. It holds each cue's tones (frequency, timing, gain and waveform), its per-cue switch and its preview button. It also holds the shared envelope, the 3-second per-cue throttle, the 15-second minimum before a finished task plays a sound, the 0–100 volume range and the persisted defaults that the main process uses too. `src/utils/sound.ts` only schedules Web Audio nodes, and `src/utils/sound-policy.ts` only decides whether a cue may play (sound on, DND off, pet visible, the cue's own switch). `tests/sound-registry.test.mts` checks that every state still produces the same scheduled output as before the registry; see [docs/dev/sound-registry.md](docs/dev/sound-registry.md).
 
 `node integrations/install.mjs` installs the hooks from a checkout with the same safeguards as the wizard (`--claude-code` limits it to Claude Code, `--uninstall` removes them).
 
@@ -223,7 +231,7 @@ Both build commands first close project-owned Agent Pets processes. To check a c
 
 ## Versioning and release
 
-Bump `version` in `package.json` (patch by default; minor for a persistent-schema, public-contract or security-boundary change). When that commit lands on `main` and no `v<version>` tag exists, `.github/workflows/release.yml` runs the type check and unit tests, builds the macOS arm64 and x64 `.dmg` files and the Windows portable `.exe`, then creates the tag and a GitHub Release with generated notes. It can also be re-run from the Actions tab and skips versions that are already tagged. Builds are unsigned. If electron-builder fails to download Electron or its tools from GitHub releases, the job retries twice through `scripts/release-asset-mirror.mjs`, a 127.0.0.1-only proxy that fetches the same release assets through the GitHub API; checksums are still verified by electron-builder.
+Bump `version` in `package.json` (patch by default; minor for a persistent-schema, public-contract or security-boundary change). When that commit lands on `main` and no `v<version>` tag exists, `.github/workflows/release.yml` runs the type check and unit tests, builds the macOS arm64 and x64 `.dmg` files and the Windows portable `.exe`, then creates the tag and a GitHub Release with generated notes. It can also be re-run from the Actions tab and skips versions that are already tagged. Each macOS job builds on a runner of its own architecture (Intel for x64) so native modules match, and electron-builder ad-hoc signs the whole bundle after it writes the fuses (`mac.identity: "-"`; no certificate, no notarization). `scripts/check-mac-bundle.mjs` then mounts the dmg and fails the release unless `codesign --verify --deep --strict` passes, the fuses equal `build.electronFuses`, and every Mach-O and `*.node` file is the target architecture. The release job uploads `SHA256SUMS.txt` with the installers. If electron-builder fails to download Electron or its tools from GitHub releases, the job retries twice through `scripts/release-asset-mirror.mjs`, a 127.0.0.1-only proxy that fetches the same release assets through the GitHub API; checksums are still verified by electron-builder.
 
 ## License
 

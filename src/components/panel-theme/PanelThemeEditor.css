@@ -102,7 +102,7 @@
 .editor-seed {
   width: var(--hit-min);
   height: var(--hit-min);
-  padding: 2px;
+  padding: var(--space-0-5);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);

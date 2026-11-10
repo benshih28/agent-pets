@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { t } from '@/i18n'
 import type { PermissionRequestView } from '@/types/permission'
+import { PERMISSION_CLOCK_INTERVAL_MS } from '@/components/permission/usePermissionClock'
 import {
   formatDuration,
   permissionIsUrgent,
@@ -17,6 +18,8 @@ const props = defineProps<{
 const remaining = computed(() => formatDuration(permissionRemainingMs(props.request, props.now)))
 const urgent = computed(() => permissionIsUrgent(props.request, props.now))
 const percent = computed(() => Math.round(permissionRemainingFraction(props.request, props.now) * 100))
+// 補間剛好一個時鐘間隔，倒數條才會連續滑動而不是一格一格跳。
+const fillTransition = `${PERMISSION_CLOCK_INTERVAL_MS}ms`
 </script>
 
 <template>
@@ -29,7 +32,7 @@ const percent = computed(() => Math.round(permissionRemainingFraction(props.requ
       aria-valuemax="100"
       :aria-valuenow="percent"
     >
-      <span class="permission-countdown-fill" :style="{ width: `${percent}%` }" />
+      <span class="permission-countdown-fill" :style="{ width: `${percent}%`, transitionDuration: fillTransition }" />
     </span>
     <span class="permission-countdown-text">
       {{ t('permission.remaining', { time: remaining }) }}<template v-if="urgent"> · {{ t('permission.expiringSoon') }}</template>
@@ -58,7 +61,8 @@ const percent = computed(() => Math.round(permissionRemainingFraction(props.requ
   height: 100%;
   border-radius: inherit;
   background: var(--state-info);
-  transition: width 1s linear;
+  transition-property: width;
+  transition-timing-function: linear;
 }
 
 .permission-countdown-text {

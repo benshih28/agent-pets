@@ -109,6 +109,8 @@ import { acquireSingleInstanceLock, relaunchApp } from './relaunch'
 import { disposeMainTimers } from './main/dispose-timers'
 import { flushMainLog, logMain, teeConsoleToLog } from './diagnostics/main-log'
 import { acquireRunMarker } from './diagnostics/session-marker'
+import { writeHookStartupMarker } from './main/hook-startup-marker'
+import type { LocalServerListenStatus } from './local-server-listen'
 import { installChildProcessGoneLogger, installCrashGuard, runStartupStep, type StartupStepResult } from './main/crash-guard'
 import { setPluginPanelWindowBounds, MAX_PET_IMAGE_BYTES, MAX_PET_JSON_BYTES, MAX_PET_UNCOMPRESSED_BYTES, MAX_PET_ZIP_BYTES, MAX_PET_ZIP_ENTRIES, animateBounds, applyNormalPetBounds, assertTrustedIpcSender, availablePetIds, broadcastAchievementUnlock, broadcastDesktopPreferences, broadcastHistoryUpdated, broadcastPowerSaveState, broadcastProgression, broadcastProgressionIfChanged, clamp, clearEdgeDwell, computePanelBounds, configureSecureProtocol, createAchievementServices, createDesktopServices, createHistoryServices, createPanelWindow, createPermissionServices, isClaudePermissionRespondEnabled, createPetWindow, createPluginServices, createPresentationServices, createProgressionServices, createProjectRoutingServices, createWindowsFullscreenServices, currentDesktopPreferences, currentHistorySummary, currentPowerSaveState, displayForBounds, enabledPluginRoot, finiteNumber, getPetsJsonPath, hidePetWindow, initializePluginCatalogAutoCheck, isProgressionPetId, isSupportedRasterImage, isTrustedIpcSender, logAchievementDiagnostic, normalizeIngressEvent, persistCurrentPetWindowState, persistPetBounds, petModeState, rasterContentType, readRegularFileWithin, refreshLocalUsage, rehomePetWindowForDisplayChange, repositionVisiblePanel, safeJoin, sanitizePetId, scheduleEdgeDwell, scheduleShimejiPositionPersist, sendIntegrationTestEvent, setActiveProgressionPet, cancelHistoryStoreRetry, localPorts, reloadPetRenderers, registerRuntimeDiagnostics, exportDiagnostics, serverHealthTracker, setPetWindowMode, showPanelWindow, showPetWindow, syncPluginHost, syncWindowsFullscreenTargets, unregisterPermissionHotkeys, updateDesktopPreferences, waitForIntegrationTestReceipt, scheduleEdgeRedock, broadcastProgressionAwards, listPermissionAuditEntries, clearPermissionAuditLog, toggleMiniMode, requestPanelMinimum, resetPanelSize } from './main/runtime'
 
@@ -214,6 +216,8 @@ configureSetupEnvironment({
 })
 
 const runMarker = acquireRunMarker(join(app.getPath('userData'), 'logs'))
+// 越早寫越好：從這裡到事件埠開始監聽之間送出的 hook 事件，會在連線被拒時短暫重試而不是遺失。
+const hookStartupMarker = writeHookStartupMarker(hookScriptDeployPath(), localPorts().event)
 const crashGuard = installCrashGuard({
   log: (level, message, detail) => {
     if (level === 'error') console.error(message, ...(detail === undefined ? [] : [detail]))
@@ -269,6 +273,7 @@ const singleInstanceLock: Promise<boolean> = acquireSingleInstanceLock(
   { argv: process.argv },
 ).then(acquired => {
   if (!acquired) {
+    hookStartupMarker.clear()
     app.quit()
   } else {
     app.on('second-instance', () => {
@@ -455,10 +460,23 @@ async function bootstrapApp(): Promise<void> {
     normalizeIngressEvent,
     (() => {
       const health = serverHealthTracker().register('event', localPorts().event)
-      return { port: localPorts().event, onStatus: health.onStatus, onPersistentFailure: health.onPersistentFailure, onHandle: health.attach }
+      return {
+        port: localPorts().event,
+        onStatus: (status: LocalServerListenStatus) => {
+          if (status.state === 'listening') hookStartupMarker.listening()
+          health.onStatus(status)
+        },
+        onPersistentFailure: (status: LocalServerListenStatus) => {
+          // 埠一直綁不上時，hook 不該再為了等它而重試。
+          hookStartupMarker.clear()
+          health.onPersistentFailure(status)
+        },
+        onHandle: health.attach,
+      }
     })(),
   )
   })
+  if (!mainState.eventServer) hookStartupMarker.clear()
 
   registerSessionJumpIpc({
     ipcMain,
@@ -795,6 +813,7 @@ async function bootstrapApp(): Promise<void> {
 
 app.whenReady().then(bootstrapApp).catch(async error => {
   startupLog('error', 'Application bootstrap failed', error)
+  hookStartupMarker.clear()
   try {
     if (!mainState.petWindow) createPetWindow()
   } catch (windowError) {
@@ -806,6 +825,7 @@ app.whenReady().then(bootstrapApp).catch(async error => {
 function teardownMainServices(): void {
   mainState.isQuitting = true
   runMarker.clear()
+  hookStartupMarker.clear()
   flushMainLog()
   mainState.pluginPanelViewController?.close()
   mainState.pluginPanelViewController = null

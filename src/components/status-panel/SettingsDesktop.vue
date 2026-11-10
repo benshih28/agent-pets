@@ -6,15 +6,16 @@ import {
   CLAUDE_PERMISSION_WAIT_MAX_SECONDS,
   CLAUDE_PERMISSION_WAIT_MIN_SECONDS,
   PERMISSION_DEFAULT_TTL_SECONDS,
+  type PermissionAuditEntry,
 } from '@/types/permission'
+import { SOUND_CUE_PREVIEWS, SOUND_CUE_TOGGLES, SOUND_VOLUME, type SoundCue, type SoundCueSwitch } from '@/types/sound'
 import Card from '@/components/ui/Card.vue'
 import ToggleRow from '@/components/ui/ToggleRow.vue'
 import Button from '@/components/ui/Button.vue'
 import NumberField from '@/components/ui/NumberField.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import type { PermissionAuditEntry } from '@/types/permission'
 import { alsoAnswerableKey, permissionSourceName } from '@/utils/permission-source'
-import { playCue, type SoundCue } from '@/utils/sound'
+import { playCue } from '@/utils/sound'
 import { formatDateParts } from '@/utils/intl-format'
 
 const store = useAgentStore()
@@ -80,6 +81,12 @@ function setVolume(event: Event): void {
   store.setSoundOption({ soundVolume: Number((event.target as HTMLInputElement).value) })
 }
 
+function setCueToggle(key: SoundCueSwitch, enabled: boolean): void {
+  const patch: Partial<Record<SoundCueSwitch, boolean>> = {}
+  patch[key] = enabled
+  store.setSoundOption(patch)
+}
+
 function preview(cue: SoundCue): void {
   playCue(cue, { preview: true })
 }
@@ -128,11 +135,12 @@ function preview(cue: SoundCue): void {
     <ToggleRow :model-value="store.soundEnabled" :label="t('sound')" :help="t('soundHelp')" @update:model-value="store.setSoundEnabled($event)" />
     <label class="permission-sound-volume">
       <span>{{ t('permission.soundVolume') }}</span>
+      <!-- raw-control: 音量滑桿；ui/ 沒有 slider 元件，全專案只有這一處 -->
       <input
         type="range"
-        min="0"
-        max="100"
-        step="5"
+        :min="SOUND_VOLUME.min"
+        :max="SOUND_VOLUME.max"
+        :step="SOUND_VOLUME.step"
         :value="store.soundVolume"
         :disabled="!store.soundEnabled"
         :aria-valuetext="`${store.soundVolume}%`"
@@ -140,13 +148,16 @@ function preview(cue: SoundCue): void {
       />
       <output>{{ store.soundVolume }}%</output>
     </label>
-    <ToggleRow :model-value="store.soundOnPermission" :disabled="!store.soundEnabled" :label="t('permission.soundOnPermission')" @update:model-value="store.setSoundOption({ soundOnPermission: $event })" />
-    <ToggleRow :model-value="store.soundOnError" :disabled="!store.soundEnabled" :label="t('permission.soundOnError')" @update:model-value="store.setSoundOption({ soundOnError: $event })" />
-    <ToggleRow :model-value="store.soundOnSuccess" :disabled="!store.soundEnabled" :label="t('permission.soundOnSuccess')" @update:model-value="store.setSoundOption({ soundOnSuccess: $event })" />
+    <ToggleRow
+      v-for="toggle in SOUND_CUE_TOGGLES"
+      :key="toggle.key"
+      :model-value="store[toggle.key]"
+      :disabled="!store.soundEnabled"
+      :label="t(toggle.labelKey)"
+      @update:model-value="setCueToggle(toggle.key, $event)"
+    />
     <div class="permission-sound-preview">
-      <Button size="sm" variant="secondary" @click="preview('waiting-permission')">{{ t('permission.soundPreviewPermission') }}</Button>
-      <Button size="sm" variant="secondary" @click="preview('error')">{{ t('permission.soundPreviewError') }}</Button>
-      <Button size="sm" variant="secondary" @click="preview('success')">{{ t('permission.soundPreviewSuccess') }}</Button>
+      <Button v-for="item in SOUND_CUE_PREVIEWS" :key="item.cue" size="sm" variant="secondary" @click="preview(item.cue)">{{ t(item.labelKey) }}</Button>
     </div>
   </Card>
 

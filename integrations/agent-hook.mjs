@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { createHash, randomBytes } from 'crypto'
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+import { createHash, randomBytes } from 'node:crypto'
+import fs from 'node:fs'
+import http from 'node:http'
+import os from 'node:os'
+import path from 'node:path'
 
 const PET_URL = 'http://127.0.0.1:17373/v1/events'
 const PERMISSION_URL = 'http://127.0.0.1:17374/v1/permission'
@@ -16,6 +17,19 @@ const POLL_INTERVAL_MS = 450
 const MIN_WAIT_SECONDS = 15
 const MAX_WAIT_SECONDS = 120
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
+// 送到 app 的時限分兩段（量測依據見 docs/dev/hook-delivery.md）。請求一旦交給作業系統，app 晚點才讀也收得到
+// （即使這個程序已結束），所以長的時限只涵蓋把請求送出去，機器很忙時這段可能要將近 1 秒。
+const SEND_DEADLINE_MS = 1500
+// 狀態事件不需要回應內容，送出後只短暫等 204 就離開。
+const STATUS_ANSWER_GRACE_MS = 250
+// 權限回覆要讀回應（請求是否建立、使用者的決定），送出後最多再等這麼久。
+const PERMISSION_ANSWER_DEADLINE_MS = 1000
+const MAX_ANSWER_BYTES = 16 * 1024
+// app 正在啟動（electron/main/hook-startup-marker.ts 寫的標記夠新）時，連線被拒就每隔一段時間重試，總共最多等這麼久。
+const STARTUP_RETRY_INTERVAL_MS = 100
+const STARTUP_WAIT_MS = 5000
+// 比這更舊的標記視為當機留下的，不重試。
+const STARTUP_MARKER_MAX_AGE_MS = 20_000
 // Fixed text: the reason Claude sees must never echo request content back.
 const DENY_MESSAGE = 'Denied in Agent Pets. (已在 Agent Pets 拒絕)'
 
@@ -199,22 +213,76 @@ function agentScope(payload) {
   return typeof payload?.agent_id === 'string' && payload.agent_id ? toIdentifier('', payload.agent_id) : 'main'
 }
 
-async function permissionPost(token, route, body, timeoutMs) {
-  try {
-    const response = await fetch(`${PERMISSION_URL}/${route}`, {
+/**
+ * POST JSON 到本機 app。用 node:http 而不是 fetch：fetch 第一次呼叫的初始化在忙碌的機器上就可能吃掉好幾百毫秒。
+ * 時限分兩段：SEND_DEADLINE_MS 內要把請求交給作業系統，之後最多再等 answerMs。
+ * 不會 reject。回傳 { status, data, refused }：status 0 代表沒有收到回應標頭；data 只在 readAnswer 且回 200/201 時
+ * 解析（超過 MAX_ANSWER_BYTES、格式錯誤或沒讀完就是 null）；refused 代表連線被拒，請求完全沒有送出。
+ */
+function postLocal(url, headers, payload, { answerMs, readAnswer }) {
+  const body = JSON.stringify(payload)
+  return new Promise((resolve) => {
+    let timer = null
+    let settled = false
+    let status = 0
+    let refused = false
+    const chunks = []
+    let size = 0
+    const request = http.request(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-agent-pets-permission-token': token },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      agent: false,
+      headers: { ...headers, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+    }, (response) => {
+      status = response.statusCode ?? 0
+      const keep = readAnswer && (status === 200 || status === 201)
+      // 回應中途斷線時立刻結束，不必等完時限。
+      response.on('error', () => done(false))
+      response.once('end', () => done(keep))
+      if (!keep) {
+        response.resume()
+        return
+      }
+      response.on('data', (chunk) => {
+        size += chunk.length
+        if (size > MAX_ANSWER_BYTES) {
+          done(false)
+          return
+        }
+        chunks.push(chunk)
+      })
     })
-    let data = null
-    if (response.status === 200 || response.status === 201) {
-      try { data = await response.json() } catch { data = null }
+    function done(parse) {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      request.destroy()
+      let data = null
+      if (parse) {
+        try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { data = null }
+      }
+      resolve({ status, data, refused })
     }
-    return { status: response.status, data }
-  } catch {
-    return { status: 0, data: null }
-  }
+    // 用 on 而不是 once：銷毀還沒回應的請求可能再發出一次 error。
+    request.on('error', (error) => {
+      if (!settled && error?.code === 'ECONNREFUSED') refused = true
+      done(false)
+    })
+    request.once('finish', () => {
+      if (settled) return
+      clearTimeout(timer)
+      timer = setTimeout(() => done(false), answerMs)
+    })
+    timer = setTimeout(() => done(false), SEND_DEADLINE_MS)
+    request.end(body)
+  })
+}
+
+async function permissionPost(token, route, body) {
+  const { status, data } = await postLocal(`${PERMISSION_URL}/${route}`, { 'x-agent-pets-permission-token': token }, body, {
+    answerMs: PERMISSION_ANSWER_DEADLINE_MS,
+    readAnswer: true,
+  })
+  return { status, data }
 }
 
 function readPermissionToken() {
@@ -247,7 +315,7 @@ async function createPermissionRequest(payload, waitSeconds) {
     detail: permissionDetail(payload?.tool_input),
     filePath: editedFilePath(payload?.tool_input),
     ttlSeconds: waitSeconds,
-  }, 1000)
+  })
   if (created.status !== 200 && created.status !== 201) return null
   return { token, lookup }
 }
@@ -257,7 +325,7 @@ async function pollPermissionDecision({ token, lookup }, waitSeconds) {
   // final poll so a click just before expiry is still picked up.
   const deadline = Date.now() + waitSeconds * 1000 + 2000
   while (Date.now() < deadline) {
-    const polled = await permissionPost(token, 'decision', lookup, 1000)
+    const polled = await permissionPost(token, 'decision', lookup)
     if (polled.status === 204) {
       await sleep(POLL_INTERVAL_MS)
       continue
@@ -270,7 +338,7 @@ async function pollPermissionDecision({ token, lookup }, waitSeconds) {
       ? { behavior: 'allow' }
       : { behavior: 'deny', message: DENY_MESSAGE }
     await writeStdout(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: output } }))
-    await permissionPost(token, 'result', { ...lookup, decisionId, result: 'delivered' }, 1000)
+    await permissionPost(token, 'result', { ...lookup, decisionId, result: 'delivered' })
     return
   }
 }
@@ -281,7 +349,7 @@ async function resolveClaudePermissions(eventName, payload) {
   if (!token) return
   const ids = claudePermissionIds(payload)
   if (eventName === 'PostToolUse' || eventName === 'PostToolUseFailure') {
-    await permissionPost(token, 'resolved', { source, instanceId: ids.instanceId, permissionId: ids.permissionId }, 1000)
+    await permissionPost(token, 'resolved', { source, instanceId: ids.instanceId, permissionId: ids.permissionId })
     return
   }
   // A new tool call (PreToolUse fires before its own PermissionRequest) or the main turn ending
@@ -289,21 +357,44 @@ async function resolveClaudePermissions(eventName, payload) {
   if (eventName === 'PreToolUse' || eventName === 'Stop') {
     // A background task may still be waiting for an answer after the main turn stops.
     if (eventName === 'Stop' && Array.isArray(payload?.background_tasks) && payload.background_tasks.length > 0) return
-    await permissionPost(token, 'resolved-session', { source, instanceId: ids.instanceId, scope: agentScope(payload) }, 1000)
+    await permissionPost(token, 'resolved-session', { source, instanceId: ids.instanceId, scope: agentScope(payload) })
     return
   }
-  await permissionPost(token, 'resolved-session', { source, instanceId: ids.instanceId }, 1000)
+  await permissionPost(token, 'resolved-session', { source, instanceId: ids.instanceId })
+}
+
+/** app 剛啟動、還沒開始收事件。只在連線被拒時才呼叫，所以 app 開著時完全不會多讀檔。 */
+function appIsStarting() {
+  try {
+    const marker = path.join(DEPLOY_DIR, `event-port-${new URL(PET_URL).port}.starting`)
+    const stat = fs.lstatSync(marker)
+    const age = Date.now() - stat.mtimeMs
+    return stat.isFile() && age > -1000 && age < STARTUP_MARKER_MAX_AGE_MS
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 寵物沒開時連線立刻被拒，hook 馬上結束（只多一次 lstat）。app 正在啟動時才重試，
+ * 而且同一個 hook 依序重試，同一個 session 的事件順序不會亂。
+ */
+async function postStatus(eventToken, event) {
+  const startedAt = Date.now()
+  for (;;) {
+    const { refused } = await postLocal(PET_URL, { 'x-agent-pets-token': eventToken }, event, {
+      answerMs: STATUS_ANSWER_GRACE_MS,
+      readAnswer: false,
+    })
+    if (!refused || Date.now() - startedAt + STARTUP_RETRY_INTERVAL_MS > STARTUP_WAIT_MS || !appIsStarting()) return
+    await sleep(STARTUP_RETRY_INTERVAL_MS)
+  }
 }
 
 const RESOLVING_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'UserPromptSubmit', 'SessionEnd'])
 
 async function main() {
-  let eventToken
-  try {
-    eventToken = fs.readFileSync(EVENT_TOKEN_PATH, 'utf8').trim()
-  } catch {
-    process.exit(0)
-  }
+  const eventToken = (readSmallFile(EVENT_TOKEN_PATH, 256) ?? '').trim()
   if (!/^[a-f0-9]{64}$/i.test(eventToken)) process.exit(0)
 
   const raw = await readStdin()
@@ -357,19 +448,7 @@ async function main() {
       ? (pending ? pollPermissionDecision(pending, waitSeconds) : null)
       : resolveClaudePermissions(eventName, payload)
 
-  try {
-    await fetch(PET_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-agent-pets-token': eventToken,
-      },
-      body: JSON.stringify(event),
-      signal: AbortSignal.timeout(300),
-    })
-  } catch {
-    // Desktop pet not running, ignore
-  }
+  await postStatus(eventToken, event)
   if (permissionWork) await permissionWork
 }
 

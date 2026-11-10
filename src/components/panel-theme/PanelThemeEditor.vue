@@ -478,6 +478,7 @@ onBeforeUnmount(() => {
         <h3 id="editor-generate-title" class="editor-section-title">{{ te('themeEditor.generateTitle') }}</h3>
         <p class="editor-help">{{ te('themeEditor.generateHelp') }}</p>
         <div class="editor-generate">
+          <!-- raw-control: 原生色彩選擇器，系統色盤只能由 input type=color 開啟，ui/ 沒有對應元件 -->
           <input v-model="seed" class="editor-seed" type="color" :aria-label="te('themeEditor.seedLabel')" data-testid="editor-seed" />
           <Button size="sm" variant="secondary" :disabled="busy" data-testid="editor-generate-seed" @click="generateFromSeed">{{ te('themeEditor.generateFromSeed') }}</Button>
           <Button size="sm" variant="secondary" :disabled="busy || !currentImageUrl" data-testid="editor-generate-image" @click="generateFromImage">{{ te('themeEditor.generateFromImage') }}</Button>

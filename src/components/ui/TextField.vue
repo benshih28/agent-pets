@@ -111,12 +111,12 @@ function clear(): void {
 }
 
 .size-md .text-field-input {
-  padding: 8px var(--space-3);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--font-sm);
 }
 
 .size-sm .text-field-input {
-  padding: 6px var(--space-3);
+  padding: var(--space-1-5) var(--space-3);
   font-size: var(--font-sm);
 }
 
@@ -151,7 +151,7 @@ function clear(): void {
   justify-content: center;
   min-width: var(--hit-min);
   min-height: var(--hit-min);
-  padding: 4px;
+  padding: var(--space-1);
   border: 0;
   border-radius: var(--radius-pill);
   background: transparent;

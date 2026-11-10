@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useReducedMotion } from '@/composables/useReducedMotion'
 import { useRovingTabs } from '@/composables/useRovingTabs'
 import Badge from '@/components/ui/Badge.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -71,7 +72,7 @@ const track = ref<HTMLElement | null>(null)
 const edges = ref({ overflowing: false, start: false, end: false })
 let resizeObserver: ResizeObserver | null = null
 const REVEAL_PADDING = 28
-const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+const reducedMotion = useReducedMotion()
 
 function updateEdges(): void {
   const el = track.value
@@ -83,7 +84,7 @@ function reveal(button: HTMLElement | null): void {
   const el = track.value
   if (!props.scrollable || !el || !button) return
   const left = scrollLeftToReveal(el, { left: button.offsetLeft, width: button.offsetWidth }, REVEAL_PADDING)
-  if (left !== el.scrollLeft) el.scrollTo({ left, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  if (left !== el.scrollLeft) el.scrollTo({ left, behavior: reducedMotion.value ? 'auto' : 'smooth' })
 }
 
 function onFocusIn(event: FocusEvent): void {
@@ -93,7 +94,7 @@ function onFocusIn(event: FocusEvent): void {
 function scrollPage(direction: -1 | 1): void {
   const el = track.value
   if (!el) return
-  el.scrollBy({ left: pageScrollDelta(el.clientWidth, direction), behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  el.scrollBy({ left: pageScrollDelta(el.clientWidth, direction), behavior: reducedMotion.value ? 'auto' : 'smooth' })
 }
 
 function onWheel(event: WheelEvent): void {
@@ -371,7 +372,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 
 .segment-badge {
   min-width: 18px;
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent-text);

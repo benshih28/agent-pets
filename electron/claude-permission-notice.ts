@@ -1,6 +1,7 @@
 import type { AdapterNormalizeResult } from '../src/types/agent-adapter'
+import { familySourceSet } from '../src/types/agent.ts'
 
-const CLAUDE_SOURCES: ReadonlySet<string> = new Set(['claude', 'claude-desktop'])
+const CLAUDE_SOURCES = familySourceSet('claude')
 
 // How long after a pet request finished a Claude "waiting for permission" event still counts
 // as answerable here (Claude's Notification hook can trail the decision by a few seconds).

@@ -289,6 +289,7 @@ onUnmounted(() => {
         <Icon name="back" />
       </Button>
       <template v-if="store.panelView === 'sessions'">
+        <!-- raw-control: 按鈕內容是寵物動畫頭像；Button 的 icon-only 尺寸與 hover 底色會蓋掉 sprite -->
         <button type="button" class="panel-pet-avatar" :title="t('panel.changePet')" :aria-label="t('panel.changePet')" @click="openPetSettings">
           <PetAnimation class="panel-pet-animation" aria-hidden="true" :state="store.currentState" :pet-id="store.activePetId" :since="store.highestPrioritySession?.lastSeenAt" :mood="store.mood" />
         </button>

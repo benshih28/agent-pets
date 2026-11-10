@@ -7,6 +7,7 @@ import { sectionAchievements, type AchievementFilter } from '@/utils/achievement
 import Card from '@/components/ui/Card.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ProgressTrack from '@/components/ui/ProgressTrack.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import ToggleRow from '@/components/ui/ToggleRow.vue'
 import { formatDateDefault } from '@/utils/intl-format'
 
@@ -27,6 +28,7 @@ const achievementQualityLabels: Partial<Record<AchievementTokenQuality, Translat
   exact: 'achievementTokenExact', estimated: 'achievementTokenEstimated',
 }
 
+const filterOptions = computed(() => FILTERS.map(option => ({ value: option.id, label: t(option.label) })))
 const sections = computed(() => sectionAchievements(store.achievements?.achievements ?? []))
 const showProgress = computed(() => filter.value !== 'unlocked')
 const showUnlocked = computed(() => filter.value !== 'progress')
@@ -75,16 +77,15 @@ function percent(item: AchievementView): number {
     <ToggleRow :model-value="store.achievementsEnabled" :label="t('achievementsEnable')" :help="t('achievementsEnableHelp')" @update:model-value="store.setAchievementsEnabled($event)" />
 
     <template v-if="store.achievements">
-      <div class="achievement-filter" role="group" :aria-label="t('growth.achievementsFilterLabel')">
-        <button
-          v-for="option in FILTERS"
-          :key="option.id"
-          type="button"
-          class="achievement-filter-button"
-          :class="{ active: filter === option.id }"
-          :aria-pressed="filter === option.id"
-          @click="filter = option.id"
-        >{{ t(option.label) }}</button>
+      <div class="achievement-filter">
+        <SegmentedControl
+          v-model="filter"
+          :options="filterOptions"
+          :ariaLabel="t('growth.achievementsFilterLabel')"
+          semantics="radio"
+          id-prefix="achievement-filter-"
+          size="sm"
+        />
       </div>
 
       <ul v-if="showProgress && sections.inProgress.length > 0" class="achievement-list" :aria-label="t('growth.achievementsFilterProgress')">
@@ -137,32 +138,10 @@ function percent(item: AchievementView): number {
   list-style: none;
 }
 
+/* 外層 flex 讓分段控制縮成內容寬度，不撐滿卡片。 */
 .achievement-filter {
   display: flex;
-  gap: var(--space-2);
   margin-top: var(--space-3);
-}
-
-.achievement-filter-button {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
-.achievement-filter-button.active {
-  border-color: var(--border-accent);
-  background: var(--accent-wash);
-  color: var(--text-primary);
-}
-
-.achievement-filter-button:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
 }
 
 .achievement-new {

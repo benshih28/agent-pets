@@ -212,6 +212,7 @@ function projectPetStatusLabel(status: 'unbound' | 'bound' | 'missing-pet'): str
             @blur="onRenameBlur"
           />
           <template v-else>
+            <!-- raw-control: role=radio 的寵物卡片，內含預覽；roving tabindex 由 SettingsPets 管理，SegmentedControl 放不下預覽 -->
             <button
               :id="`pet-radio-${pet.id}`"
               type="button"

@@ -4,6 +4,8 @@
 // 寬度由呼叫端的 measure() 提供（renderer 用 canvas measureText，測試用假的），
 // 這裡只做加總與取捨，所以是純函式。
 
+import { PET_CELL_WIDTH } from '../types/pet-atlas.ts'
+
 export type StatusLinePart = 'label' | 'state' | 'badge' | 'readout'
 export type MeasureText = (text: string, part: StatusLinePart) => number
 
@@ -55,7 +57,7 @@ export const STATUS_LINE_GEOMETRY = {
   readoutMin: 25,
   /** .status-line 的 max-width 是 var(--pet-w) 減去這個值。 */
   petInsetX: 14,
-  /** 多寵物狀態列寬度是 192px × 寵物倍率減去這個值。 */
+  /** 多寵物狀態列寬度是一格 sprite 寬（--pet-cell-w）× 寵物倍率減去這個值。 */
   multiPetInsetX: 12,
   /** 預留給次像素捨入與字型差異的空間。 */
   slack: 2,
@@ -63,7 +65,7 @@ export const STATUS_LINE_GEOMETRY = {
 
 /** 多寵物狀態列的最小寬度（.multi-pet-status-line），仍在 0.6 倍寵物欄內。 */
 export const MULTI_PET_LINE_MIN_W = 112
-export const MULTI_PET_SPRITE_W = 192
+export const MULTI_PET_SPRITE_W = PET_CELL_WIDTH
 
 // 各部分文字的字型；DesktopPet.vue 以此組出 canvas 字型，測試檢查它與 CSS 一致。
 export const STATUS_TEXT_FONTS: Readonly<Record<StatusLinePart, { weight: number; sizeVar: string; sizeFallback: string; familyVar: string }>> = {

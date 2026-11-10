@@ -13,7 +13,9 @@
 - **macOS** — `AgentPets-<version>-arm64.dmg`（Apple Silicon）或 `AgentPets-<version>-x64.dmg`（Intel）。開啟後把 App 拖進「應用程式」。
 - **Windows** — `AgentPets-<version>.exe`，免安裝的可攜版。
 
-目前的版本沒有程式碼簽章，第一次開啟時系統會跳出警告：
+每個 Release 都附 `SHA256SUMS.txt`；在下載資料夾執行 `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` 即可比對檔案。
+
+目前的版本沒有開發者憑證，也沒有公證（macOS 版只有 ad-hoc 簽章，用來密封 bundle），第一次開啟時系統會跳出警告：
 
 - **macOS（Gatekeeper）** — 在「應用程式」中對 App 按右鍵，選擇**打開**並確認；或到**系統設定 → 隱私權與安全性**按**強制打開**。最後手段：`xattr -dr com.apple.quarantine "/Applications/Agent Pets.app"`。
 - **Windows（SmartScreen）** — 選擇**其他資訊 → 仍要執行**。
@@ -68,9 +70,9 @@
 
 精靈圖規格（匯入時檢查）：
 
-- 單格 **192 × 208 px**；圖片寬高必須是該尺寸的整數倍，且**至少 9 列**（第 0–8 列）。
-- 使用的列：0 閒置／離線、5 錯誤、6 等待權限／等待輸入、7 思考／執行工具、8 成功。
-- `pet.json` 可選擇性宣告 `behaviorManifest` 供 Shimeji 使用，例如 `{"behaviorManifest":{"walk":{"row":1},"sleep":{"row":5}}}`（列 0–10、最多 16 格、每格 60–3000 毫秒）。未宣告的行為會回到閒置。
+- 單格 **192 × 208 px**；圖片寬高必須是該尺寸的整數倍，且**至少 9 列**（第 0–8 列）。格子尺寸、列號與預設節奏只定義在 [`src/types/pet-atlas.ts`](src/types/pet-atlas.ts)，匯入驗證與畫面端共用。
+- 預設列：0 idle（閒置／離線）、3 waving、4 jumping（成功）、5 failed（錯誤）、6 waiting（等待權限／等待輸入）、7 running 與 8 review（思考／執行工具）。
+- `pet.json`（或插件外觀）可宣告 `behaviorManifest` 覆蓋任何動作——`idle`、`waving`、`jumping`、`failed`、`waiting`、`running`、`review`——並加上 Shimeji 用的 `walk` 與 `sleep`，例如 `{"behaviorManifest":{"idle":{"row":9,"frames":4},"walk":{"row":1},"sleep":{"row":5}}}`。每一項是 `row`（0–63）、可選的 `frames`（1–16）與 `frameDurations`（1–16 個值，夾在 60–3000 毫秒）。格式不合法、列號超過圖的列數或格數超過欄數的項目會被丟掉，該動作改用內建值；沒宣告的 `walk`／`sleep` 會回到閒置。
 
 ## 控制面板
 
@@ -143,7 +145,7 @@ Agent 要求權限時，寵物上會出現液態玻璃氣泡，面板內也會�
 
 ## 事件伺服器
 
-Hook 會附上每次安裝專屬的 `X-Agent-Pets-Token` 標頭（讀自 `~/.desktop-pet/event-token`），把狀態送到 `http://127.0.0.1:17373/v1/events`。
+Hook 會附上每次安裝專屬的 `X-Agent-Pets-Token` 標頭（讀自 `~/.desktop-pet/event-token`），把狀態送到 `http://127.0.0.1:17373/v1/events`。每個 hook 最多花 1.5 秒把事件送出、再等 0.25 秒回應；寵物沒開時會立刻結束，不會拖慢 agent。寵物還在啟動時（開始收事件前會留著 `~/.desktop-pet/event-port-17373.starting`），被拒絕的事件會重試最多 5 秒，不會遺失（見 [docs/dev/hook-delivery.md](docs/dev/hook-delivery.md)）。
 
 ```json
 { "source": "codex", "sessionId": "sess_abc123", "state": "thinking", "timestamp": 1735689600000 }
@@ -209,13 +211,19 @@ pnpm dev
 | `pnpm check:bundle-size` | 任一 renderer chunk 超過 250 KB 即失敗（需先 `vite build`） |
 | `pnpm check:bundle` | 驗證插件面板 tokens 的 bundle |
 | `pnpm check:contrast` | 設計 token 對比度檢查（違規即失敗） |
-| `pnpm check:design` / `check:design:strict` | 回報寫死的顏色與尺寸；`--strict` 會直接失敗 |
+| `pnpm check:design` / `check:design:strict` | 回報寫死的顏色、尺寸、間距、transition 時長與 easing；`--strict` 會直接失敗（見 [docs/dev/design-tokens.md](docs/dev/design-tokens.md)） |
 | `pnpm build` / `pnpm build:fast` | 型別檢查、Vite 建置，再由 electron-builder 輸出到 `release/`（`build:fast` 不壓縮） |
 | `pnpm bench`、`pnpm bench:lag` | 效能基準測試 |
 
-兩個建置指令都會先關閉本專案的 Agent Pets 程序。若想在真實 Electron App 中驗證修改又不動到你的資料，先執行 `pnpm exec vite build`，再執行 `node scripts/e2e-isolated-electron.mjs`（暫時的 home 與 userData、假的 `safeStorage`，所以不會碰到 macOS 鑰匙圈；本機埠預設為 27373–27375，已安裝的版本可保有 17373–17375，`--hook-port-base` 可改用另一組，`--real-hook-ports` 才用預設埠；見 [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)）。
+兩個建置指令都會先關閉本專案的 Agent Pets 程序。若想在真實 Electron App 中驗證修改又不動到你的資料，先執行 `pnpm exec vite build`，再執行 `node scripts/e2e-isolated-electron.mjs`（暫時的 home 與 userData、假的 `safeStorage`，所以不會碰到 macOS 鑰匙圈；本機埠預設為 27373–27375，已安裝的版本可保有 17373–17375，`--hook-port-base` 可改用另一組，`--real-hook-ports` 才用預設埠，`--reuse-root` 沿用上一次的 home 重新啟動，供冷啟動測試使用；見 [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)）。
 
 **開發埠覆寫** — 未打包的執行可設定 `AGENT_PETS_EVENT_PORT`、`AGENT_PETS_PERMISSION_PORT`、`AGENT_PETS_PRESENTATION_PORT`（1024–65535；預設 17373、17374、17375），避免和已安裝的版本搶埠。打包版會忽略這些變數。
+
+**Agent 狀態** — 依狀態而定的資料都集中在兩張以 `satisfies Record<AgentState, …>` 檢查的表：`src/types/agent.ts` 的 `AGENT_STATE_POLICY`（優先度、桌面通知、歷史結局，主行程共用）與 `src/utils/agent-state-presentation.ts` 的 `AGENT_STATE_PRESENTATION`（標籤、顏色、螢幕閱讀器文字、狀態列用字、迷你徽章、音效）。新增狀態時兩張表沒填齊，型別檢查就會失敗。唯一的例外是每個狀態對應的寵物動作：它要看前一個狀態與時間，所以留在 `src/utils/pet-motion-plan.ts` 用邏輯判斷。
+
+**Agent 來源** — 6 個事件來源（`claude`、`codex-desktop` 等）與 3 個工具家族（Codex、Claude、OpenCode）只在 `src/types/agent.ts` 列一次：`AGENT_SOURCE_REGISTRY`（名稱、家族、CLI 或 Desktop）與 `AGENT_FAMILY_REGISTRY`（家族名稱、adapter id、有沒有訂閱額度、本機 token 紀錄）。來源名稱、狀態列的家族順序、每家族的寵物、quota 條、通知上的名稱、adapter 的來源清單，以及主行程的白名單（事件來源、權限來源、插件不能用的名稱）都由這兩張表推導。hook 腳本與安裝程式（`integrations/`、`electron/setup.ts`、`electron/hook-config.ts`）仍各自寫著來源字串。新增來源前先看 [docs/dev/agent-sources.md](docs/dev/agent-sources.md)。
+
+**音效** — 哪個狀態播哪個 cue，由 `AGENT_STATE_PRESENTATION` 的 `cue` 欄位決定。其餘跟音效有關的資料都在 `src/types/sound.ts`，以 `satisfies Record<SoundCue, …>` 檢查並深層凍結。表裡有每個 cue 的音形（頻率、時間、增益、波形）、對應的開關和試聽按鈕，也有共用的包絡、同一個 cue 3 秒內只播一次的節流、任務至少跑 15 秒完成時才出聲的門檻、0–100 的音量範圍，以及主行程也會用到的持久化預設值。`src/utils/sound.ts` 只負責排程 Web Audio 節點；`src/utils/sound-policy.ts` 只判斷能不能播，條件是音效開著、沒開勿擾、寵物看得到，而且這個 cue 自己的開關也開著。`tests/sound-registry.test.mts` 會比對每個狀態排程出去的聲音，確認跟改成 registry 之前完全相同；見 [docs/dev/sound-registry.md](docs/dev/sound-registry.md)。
 
 在原始碼目錄執行 `node integrations/install.mjs` 可用與精靈相同的保護機制安裝 hook（`--claude-code` 只處理 Claude Code，`--uninstall` 則移除）。
 
@@ -223,7 +231,7 @@ pnpm dev
 
 ## 版本與發佈
 
-在 `package.json` 提高 `version`（預設升 patch；永久資料結構、公開契約或安全邊界的變更才升 minor）。該 commit 進入 `main` 且尚無 `v<version>` tag 時，`.github/workflows/release.yml` 會執行型別檢查與單元測試，建置 macOS arm64 與 x64 的 `.dmg` 及 Windows 可攜版 `.exe`，再建立 tag 與附自動產生說明的 GitHub Release。也可從 Actions 頁面重新執行，已有 tag 的版本會被略過。目前版本沒有簽章。electron-builder 從 GitHub releases 下載 Electron 或工具失敗時，會改經 `scripts/release-asset-mirror.mjs` 再試兩次：它只聽 127.0.0.1，經 GitHub API 下載同一個 release 檔案，checksum 仍由 electron-builder 驗證。
+在 `package.json` 提高 `version`（預設升 patch；永久資料結構、公開契約或安全邊界的變更才升 minor）。該 commit 進入 `main` 且尚無 `v<version>` tag 時，`.github/workflows/release.yml` 會執行型別檢查與單元測試，建置 macOS arm64 與 x64 的 `.dmg` 及 Windows 可攜版 `.exe`，再建立 tag 與附自動產生說明的 GitHub Release。也可從 Actions 頁面重新執行，已有 tag 的版本會被略過。兩個 macOS job 各在同架構的 runner 上建置（x64 用 Intel），原生模組才會是對的架構；electron-builder 在寫入 fuses 之後對整個 bundle 做 ad-hoc 簽章（`mac.identity: "-"`，沒有憑證、沒有公證）。接著 `scripts/check-mac-bundle.mjs` 掛載 dmg 檢查：`codesign --verify --deep --strict` 要通過、fuses 要等於 `build.electronFuses`、每個 Mach-O 與 `*.node` 都要是目標架構，任何一項不符就讓發版失敗。release job 會把 `SHA256SUMS.txt` 跟安裝檔一起上傳。electron-builder 從 GitHub releases 下載 Electron 或工具失敗時，會改經 `scripts/release-asset-mirror.mjs` 再試兩次：它只聽 127.0.0.1，經 GitHub API 下載同一個 release 檔案，checksum 仍由 electron-builder 驗證。
 
 ## 授權
 

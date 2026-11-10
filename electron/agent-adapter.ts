@@ -16,6 +16,7 @@ import type { AgentCapabilities } from '../src/types/capabilities'
 import { normalizeAgentStatusEvent } from './event-normalizer.ts'
 import { buildOutcome, failedOutcome } from './install-outcome.ts'
 import { AGENT_ADAPTER_REGISTRY } from '../src/types/agent-adapter.ts'
+import { familyOfSource } from '../src/types/agent.ts'
 
 const ADAPTER_VERSION = '1.0.0'
 const ADAPTER_IDS: ReadonlySet<string> = new Set(AGENT_ADAPTER_REGISTRY.map(definition => definition.id))
@@ -115,7 +116,8 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
     normalize: async (input, _ctx, receivedAt) => {
       const normalized = normalizeAgentStatusEvent(input, receivedAt)
       if (!normalized.ok) return normalized
-      if (definition.id !== 'generic-http' && !definition.sources.includes(normalized.event.source)) {
+      // 有家族的 adapter 只收自己家族的來源（查來源 registry，O(1)）；generic-http 沒有家族，什麼來源都收。
+      if (definition.family !== null && familyOfSource(normalized.event.source) !== definition.family) {
         return { ok: false, error: 'source_not_supported' }
       }
       return {

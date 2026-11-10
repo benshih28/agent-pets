@@ -51,7 +51,7 @@
   "pet.importWarning.declared-version-mismatch": "pet.json declares a spriteVersionNumber that does not match the image rows; the version was detected from the image.",
   "pet.importWarning.unexpected-row-count": "The sheet does not have the standard 9 (v1) or 11 (v2) rows; extra rows are not used.",
   "pet.importWarning.unexpected-column-count": "The sheet does not have the standard 8 columns; animations may show empty cells.",
-  "pet.importWarning.behavior-row-out-of-range": "behaviorManifest points at a row that does not exist; that behaviour falls back to idle.",
+  "pet.importWarning.behavior-row-out-of-range": "behaviorManifest points outside the atlas (row or frame count); that motion uses the built-in animation instead.",
   "pet.importWarning.ignored-entries": "The zip contains other files; only pet.json and one spritesheet are used.",
   "pet.importConflict": "A pet with the ID “{id}” already exists.",
   "pet.importConflictBuiltIn": "“{id}” is a built-in pet ID; this pet will be added as “{suggested}”.",

@@ -1,4 +1,7 @@
-export type PetBehaviorName = 'walk' | 'sleep'
+import type { PetMotionManifest, PetMotionName, PetMotionOverride, PetOptionalMotionName } from './pet-atlas.ts'
+
+/** 自主行為（Shimeji）會要求的選用動作。 */
+export type PetBehaviorName = PetOptionalMotionName
 export type PetAutonomousBehavior = 'idle' | 'walk' | 'sleep' | 'cursor-look' | 'poke'
 
 export interface PluginSkinPetSource {
@@ -9,13 +12,10 @@ export interface PluginSkinPetSource {
   kind: 'person' | 'animal'
 }
 
-export interface PetBehaviorDefinition {
-  row: number
-  frames?: number
-  frameDurations?: number[]
-}
-
-export type PetBehaviorManifest = Partial<Record<PetBehaviorName, PetBehaviorDefinition>>
+export type PetBehaviorDefinition = PetMotionOverride
+/** 寵物包介面：任何 PetMotionName 都能被覆蓋（規格見 types/pet-atlas.ts）。 */
+export type PetBehaviorManifest = PetMotionManifest
+export type { PetMotionName }
 
 export interface ShimejiContext {
   enabled: boolean

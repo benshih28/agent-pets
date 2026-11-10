@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
-import type { AgentStatusEvent, AgentState } from '../src/types/agent.ts'
+import { isAgentState, type AgentStatusEvent, type AgentState } from '../src/types/agent.ts'
 import type { AchievementCompletedSessionFact } from './achievements.ts'
 import {
   HISTORY_TERMINAL_STATES,
@@ -255,9 +255,6 @@ function sessionSearchText(label: string, agentId: string, adapterId: string): s
 }
 
 const STORED_FINAL_STATES = new Set<string>(['success', 'error', 'cancelled', 'open'])
-const AGENT_STATES = new Set<string>([
-  'offline', 'idle', 'thinking', 'tool-running', 'waiting-permission', 'waiting-input', 'success', 'error',
-])
 
 function readSession(row: SqliteRow | undefined): SessionRow | null {
   if (!row || typeof row.session_pk !== 'string' || typeof row.adapter_id !== 'string') return null
@@ -282,7 +279,7 @@ function readSession(row: SqliteRow | undefined): SessionRow | null {
       ? state
       : 'idle',
     lastSeenAt: Math.max(0, asInteger(row.last_seen_at)),
-    rawLastState: AGENT_STATES.has(state) ? state : 'idle',
+    rawLastState: isAgentState(state) ? state : 'idle',
     rowid: asInteger(row.session_rowid),
     projectLabel: safeText(row.project_label),
     usageKey: safeText(row.usage_key),

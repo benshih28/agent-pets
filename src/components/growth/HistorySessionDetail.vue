@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
 import { t, type TranslationKey } from '@/i18n'
-import { useHistoryFormat } from '@/composables/useHistoryFormat'
-import { STATE_LABELS } from '@/types/agent'
+import { isAgentState } from '@/types/agent'
 import {
   HISTORY_SESSION_TIMELINE_MAX,
+  HISTORY_TERMINAL_STATES,
   type HistorySessionDetail,
   type HistorySessionListItem,
   type HistorySessionOutcome,
 } from '@/types/history'
-import { agentDisplayName } from '@/utils/agent-label'
-import { formatDateTime, formatTimeFull } from '@/utils/intl-format'
-import { stateAriaLabel } from '@/utils/state-aria'
+import { useHistoryFormat } from '@/composables/useHistoryFormat'
 import Dialog from '@/components/ui/Dialog.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
+import { agentDisplayName } from '@/utils/agent-label'
+import { AGENT_STATE_PRESENTATION } from '@/utils/agent-state-presentation'
+import { formatDateTime, formatTimeFull } from '@/utils/intl-format'
+import { stateAriaLabel } from '@/utils/state-aria'
 
 // 單一工作階段的時間軸對話框：狀態轉換（工具只顯示名稱）與每段持續時間。
 const props = defineProps<{ session: HistorySessionListItem | null; projectName: string }>()
@@ -27,8 +29,6 @@ const OUTCOME_LABEL_KEYS: Record<HistorySessionOutcome, TranslationKey> = {
   active: 'growth.outcomeActive',
   incomplete: 'growth.outcomeIncomplete',
 }
-
-const TERMINAL_STATES = new Set(['success', 'error', 'offline'])
 
 const detail = shallowRef<HistorySessionDetail | null>(null)
 const loading = ref(false)
@@ -53,7 +53,7 @@ watch(() => props.session?.id, async id => {
   }
 }, { immediate: true })
 
-// Prefer the freshly read row; fall back to the list row while loading.
+// 優先用剛讀到的資料列；載入中先用清單上的那一列。
 const current = computed(() => detail.value?.session ?? props.session)
 
 const description = computed(() => {
@@ -63,21 +63,21 @@ const description = computed(() => {
   return `${agentDisplayName(session.adapterId)} · ${range}`
 })
 
-/** Each entry lasts until the next one; the last until the session's last activity. */
+/** 每一筆持續到下一筆；最後一筆持續到 session 最後一次活動。 */
 const timeline = computed(() => {
   const entries = detail.value?.timeline ?? []
   const endAt = current.value?.lastSeenAt ?? 0
   return entries.map((entry, index) => ({
     ...entry,
     key: `${index}-${entry.occurredAt}`,
-    // A terminal last entry has no meaningful duration of its own.
-    spanMs: index === entries.length - 1 && TERMINAL_STATES.has(entry.state)
+    // 最後一筆若是結束狀態，本身沒有有意義的持續時間。
+    spanMs: index === entries.length - 1 && isAgentState(entry.state) && HISTORY_TERMINAL_STATES.has(entry.state)
       ? null
       : Math.max(0, (entries[index + 1]?.occurredAt ?? endAt) - entry.occurredAt),
   }))
 })
 
-// Read as one sentence: translated state, tool, time and duration.
+// 念成一句話：已翻譯的狀態、工具、時間與持續時間。
 function entryAriaLabel(entry: { occurredAt: number; state: string; toolName?: string; spanMs: number | null }): string {
   return [
     stateAriaLabel(entry.state),
@@ -143,7 +143,7 @@ function unknownOr(tracked: boolean, value: string): string {
             <time class="detail-time" :datetime="new Date(entry.occurredAt).toISOString()">{{ formatTimeFull(entry.occurredAt) }}</time>
             <span class="detail-marker" aria-hidden="true" />
             <span class="detail-state">
-              <span class="detail-state-label">{{ STATE_LABELS[entry.state] ?? entry.state }}</span>
+              <span class="detail-state-label">{{ isAgentState(entry.state) ? AGENT_STATE_PRESENTATION[entry.state].label : entry.state }}</span>
               <code v-if="entry.toolName" class="detail-tool" :title="entry.toolName">{{ entry.toolName }}</code>
             </span>
             <span class="detail-span">{{ entry.spanMs === null ? '' : t('growth.sessionTimelineFor', { duration: duration(entry.spanMs) }) }}</span>

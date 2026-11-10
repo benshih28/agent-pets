@@ -67,7 +67,7 @@ onUnmounted(() => dispose?.())
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .server-health-text strong {
@@ -82,7 +82,7 @@ onUnmounted(() => dispose?.())
 .server-health-details {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   margin: var(--organic-space-1) 0 0;
   padding: 0;
   font-size: var(--font-body-sm);

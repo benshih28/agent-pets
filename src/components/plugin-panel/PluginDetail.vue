@@ -292,7 +292,7 @@ watch(plugin, async (value, previous) => {
   min-width: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .identity-name {

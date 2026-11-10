@@ -24,7 +24,7 @@ defineProps<{ themed: boolean }>()
   gap: var(--space-1);
   max-width: 100%;
   overflow: hidden;
-  padding: 2px var(--space-2) 5px;
+  padding: var(--space-0-5) var(--space-2) 5px;
   border: 1px solid var(--pet-status-border, var(--organic-status-border));
   border-radius: var(--organic-status-radius);
   background:
@@ -56,7 +56,7 @@ defineProps<{ themed: boolean }>()
 }
 
 .preview-pill-sep {
-  margin: 0 2px;
+  margin: 0 var(--space-0-5);
   color: var(--pet-status-text-muted, var(--organic-status-text));
 }
 

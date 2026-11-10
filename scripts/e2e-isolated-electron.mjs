@@ -5,6 +5,8 @@
 //   pnpm exec vite build
 //   node scripts/e2e-isolated-electron.mjs [--inspect-port 9349] [--debug-port 9348] [--app-root <dir>]
 //                                          [--hook-port-base 27373 | --real-hook-ports]（說明見下）
+//                                          [--reuse-root <上次啟動日誌的 root>]
+// --reuse-root 沿用上一次的暫時 HOME 與 userData 重新啟動（token 與已安裝的 hook 都還在），用來量測 app 冷啟動。
 // --app-root runs another copy of the app (e.g. an extracted packaged app.asar) instead of this repo.
 // Prints one JSON line with the temp root, ports and pid, then keeps running.
 // 測試 app 預設使用自己的本機埠（event／permission／presentation = base、base+1、base+2，base 為 27373），
@@ -14,9 +16,9 @@
 // 請看啟動日誌的「listening on」確認。--real-hook-ports 刻意使用預設埠，給需要真實 hook 的測試；這類測試請盡量縮短。
 import { spawn } from 'node:child_process'
 import { createHash, generateKeyPairSync, sign as cryptoSign } from 'node:crypto'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { zipSync } from 'fflate'
 
@@ -142,9 +144,19 @@ function createCatalogFixture(root) {
   return { catalogFixture, tamperedArchivePath }
 }
 
-const root = mkdtempSync(join(tmpdir(), 'agent-pets-e2e-'))
-mkdirSync(join(root, 'home'))
-mkdirSync(join(root, 'ud'))
+const reuseRoot = argString('--reuse-root')
+// 只接受這支腳本自己在暫存目錄建立過的 root，避免把使用者的資料夾當成測試 HOME。
+const isReusableRoot = dir => existsSync(join(dir, 'home', '.desktop-pet', 'event-token')) && existsSync(join(dir, 'ud'))
+  && basename(dir).startsWith('agent-pets-e2e-') && realpathSync(dirname(dir)) === realpathSync(tmpdir())
+if (reuseRoot && !isReusableRoot(resolve(reuseRoot))) {
+  console.error('--reuse-root must be a root printed by an earlier run of this script')
+  process.exit(1)
+}
+const root = reuseRoot ? resolve(reuseRoot) : mkdtempSync(join(tmpdir(), 'agent-pets-e2e-'))
+if (!reuseRoot) {
+  mkdirSync(join(root, 'home'))
+  mkdirSync(join(root, 'ud'))
+}
 const { catalogFixture, tamperedArchivePath } = createCatalogFixture(root)
 const bootstrap = join(root, 'bootstrap.cjs')
 writeFileSync(bootstrap, `

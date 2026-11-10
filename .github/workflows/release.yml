@@ -67,14 +67,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Apple Silicon 與 Intel 拆成兩個平行 job，不再於同一台機器上依序打包
+          # Apple Silicon 與 Intel 拆成兩個平行 job，各自在同架構的 runner 上建置：
+          # pnpm 只會裝 host 架構的原生模組（koffi 的 @koromix/koffi-darwin-*），
+          # 在 arm64 runner 上打 x64 包會把 arm64 的 .node 放進 x64 dmg。
           - name: macos-arm64
             os: macos-latest
             builder-args: --mac --arm64
+            mac-arch: arm64
             artifact-glob: release/*.dmg
           - name: macos-x64
-            os: macos-latest
+            os: macos-15-intel
             builder-args: --mac --x64
+            mac-arch: x64
             artifact-glob: release/*.dmg
           - name: windows
             os: windows-latest
@@ -82,7 +86,8 @@ jobs:
             artifact-glob: release/*.exe
     runs-on: ${{ matrix.os }}
     env:
-      # 目前沒有簽章憑證：關閉 macOS 自動尋找簽章身分，產出未簽章版本
+      # 目前沒有簽章憑證：關閉 macOS 自動尋找簽章身分。package.json 的 mac.identity 是 "-"，
+      # electron-builder 會在寫入 fuses 之後對整個 bundle 做 ad-hoc 簽章（不是正式簽章，也不公證）
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       # 統一快取位置，讓 Electron 與 electron-builder 下載的二進位檔可跨次重用
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
@@ -153,6 +158,25 @@ jobs:
           cat "$RUNNER_TEMP/asset-mirror.log"
           exit 1
 
+      # 驗證使用者實際下載到的 dmg：整個 bundle 簽章完整（codesign --verify --deep --strict）、
+      # fuses 等於 build.electronFuses、每個 Mach-O 與 *.node 都是目標架構。任何一項不符就讓發版失敗。
+      - name: Verify macOS bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MAC_ARCH: ${{ matrix.mac-arch }}
+        run: |
+          shopt -s nullglob
+          dmgs=(release/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one dmg, found ${#dmgs[@]}"
+            exit 1
+          fi
+          mountpoint=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mountpoint" "${dmgs[0]}"
+          trap 'hdiutil detach "$mountpoint" || hdiutil detach -force "$mountpoint"' EXIT
+          node scripts/check-mac-bundle.mjs --app "$mountpoint/Agent Pets.app" --arch "$MAC_ARCH"
+
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
@@ -178,6 +202,9 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           ls -l dist-release
+          # 附上 SHA256SUMS.txt，下載後可用 `shasum -a 256 -c SHA256SUMS.txt` 比對
+          (cd dist-release && sha256sum -- * > SHA256SUMS.txt)
+          cat dist-release/SHA256SUMS.txt
           gh release create "v$VERSION" dist-release/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

@@ -6,6 +6,8 @@ import type {
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
 import { isPluginId } from '../src/types/id-patterns.ts'
 import { isRecord } from './value-guards.ts'
+import { AGENT_FAMILY_KEYS, ALL_SOURCES } from '../src/types/agent.ts'
+import { AGENT_ADAPTER_REGISTRY } from '../src/types/agent-adapter.ts'
 
 export const PLUGIN_EVENT_SOURCE_WINDOW_MS = 60_000
 export const PLUGIN_EVENT_SOURCE_RATE_PER_PLUGIN = 30
@@ -19,10 +21,12 @@ export const PLUGIN_EVENT_SOURCE_ACTIVE_TTL_MS = 2 * 60_000
 export const PLUGIN_EVENT_SOURCE_TERMINAL_TTL_MS = 30_000
 export const PLUGIN_EVENT_SOURCE_MAX_SESSION_LIFETIME_MS = 30 * 60_000
 
-export const PLUGIN_EVENT_SOURCE_RESERVED_FAMILIES = new Set([
-  'codex', 'claude', 'claude-code', 'opencode',
-  'codex-desktop', 'claude-desktop', 'opencode-cli', 'opencode-desktop',
-  'generic-http', 'agent-pets', 'plugin', 'system',
+// 插件不能冒充內建 Agent：每個內建來源、家族與 adapter id 都保留，新增來源時自動跟上。
+export const PLUGIN_EVENT_SOURCE_RESERVED_FAMILIES: ReadonlySet<string> = new Set([
+  ...AGENT_FAMILY_KEYS,
+  ...ALL_SOURCES,
+  ...AGENT_ADAPTER_REGISTRY.map(definition => definition.id),
+  'agent-pets', 'plugin', 'system',
 ])
 
 const SESSION_ID = /^[\x21-\x7e]{1,64}$/

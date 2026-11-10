@@ -5,6 +5,7 @@ import * as path from 'node:path'
 import { renameSyncWithRetry } from './fs-rename.ts'
 import { promisify } from 'node:util'
 import { translateBackendError } from '../src/i18n.ts'
+import type { QuotaFamilyKey } from '../src/types/agent.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -78,7 +79,8 @@ export type QuotaErrorKind =
   | 'unavailable'
 
 export interface QuotaProvider {
-  id: 'codex' | 'claude'
+  /** 就是家族 key（AGENT_FAMILY_REGISTRY 裡 quotaProvider 為 true 的家族）。 */
+  id: QuotaFamilyKey
   name: string
   plan?: string
   windows: QuotaWindow[]

@@ -75,6 +75,28 @@ test('keeps a declared manifest, drops rows beyond the sheet, and reports extra 
   assert.deepEqual(outOfRange.warnings, ['behavior-row-out-of-range', 'ignored-entries'])
 })
 
+test('pet packs can override any motion, but only within the real atlas grid', () => {
+  const pack = parsed({ id: 'fox', behaviorManifest: {
+    idle: { row: 9, frames: 4, frameDurations: [200, 200, 200, 400] },
+    failed: { row: 2 },
+  } })
+  assert.deepEqual(pack.behaviorManifest, {
+    idle: { row: 9, frames: 4, frameDurations: [200, 200, 200, 400] },
+    failed: { row: 2 },
+    walk: { row: 1 },
+  })
+  assert.deepEqual(pack.warnings, [])
+
+  // 第 9 列只存在於 v2；8 欄的圖集放不下 9 格。兩者都丟掉並警告，其餘覆蓋值保留。
+  const tooBig = parsed({ id: 'fox', behaviorManifest: {
+    idle: { row: 9 },
+    waving: { row: 3, frames: 9 },
+    review: { row: 4 },
+  } }, { 'spritesheet.webp': V1 })
+  assert.deepEqual(tooBig.behaviorManifest, { review: { row: 4 } })
+  assert.deepEqual(tooBig.warnings, ['behavior-row-out-of-range'])
+})
+
 test('drops prototype-pollution keys and rejects non-object or non-UTF-8 pet.json', () => {
   const value = parseUntrustedJson(text('{"__proto__":{"polluted":true},"a":{"constructor":{"prototype":{"x":1}},"b":1}}')) as Record<string, unknown>
   assert.equal(Object.prototype.hasOwnProperty.call(value, '__proto__'), false)

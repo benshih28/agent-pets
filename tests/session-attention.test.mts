@@ -92,7 +92,7 @@ test('the pet template no longer renders a (+N) session count', async () => {
 })
 
 test('on-pet state words are short English for every state; the catalogs no longer carry them', async () => {
-  const { stateLineLabel } = await import('../src/utils/state-line-words.ts')
+  const { stateLineLabel } = await import('../src/utils/agent-state-presentation.ts')
   const expected: Record<string, string> = {
     offline: 'Offline', idle: 'Idle', thinking: 'Thinking', 'tool-running': 'Working',
     'waiting-permission': 'Permission', 'waiting-input': 'Needs input', success: 'Done', error: 'Failed',

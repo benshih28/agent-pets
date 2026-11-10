@@ -30,7 +30,7 @@
 .pet-toast.permission-notice {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: max-content;
   max-width: min(240px, calc(var(--pet-w, 250px) - 10px));
   background:
@@ -87,7 +87,7 @@
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
   border-radius: 4px;
   object-fit: cover;
 }
@@ -97,7 +97,7 @@
   min-width: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .plugin-feed-source {
@@ -113,7 +113,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   border: 0;
   background: transparent;
   color: inherit;
@@ -148,7 +148,7 @@
 .pet-toast .plugin-feed-open-panel {
   align-self: flex-start;
   margin-top: 3px;
-  padding: 2px 6px;
+  padding: var(--space-0-5) var(--space-1-5);
   border: 1px solid color-mix(in srgb, var(--pet-bubble-plugin-text) 28%, transparent);
   border-radius: 5px;
   background: var(--surface-raised-hover);
@@ -184,7 +184,7 @@
 
 .presentation-say-icon {
   flex: 0 0 auto;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
   color: var(--pet-bubble-info-accent);
 }
 
@@ -290,7 +290,7 @@
   min-width: 150px;
   max-width: min(260px, calc(var(--pet-w, 250px) - 10px));
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   padding-bottom: max(6px, calc(7px * var(--pet-scale, 1)));
   cursor: pointer;
 }
@@ -299,7 +299,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .timed-toast-icon {
@@ -353,7 +353,7 @@
 .pet-toast.activity {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .activity-text {

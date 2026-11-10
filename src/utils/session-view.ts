@@ -32,8 +32,9 @@ export interface SessionViewOptions {
 
 export function groupSessions(sessions: readonly AgentSession[], options: SessionViewOptions): SessionGroups {
   const groups: SessionGroups = { attention: [], running: [], other: [], offline: [] }
+  const allowedSources: ReadonlySet<AgentSource> | null = options.sources ? new Set(options.sources) : null
   for (const session of sessions) {
-    if (options.sources && !options.sources.includes(session.source)) continue
+    if (allowedSources && !allowedSources.has(session.source)) continue
     if (session.state === 'offline') { groups.offline.push(session); continue }
     const bucket = sessionBucket(session.state)
     if (options.filter !== 'all' && options.filter !== bucket) continue

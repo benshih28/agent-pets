@@ -43,12 +43,24 @@ export interface PluginCommandContribution {
   title: PluginLocalizedText
 }
 
+export type PetMotionName = 'idle' | 'waving' | 'jumping' | 'failed' | 'waiting' | 'running' | 'review' | 'walk' | 'sleep'
+
+export interface PetMotionOverride {
+  /** 0–63, and below the spritesheet's row count. */
+  row: number
+  /** 1–16, and no more than the spritesheet's column count. */
+  frames?: number
+  /** 1–16 values; each is clamped to 60–3000 ms. */
+  frameDurations?: number[]
+}
+
 export interface PluginSkinContribution {
   id: string
   displayName: PluginLocalizedText
   spritesheet: string
   kind: 'person' | 'animal'
-  behaviorManifest?: Partial<Record<'walk' | 'sleep', { row: number; frames?: number; frameDurations?: number[] }>>
+  /** Any motion can be overridden; invalid or out-of-atlas entries fall back to the built-in motion. */
+  behaviorManifest?: Partial<Record<PetMotionName, PetMotionOverride>>
 }
 
 export type PluginEventSourceState = 'thinking' | 'tool-running' | 'idle' | 'done' | 'error'

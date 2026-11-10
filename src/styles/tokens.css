@@ -4,9 +4,9 @@
    in place of a literal is a no-op visually.
 
    Rule: component <style> blocks must not contain bare hex or rgba() values.
-   State colours that JS needs (STATE_COLORS in types/agent.ts) are the one
-   documented exception — they are mirrored here as --state-* so CSS can use
-   the same palette. */
+   State colours that JS needs (AGENT_STATE_PRESENTATION in
+   utils/agent-state-presentation.ts) only name the --state-* variables below,
+   so CSS and JS share the same palette. */
 
 :root {
   /* 顏色一律來自下方的主題色盤（--builtin-organic-* → --organic-*）與其語意層
@@ -44,6 +44,11 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
+  /* 半格：密集的標籤／數值堆疊與膠囊內距。只是常見值的名字，不是新的視覺節奏；
+     margin／padding／gap 若寫死成任何 --space-* 的值會被 check:design 擋下。 */
+  --space-0-5: 2px;
+  --space-1-5: 6px;
+  --space-2-5: 10px;
 
   /* ── Radii — four steps ───────────────────────────────────────────────── */
   --radius-sm: 6px;
@@ -72,11 +77,17 @@
   --leading-normal: 1.4;
   --leading-relaxed: 1.55;
 
-  /* ── Motion ───────────────────────────────────────────────────────────── */
+  /* ── Motion ─────────────────────────────────────────────────────────────
+     --transition-*：介面狀態切換（hover、展開），transition 一律用它們。
+     --duration-*：同一種語意在多處重複的 keyframe 動畫時長；只出現一次的裝飾動畫
+     （寵物 sprite 反應等）留在元件裡。減少動態時全部歸零（見檔尾）。 */
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
   --transition-slow: 0.35s ease;
+  --duration-spin: 0.8s; /* 載入轉圈一圈（Button loading、Spinner） */
+  --duration-attention: 1.8s; /* 寵物視窗提醒使用者注意的循環脈動（迷你徽章、額度警示） */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-overshoot: cubic-bezier(0.2, 1.4, 0.4, 1); /* 彈出時略衝過頭再回位（驚訝反應、成就徽章） */
 
   /* ── 主題色盤（palette layer）─────────────────────────────────────────
      兩個視窗（面板與寵物）、所有介面的唯一顏色來源。--builtin-organic-* 是
@@ -259,14 +270,13 @@
   --accent-on: var(--color-on-accent);
   --accent-bright: var(--color-on-accent);
   --accent-soft: var(--organic-surface-warm);
-  --accent-wash: var(--organic-surface-warm);
   --accent-glow: var(--organic-accent-glow);
   --gradient-accent: var(--color-accent);
   /* 供應商識別色：Claude 用色盤的鼠尾草色系，與 Codex 的強調色區分；
      一律搭配供應商名稱文字，所以不承載狀態語意，主題可以隨色盤調整。 */
   --accent-claude: var(--organic-sage);
   --gradient-claude: var(--organic-sage);
-  /* 代理狀態（狀態點、迷你環、工作階段列；STATE_COLORS 讀這些名稱）：
+  /* 代理狀態（狀態點、迷你環、工作階段列；AGENT_STATE_PRESENTATION 的 color 讀這些名稱）：
      成功/錯誤/等待取自受色相限制的狀態色，思考/工具＝強調文字色（強調填色在淺色膠囊上不到 3:1），
      閒置/離線＝弱化文字。
      主題無法直接設定 --state-*，只能透過受驗證的色盤，所以語意不會被改掉；
@@ -566,12 +576,16 @@
 }
 
 /* Honour the OS "reduce motion" setting in one place rather than auditing
-   the ~54 transition/animation declarations across components. */
+   every transition/animation declaration across components. Every motion token
+   above is zeroed here (tests/design-motion-tokens.test.mts checks it); the
+   universal rule also stops the one-off keyframe animations. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --transition-fast: 0s;
     --transition-base: 0s;
     --transition-slow: 0s;
+    --duration-spin: 0s;
+    --duration-attention: 0s;
   }
 
   *,

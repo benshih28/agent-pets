@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { locale, t } from '@/i18n'
 import { useAgentStore } from '@/stores/agentStore'
-import { SOURCE_FAMILIES, SOURCE_LABELS, STATE_LABELS } from '@/types/agent'
+import { locale, t } from '@/i18n'
+import { FAMILY_SOURCES, familyOfSource, isAgentFamilyKey, QUOTA_FAMILY_KEYS, SOURCE_FAMILIES, SOURCE_LABELS } from '@/types/agent'
 import type { PluginEventSourceState, PluginEventSourceStatusView } from '@/types/plugin'
 import { useQuotaFormat } from '@/composables/useQuotaFormat'
-import {
-  countByBucket,
-  groupSessions,
-  projectLabels,
-  type SessionFilter,
-  type SessionSort,
-} from '@/utils/session-view'
+import SessionRow from '@/components/status-panel/SessionRow.vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -19,8 +13,15 @@ import Icon from '@/components/ui/Icon.vue'
 import ProgressTrack from '@/components/ui/ProgressTrack.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import Select from '@/components/ui/Select.vue'
-import SessionRow from '@/components/status-panel/SessionRow.vue'
+import { AGENT_STATE_PRESENTATION } from '@/utils/agent-state-presentation'
 import { formatTimeFull } from '@/utils/intl-format'
+import {
+  countByBucket,
+  groupSessions,
+  projectLabels,
+  type SessionFilter,
+  type SessionSort,
+} from '@/utils/session-view'
 
 const props = defineProps<{ nowTick: number; pluginEventSourceStatuses: PluginEventSourceStatusView[] }>()
 const emit = defineEmits<{ managePlugins: [] }>()
@@ -40,7 +41,7 @@ const counts = computed(() => countByBucket(activeSessionList.value))
 const labels = computed(() => projectLabels(store.sessionList.map(session => session.project)))
 const groups = computed(() => groupSessions(store.sessionList, {
   filter: filter.value,
-  sources: sourceFamily.value === 'all' ? null : SOURCE_FAMILIES.find(family => family.key === sourceFamily.value)?.sources ?? null,
+  sources: isAgentFamilyKey(sourceFamily.value) ? FAMILY_SOURCES[sourceFamily.value] : null,
   sort: sort.value,
 }))
 const visibleGroups = computed(() => ([
@@ -54,14 +55,14 @@ const filterOptions = computed(() => [
   { value: 'running', label: t('panel.filterRunning'), badge: counts.value.running },
 ])
 const activeToolFamilyCount = computed(() => new Set(
-  activeSessionList.value.map(session => SOURCE_FAMILIES.find(family => family.sources.includes(session.source))?.key ?? session.source),
+  activeSessionList.value.map(session => familyOfSource(session.source) ?? session.source),
 ).size)
 const noMatches = computed(() => visibleGroups.value.length === 0 && activeSessionList.value.length > 0)
 const quotaStripFamilies = computed(() => (
-  (['codex', 'claude'] as const).flatMap((id) => {
+  QUOTA_FAMILY_KEYS.flatMap((id) => {
     const quota = store.quotaByFamily[id]
     if (!quota) return []
-    // The label comes from the provider payload, so a new provider needs no edit here.
+    // 標籤來自提供者的 payload，新增提供者時這裡不必改。
     const name = store.quotaUsage?.providers.find(provider => provider.id === id)?.name ?? id
     return [{ id, ...quota, label: name }]
   })
@@ -76,9 +77,9 @@ function sessionDetail(session: (typeof store.sessionList)[number]): string {
     if (store.permissionRequest?.sessionId === session.sessionId) return t('permissionInlineHint')
     return t('returnToTerminal')
   }
-  if (session.toolName) return `${STATE_LABELS[session.state]} · ${session.toolName}`
-  if (session.state === 'success') return `${STATE_LABELS[session.state]} · ${formatTime(session.lastSeenAt)}`
-  return STATE_LABELS[session.state]
+  if (session.toolName) return `${AGENT_STATE_PRESENTATION[session.state].label} · ${session.toolName}`
+  if (session.state === 'success') return `${AGENT_STATE_PRESENTATION[session.state].label} · ${formatTime(session.lastSeenAt)}`
+  return AGENT_STATE_PRESENTATION[session.state].label
 }
 
 function pluginEventSourceStateLabel(state: PluginEventSourceState): string {

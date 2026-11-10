@@ -34,7 +34,7 @@ Official sources:
 
 ## Electron/CSS implementation guidance
 
-- Centralize semantic tokens such as surface tint, border, highlight, shadow, blur, radius, and motion instead of repeating arbitrary values.
+- Centralize semantic tokens such as surface tint, border, highlight, shadow, blur, radius, spacing, and motion instead of repeating arbitrary values. Hover/press/focus feedback uses `--transition-*` so it stays brief and is zeroed under reduced motion; see the spacing and motion section of [ui-design-system.md](ui-design-system.md).
 - Limit `backdrop-filter` to the functional-layer container. Nested children must not add another backdrop filter.
 - Keep a sufficiently opaque base color beneath blur because transparent Electron windows can sit over unpredictable wallpaper or video.
 - Use rounded containers and concentric spacing, but retain existing pet proportions and compact desktop hit areas.

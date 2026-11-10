@@ -1,5 +1,7 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { SanitizedPetBehaviorManifest } from '../pet-behavior-manifest'
+import { petAtlasGridFromSize, type PetAtlasGrid } from '../../src/types/pet-atlas.ts'
+import { readImageSize } from '../pet-sprite-validation.ts'
 import { handleWithSenderGuard } from './trusted.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
@@ -43,7 +45,7 @@ export interface PetsIpcDependencies {
   path: PetLoadPath
   builtinPetsPath(): string
   customPetsPath(): string
-  parseBehaviorManifest(value: unknown): SanitizedPetBehaviorManifest | undefined
+  parseBehaviorManifest(value: unknown, grid?: PetAtlasGrid): SanitizedPetBehaviorManifest | undefined
   sanitizePetId(value: string): string | null
   safeJoin(base: string, ...parts: string[]): string | null
   pluginsEnabled(): boolean
@@ -114,7 +116,12 @@ export async function loadPets(deps: Omit<PetsIpcDependencies, 'ipcMain' | 'asse
         const image = await deps.readRegularFileWithin(root, skin.spritesheet, deps.pluginSkinImageMaxBytes)
         if (!image || !deps.rasterContentType(image)) continue
         const encodedPath = skin.spritesheet.split('/').map(segment => encodeURIComponent(segment)).join('/')
-        const behaviorManifest = deps.parseBehaviorManifest(skin.behaviorManifest)
+        // 圖已經讀進來，順便用實際尺寸丟掉放不進圖集的覆蓋值。
+        const size = readImageSize(image)
+        const behaviorManifest = deps.parseBehaviorManifest(
+          skin.behaviorManifest,
+          size ? petAtlasGridFromSize(size.width, size.height) : undefined,
+        )
         pluginSkins.push({
           id,
           displayName: skin.displayName[locale],

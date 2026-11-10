@@ -247,6 +247,7 @@ onUnmounted(() => {
     <template v-else>
       <ul class="sessions-list">
         <li v-for="item in items" :key="item.id" class="sessions-item">
+          <!-- raw-control: 整列可點的清單列，內含徽章與多欄文字，不是動作按鈕 -->
           <button
             type="button"
             class="sessions-row"

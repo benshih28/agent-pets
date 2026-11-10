@@ -51,7 +51,7 @@
   "pet.importWarning.declared-version-mismatch": "pet.json 宣告的 spriteVersionNumber 與圖片列數不符，已依圖片判定版本。",
   "pet.importWarning.unexpected-row-count": "列數不是標準的 9 列（v1）或 11 列（v2），多出的列不會被使用。",
   "pet.importWarning.unexpected-column-count": "欄數不是標準的 8 欄，動畫可能會出現空白格。",
-  "pet.importWarning.behavior-row-out-of-range": "behaviorManifest 指向不存在的列，該行為已改回待命動畫。",
+  "pet.importWarning.behavior-row-out-of-range": "behaviorManifest 指向圖集外的列或格，該動作已改回內建動畫。",
   "pet.importWarning.ignored-entries": "Zip 內有其他檔案，只會使用 pet.json 與一張 spritesheet。",
   "pet.importConflict": "已經有 ID 為「{id}」的寵物。",
   "pet.importConflictBuiltIn": "「{id}」是內建寵物的 ID，將以「{suggested}」另存一份。",

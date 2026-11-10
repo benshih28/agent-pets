@@ -121,4 +121,4 @@ onBeforeUnmount(() => { if (slowTimer) clearTimeout(slowTimer) })
   </section>
 </template>
 
-<style scoped src="./PluginPanelFrame.css"></style>
+<style scoped src="@/components/plugin-panel/PluginPanelFrame.css"></style>

@@ -9,6 +9,7 @@ import {
   CLAUDE_PERMISSION_WAIT_MAX_SECONDS,
   CLAUDE_PERMISSION_WAIT_MIN_SECONDS,
 } from '../src/types/permission.ts'
+import { SOUND_DEFAULTS, SOUND_VOLUME } from '../src/types/sound.ts'
 import {
   UNSUPPORTED_DESKTOP_VISIBILITY_CAPABILITIES,
   type DesktopVisibilityCapabilities,
@@ -134,17 +135,13 @@ const DEFAULTS: StoredDesktopPreferences = {
   completionMarkersEnabled: true,
   sessionJumpEnabled: true,
   sessionJumpSwitchAppEnabled: true,
-  soundEnabled: false,
-  soundVolume: 60,
-  soundOnPermission: true,
-  soundOnError: true,
-  soundOnSuccess: true,
+  ...SOUND_DEFAULTS,
   launchAtStartup: false,
   locale: DEFAULT_LOCALE,
 }
 
 function isVolume(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+  return typeof value === 'number' && Number.isFinite(value) && value >= SOUND_VOLUME.min && value <= SOUND_VOLUME.max
 }
 
 function isWaitSeconds(value: unknown): value is number {
@@ -181,7 +178,7 @@ export function parseDesktopPreferencesPatch(value: unknown): DesktopPreferences
       continue
     }
     if (key === 'soundVolume') {
-      if (!isVolume(value[key])) throw new TypeError('Desktop preference soundVolume must be a number from 0 to 100')
+      if (!isVolume(value[key])) throw new TypeError(`Desktop preference soundVolume must be a number from ${SOUND_VOLUME.min} to ${SOUND_VOLUME.max}`)
       continue
     }
     if (key === 'claudePermissionWaitSeconds') {

@@ -4,6 +4,7 @@ import { t, type TranslationKey } from '@/i18n'
 import type { PetImportDecision, PetImportPreview, PetImportWarning } from '@/types/pet-import'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import { useReducedMotion } from '@/composables/useReducedMotion'
 import {
   PREVIEW_IDLE_FRAMES,
   PREVIEW_IDLE_FRAME_MS,
@@ -68,6 +69,7 @@ const conflictMessage = computed(() => {
 })
 
 // 待命動畫用計時器切換背景位置；減少動態效果時只顯示第一格。
+const reducedMotion = useReducedMotion()
 let idleTimer: ReturnType<typeof setInterval> | null = null
 function stopIdle(): void {
   if (idleTimer) clearInterval(idleTimer)
@@ -76,12 +78,13 @@ function stopIdle(): void {
 }
 function startIdle(): void {
   stopIdle()
-  const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  if (reduced || !props.preview) return
+  if (reducedMotion.value || !props.preview) return
   idleTimer = setInterval(() => { idleFrame.value = (idleFrame.value + 1) % idleColumns.value }, PREVIEW_IDLE_FRAME_MS)
 }
 
 watch(() => props.preview?.token, token => (token ? startIdle() : stopIdle()), { immediate: true })
+// 預覽開著時切換系統的「減少動態效果」也要立即生效。
+watch(reducedMotion, () => { if (props.preview) startIdle() })
 onUnmounted(stopIdle)
 </script>
 

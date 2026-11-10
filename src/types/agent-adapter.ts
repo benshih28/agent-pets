@@ -1,37 +1,36 @@
-import type { AgentCapabilities } from './capabilities'
-import type { AgentSource, AgentStatusEvent } from './agent'
-import { SOURCE_LABELS } from './agent.ts'
+import { GENERIC_HTTP_CAPABILITIES, type AgentCapabilities } from './capabilities.ts'
+import type { AgentFamilyKey, AgentSource, AgentStatusEvent } from './agent'
+import { AGENT_FAMILY_REGISTRY, FAMILY_SOURCES, SOURCE_LABELS } from './agent.ts'
 
 export type AdapterInstallTarget = 'opencode' | 'codex' | 'claudeCode'
-
-const OPENCODE_SOURCES: ReadonlyArray<AgentSource> = Object.freeze(['opencode-cli', 'opencode-desktop'])
-const CODEX_SOURCES: ReadonlyArray<AgentSource> = Object.freeze(['codex', 'codex-desktop'])
-const CLAUDE_SOURCES: ReadonlyArray<AgentSource> = Object.freeze(['claude', 'claude-desktop'])
 
 function freezeCapabilities(value: AgentCapabilities): Readonly<AgentCapabilities> {
   return Object.freeze({ ...value, permissionModes: Object.freeze([...value.permissionModes]) })
 }
 
+// 有沒有訂閱額度只寫在家族表（AGENT_FAMILY_REGISTRY.quotaProvider），capabilities 從那裡推導。
+function quotaOf(family: AgentFamilyKey): AgentCapabilities['quota'] {
+  return AGENT_FAMILY_REGISTRY[family].quotaProvider ? 'provider' : 'none'
+}
+
 const OPENCODE_CAPABILITIES = freezeCapabilities({
-  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'estimated', quota: 'none',
+  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'estimated', quota: quotaOf('opencode'),
   waitingInput: true, permissions: 'respond', permissionModes: ['allow_once', 'deny'], orderedEvents: false, healthCheck: true,
 })
 const CODEX_CAPABILITIES = freezeCapabilities({
-  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'exact', quota: 'provider',
+  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'exact', quota: quotaOf('codex'),
   waitingInput: false, permissions: 'observe', permissionModes: [], orderedEvents: false, healthCheck: true,
 })
 const CLAUDE_CAPABILITIES = freezeCapabilities({
-  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'exact', quota: 'provider',
+  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'exact', quota: quotaOf('claude'),
   waitingInput: true, permissions: 'observe', permissionModes: [], orderedEvents: false, healthCheck: true,
-})
-const GENERIC_HTTP_CAPABILITIES = freezeCapabilities({
-  lifecycle: true, sessions: true, projects: true, toolActivity: true, tokenUsage: 'none', quota: 'none',
-  waitingInput: true, permissions: 'none', permissionModes: [], orderedEvents: false, healthCheck: false,
 })
 
 interface AgentAdapterRegistryEntry {
   id: string
   displayName: string
+  /** 這個 adapter 對應的工具家族；generic-http 沒有家族。來源清單由家族推導。 */
+  family: AgentFamilyKey | null
   sources: ReadonlyArray<AgentSource>
   sourceLabels: ReadonlyArray<string>
   capabilities: Readonly<AgentCapabilities>
@@ -47,19 +46,19 @@ function sourceLabelsFor(sources: ReadonlyArray<AgentSource>): ReadonlyArray<str
 /** Single registration point for built-in adapter ids and their public capabilities. */
 export const AGENT_ADAPTER_REGISTRY = Object.freeze([
   {
-    id: 'opencode', displayName: 'OpenCode', sources: OPENCODE_SOURCES, sourceLabels: sourceLabelsFor(OPENCODE_SOURCES),
+    id: 'opencode', displayName: 'OpenCode', family: 'opencode', sources: FAMILY_SOURCES.opencode, sourceLabels: sourceLabelsFor(FAMILY_SOURCES.opencode),
     capabilities: OPENCODE_CAPABILITIES, installTarget: 'opencode', installable: true, testSource: 'opencode-cli',
   },
   {
-    id: 'codex', displayName: 'Codex', sources: CODEX_SOURCES, sourceLabels: sourceLabelsFor(CODEX_SOURCES),
+    id: 'codex', displayName: 'Codex', family: 'codex', sources: FAMILY_SOURCES.codex, sourceLabels: sourceLabelsFor(FAMILY_SOURCES.codex),
     capabilities: CODEX_CAPABILITIES, installTarget: 'codex', installable: true, testSource: 'codex',
   },
   {
-    id: 'claude-code', displayName: 'Claude Code', sources: CLAUDE_SOURCES, sourceLabels: sourceLabelsFor(CLAUDE_SOURCES),
+    id: 'claude-code', displayName: 'Claude Code', family: 'claude', sources: FAMILY_SOURCES.claude, sourceLabels: sourceLabelsFor(FAMILY_SOURCES.claude),
     capabilities: CLAUDE_CAPABILITIES, installTarget: 'claudeCode', installable: true, testSource: 'claude',
   },
   {
-    id: 'generic-http', displayName: 'Generic HTTP', sources: Object.freeze([]), sourceLabels: Object.freeze(['/v1/events']),
+    id: 'generic-http', displayName: 'Generic HTTP', family: null, sources: Object.freeze([]), sourceLabels: Object.freeze(['/v1/events']),
     capabilities: GENERIC_HTTP_CAPABILITIES, installable: false,
   },
 ] as const satisfies ReadonlyArray<AgentAdapterRegistryEntry>)

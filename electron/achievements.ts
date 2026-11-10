@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createRequire } from 'node:module'
-import type { AgentStatusEvent } from '../src/types/agent.ts'
+import { LOCAL_USAGE_ADAPTER_IDS, LOCAL_USAGE_SOURCES, type AgentStatusEvent } from '../src/types/agent.ts'
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import type { ProgressionSnapshot } from '../src/types/progression.ts'
 import {
@@ -60,9 +60,8 @@ const LOCAL_TOKEN_COMPACT_BATCH = 5_000
 // logs (LocalUsageReader). That ledger is the single source of truth for these
 // agents, so token usage on their live events is ignored here; otherwise the
 // same message would count twice. Other agents (OpenCode, generic HTTP) have
-// no local log reader and keep using event-reported usage.
-const LOCAL_LOG_TOKEN_ADAPTERS = new Set(['codex', 'claude-code'])
-const LOCAL_LOG_TOKEN_SOURCES = new Set(['codex', 'codex-desktop', 'claude', 'claude-desktop'])
+// no local log reader and keep using event-reported usage. Which agents have a local log is
+// AGENT_FAMILY_REGISTRY.localUsageSource (LOCAL_USAGE_ADAPTER_IDS / LOCAL_USAGE_SOURCES).
 
 /** Minimal shape of one exact local-log usage record (see HistoryTokenUsageRecord). */
 export interface LocalTokenUsageFact {
@@ -185,7 +184,7 @@ function eventTokenKey(event: AgentStatusEvent, petId: string): string {
 }
 
 function isLocalLogTokenEvent(event: AgentStatusEvent): boolean {
-  return LOCAL_LOG_TOKEN_ADAPTERS.has(eventAdapterId(event)) || LOCAL_LOG_TOKEN_SOURCES.has(event.source)
+  return LOCAL_USAGE_ADAPTER_IDS.has(eventAdapterId(event)) || LOCAL_USAGE_SOURCES.has(event.source)
 }
 
 function rowQuality(row: SqliteRow | undefined): AchievementTokenQuality {
@@ -376,7 +375,7 @@ export class AchievementStore {
       for (const record of records) {
         const adapterId = safeAdapterId(record.adapterId)
         const sourceEventId = safeEventId(record.sourceEventId)
-        if (!sourceEventId || !LOCAL_LOG_TOKEN_ADAPTERS.has(adapterId)) continue
+        if (!sourceEventId || !LOCAL_USAGE_ADAPTER_IDS.has(adapterId)) continue
         const occurredAt = Number.isFinite(record.occurredAt) ? Math.min(record.occurredAt, now) : now
         if (occurredAt < compactBefore) continue
         const total = Math.min(MAX_TOKEN_COUNT, safeToken(record.input) + safeToken(record.output))

@@ -27,6 +27,7 @@ import { desktopVisibilityCapabilitiesForPlatform, macVisibleOnFullScreen } from
 import { PermissionBroker } from '../permission-broker'
 import { appendPermissionAudit, clearPermissionAudit, readPermissionAudit, trimPermissionAuditOnStartup } from '../permission-audit'
 import type { PermissionAuditEntry } from '../../src/types/permission'
+import { familySourceSet } from '../../src/types/agent'
 import { CLAUDE_PERMISSION_WAIT_DEFAULT_SECONDS } from '../../src/types/permission'
 import { ProgressionStore } from '../progression'
 import { AchievementStore } from '../achievements'
@@ -67,7 +68,7 @@ import { isPluginPanelInstallConfirmation, isPluginPanelPluginId, isPluginPanelP
 import { handlePluginProtocolRequest } from '../plugin-protocol'
 import { pluginHostAssets } from '../plugin-host-assets'
 import { parsePluginManifest } from '../plugin-manifest'
-import { createPermissionAdapterServer, PermissionAdapterRelay } from '../permission-adapter-server'
+import { createPermissionAdapterServer, PERMISSION_ADAPTER_SOURCES, PermissionAdapterRelay } from '../permission-adapter-server'
 import type { DesktopPreferences } from '../../src/types/desktop'
 import { CLAUDE_ANSWERABLE_GRACE_MS, withAnswerableClaudeNotice } from '../claude-permission-notice'
 import { locale, setLocale, t } from '../../src/i18n'
@@ -3124,7 +3125,7 @@ export function clearPermissionAuditLog(): void {
 }
 
 // --- Claude Code permission respond (opt-in) --------------------------------
-const CLAUDE_PERMISSION_SOURCES: ReadonlySet<string> = new Set(['claude', 'claude-desktop'])
+const CLAUDE_PERMISSION_SOURCES = familySourceSet('claude')
 // Cached so the permission server never reads preferences (or the OS login item) per request.
 let claudePermissionRespondEnabled = false
 
@@ -3164,10 +3165,7 @@ export function createPermissionServices(permissionToken: string): void {
       }
     },
   })
-  broker.registerAdapter(relay.createPort('opencode-cli'))
-  broker.registerAdapter(relay.createPort('opencode-desktop'))
-  broker.registerAdapter(relay.createPort('claude'))
-  broker.registerAdapter(relay.createPort('claude-desktop'))
+  for (const source of PERMISSION_ADAPTER_SOURCES) broker.registerAdapter(relay.createPort(source))
   const server = createPermissionAdapterServer({
     token: permissionToken,
     broker,

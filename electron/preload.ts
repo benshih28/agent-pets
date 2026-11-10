@@ -1,5 +1,6 @@
 import { IPC_CHANNELS } from './ipc/channels'
 import type { ElectronAPI } from '../src/types/electron-api'
+import type { AgentSource } from '../src/types/agent'
 import type { AdapterDiagnoseIpcResult, AdapterInstallIpcResult, AdapterUninstallIpcResult } from '../src/types/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopPreferences, DesktopPreferencesPatch } from '../src/types/desktop'
@@ -507,7 +508,7 @@ const electronAPI: ElectronAPI = {
     }
   },
 
-  testIntegration: (source: 'opencode-cli' | 'opencode-desktop' | 'codex' | 'codex-desktop' | 'claude' | 'claude-desktop') => {
+  testIntegration: (source: AgentSource) => {
     return ipcRenderer.invoke(IPC_CHANNELS.testIntegration, source)
   },
 

@@ -80,7 +80,7 @@
 }
 
 .mini-status-badge.pulse {
-  animation: mini-badge-pulse 1.8s ease-in-out infinite;
+  animation: mini-badge-pulse var(--duration-attention) ease-in-out infinite;
 }
 
 .mini-status-dot {
@@ -95,7 +95,7 @@
   bottom: 4px;
   right: 4px;
   min-width: 18px;
-  padding: 2px 4px;
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--surface-panel);
   color: var(--text-primary);
@@ -199,8 +199,8 @@
   height: 20px;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 0 6px;
+  gap: var(--space-0-5);
+  padding: 0 var(--space-1-5);
   border: 1px solid var(--surface-panel);
   border-radius: var(--radius-pill);
   background: var(--state-success);
@@ -230,7 +230,7 @@
   display: grid;
   min-width: 17px;
   height: 17px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   place-items: center;
   border: 1px solid var(--surface-panel);
   border-radius: var(--radius-pill);
@@ -250,7 +250,7 @@
   display: grid;
   min-width: 17px;
   height: 17px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   place-items: center;
   border: 1px solid var(--surface-panel);
   border-radius: var(--radius-pill);
@@ -348,8 +348,8 @@
   /* Keep the same status-pill treatment as single-pet mode, but constrain
      each pill to its own sprite column instead of the full pet window. */
   /* 小尺寸時保留 112px 的下限（仍在 0.6 倍、約 115px 的寵物欄內），讓「點 + 最長的狀態詞」放得下。 */
-  width: max(calc(192px * var(--pet-scale, 1) - 12px), 112px);
-  max-width: max(calc(192px * var(--pet-scale, 1) - 12px), 112px);
+  width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - 12px), 112px);
+  max-width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - 12px), 112px);
   margin-top: -8px;
 }
 
@@ -623,7 +623,7 @@
    讓長專案名與狀態都看得到，又不會長出 tooltip 預留的高度。 */
 .quota-tooltip-line {
   display: -webkit-box;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   overflow: hidden;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -637,7 +637,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2-5);
   /* nowrap is what lets max-content size the tooltip to one tidy line per
      row; the label truncates rather than wraps if an unknown window label
      ever runs past the max-width guard. */
@@ -658,7 +658,7 @@
 
 .quota-tooltip-reset {
   display: block;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
   color: var(--organic-status-tooltip-muted);
   font-size: 0.91em;
   font-variant-numeric: tabular-nums;
@@ -788,18 +788,18 @@
 }
 
 .quota-critical .quota-meter-fill {
-  animation: quota-pulse 1.8s ease-in-out infinite;
+  animation: quota-pulse var(--duration-attention) ease-in-out infinite;
 }
 
 /* Below 10% the whole readout joins in: the bar throws an alarm glow and
    the percentage beats, so a nearly-empty quota is noticeable from across
    the desk rather than only on a close look. */
 .quota-critical .quota-meter {
-  animation: quota-alarm 1.8s ease-in-out infinite;
+  animation: quota-alarm var(--duration-attention) ease-in-out infinite;
 }
 
 .quota-critical .quota-readout {
-  animation: quota-heartbeat 1.8s ease-in-out infinite;
+  animation: quota-heartbeat var(--duration-attention) ease-in-out infinite;
 }
 
 @keyframes quota-pulse {
@@ -885,7 +885,7 @@
 }
 
 /* 高對比（forced colors）會把背景換成 Canvas，點與它的形狀就看不見了；改用系統文字色，
-   狀態仍由形狀與文字表達（inline 的 STATE_COLORS 需要 !important 才蓋得過）。 */
+   狀態仍由形狀與文字表達（inline 的狀態色需要 !important 才蓋得過）。 */
 @media (forced-colors: active) {
   .line-dot {
     background: CanvasText !important;

@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   TOAST_ERROR_MS,
   TOAST_SUCCESS_MS,
+  TOAST_WAITING_MS,
   describeTool,
   formatElapsedShort,
   toastDurationFor,
@@ -35,11 +36,7 @@ test('tool identifiers map to readable categories', () => {
   assert.ok(!odd.params.name.includes('<'))
 })
 
-import { TOAST_WAITING_MS, SUCCESS_SOUND_MIN_MS, shouldPlaySuccessSound } from '../src/utils/pet-toast.ts'
-
-test('waiting reminders have their own lifetime and short tasks stay silent', () => {
+// 短任務不出聲的門檻已移到音效 registry，測試在 tests/sound-registry.test.mts。
+test('waiting reminders have their own lifetime', () => {
   assert.equal(toastDurationFor('waiting'), TOAST_WAITING_MS)
-  assert.equal(shouldPlaySuccessSound(undefined), true)
-  assert.equal(shouldPlaySuccessSound(SUCCESS_SOUND_MIN_MS - 1), false)
-  assert.equal(shouldPlaySuccessSound(SUCCESS_SOUND_MIN_MS), true)
 })

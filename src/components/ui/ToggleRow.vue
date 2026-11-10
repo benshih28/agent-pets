@@ -56,7 +56,7 @@ const helpId = `toggle-${useId()}-help`
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .label {

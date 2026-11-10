@@ -98,7 +98,7 @@ function onKeydown(event: KeyboardEvent): void {
 
 .segment-badge {
   min-width: 18px;
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent-text, var(--accent-bright));
