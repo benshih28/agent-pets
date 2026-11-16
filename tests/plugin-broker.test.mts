@@ -7,6 +7,7 @@ import { PluginBroker, PLUGIN_LOG_MAX_ENTRIES, PLUGIN_RPC_MAX_BYTES } from '../e
 import { PluginFeedController } from '../electron/plugin-feed.ts'
 import type { PluginManifest } from '../src/types/plugin.ts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const PLUGIN_NAME = { 'zh-TW': '測試插件', 'en-US': 'Test Plugin' }
 
@@ -81,7 +82,7 @@ function createHarness(options: {
     setNow: (value: number) => { now = value },
     cleanup: () => {
       broker.destroy()
-      fs.rmSync(userDataDirectory, { recursive: true, force: true })
+      removeTempTree(userDataDirectory)
     },
   }
 }
@@ -337,4 +338,137 @@ test('agent.emit reaches only the observe-only event source callback', () => {
       badge: 0,
     })
   } finally { harness.cleanup() }
+})
+
+// 以下測試鎖住 storage 容量判斷：任何寫入是否被接受，都必須等同「寫入後整份 JSON 的 UTF-8 位元組數不超過上限」。
+const STORAGE_LIMIT = 64 * 1024
+
+function storageFile(harness: ReturnType<typeof createHarness>): string {
+  return path.join(harness.userDataDirectory, 'plugins', 'sample', 'data', 'storage.json')
+}
+
+function serializedBytes(values: Record<string, unknown>): number {
+  return Buffer.byteLength(JSON.stringify(values), 'utf8')
+}
+
+/** 固定種子的亂數，讓失敗可以重現。 */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 0x1_0000_0000
+  }
+}
+
+test('storage size accounting matches a full re-serialization across random set/remove sequences', () => {
+  const keys = ['a', 'b', '1', '10', '鍵', 'emoji🐾', 'quote"key', 'back\\slash', 'k'.repeat(128)]
+  // 單獨的代理字元會被 JSON.stringify 跳脫成 6 個位元組，用來確認容量是照序列化結果計算。
+  const fragments = ['x', '中', '🐾', '"', '\\', '\n', String.fromCharCode(0xd800), 'é']
+  for (const seed of [1, 7, 42]) {
+    const harness = createHarness({ storageBytesPerPlugin: STORAGE_LIMIT })
+    try {
+      const random = seededRandom(seed)
+      const pick = <T,>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T
+      const model: Record<string, unknown> = {}
+      let accepted = 0
+      let rejected = 0
+      for (let step = 0; step < 400; step += 1) {
+        const key = pick(keys)
+        if (random() < 0.2) {
+          const response = harness.broker.handle('sample', request(`r${step}`, 'storage.remove', [key]))
+          const removed = Object.hasOwn(model, key)
+          delete model[key]
+          assert.deepEqual(response, { id: `r${step}`, ok: true, value: { removed } }, `seed ${seed} step ${step}`)
+          continue
+        }
+        const text = pick(fragments).repeat(Math.floor(random() * 9_000))
+        const value = pick([
+          () => text,
+          () => ({ text, n: random() < 0.5 ? -0 : 1e21, nested: [0.1, null, true, { deep: text.slice(0, 5) }] }),
+          () => [text, text.slice(0, 3)],
+          () => Math.floor(random() * 1_000_000) / 7,
+        ])()
+        const candidate = { ...model, [key]: JSON.parse(JSON.stringify(value)) as unknown }
+        const fits = serializedBytes(candidate) <= STORAGE_LIMIT
+        const response = harness.broker.handle('sample', request(`s${step}`, 'storage.set', [key, value]))
+        if (fits) {
+          model[key] = candidate[key]
+          accepted += 1
+          assert.deepEqual(response, { id: `s${step}`, ok: true, value: { stored: true } }, `seed ${seed} step ${step}`)
+        } else {
+          rejected += 1
+          assert.deepEqual(response, { id: `s${step}`, ok: false, error: 'too_large' }, `seed ${seed} step ${step}`)
+        }
+      }
+      assert.ok(accepted > 50 && rejected > 20, `seed ${seed} should exercise both outcomes (${accepted}/${rejected})`)
+      for (const key of keys) {
+        const found = Object.hasOwn(model, key)
+        assert.deepEqual(harness.broker.handle('sample', request('g', 'storage.get', [key])), {
+          id: 'g', ok: true, value: { found, value: found ? model[key] : null },
+        })
+      }
+      assert.equal(harness.broker.flushStorage('sample'), true)
+      assert.deepEqual(JSON.parse(fs.readFileSync(storageFile(harness), 'utf8')), JSON.parse(JSON.stringify(model)))
+    } finally {
+      harness.cleanup()
+    }
+  }
+})
+
+test('storage accepts a write that lands exactly on the limit and rejects one byte more, including data loaded from disk', () => {
+  const harness = createHarness({ storageBytesPerPlugin: STORAGE_LIMIT })
+  try {
+    // 檔案內有縮排與多位元組字元：容量看的是重新序列化後的大小，不是檔案大小。
+    const initial = { '既有': '中文🐾', list: [1, 2, 3] }
+    fs.mkdirSync(path.dirname(storageFile(harness)), { recursive: true })
+    fs.writeFileSync(storageFile(harness), JSON.stringify(initial, null, 2))
+    const base = serializedBytes({ ...initial, fill: '' })
+    const exact = 'x'.repeat(STORAGE_LIMIT - base)
+    assert.equal(serializedBytes({ ...initial, fill: exact }), STORAGE_LIMIT)
+    assert.deepEqual(harness.broker.handle('sample', request('over', 'storage.set', ['fill', `${exact}x`])), {
+      id: 'over', ok: false, error: 'too_large',
+    })
+    assert.deepEqual(harness.broker.handle('sample', request('exact', 'storage.set', ['fill', exact])), {
+      id: 'exact', ok: true, value: { stored: true },
+    })
+    // 覆寫成較短的值、刪除後再寫回，都要沿用同一份計算。
+    assert.deepEqual(harness.broker.handle('sample', request('short', 'storage.set', ['fill', 'y'])), {
+      id: 'short', ok: true, value: { stored: true },
+    })
+    assert.deepEqual(harness.broker.handle('sample', request('rm', 'storage.remove', ['list'])), {
+      id: 'rm', ok: true, value: { removed: true },
+    })
+    const freed = serializedBytes({ '既有': initial['既有'], fill: '' })
+    assert.deepEqual(harness.broker.handle('sample', request('refill', 'storage.set', ['fill', 'z'.repeat(STORAGE_LIMIT - freed)])), {
+      id: 'refill', ok: true, value: { stored: true },
+    })
+    assert.deepEqual(harness.broker.handle('sample', request('one-more', 'storage.set', ['extra', 0])), {
+      id: 'one-more', ok: false, error: 'too_large',
+    })
+    assert.equal(harness.broker.flushStorage('sample'), true)
+    assert.equal(fs.statSync(storageFile(harness)).size <= STORAGE_LIMIT + 64, true)
+    assert.equal(serializedBytes(JSON.parse(fs.readFileSync(storageFile(harness), 'utf8')) as Record<string, unknown>), STORAGE_LIMIT)
+  } finally {
+    harness.cleanup()
+  }
+})
+
+test('storage.get never reads inherited Object.prototype members after writes', () => {
+  // 修正前每次寫入都用 spread 換成一般物件，之後讀 'toString' 會拿到 Object.prototype 的函式。
+  const harness = createHarness({ storageBytesPerPlugin: STORAGE_LIMIT })
+  try {
+    assert.deepEqual(harness.broker.handle('sample', request('set', 'storage.set', ['a', 1])), {
+      id: 'set', ok: true, value: { stored: true },
+    })
+    assert.deepEqual(harness.broker.handle('sample', request('rm', 'storage.remove', ['a'])), {
+      id: 'rm', ok: true, value: { removed: true },
+    })
+    for (const key of ['toString', 'hasOwnProperty', 'valueOf']) {
+      assert.deepEqual(harness.broker.handle('sample', request('get', 'storage.get', [key])), {
+        id: 'get', ok: true, value: { found: false, value: null },
+      })
+    }
+  } finally {
+    harness.cleanup()
+  }
 })

@@ -1,10 +1,13 @@
 import { execFile } from 'node:child_process'
 import path from 'node:path'
 import type { AgentStatusEvent } from '../src/types/agent'
-import type { HostAppId } from '../src/types/host-app'
+import { windowsExecutablesFor, type HostAppId } from '../src/types/host-app.ts'
 import type { SessionJumpAction, SessionJumpResult } from '../src/types/session-jump'
 import { isValidBundleId, parseHostHints, resolveHostBundleId } from './host-app.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import type { WindowsActivationResult } from './windows-window-activator.ts'
+import { asRecord } from './value-guards.ts'
+import { SESSION_REMOVE_MS } from '../src/utils/session-lifecycle.ts'
 
 // "Jump back" actions for one agent session: switch to its app, show its project folder or copy
 // its path. The absolute project path and bundle id arrive with token-authenticated events and are
@@ -18,11 +21,10 @@ import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
 
 const MAX_ENTRIES = 200
 /** Matches the renderer's removal horizon; an older session cannot be shown, so it cannot be targeted. */
-const MAX_AGE_MS = 45 * 60_000
+const MAX_AGE_MS = SESSION_REMOVE_MS
 const MAX_PATH_LENGTH = 4096
 const RATE_WINDOW_MS = 10_000
 const RATE_LIMIT_PER_ACTION = 5
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 // Package directories are refused outright; the folder is only ever revealed, but there is no
 // reason to point Finder at a bundle. (Document packages such as .xcodeproj are covered by the
@@ -58,6 +60,11 @@ export interface SessionJumpDependencies {
   getPreferences(): { sessionJumpEnabled: boolean; sessionJumpSwitchAppEnabled: boolean }
   /** Runs `/usr/bin/open -b <bundleId>`; injected so tests never launch anything. */
   activateBundle(bundleId: string): Promise<void>
+  /**
+   * Windows：把屬於白名單執行檔（小寫 basename）的視窗帶到前景；測試注入假的，絕不呼叫真的 Win32。
+   * 未提供時 win32 視為不支援。
+   */
+  activateWindowsApp?(executables: ReadonlyArray<string>): Promise<WindowsActivationResult>
   /**
    * Reveals a verified directory in the file manager (selects it in its parent). Never "opens" it:
    * LaunchServices treats document packages (.xcodeproj, .rtfd, ...) as documents and would launch
@@ -112,13 +119,17 @@ export function isUsableProjectPath(value: unknown, platform: NodeJS.Platform): 
   if (!pathApi(platform).isAbsolute(value)) return false
   // UNC and device paths would make Explorer contact a remote host (and send credentials).
   if (platform === 'win32' && /^[\\/]{2}/.test(value)) return false
+  // 只收「磁碟機代號 + 絕對路徑」：單一反斜線開頭（當前磁碟根目錄）、`\??\` 前綴與
+  // 磁碟機代號之外的冒號（NTFS 替代資料流 `a:stream`）都不是專案資料夾。
+  if (platform === 'win32' && (!/^[A-Za-z]:[\\/]/.test(value) || value.indexOf(':', 2) !== -1)) return false
   return true
 }
 
 // Shell metacharacters (and quotes) that would change what an unquoted paste does. Backslash is
 // an escape in POSIX shells but the separator on Windows, where cmd's % and ^ are refused instead.
-const POSIX_SHELL_METACHARACTERS = /[;|&$`<>(){}*?!"'\\]/
-const WINDOWS_SHELL_METACHARACTERS = /[;|&$`<>(){}*?!"'%^]/
+const POSIX_SHELL_METACHARACTERS = /[;|&$`<>(){}*?!"'\\]|\s#/
+// PowerShell 也把彎引號（U+2018-201F）當成引號；`[` `]` 在 PowerShell 是萬用字元；空白後的 `#` 會開始註解。
+const WINDOWS_SHELL_METACHARACTERS = /[;|&$`<>(){}*?!"'%^\u2018-\u201f[\]]|\s#/
 
 /** A path that can be pasted unquoted into a shell without running anything extra. */
 export function isShellSafePath(value: string, platform: NodeJS.Platform): boolean {
@@ -151,7 +162,8 @@ export async function verifyProjectDirectory(
     if (await deps.exists(api.join(real, 'Contents', 'Info.plist'))) return null
   }
   // Windows shell namespace junctions ("name.{CLSID}") open a shell extension, not a folder.
-  if (deps.platform === 'win32' && /\.\{[0-9a-f-]+\}$/i.test(real)) return null
+  // 任何一層目錄名帶 CLSID 後綴都拒絕，不只最後一層。
+  if (deps.platform === 'win32' && /\.\{[0-9a-f-]+\}(?:[\\/]|$)/i.test(real)) return null
   return real
 }
 
@@ -194,13 +206,15 @@ export class SessionJumpService {
     this.entries.clear()
   }
 
-  /** Bundle id "switch to app" would activate for this session, or null. */
+  /** What "switch to app" would activate for this session (macOS bundle id, Windows app id), or null. */
   switchTarget(key: string): string | null {
-    if (this.deps.platform !== 'darwin') return null
+    if (this.deps.platform !== 'darwin' && this.deps.platform !== 'win32') return null
     const entry = this.entry(key)
     // Defence in depth only: an explicit generic-http event is refused, but a token holder can still
     // claim a built-in source. The allowlist in resolveHostBundleId is the real boundary.
     if (!entry || !entry.adapterId || entry.adapterId === 'generic-http') return null
+    // Windows 只靠 app id 對應白名單執行檔；hook 的 bundle id 在 Windows 上沒有意義。
+    if (this.deps.platform === 'win32') return windowsExecutablesFor(entry.app).length > 0 ? entry.app ?? null : null
     return resolveHostBundleId(entry.app, entry.bundleId)
   }
 
@@ -224,6 +238,7 @@ export class SessionJumpService {
 
     switch (action) {
       case 'switch-app': {
+        if (this.deps.platform === 'win32') return this.switchWindowsApp(key, entry)
         if (this.deps.platform !== 'darwin') return { ok: false, error: 'unsupported' }
         const bundleId = this.switchTarget(key)
         if (!bundleId) return { ok: false, error: 'unavailable' }
@@ -261,6 +276,19 @@ export class SessionJumpService {
     }
   }
 
+  private async switchWindowsApp(key: string, entry: JumpEntry): Promise<SessionJumpResult> {
+    const activate = this.deps.activateWindowsApp
+    if (!activate) return { ok: false, error: 'unsupported' }
+    if (!this.switchTarget(key)) return { ok: false, error: 'unavailable' }
+    try {
+      const result = await activate(windowsExecutablesFor(entry.app))
+      if (result === 'activated') return { ok: true }
+      return { ok: false, error: result === 'not_found' ? 'unavailable' : 'failed' }
+    } catch {
+      return { ok: false, error: 'failed' }
+    }
+  }
+
   private entry(key: string): JumpEntry | undefined {
     const entry = this.entries.get(key)
     if (!entry) return undefined
@@ -286,7 +314,7 @@ export class SessionJumpService {
 const contexts = new WeakMap<AgentStatusEvent, SessionJumpContext>()
 
 function rawField(input: unknown, key: string): unknown {
-  return input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>)[key] : undefined
+  return asRecord(input)?.[key]
 }
 
 /**
@@ -306,10 +334,11 @@ export function withSessionJumpContext(
         host: {
           kind: event.host.kind,
           app: event.host.app,
-          switchable: platform === 'darwin'
-            && event.adapterId !== undefined
+          switchable: event.adapterId !== undefined
             && event.adapterId !== 'generic-http'
-            && resolveHostBundleId(event.host.app, bundleId) !== null,
+            && (platform === 'darwin'
+              ? resolveHostBundleId(event.host.app, bundleId) !== null
+              : platform === 'win32' && windowsExecutablesFor(event.host.app).length > 0),
         },
       }
     : event

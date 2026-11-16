@@ -377,7 +377,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   background: var(--accent-soft);
   color: var(--accent-text);
   font-size: var(--font-label, var(--font-xs));
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 /* 主動分頁上的數字徽章：accentHover 字在 onAccent 底上 >= 4.5:1（accent 只保證 3:1）。 */

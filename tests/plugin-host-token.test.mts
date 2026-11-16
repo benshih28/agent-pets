@@ -48,13 +48,13 @@ test('a queued eventSource RPC cannot restore cleared status after runtime clean
 
 test('plugin RPC result is discarded when its runtime is revoked while awaiting the host API', async () => {
   let activeToken: string | null = 'runtime-1'
-  let resolveWork: ((value: unknown) => void) | null = null
+  let resolveWork: (value: unknown) => void = () => {}
   const dispatch = runPluginRpcForCurrentToken(() => activeToken, 'runtime-1', () => new Promise(resolve => {
     resolveWork = resolve
   }))
   await Promise.resolve()
   await Promise.resolve()
   activeToken = null
-  resolveWork?.({ accepted: true })
+  resolveWork({ accepted: true })
   assert.deepEqual(await dispatch, { current: false })
 })

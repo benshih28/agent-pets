@@ -1,0 +1,19 @@
+{
+  "update.title": "App updates",
+  "update.currentVersion": "Current version {version}",
+  "update.autoCheck": "Check for new versions automatically",
+  "update.autoCheckHelp": "Off by default. When on, asks GitHub for the latest version at most once a day. It only notifies; nothing is downloaded or installed automatically.",
+  "update.lastChecked": "Last checked",
+  "update.neverChecked": "Not checked yet",
+  "update.checkNow": "Check now",
+  "update.checking": "Checking…",
+  "update.upToDate": "You are on the latest version",
+  "update.available": "New version {version} available",
+  "update.availableCheckFailed": "New version {version} available; the latest check failed",
+  "update.failed": "The check failed. Please try again later.",
+  "update.rateLimited": "Checking too often. Please try again shortly.",
+  "update.viewRelease": "View release",
+  "update.openFailed": "Could not open the release page",
+  "update.notifyTitle": "New Agent Pets version",
+  "update.notifyBody": "Version {version} is out. Open Advanced in Settings to view it; nothing is downloaded or installed automatically."
+}

@@ -8,12 +8,21 @@ import {
   type PluginPanelNativeView,
   type PluginPanelViewCancelableEvent,
   type PluginPanelViewSession,
+  type PluginPanelViewWebContents,
+  type PluginPanelViewWebPreferences,
 } from '../electron/plugin-panel-view.ts'
 import { createPluginPanelPublicApi } from '../electron/plugin-panel-view-bridge.ts'
 import { PluginUiMessageGuard } from '../electron/plugin-ui-messages.ts'
+import { PLUGIN_THEME_API_VERSION, PLUGIN_THEME_TOKENS, type PluginThemeSnapshot, type PluginThemeToken } from '../src/types/plugin-theme.ts'
 
 const token = '123e4567-e89b-42d3-a456-426614174000'
 const initialBounds = { x: 8, y: 64, width: 480, height: 360 }
+
+function themeSnapshot(): PluginThemeSnapshot {
+  const tokens = {} as Record<PluginThemeToken, string>
+  for (const name of PLUGIN_THEME_TOKENS) tokens[name] = '1'
+  return { apiVersion: PLUGIN_THEME_API_VERSION, mode: 'dark', tokens }
+}
 
 function fakeController(options: {
   loadURL?: (url: string, viewIndex: number) => Promise<void>
@@ -24,7 +33,7 @@ function fakeController(options: {
 } = {}) {
   let parentVisible = options.parentVisible ?? true
   let sessionPartition = ''
-  let viewOptions: { webPreferences: Record<string, unknown> } | null = null
+  let viewOptions: { webPreferences: PluginPanelViewWebPreferences } | null = null
   let tokenSequence = 0
   let permissionRequest: ((contents: unknown, permission: string, callback: (allowed: boolean) => void) => void) | null = null
   let permissionCheck: ((...args: unknown[]) => boolean) | null = null
@@ -48,13 +57,13 @@ function fakeController(options: {
   const closedEvents: Array<{ pluginId: string; openToken: number; reason: string }> = []
   const blockedRequestUrls: string[] = []
 
-  const session = {
+  const session: PluginPanelViewSession = {
     protocol: { handle: () => {} },
     webRequest: { onBeforeRequest: (_filter: { urls: string[] }, listener: typeof beforeRequest) => { beforeRequest = listener } },
     setPermissionRequestHandler: (handler: typeof permissionRequest) => { permissionRequest = handler },
     setPermissionCheckHandler: (handler: typeof permissionCheck) => { permissionCheck = handler },
     on: (_event: 'will-download', listener: typeof willDownload) => { willDownload = listener },
-  } as unknown as PluginPanelViewSession
+  }
 
   const parent = {
     isDestroyed: () => false,
@@ -69,31 +78,31 @@ function fakeController(options: {
     getParentWindow: () => parent,
     createSession: partition => { sessionPartition = partition; return session },
     createView: viewOptionsValue => {
-      viewOptions = viewOptionsValue as unknown as { webPreferences: Record<string, unknown> }
+      viewOptions = viewOptionsValue
+      const contents: PluginPanelViewWebContents = {
+        setWindowOpenHandler: handler => { openHandler = handler },
+        on: (event, listener) => { state.listeners.set(event, listener) },
+        loadURL: async url => {
+          state.loadedUrl = url
+          await options.loadURL?.(url, views.length)
+        },
+        send: (_channel, data) => { sentMessages.push(data) },
+        destroy: () => { state.destroyed = true },
+        isDestroyed: () => state.destroyed,
+      }
+      const view: PluginPanelNativeView = {
+        webContents: contents,
+        setBounds: bounds => { state.bounds.push(bounds) },
+        setVisible: visible => { state.visibility.push(visible) },
+      }
       const state = {
-        view: null as unknown as PluginPanelNativeView,
+        view,
         listeners: new Map<string, (event?: PluginPanelViewCancelableEvent) => void>(),
         destroyed: false,
         loadedUrl: '',
         bounds: [] as Array<{ x: number; y: number; width: number; height: number }>,
         visibility: [] as boolean[],
       }
-      const contents = {
-        setWindowOpenHandler: (handler: typeof openHandler) => { openHandler = handler },
-        on: (event: string, listener: (event?: PluginPanelViewCancelableEvent) => void) => { state.listeners.set(event, listener) },
-        loadURL: async (url: string) => {
-          state.loadedUrl = url
-          await options.loadURL?.(url, views.length)
-        },
-        send: (_channel: string, data: unknown) => { sentMessages.push(data) },
-        destroy: () => { state.destroyed = true },
-        isDestroyed: () => state.destroyed,
-      }
-      state.view = {
-        webContents: contents,
-        setBounds: bounds => { state.bounds.push(bounds) },
-        setVisible: visible => { state.visibility.push(visible) },
-      } as unknown as PluginPanelNativeView
       views.push(state)
       return state.view
     },
@@ -113,7 +122,7 @@ function fakeController(options: {
       return { ok: true, value: { method: request.method } }
     },
     onClosed: event => closedEvents.push(event),
-    getThemeSnapshot: () => ({ apiVersion: 1, mode: 'dark', tokens: {} }) as never,
+    getThemeSnapshot: themeSnapshot,
     ackTimeoutMs: options.ackTimeoutMs,
     loadTimeoutMs: options.loadTimeoutMs,
     onBlockedRequest: url => {
@@ -256,7 +265,7 @@ test('plugin panel refuses to attach a view without valid frame bounds', async (
 })
 
 test('stale close after a rapid close-open cannot close the newer panel', async () => {
-  let finishFirstLoad: (() => void) | null = null
+  let finishFirstLoad: () => void = () => undefined
   const firstLoad = new Promise<void>(resolve => { finishFirstLoad = resolve })
   const fake = fakeController({ loadURL: (_url, viewIndex) => viewIndex === 0 ? firstLoad : Promise.resolve() })
   const firstOpen = fake.controller.open({ pluginId: 'sample-plugin', entry: 'ui/index.html', openToken: 1, bounds: initialBounds })
@@ -265,7 +274,7 @@ test('stale close after a rapid close-open cannot close the newer panel', async 
 
   const secondResult = await fake.controller.open({ pluginId: 'another-plugin', entry: 'ui/index.html', openToken: 2, bounds: initialBounds })
   assert.deepEqual(secondResult, { ok: true, value: { opened: true, openToken: 2 } })
-  finishFirstLoad?.()
+  finishFirstLoad()
   assert.deepEqual(await firstOpen, { ok: false, error: 'disabled' })
 
   fake.controller.close('closed', 1)
@@ -536,17 +545,17 @@ test('hiding the settings panel suspends an acknowledged view and restores it on
 
 test('theme changes reach only the open panel page, and theme.get is allowed for any sender that owns the view', async () => {
   const fake = fakeController()
-  const snapshot = { apiVersion: 1, mode: 'dark', tokens: {} }
-  fake.controller.notifyThemeChanged(snapshot as never)
+  const snapshot = themeSnapshot()
+  fake.controller.notifyThemeChanged(snapshot)
   assert.deepEqual(fake.sentMessages, [], 'no page open: nothing is sent')
   await fake.controller.open({ pluginId: 'sample-plugin', entry: 'ui/index.html', openToken: 1, bounds: initialBounds })
   const contents = fake.addedView?.webContents
   assert.deepEqual(await fake.controller.handleApiRequest(contents, 'theme.get', []), { ok: true, value: { method: 'theme.get' } })
   assert.deepEqual(await fake.controller.handleApiRequest({}, 'theme.get', []), { ok: false, error: 'not_permitted' })
-  fake.controller.notifyThemeChanged(snapshot as never)
+  fake.controller.notifyThemeChanged(snapshot)
   assert.deepEqual(fake.sentMessages, [snapshot])
   fake.controller.close('closed')
-  fake.controller.notifyThemeChanged(snapshot as never)
+  fake.controller.notifyThemeChanged(snapshot)
   assert.equal(fake.sentMessages.length, 1)
 })
 
@@ -555,7 +564,7 @@ test('the initial theme snapshot is returned only to the open panel page', async
   assert.equal(fake.controller.initialTheme({}), null, 'no page open')
   await fake.controller.open({ pluginId: 'sample-plugin', entry: 'ui/index.html', openToken: 1, bounds: initialBounds })
   const contents = fake.addedView?.webContents
-  assert.deepEqual(fake.controller.initialTheme(contents), { apiVersion: 1, mode: 'dark', tokens: {} })
+  assert.deepEqual(fake.controller.initialTheme(contents), themeSnapshot())
   assert.equal(fake.controller.initialTheme({}), null, 'another sender')
   fake.controller.close('closed')
   assert.equal(fake.controller.initialTheme(contents), null, 'after close')

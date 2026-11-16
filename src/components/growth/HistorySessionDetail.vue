@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { t, type TranslationKey } from '@/i18n'
 import { isAgentState } from '@/types/agent'
 import {
   HISTORY_SESSION_TIMELINE_MAX,
-  HISTORY_TERMINAL_STATES,
   type HistorySessionDetail,
   type HistorySessionListItem,
   type HistorySessionOutcome,
 } from '@/types/history'
 import { useHistoryFormat } from '@/composables/useHistoryFormat'
 import Dialog from '@/components/ui/Dialog.vue'
+import SegmentedControl, { type SegmentedOption } from '@/components/ui/SegmentedControl.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 import { agentDisplayName } from '@/utils/agent-label'
 import { AGENT_STATE_PRESENTATION } from '@/utils/agent-state-presentation'
 import { formatDateTime, formatTimeFull } from '@/utils/intl-format'
+import { buildTimelineRows, type TimelineOrder } from '@/utils/history-timeline'
 import { stateAriaLabel } from '@/utils/state-aria'
 
 // 單一工作階段的時間軸對話框：狀態轉換（工具只顯示名稱）與每段持續時間。
@@ -34,24 +35,68 @@ const detail = shallowRef<HistorySessionDetail | null>(null)
 const loading = ref(false)
 const failed = ref(false)
 let requestSeq = 0
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+const REFRESH_DEBOUNCE_MS = 500
 
-watch(() => props.session?.id, async id => {
+// silent：背景刷新沿用畫面上的資料，不閃骨架；失敗時保留上一份結果。
+async function load(id: string, silent = false): Promise<void> {
   const seq = ++requestSeq
-  detail.value = null
-  failed.value = false
-  if (!id) return
-  loading.value = true
+  if (!silent) {
+    detail.value = null
+    failed.value = false
+    loading.value = true
+  }
   try {
     const result = await window.electronAPI?.getHistorySessionDetail(id)
     if (seq !== requestSeq) return
-    detail.value = result ?? null
-    failed.value = !result
+    if (result) {
+      detail.value = result
+      failed.value = false
+    } else if (!silent) {
+      failed.value = true
+    }
   } catch {
-    if (seq === requestSeq) failed.value = true
+    if (seq === requestSeq && !silent) failed.value = true
   } finally {
     if (seq === requestSeq) loading.value = false
   }
+}
+
+function cancelRefresh(): void {
+  if (refreshTimer) clearTimeout(refreshTimer)
+  refreshTimer = null
+}
+
+watch(() => props.session?.id, id => {
+  cancelRefresh()
+  if (id) {
+    void load(id)
+    return
+  }
+  requestSeq += 1
+  detail.value = null
+  failed.value = false
+  loading.value = false
 }, { immediate: true })
+
+// 彈窗開著時跟著歷史更新即時刷新，不必關掉重開。
+let cleanupHistoryUpdated: (() => void) | null = null
+onMounted(() => {
+  cleanupHistoryUpdated = window.electronAPI?.onHistoryUpdated(() => {
+    if (!props.session?.id) return
+    cancelRefresh()
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      const id = props.session?.id
+      if (id) void load(id, true)
+    }, REFRESH_DEBOUNCE_MS)
+  }) ?? null
+})
+onUnmounted(() => {
+  cleanupHistoryUpdated?.()
+  cancelRefresh()
+  requestSeq += 1
+})
 
 // 優先用剛讀到的資料列；載入中先用清單上的那一列。
 const current = computed(() => detail.value?.session ?? props.session)
@@ -63,19 +108,13 @@ const description = computed(() => {
   return `${agentDisplayName(session.adapterId)} · ${range}`
 })
 
-/** 每一筆持續到下一筆；最後一筆持續到 session 最後一次活動。 */
-const timeline = computed(() => {
-  const entries = detail.value?.timeline ?? []
-  const endAt = current.value?.lastSeenAt ?? 0
-  return entries.map((entry, index) => ({
-    ...entry,
-    key: `${index}-${entry.occurredAt}`,
-    // 最後一筆若是結束狀態，本身沒有有意義的持續時間。
-    spanMs: index === entries.length - 1 && isAgentState(entry.state) && HISTORY_TERMINAL_STATES.has(entry.state)
-      ? null
-      : Math.max(0, (entries[index + 1]?.occurredAt ?? endAt) - entry.occurredAt),
-  }))
-})
+// 預設最新在前，不用捲動就能看到最近的進度；選擇在切換不同工作階段時保留。
+const timelineOrder = ref<TimelineOrder>('desc')
+const orderOptions = computed<SegmentedOption[]>(() => [
+  { value: 'desc', label: t('growth.sessionTimelineNewestFirst') },
+  { value: 'asc', label: t('growth.sessionTimelineOldestFirst') },
+])
+const timeline = computed(() => buildTimelineRows(detail.value?.timeline ?? [], current.value?.lastSeenAt ?? 0, timelineOrder.value))
 
 // 念成一句話：已翻譯的狀態、工具、時間與持續時間。
 function entryAriaLabel(entry: { occurredAt: number; state: string; toolName?: string; spanMs: number | null }): string {
@@ -125,7 +164,18 @@ function unknownOr(tracked: boolean, value: string): string {
         </div>
       </dl>
 
-      <h3 class="detail-heading">{{ t('growth.sessionTimeline') }}</h3>
+      <div class="detail-heading-row">
+        <h3 class="detail-heading">{{ t('growth.sessionTimeline') }}</h3>
+        <SegmentedControl
+          v-if="timeline.length > 0"
+          v-model="timelineOrder"
+          :options="orderOptions"
+          semantics="radio"
+          size="sm"
+          id-prefix="session-timeline-order-"
+          :ariaLabel="t('growth.sessionTimelineOrder')"
+        />
+      </div>
       <div v-if="loading" aria-busy="true"><Skeleton variant="line" :lines="4" /></div>
       <p v-else-if="failed" class="detail-muted" role="alert">{{ t('growth.sessionDetailError') }}</p>
       <p v-else-if="timeline.length === 0" class="detail-muted">{{ t('growth.sessionTimelineEmpty') }}</p>
@@ -187,8 +237,17 @@ function unknownOr(tracked: boolean, value: string): string {
   white-space: nowrap;
 }
 
+.detail-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
 .detail-heading {
-  margin: var(--space-2) 0 0;
+  margin: 0;
   color: var(--text-primary);
   font-size: var(--font-md);
   font-weight: var(--weight-bold);

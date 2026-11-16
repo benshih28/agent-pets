@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { clipboard, shell } from 'electron'
 import { activateMacBundle, SessionJumpService } from '../session-jump.ts'
+import { activateWindowsApp } from '../windows-window-activator.ts'
 import type { DesktopPreferences } from '../../src/types/desktop'
 
 // Electron wiring for the session jump service; the policy lives in electron/session-jump.ts.
@@ -11,6 +12,7 @@ export function createSessionJumpService(getPreferences: () => DesktopPreference
     platform: process.platform,
     getPreferences,
     activateBundle: bundleId => activateMacBundle(bundleId),
+    activateWindowsApp: executables => activateWindowsApp(executables),
     // Reveal only (Finder / Explorer selects the folder); never shell.openPath, which can launch apps.
     revealDirectory: directory => shell.showItemInFolder(directory),
     writeClipboard: text => clipboard.writeText(text),

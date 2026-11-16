@@ -7,6 +7,10 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { OPAQUE_ID_128_PATTERN } from '../src/types/id-patterns.ts'
+import { hookStartupMarkerName } from '../electron/main/hook-startup-marker.ts'
+import { withStartupBaseline } from './support/node-startup.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 // Runs the real integrations/agent-hook.mjs against fake local servers. The hook hard-codes the
 // app's ports, so each test runs a copy whose ports point at ephemeral test servers; HOME is a
@@ -56,6 +60,10 @@ async function harness(options: {
   optIn?: Record<string, unknown> | null
   permissionToken?: string | null
   permissionServer?: boolean
+  /** 寫一個新的 app 啟動標記（事件埠）。 */
+  startupMarker?: boolean
+  /** 權限埠一開始關著，這麼久之後才開始監聽（模擬 app 啟動中）。 */
+  permissionOpensAfterMs?: number
 } = {}): Promise<Harness> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-claude-hook-'))
   const deploy = path.join(home, '.desktop-pet')
@@ -74,9 +82,7 @@ async function harness(options: {
     response.statusCode = 204
     response.end()
   })
-  const permissionServer = options.permissionServer === false
-    ? null
-    : await listen(async (request, response) => {
+  const permissionListener = async (request: IncomingMessage, response: ServerResponse) => {
       const at = Number(process.hrtime.bigint())
       const route = (request.url ?? '').replace('/v1/permission/', '')
       const body = await readBody(request)
@@ -89,8 +95,19 @@ async function harness(options: {
       } else {
         response.end()
       }
-    })
+  }
+  const delayed = options.permissionOpensAfterMs !== undefined
+  let permissionServer: Server | null = options.permissionServer === false || delayed ? null : await listen(permissionListener)
   const permissionPort = permissionServer ? portOf(permissionServer) : await closedPort()
+  let openTimer: NodeJS.Timeout | null = null
+  if (delayed) {
+    openTimer = setTimeout(() => {
+      const late = createServer(permissionListener)
+      permissionServer = late
+      late.listen(permissionPort, '127.0.0.1')
+    }, options.permissionOpensAfterMs)
+  }
+  if (options.startupMarker) fs.writeFileSync(path.join(deploy, hookStartupMarkerName(portOf(eventServer))), '1\n')
 
   // Same script, test ports, a 1 s minimum wait so the timeout case stays fast, and a looser event budget.
   const hookPath = path.join(home, 'agent-hook.mjs')
@@ -105,7 +122,7 @@ async function harness(options: {
   if (!patched.includes('const SEND_DEADLINE_MS = 5000') || !patched.includes('PERMISSION_ANSWER_DEADLINE_MS = 5000')) {
     // Close the servers first so a stale patch fails the test instead of hanging the run.
     await new Promise<void>(resolve => eventServer.close(() => resolve()))
-    if (permissionServer) await new Promise<void>(resolve => permissionServer.close(() => resolve()))
+    if (permissionServer) await new Promise<void>(resolve => permissionServer!.close(() => resolve()))
     throw new Error('agent-hook.mjs call budgets changed; update the test patch')
   }
   fs.writeFileSync(hookPath, patched)
@@ -116,9 +133,13 @@ async function harness(options: {
     permissionCalls,
     eventCalls,
     close: async () => {
+      if (openTimer) clearTimeout(openTimer)
       await new Promise<void>(resolve => eventServer.close(() => resolve()))
-      if (permissionServer) await new Promise<void>(resolve => permissionServer.close(() => resolve()))
-      fs.rmSync(home, { recursive: true, force: true })
+      if (permissionServer) {
+        permissionServer.closeAllConnections()
+        await new Promise<void>(resolve => permissionServer!.close(() => resolve()))
+      }
+      removeTempTree(home)
     },
   }
 }
@@ -126,10 +147,14 @@ async function harness(options: {
 // Host-detection variables are cleared so the runner's own terminal never leaks into a payload.
 const HOST_ENV_KEYS = ['TERM_PROGRAM', '__CFBundleIdentifier', 'CLAUDE_CODE_ENTRYPOINT', 'WT_SESSION', 'VSCODE_INJECTION', 'VSCODE_GIT_IPC_HANDLE', 'CURSOR_TRACE_ID']
 
-function runHook(h: Harness, payload: Record<string, unknown>, extraEnv: NodeJS.ProcessEnv = {}): Promise<{ stdout: string; code: number | null; ms: number }> {
+function hookEnv(h: Harness, extraEnv: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: h.home, USERPROFILE: h.home }
   for (const key of HOST_ENV_KEYS) delete env[key]
-  Object.assign(env, extraEnv)
+  return Object.assign(env, extraEnv)
+}
+
+function runHook(h: Harness, payload: Record<string, unknown>, extraEnv: NodeJS.ProcessEnv = {}): Promise<{ stdout: string; code: number | null; ms: number }> {
+  const env = hookEnv(h, extraEnv)
   const startedAt = Date.now()
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [h.hookPath, 'claude'], { env, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -352,7 +377,7 @@ test('an unusual session id still becomes a valid bounded identifier', async () 
     await runHook(h, permissionRequest({ session_id: `bad id/${'x'.repeat(300)}` }))
     const request = h.permissionCalls.find(call => call.route === 'request')!
     for (const key of ['instanceId', 'sessionId', 'permissionId']) {
-      assert.match(String(request.body[key]), /^[A-Za-z0-9._:-]{1,128}$/, key)
+      assert.match(String(request.body[key]), OPAQUE_ID_128_PATTERN, key)
     }
   } finally {
     await h.close()
@@ -406,6 +431,67 @@ test('the status event names the host app from a few env values only', async () 
     h.eventCalls.length = 0
     await runHook(h, { ...permissionRequest(), hook_event_name: 'UserPromptSubmit' }, { TERM_PROGRAM: 'bad value; rm -rf /' })
     assert.equal(h.eventCalls[0]!.body.host, undefined)
+  } finally {
+    await h.close()
+  }
+})
+
+// --- 啟動期間的 request 重試 ---------------------------------------------------
+
+const DENY_OUTPUT = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied in Agent Pets. (已在 Agent Pets 拒絕)' } } })
+
+test('during app start-up the request call waits for the permission port and the decision is still delivered', async () => {
+  const h = await harness({ handler: decisionFlow('deny', 0), startupMarker: true, permissionOpensAfterMs: 700, optIn: { enabled: true, waitSeconds: 30 } })
+  try {
+    const result = await runHook(h, permissionRequest())
+    assert.equal(result.stdout, DENY_OUTPUT)
+    const requests = h.permissionCalls.filter(call => call.route === 'request')
+    assert.equal(requests.length, 1, 'a refused attempt sends nothing, so exactly one request reaches the server')
+    // 等待的秒數從 ttl 扣掉：最多 5 秒，30 秒的等待時間至少還剩 24 秒。
+    const ttl = requests[0].body.ttlSeconds as number
+    assert.ok(ttl <= 30 && ttl >= 24, `ttl ${ttl}`)
+    assert.equal(h.permissionCalls.some(call => call.route === 'result'), true)
+  } finally {
+    await h.close()
+  }
+})
+
+test('without a start-up marker a refused request is not retried', async t => {
+  // 權限埠整段都關著，以耗時判斷：誤把重試打開會一直重試到 PERMISSION_STARTUP_WAIT_MS（5 秒）。
+  // 不用「晚 2.5 秒才開的埠」：高負載下 hook 比開埠還晚啟動，第一次請求就直接成功（F2 實測）。
+  // 上限與 agent-hook-delivery 相同，取兩倍 node 啟動基準加 1.5 秒；基準在 3.5 秒內都小於重試所需的時間。
+  const h = await harness({ permissionServer: false })
+  try {
+    const result = await withStartupBaseline(hookEnv(h), () => runHook(h, permissionRequest()))
+    assert.equal(result.code, 0)
+    assert.equal(result.stdout, '')
+    const bound = result.baseline * 2 + 1_500
+    t.diagnostic(`hook ${result.ms} ms, node startup ${result.baseline} ms, bound ${bound} ms`)
+    assert.ok(result.ms < bound, `hook took ${result.ms} ms (node startup ${result.baseline} ms)`)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a fresh marker but a port that never opens gives up within the bound and prints nothing', async () => {
+  const h = await harness({ permissionServer: false, startupMarker: true })
+  try {
+    const result = await runHook(h, permissionRequest())
+    assert.equal(result.code, 0)
+    assert.equal(result.stdout, '')
+    assert.ok(result.ms >= 4_500, `gave up too early: ${result.ms} ms`)
+    assert.ok(result.ms < 12_000, `took ${result.ms} ms`)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a request that reached the server is never retried, even during start-up', async () => {
+  const h = await harness({ handler: () => ({ status: 503, body: { error: 'source_disabled' } }), startupMarker: true })
+  try {
+    const result = await runHook(h, permissionRequest())
+    assert.equal(result.stdout, '')
+    assert.equal(h.permissionCalls.filter(call => call.route === 'request').length, 1)
   } finally {
     await h.close()
   }

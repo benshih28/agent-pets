@@ -40,6 +40,11 @@ interface HostAppDefinition {
   bundleIds: ReadonlyArray<string>
   /** Used when the hook reported the app but no bundle id; absent when the id is ambiguous. */
   defaultBundleId?: string
+  /**
+   * Windows 可被切換的執行檔 basename（小寫、完全相等比對）。沒有把握的 App 不列，
+   * 沒有此欄位就代表 Windows 上不支援切換。
+   */
+  windowsExecutables?: ReadonlyArray<string>
 }
 
 export const HOST_APPS: Readonly<Record<Exclude<HostAppId, 'unknown'>, HostAppDefinition>> = Object.freeze({
@@ -47,17 +52,17 @@ export const HOST_APPS: Readonly<Record<Exclude<HostAppId, 'unknown'>, HostAppDe
   iterm2: { kind: 'terminal', label: 'iTerm2', bundleIds: ['com.googlecode.iterm2'], defaultBundleId: 'com.googlecode.iterm2' },
   warp: { kind: 'terminal', label: 'Warp', bundleIds: ['dev.warp.Warp-Stable', 'dev.warp.Warp-Preview'], defaultBundleId: 'dev.warp.Warp-Stable' },
   ghostty: { kind: 'terminal', label: 'Ghostty', bundleIds: ['com.mitchellh.ghostty'], defaultBundleId: 'com.mitchellh.ghostty' },
-  wezterm: { kind: 'terminal', label: 'WezTerm', bundleIds: ['com.github.wez.wezterm'], defaultBundleId: 'com.github.wez.wezterm' },
+  wezterm: { kind: 'terminal', label: 'WezTerm', bundleIds: ['com.github.wez.wezterm'], defaultBundleId: 'com.github.wez.wezterm', windowsExecutables: ['wezterm-gui.exe'] },
   kitty: { kind: 'terminal', label: 'kitty', bundleIds: ['net.kovidgoyal.kitty'], defaultBundleId: 'net.kovidgoyal.kitty' },
   alacritty: { kind: 'terminal', label: 'Alacritty', bundleIds: ['org.alacritty'], defaultBundleId: 'org.alacritty' },
-  hyper: { kind: 'terminal', label: 'Hyper', bundleIds: ['co.zeit.hyper'], defaultBundleId: 'co.zeit.hyper' },
-  tabby: { kind: 'terminal', label: 'Tabby', bundleIds: ['org.tabby'], defaultBundleId: 'org.tabby' },
-  'windows-terminal': { kind: 'terminal', label: 'Windows Terminal', bundleIds: [] },
-  vscode: { kind: 'ide', label: 'VS Code', bundleIds: ['com.microsoft.VSCode'], defaultBundleId: 'com.microsoft.VSCode' },
-  'vscode-insiders': { kind: 'ide', label: 'VS Code Insiders', bundleIds: ['com.microsoft.VSCodeInsiders'], defaultBundleId: 'com.microsoft.VSCodeInsiders' },
-  cursor: { kind: 'ide', label: 'Cursor', bundleIds: ['com.todesktop.230313mzl4w4u92'], defaultBundleId: 'com.todesktop.230313mzl4w4u92' },
-  windsurf: { kind: 'ide', label: 'Windsurf', bundleIds: ['com.exafunction.windsurf'], defaultBundleId: 'com.exafunction.windsurf' },
-  zed: { kind: 'ide', label: 'Zed', bundleIds: ['dev.zed.Zed', 'dev.zed.Zed-Preview'], defaultBundleId: 'dev.zed.Zed' },
+  hyper: { kind: 'terminal', label: 'Hyper', bundleIds: ['co.zeit.hyper'], defaultBundleId: 'co.zeit.hyper', windowsExecutables: ['hyper.exe'] },
+  tabby: { kind: 'terminal', label: 'Tabby', bundleIds: ['org.tabby'], defaultBundleId: 'org.tabby', windowsExecutables: ['tabby.exe'] },
+  'windows-terminal': { kind: 'terminal', label: 'Windows Terminal', bundleIds: [], windowsExecutables: ['windowsterminal.exe'] },
+  vscode: { kind: 'ide', label: 'VS Code', bundleIds: ['com.microsoft.VSCode'], defaultBundleId: 'com.microsoft.VSCode', windowsExecutables: ['code.exe'] },
+  'vscode-insiders': { kind: 'ide', label: 'VS Code Insiders', bundleIds: ['com.microsoft.VSCodeInsiders'], defaultBundleId: 'com.microsoft.VSCodeInsiders', windowsExecutables: ['code - insiders.exe'] },
+  cursor: { kind: 'ide', label: 'Cursor', bundleIds: ['com.todesktop.230313mzl4w4u92'], defaultBundleId: 'com.todesktop.230313mzl4w4u92', windowsExecutables: ['cursor.exe'] },
+  windsurf: { kind: 'ide', label: 'Windsurf', bundleIds: ['com.exafunction.windsurf'], defaultBundleId: 'com.exafunction.windsurf', windowsExecutables: ['windsurf.exe'] },
+  zed: { kind: 'ide', label: 'Zed', bundleIds: ['dev.zed.Zed', 'dev.zed.Zed-Preview'], defaultBundleId: 'dev.zed.Zed', windowsExecutables: ['zed.exe'] },
   jetbrains: {
     kind: 'ide',
     label: 'JetBrains IDE',
@@ -77,4 +82,10 @@ export function isHostAppId(value: unknown): value is HostAppId {
 export function hostAppLabel(app: HostAppId | undefined): string | null {
   if (!app || app === 'unknown') return null
   return HOST_APPS[app].label
+}
+
+/** Windows 上該 App 允許切換的執行檔 basename 白名單；空陣列代表不支援。 */
+export function windowsExecutablesFor(app: HostAppId | undefined): ReadonlyArray<string> {
+  if (!app || app === 'unknown') return []
+  return HOST_APPS[app].windowsExecutables ?? []
 }

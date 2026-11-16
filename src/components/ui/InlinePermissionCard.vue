@@ -4,7 +4,7 @@ import type { PermissionDecisionValue, PermissionRequestView } from '@/types/per
 import { t } from '@/i18n'
 import { useAgentStore } from '@/stores/agentStore'
 import { alsoAnswerableKey, permissionSourceName } from '@/utils/permission-source'
-import { formatDuration } from '@/utils/permission-view'
+import { formatClockDuration } from '@/utils/intl-format'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
 import PermissionRiskBadge from '@/components/permission/PermissionRiskBadge.vue'
@@ -25,7 +25,7 @@ const now = usePermissionClock()
 const deciding = ref<PermissionDecisionValue | null>(null)
 
 const title = computed(() => `${permissionSourceName(props.request.agentId)} · ${t('permissionInlineTitle')}`)
-const waited = computed(() => formatDuration(now.value - props.request.receivedAt))
+const waited = computed(() => formatClockDuration(now.value - props.request.receivedAt))
 const alsoAnswerKey = computed(() => alsoAnswerableKey(props.request.agentId))
 
 // A failed decision leaves the buttons usable again so the user can retry or
@@ -106,7 +106,7 @@ function decide(decision: PermissionDecisionValue): void {
   display: flex;
   flex-direction: column;
   gap: var(--organic-space-3, var(--space-3));
-  padding: 15px var(--organic-space-4, var(--space-4));
+  padding: var(--list-card-padding-y) var(--organic-space-4, var(--space-4));
   border: 2px solid var(--accent);
   border-radius: var(--organic-radius-md, var(--radius-md));
   /* 以浮層表面承載內容、強調色只做外框：提示、倒數與風險徽章的文字都放在
@@ -134,7 +134,7 @@ function decide(decision: PermissionDecisionValue): void {
   overflow: hidden;
   font-family: var(--font-heading, var(--font-ui));
   font-size: var(--font-heading-sm, var(--font-md));
-  line-height: 1.2;
+  line-height: var(--leading-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

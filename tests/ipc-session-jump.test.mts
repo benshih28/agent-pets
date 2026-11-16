@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerSessionJumpIpc } from '../electron/ipc/session-jump.ts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 function setup() {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   const runs: unknown[] = []
   const senders: unknown[] = []
   registerSessionJumpIpc({
-    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     assertTrustedIpcSender: event => {
       senders.push(event)
       if ((event as { untrusted?: boolean }).untrusted) throw new Error('Unauthorized IPC sender')

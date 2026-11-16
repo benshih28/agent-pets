@@ -11,11 +11,12 @@
 到 [Releases](https://github.com/Ponpon55837/agent-pets/releases) 頁面下載最新版本。
 
 - **macOS** — `AgentPets-<version>-arm64.dmg`（Apple Silicon）或 `AgentPets-<version>-x64.dmg`（Intel）。開啟後把 App 拖進「應用程式」。
-- **Windows** — `AgentPets-<version>.exe`，免安裝的可攜版。
+- **Windows** — `AgentPets-Setup-<version>.exe` 安裝版（安裝在使用者自己的資料夾，不需要系統管理員權限；解除安裝時保留設定與資料），或 `AgentPets-<version>.exe` 免安裝的可攜版。
+- **Linux（未驗證）** — `AgentPets-<version>-x86_64.AppImage` 或 `AgentPets-<version>-amd64.deb`。這兩個檔案由 CI 產出，但還沒在 Linux 實機測試過，目前不算支援的平台。Linux 上沒有開機時啟動與點擊穿透；沒有系統鑰匙圈（gnome-keyring／KWallet）時，插件的機密設定無法儲存；桌面環境沒有系統匣時，App 仍可執行但沒有系統匣選單。沙盒限制：Ubuntu 24.04 以上由 AppArmor 限制非特權的 user namespace，而 AppImage 沒有 SUID 的 `chrome-sandbox`，所以 AppImage 在那裡可能因沙盒錯誤而無法啟動。Agent Pets 預設不會關閉 Chromium 沙盒（CI 只在一次性的 runner 上放寬這個限制）。使用者端的選擇是安裝 `.deb`（electron-builder 的安裝腳本會設定 `chrome-sandbox` 的 SUID 並安裝 AppArmor profile；尚未在 Linux 實機測試），或自行安裝允許本 App 建立 user namespace 的 AppArmor profile；以 `--no-sandbox` 啟動也能執行，但會拿掉 Chromium 的程序沙盒，風險自行承擔。
 
 每個 Release 都附 `SHA256SUMS.txt`；在下載資料夾執行 `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` 即可比對檔案。
 
-目前的版本沒有開發者憑證，也沒有公證（macOS 版只有 ad-hoc 簽章，用來密封 bundle），第一次開啟時系統會跳出警告：
+目前發佈的版本沒有開發者憑證，也沒有公證（macOS 版只有 ad-hoc 簽章，用來密封 bundle），第一次開啟時系統會跳出警告（發版流程已支援正式簽章，維護者設定憑證後會自動啟用，見 [docs/dev/release-signing.md](docs/dev/release-signing.md)）：
 
 - **macOS（Gatekeeper）** — 在「應用程式」中對 App 按右鍵，選擇**打開**並確認；或到**系統設定 → 隱私權與安全性**按**強制打開**。最後手段：`xattr -dr com.apple.quarantine "/Applications/Agent Pets.app"`。
 - **Windows（SmartScreen）** — 選擇**其他資訊 → 仍要執行**。
@@ -40,8 +41,10 @@
 
 - **respond** — 權限請求可直接在寵物氣泡上「允許一次」或「拒絕」。OpenCode 一律支援；Claude Code 需開啟**從寵物回覆 Claude Code 權限**（見[權限氣泡](#權限氣泡)）。
 - **observe** — 寵物會顯示「等待權限」，但必須回到工具本身核准（Codex 只會回報正在等待，沒有管道把決定送回去）。
+- Claude Code：壓縮上下文時顯示「思考中」，手動 `/compact` 結束後回到閒置。「等待權限」與「等待輸入」依 Claude Code 結構化的通知類型判斷（舊版改看通知文字）。舊版本安裝的 hook，會在新版本第一次啟動時補上新的事件，並先備份。
 - Codex 不會回報「等待輸入」狀態。Codex Desktop 與 CLI 共用 `~/.codex`，且沒有獨立的安裝 API，所以只有在該版本執行相同 hook 時才有作用，請用**等待真實事件**確認。
-- **Token usage：exact** 表示逐則訊息讀取 Agent 自己的本機工作階段紀錄（`~/.codex/sessions`、`~/.claude/projects`）。**estimated** 表示數字來自 Agent 送來的事件，例如 OpenCode 與 Generic HTTP 整合；Codex 與 Claude Code 事件上的用量不計入，讓本機紀錄維持唯一來源。
+- **Token usage：exact** 表示逐則訊息讀取 Agent 自己的本機工作階段紀錄（`~/.codex/sessions`、`~/.claude/projects`，搬移設定目錄時改讀下方的位置）。**estimated** 表示數字來自 Agent 送來的事件，例如 OpenCode 與 Generic HTTP 整合；Codex 與 Claude Code 事件上的用量不計入，讓本機紀錄維持唯一來源。
+- **搬移設定目錄**：hook、偵測、額度與 Token 用量會跟著 `CLAUDE_CONFIG_DIR`（Claude Code）、`CODEX_HOME`（Codex）與 `XDG_CONFIG_HOME`（OpenCode，位置是 `<XDG_CONFIG_HOME>/opencode`）。值必須是絕對路徑（Codex 另外要求資料夾已存在）；無法使用時，工具卡片會說明原因，並拒絕安裝，而不是寫到預設位置。macOS 與 Linux 從 Dock 或桌面開啟時，也會向 login shell（`$SHELL -l`，上限 2 秒）讀這些變數。修改後請重新啟動 Agent Pets。如果先裝了 Agent Pets 才設定變數，卡片會指出舊位置，按**移除**會一併清除。換了 `CODEX_HOME` 後，Codex 會要求重新信任 hook。
 - **Generic HTTP** adapter 供本機整合透過需驗證的 `/v1/events` 端點使用（見[事件伺服器](#事件伺服器)），僅能觀察。
 
 ## 寵物
@@ -78,8 +81,8 @@
 
 點擊寵物或從系統匣開啟。標題列顯示寵物、等級與執行中／需處理的工作階段數，並由左至右提供 **⋮ 選單**（勿擾模式、保持開啟，以及可在跟隨系統／淺色／深色間循環的外觀快速切換；勿擾開啟時按鈕上會有小圓點）、設定（`Cmd/Ctrl+,`）與關閉。**Esc** 會一層層返回，最後隱藏面板。拖曳任一邊緣即可調整面板大小（最小 360×420，最大可到全螢幕），所有畫面共用同一個大小並會被記住；**設定 → 通用 → 重設面板大小**可回到預設。
 
-- **Sessions** — 分成**需要處理**、**進行中**與**閒置與已完成**三組。可依全部／需要處理／進行中與工具篩選，並依緊急程度或最近時間排序。進行中的狀態會顯示經過時間；展開一列可看到路徑、工具、最後出現時間與 Session ID，以及「回到工作階段」動作：**顯示專案資料夾**（在 Finder／檔案總管中選取，不會開啟）、**複製專案路徑**，macOS 另有**切換到**該工作階段所在的終端機或 IDE（只會把 App 帶到最前面，不會指定視窗或分頁）。**清除離線項目**會把已結束的工作階段從畫面移除；超過 15 分鐘沒有訊號的工作階段會被視為過期。本機埠被占用時會顯示橫幅與**立即重試**。
-- **額度** — Codex 與 Claude Code 訂閱的剩餘額度（工作階段與每週視窗，重置時間以本地時間顯示）。Agent Pets 沒有帳號系統，也不會要求 Agent 的帳密：它沿用 CLI 在本機的登入狀態，由主行程向供應商查詢，只把百分比傳給介面。若 CLI 登入遺失或過期，請在該 CLI 重新登入。面板開啟時每 2 分鐘更新一次（**立即更新**有頻率限制）；更新失敗時仍保留最後一次成功的數值。該工具作用中時，寵物的狀態膠囊也會嵌入一條細額度條。供應商額度下方的**目前 5 小時區塊**是依本機紀錄算出的區塊（從休息滿 5 小時後的第一筆用量開始、向下取整到整點，持續 5 小時）：顯示目前 Token、已過與剩餘時間，以及每分鐘 Token。這是本機推算的時段，不是供應商自己的額度。
+- **Sessions** — 分成**需要處理**、**進行中**與**閒置與已完成**三組。可依全部／需要處理／進行中與工具篩選，並依緊急程度或最近時間排序。進行中的狀態會顯示經過時間；展開一列可看到路徑、工具、最後出現時間與 Session ID，以及「回到工作階段」動作：**顯示專案資料夾**（在 Finder／檔案總管中選取，不會開啟）、**複製專案路徑**，macOS 與 Windows 另有**切換到**該工作階段所在的終端機或 IDE（只會把 App 帶到最前面，不會指定視窗或分頁）。**清除離線項目**會把已結束的工作階段從畫面移除；超過 15 分鐘沒有訊號的工作階段會被視為過期。本機埠被占用時會顯示橫幅與**立即重試**。
+- **額度** — Codex 與 Claude Code 訂閱的剩餘額度（工作階段與每週視窗，重置時間以本地時間顯示）。Agent Pets 沒有帳號系統，也不會要求 Agent 的帳密：它沿用 CLI 在本機的登入狀態，由主行程向供應商查詢，只把百分比傳給介面。若 CLI 登入遺失或過期，請在該 CLI 重新登入。面板開啟時每 2 分鐘更新一次（**立即更新**有頻率限制）；更新失敗時仍保留最後一次成功的數值。該工具作用中時，寵物的狀態膠囊也會嵌入一條細額度條。供應商額度下方的**目前 5 小時區塊**是依本機紀錄算出的區塊（從休息滿 5 小時後的第一筆用量開始、向下取整到整點，持續 5 小時）：顯示目前 Token、已過與剩餘時間，以及每分鐘 Token。這是本機推算的時段，不是供應商自己的額度。每個額度視窗下方會依近兩小時的讀數，估計照目前速度何時用完，或重置前不會用完；讀數不足（少於 3 筆或跨度不到 10 分鐘）或剛重置時不顯示（[docs/dev/quota-forecast.md](docs/dev/quota-forecast.md)）。
 - **歷史** — 顯示 **7、30 或 90 天**的完成／失敗工作階段、作業時間、Token 用量（新輸入加輸出，快取另列）、Agent 分布與各模型明細，可依專案篩選。**匯出 JSON** 或**匯出 CSV** 會把已去識別的每日摘要寫到你選擇的檔案。**清除歷史**只清除歷史與額度快照，不會動到 XP、等級或成就。歷史資料來自 hook 事件，加上對本機 Codex／Claude Code 工作階段紀錄的唯讀掃描；不儲存提示詞、工具參數與完整路徑。很長的紀錄會分幾次掃描讀完，不會因為檔案太大而略過。原始事件保留 90 天，每日彙總則長期保留。
 - **歷史 → 工作階段** — 依最後活動時間由新到舊列出過去的工作階段（按**載入更多**看更早的）：結果（完成、失敗、已取消、進行中、未完成）、Agent、專案、時長、工具執行次數、權限等待、Token 與主要模型。沿用上方的天數與專案篩選，另可依 Agent、結果、自訂日期篩選，或搜尋專案與 Agent 名稱。點選工作階段可看時間軸：每次狀態變化的時間與工具名稱（最近 500 筆）。只保存中繼資料：不含提示詞、對話內容或工具參數，專案也只記資料夾名稱。此功能加入前記錄的工作階段沒有工具統計與時間軸。JSON 匯出會附上這份清單，但不含專案名稱。
 
@@ -92,6 +95,7 @@
 - XP 只在主行程發放且具冪等性：每完成一個工作階段 +20、每個本地日的第一次完成 +10、每 30 分鐘的作業時間 +2（每個工作階段最多 +10）、連續使用每多一天 +5。失敗或取消的工作不給 XP。
 - **心情**每天從 10 開始：成功 +4、錯誤 −6，另有工具數與長時間工作的上限加成。**重設今日心情**會回到 10；**心情視覺效果**可關閉光環而不停止計算。
 - 共 14 個成就（其中一個隱藏），可依全部／進行中／已解鎖篩選。每個寵物的解鎖只記錄一次，並以系統通知提示。Token 成就計入 Codex 與 Claude Code 本機紀錄的精確用量（每則訊息只算一次，與歷史一樣由所有寵物共用），以及其他 Agent 事件回報的用量。關閉成就只會停止新的解鎖。
+- **重設成長資料**經確認後清除所有寵物的 XP、等級、連續天數與成就；歷史、寵物與設定保留，較早的歷史也不會再被計入。**資料庫整理**會刪除超過保留期的歷史並壓縮本機資料庫，顯示整理前後的大小；本機紀錄掃描進行中時會稍後再試（[docs/dev/data-maintenance.md](docs/dev/data-maintenance.md)）。
 
 ## 設定
 
@@ -102,12 +106,13 @@
 | 通用 | 語言（繁體中文／English）、**外觀主題**（面板：跟隨系統／淺色／深色；寵物：預設深色、淺色或跟隨面板，可分開設定，例如深色系統搭配淺色寵物）、**面板主題**（各模式使用的主題、**自訂…**、**恢復內建外觀**）、**我的主題**、寵物大小、重設面板大小、彈跳與晃動、狀態泡泡、待機小動作、工作中提示 |
 | 寵物 | 寵物庫與匯入、多寵物、專案寵物、成長（心情、XP、成就） |
 | 桌面 | 通知、勿擾、音效；Mini 模式、邊緣收合、Shimeji、擷取排除、全螢幕自動隱藏、完成標記、右鍵隱藏、回到工作階段、權限氣泡、從寵物回覆 Claude Code 權限、Presentation MCP、開機啟動（打包版）、權限紀錄 |
-| 進階 | 設定精靈、專案 MCP、診斷、重新啟動、離開 |
+| 進階 | 應用程式更新檢查、設定精靈、專案 MCP、診斷、重新啟動、離開 |
 | 插件 | 安裝、啟用、權限、更新與插件通知（日常使用在主畫面的插件分頁） |
 
 - **勿擾**會靜音系統通知、音效、額外動態與非必要氣泡，但不會停止事件接收。限時選項在系統匣選單：30 分鐘、1 小時、到明天 9:00，或直到手動關閉（限時勿擾最長 7 天）。結束時會有摘要通知，告知期間靜音了幾則提醒。
-- **通知**（預設開啟）涵蓋等待權限、等待輸入、完成與錯誤，每個工作階段有冷卻時間，結束類事件會合併。在 macOS 上，點擊只關於一個工作階段的等待權限或等待輸入通知，會切換到該工作階段的 App；其他通知則開啟 Sessions。**音效**（預設關閉）播放簡短的合成提示音，可分別開關各事件並調整音量。
-- **回到工作階段**（預設開啟）控制上述動作；**切換到 App**（macOS，預設開啟）有獨立開關。切換使用 `open -b`（LaunchServices），不需要「自動化」或「輔助使用」權限。只能啟用固定清單中的終端機、IDE 與 Claude App，而且一定要你點擊；Windows 暫不提供。
+- **通知**（預設開啟）涵蓋等待權限、等待輸入、完成與錯誤，每個工作階段有冷卻時間，結束類事件會合併。在 macOS 與 Windows 上，點擊只關於一個工作階段的等待權限或等待輸入通知，會切換到該工作階段的 App；其他通知則開啟 Sessions。**音效**（預設關閉）播放簡短的合成提示音，可分別開關各事件並調整音量。
+- **回到工作階段**（預設開啟）控制上述動作；**切換到 App**（macOS 與 Windows，預設開啟）有獨立開關。macOS 使用 `open -b`（LaunchServices），不需要「自動化」或「輔助使用」權限；Windows 把白名單執行檔（Windows Terminal、VS Code、Cursor、Windsurf、Zed、WezTerm、Hyper、Tabby）最上層的視窗帶到前景，不會啟動任何程式。只能啟用固定清單中的終端機、IDE 與 Claude App，而且一定要你點擊。
+- **應用程式更新**（設定 → 進階）顯示目前版本，並可向 GitHub Releases 查詢是否有新版。**自動檢查新版**預設關閉，開啟後每天最多查一次。只會提示並開啟版本頁面，不會下載或安裝（[docs/security/app-update-check.md](docs/security/app-update-check.md)）。
 - **擷取排除**只讓寵物視窗不出現在支援的截圖與錄影中（Windows 使用系統 API；macOS 為盡力而為）。**全螢幕自動隱藏**讓寵物避開其他 App 的 macOS 全螢幕 Space 或 Windows 無邊框全螢幕視窗；原生執行環境無法使用時會安全地停用。
 
 ## 權限氣泡
@@ -119,7 +124,7 @@ Agent 要求權限時，寵物上會出現液態玻璃氣泡，面板內也會�
 - **快捷鍵** — 只有在最上層請求符合條件（低或中風險）時才註冊全域快捷鍵：macOS 為 **Cmd+Shift+Y** 允許一次、**Cmd+Shift+N** 拒絕；Windows 為 **Ctrl+Shift+Y**、**Ctrl+Shift+N**。若按鍵被其他 App 占用，氣泡會說明，按鈕仍可使用。氣泡本身：**N** 或 **Esc** 拒絕；低風險按 **Y** 即允許一次，其他風險需按住 **Y** 0.6 秒。
 - **佇列** — 多個待處理請求會以可展開的清單顯示；**全部拒絕**需要再按一次確認。
 - 對無法在此回覆的 Agent（Codex，以及未開啟下列選項時的 Claude Code），氣泡只是提醒，請回到該工具處理。只提供「允許一次」與「拒絕」，刻意不提供永久核准。
-- **Claude Code**（預設關閉）— 在**設定 → 桌面 → 權限請求**開啟**從寵物回覆 Claude Code 權限**。之後 Claude Code 的 `PermissionRequest` hook 會在**等待秒數**內（預設 90 秒，可設 15–120 秒）等你回覆，終端機裡 Claude Code 自己的權限對話框同時保留，先回覆的一方生效，寵物卡片也會提示可在終端機回覆。一次點擊只回覆一個工具呼叫：若另一個工具呼叫正在等待完全相同的請求（例如兩個 subagent 執行同一個指令），第二個只能在終端機回覆。泡泡會在該工具執行完、Claude 開始下一個工具呼叫或權限詢問、回合結束或送出新提示，或等待逾時時撤下。由於終端機可能先回覆，權限紀錄會把 Claude Code 的決定標示為「終端機可能已先回覆」。寵物沒開、選項關閉、等待逾時或發生任何錯誤時，hook 不輸出任何內容，Claude Code 照原本流程進行（非互動的 `-p` 執行則照常拒絕）。你自己的 deny 規則仍優先於寵物的允許。拒絕時 Claude 只會收到固定文字 `Denied in Agent Pets. (已在 Agent Pets 拒絕)`。若其他工具也註冊了 `PermissionRequest` hook，會與我們並行執行，以哪一方的回覆為準由 Claude Code 決定。
+- **Claude Code**（預設關閉）— 在**設定 → 桌面 → 權限請求**開啟**從寵物回覆 Claude Code 權限**。之後 Claude Code 的 `PermissionRequest` hook 會在**等待秒數**內（預設 90 秒，可設 15–120 秒）等你回覆，終端機裡 Claude Code 自己的權限對話框同時保留，先回覆的一方生效，寵物卡片也會提示可在終端機回覆。一次點擊只回覆一個工具呼叫：若另一個工具呼叫正在等待完全相同的請求（例如兩個 subagent 執行同一個指令），第二個只能在終端機回覆。泡泡會在該工具執行完、Claude 開始下一個工具呼叫或權限詢問、回合結束或送出新提示，或等待逾時時撤下。由於終端機可能先回覆，權限紀錄會把 Claude Code 的決定標示為「終端機可能已先回覆」。寵物還在啟動時，被拒絕的請求會重試最多 5 秒，等待秒數也扣掉同樣的時間。寵物沒開、選項關閉、等待逾時或發生任何錯誤時，hook 不輸出任何內容，Claude Code 照原本流程進行（非互動的 `-p` 執行則照常拒絕）。你自己的 deny 規則仍優先於寵物的允許。拒絕時 Claude 只會收到固定文字 `Denied in Agent Pets. (已在 Agent Pets 拒絕)`。若其他工具也註冊了 `PermissionRequest` hook，會與我們並行執行，以哪一方的回覆為準由 Claude Code 決定。
 - **權限氣泡**可在設定中關閉；關閉後待處理請求仍由 broker 保管並顯示在系統匣標記上。**設定 → 桌面**也會列出最近的決定紀錄（只含時間、工具、來源與結果）。
 
 ## 插件
@@ -164,7 +169,7 @@ Hook 會附上每次安裝專屬的 `X-Agent-Pets-Token` 標頭（讀自 `~/.des
 
 ## 隱私與安全
 
-- 所有資料都留在你的電腦：歷史、XP、成就、紀錄與權杖都不會上傳。
+- 所有資料都留在你的電腦：歷史、XP、成就、紀錄與權杖都不會上傳。App 唯一會自行發出的請求是需手動開啟的更新檢查，只向 `api.github.com` 讀取最新版本，不送出任何關於你的資料。
 - Renderer 以沙盒、context isolation、無 Node.js、嚴格 CSP 與驗證過的 IPC 來源執行；Electron fuses 停用 RunAsNode 並強制只從 ASAR 載入。
 - 事件、權限與 Presentation MCP 伺服器只監聽 `127.0.0.1`（埠 17373–17375），使用各自獨立的安裝權杖，拒絕瀏覽器發起的請求並限制輸入速率；埠被占用時會退避重試。
 - 權限回應走獨立的埠與權杖，具備 TTL、一次性決定、防重放與已遮蔽的稽核紀錄。
@@ -180,14 +185,16 @@ Hook 會附上每次安裝專屬的 `X-Agent-Pets-Token` 標頭（讀自 `~/.des
 |------|----------|
 | 寵物一直顯示離線 | 按**等待真實事件**並執行一個提示詞。沒有事件：重新啟動工具（hook 在啟動時載入），再按**診斷**。 |
 | 診斷：找不到 Node.js 執行檔 | 安裝 Node.js 18 以上，然後按**修復**；它會寫入絕對路徑（從 Finder 或 Dock 啟動的 App 找不到單純的 `node`）。切換 nvm 版本後也需要**修復**。 |
-| Codex hooks 未啟用 | **修復**會在 `~/.codex/config.toml` 的 `[features]` 加入 `hooks = true`。 |
+| Codex hooks 未啟用 | **修復**會在 `CODEX_HOME`（預設 `~/.codex`）內 `config.toml` 的 `[features]` 加入 `hooks = true`。 |
+| 卡片：設定目錄無法使用 | `CLAUDE_CONFIG_DIR`、`CODEX_HOME` 或 `XDG_CONFIG_HOME` 是相對路徑、以 `~` 開頭，或指向不存在的資料夾。修正後重新啟動 Agent Pets。 |
 | 安裝被拒：不是有效的 JSON | `settings.json`／`hooks.json` 含註解或語法錯誤。Agent Pets 不會動它；請修正或移開該檔案後再安裝。 |
+| 安裝被拒：檔案被其他程式修改 | Agent Pets 更新時，Claude Code 或 Codex 連續兩次改寫了同一個檔案。沒有改動任何內容，請再試一次。 |
 | 橫幅：事件接收器離線 | 本機埠（17373–17375）被其他程式或舊的 Agent Pets 占用。關閉它；App 會自動重試，也可按**立即重試**。 |
 | Hook 腳本過期 | **修復**會重新部署。 |
 | Claude Code 看不到專案 MCP | 在 `/mcp` 核准 `agent-pets`。Codex 需要先信任該專案。 |
 | 寵物凍結或空白 | 使用系統匣（進階）的**重新載入寵物**，或設定 → 進階的**重新啟動寵物**。 |
 | macOS：**開機時啟動**一直顯示需核准 | 到「系統設定 → 一般 → 登入項目」核准 Agent Pets（設定頁有按鈕可直接開啟）。請先把 App 移到「應用程式」資料夾；從磁碟映像或下載資料夾執行時無法註冊登入項目。 |
-| Windows：按**重新啟動**後程式關閉卻沒有再開 | 免安裝版已修正，會重新啟動原本的 `.exe`，而不是暫時解壓縮的資料夾。若仍失敗，請手動再開啟 `.exe`。 |
+| Windows：按**重新啟動**後程式關閉卻沒有再開 | 免安裝版已修正，會重新啟動原本的 `.exe`，而不是暫時解壓縮的資料夾；安裝版重新啟動安裝目錄中的 `.exe`。若仍失敗，請手動再開啟 `.exe`。 |
 | 回報問題 | 匯出診斷並附上檔案。 |
 
 ## 開發
@@ -206,7 +213,8 @@ pnpm dev
 | `pnpm dev` / `pnpm dev:safe` | Vite + Electron 開發模式；Windows GPU 程序當機時，`dev:safe` 改用軟體算圖 |
 | `pnpm test:unit` / `pnpm test:unit:watch` | `tests/` 內的 Node 內建測試（不會啟動 Electron） |
 | `pnpm test:coverage` | 單元測試，並對主行程模組設定 85% 行覆蓋率下限 |
-| `pnpm lint` | 主行程守門（未處理的 `loadURL`、全域錯誤處理） |
+| `pnpm test:smoke` | 先 `pnpm exec vite build`：啟動隔離的 Electron App、送一筆事件、確認狀態並結束（本機請加 `--offscreen`） |
+| `pnpm lint` | ESLint（Vue／TypeScript、`@/` import 規則、`electron/` 的未處理 Promise）與主行程全域錯誤處理守門 |
 | `pnpm exec vue-tsc --noEmit` | 型別檢查 |
 | `pnpm check:bundle-size` | 任一 renderer chunk 超過 250 KB 即失敗（需先 `vite build`） |
 | `pnpm check:bundle` | 驗證插件面板 tokens 的 bundle |
@@ -214,6 +222,7 @@ pnpm dev
 | `pnpm check:design` / `check:design:strict` | 回報寫死的顏色、尺寸、間距、transition 時長與 easing；`--strict` 會直接失敗（見 [docs/dev/design-tokens.md](docs/dev/design-tokens.md)） |
 | `pnpm build` / `pnpm build:fast` | 型別檢查、Vite 建置，再由 electron-builder 輸出到 `release/`（`build:fast` 不壓縮） |
 | `pnpm bench`、`pnpm bench:lag` | 效能基準測試 |
+| `pnpm bench:lag:check` | 對照 `scripts/bench/event-loop-lag.baseline.json` 檢查事件迴圈延遲，超過門檻就以 1 結束（見 `docs/perf/event-loop-lag-baseline.md`） |
 
 兩個建置指令都會先關閉本專案的 Agent Pets 程序。若想在真實 Electron App 中驗證修改又不動到你的資料，先執行 `pnpm exec vite build`，再執行 `node scripts/e2e-isolated-electron.mjs`（暫時的 home 與 userData、假的 `safeStorage`，所以不會碰到 macOS 鑰匙圈；本機埠預設為 27373–27375，已安裝的版本可保有 17373–17375，`--hook-port-base` 可改用另一組，`--real-hook-ports` 才用預設埠，`--reuse-root` 沿用上一次的 home 重新啟動，供冷啟動測試使用；見 [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)）。
 
@@ -221,17 +230,17 @@ pnpm dev
 
 **Agent 狀態** — 依狀態而定的資料都集中在兩張以 `satisfies Record<AgentState, …>` 檢查的表：`src/types/agent.ts` 的 `AGENT_STATE_POLICY`（優先度、桌面通知、歷史結局，主行程共用）與 `src/utils/agent-state-presentation.ts` 的 `AGENT_STATE_PRESENTATION`（標籤、顏色、螢幕閱讀器文字、狀態列用字、迷你徽章、音效）。新增狀態時兩張表沒填齊，型別檢查就會失敗。唯一的例外是每個狀態對應的寵物動作：它要看前一個狀態與時間，所以留在 `src/utils/pet-motion-plan.ts` 用邏輯判斷。
 
-**Agent 來源** — 6 個事件來源（`claude`、`codex-desktop` 等）與 3 個工具家族（Codex、Claude、OpenCode）只在 `src/types/agent.ts` 列一次：`AGENT_SOURCE_REGISTRY`（名稱、家族、CLI 或 Desktop）與 `AGENT_FAMILY_REGISTRY`（家族名稱、adapter id、有沒有訂閱額度、本機 token 紀錄）。來源名稱、狀態列的家族順序、每家族的寵物、quota 條、通知上的名稱、adapter 的來源清單，以及主行程的白名單（事件來源、權限來源、插件不能用的名稱）都由這兩張表推導。hook 腳本與安裝程式（`integrations/`、`electron/setup.ts`、`electron/hook-config.ts`）仍各自寫著來源字串。新增來源前先看 [docs/dev/agent-sources.md](docs/dev/agent-sources.md)。
+**Agent 來源** — 6 個事件來源（`claude`、`codex-desktop` 等）與 3 個工具家族（Codex、Claude、OpenCode）只在 `src/types/agent.ts` 列一次：`AGENT_SOURCE_REGISTRY`（名稱、家族、CLI 或 Desktop）與 `AGENT_FAMILY_REGISTRY`（家族名稱、adapter id、有沒有訂閱額度、本機 token 紀錄）。來源名稱、狀態列的家族順序、每家族的寵物、quota 條、通知上的名稱、adapter 的來源清單，以及主行程的白名單（事件來源、權限來源、插件不能用的名稱）都由這兩張表推導。hook 腳本與安裝程式（`integrations/`、`electron/setup.ts`、`electron/hook-config.ts`）仍各自寫著來源字串，由 `tests/hook-literal-contract.test.mts` 等契約測試核對（清單見下方文件）。新增來源前先看 [docs/dev/agent-sources.md](docs/dev/agent-sources.md)。
 
 **音效** — 哪個狀態播哪個 cue，由 `AGENT_STATE_PRESENTATION` 的 `cue` 欄位決定。其餘跟音效有關的資料都在 `src/types/sound.ts`，以 `satisfies Record<SoundCue, …>` 檢查並深層凍結。表裡有每個 cue 的音形（頻率、時間、增益、波形）、對應的開關和試聽按鈕，也有共用的包絡、同一個 cue 3 秒內只播一次的節流、任務至少跑 15 秒完成時才出聲的門檻、0–100 的音量範圍，以及主行程也會用到的持久化預設值。`src/utils/sound.ts` 只負責排程 Web Audio 節點；`src/utils/sound-policy.ts` 只判斷能不能播，條件是音效開著、沒開勿擾、寵物看得到，而且這個 cue 自己的開關也開著。`tests/sound-registry.test.mts` 會比對每個狀態排程出去的聲音，確認跟改成 registry 之前完全相同；見 [docs/dev/sound-registry.md](docs/dev/sound-registry.md)。
 
 在原始碼目錄執行 `node integrations/install.mjs` 可用與精靈相同的保護機制安裝 hook（`--claude-code` 只處理 Claude Code，`--uninstall` 則移除）。
 
-**CI** — `ci.yml` 在 pull request 與 `main` 推送涉及文件以外的變更時執行：型別檢查、`pnpm lint`、`pnpm test:coverage`、`vite build`、bundle 大小、插件面板 bundle 與對比度檢查、設計 token 報告，以及不阻擋合併的相依套件稽核。`ci-platforms.yml` 每週與手動觸發時，在 macOS 與 Windows 上執行型別檢查與單元測試。
+**CI** — `ci.yml` 在 pull request 與 `main` 推送涉及文件以外的變更時執行：型別檢查、`pnpm lint`、`pnpm test:coverage`、`vite build`、bundle 大小、插件面板 bundle 與對比度檢查、設計 token 報告、Electron 冒煙測試（`pnpm test:smoke`：在隔離的 HOME 與假的 `safeStorage` 下啟動 App、送一筆事件、確認寵物狀態、正常結束；Linux 透過 xvfb 執行，見 [docs/dev/e2e-without-keychain.md](docs/dev/e2e-without-keychain.md)），事件迴圈延遲基準門檻（有 `bench:lag:check` script 時執行），以及正式依賴的漏洞稽核（有 high 以上漏洞就失敗，所以上游新公告可能讓 CI 自己變紅，處理步驟見 [docs/phase-reports/phase-packaging-ci.md](docs/phase-reports/phase-packaging-ci.md)；連不上公告來源只警告）。workflow 的 action 都固定到 commit SHA。`ci-platforms.yml` 每週、手動觸發，以及改到它自己或冒煙腳本的 PR，會在 macOS 與 Windows 上執行型別檢查、單元測試與冒煙測試。
 
 ## 版本與發佈
 
-在 `package.json` 提高 `version`（預設升 patch；永久資料結構、公開契約或安全邊界的變更才升 minor）。該 commit 進入 `main` 且尚無 `v<version>` tag 時，`.github/workflows/release.yml` 會執行型別檢查與單元測試，建置 macOS arm64 與 x64 的 `.dmg` 及 Windows 可攜版 `.exe`，再建立 tag 與附自動產生說明的 GitHub Release。也可從 Actions 頁面重新執行，已有 tag 的版本會被略過。兩個 macOS job 各在同架構的 runner 上建置（x64 用 Intel），原生模組才會是對的架構；electron-builder 在寫入 fuses 之後對整個 bundle 做 ad-hoc 簽章（`mac.identity: "-"`，沒有憑證、沒有公證）。接著 `scripts/check-mac-bundle.mjs` 掛載 dmg 檢查：`codesign --verify --deep --strict` 要通過、fuses 要等於 `build.electronFuses`、每個 Mach-O 與 `*.node` 都要是目標架構，任何一項不符就讓發版失敗。release job 會把 `SHA256SUMS.txt` 跟安裝檔一起上傳。electron-builder 從 GitHub releases 下載 Electron 或工具失敗時，會改經 `scripts/release-asset-mirror.mjs` 再試兩次：它只聽 127.0.0.1，經 GitHub API 下載同一個 release 檔案，checksum 仍由 electron-builder 驗證。
+在 `package.json` 提高 `version`（預設升 patch；永久資料結構、公開契約或安全邊界的變更才升 minor）。該 commit 進入 `main` 且尚無 `v<version>` tag 時，`.github/workflows/release.yml` 會執行型別檢查與單元測試，建置 macOS arm64 與 x64 的 `.dmg`、Windows 安裝版與可攜版 `.exe`，以及 Linux 的 `.AppImage` 與 `.deb`，再建立 tag 與附自動產生說明的 GitHub Release。也可從 Actions 頁面重新執行，已有 tag 的版本會被略過；在 `main` 以外的分支手動觸發時仍會建置並上傳 artifact，但不會讀取簽章 secrets，也不會建立 Release。兩個 macOS job 各在同架構的 runner 上建置（x64 用 Intel），原生模組才會是對的架構；沒有設定簽章 secrets 時，electron-builder 在寫入 fuses 之後對整個 bundle 做 ad-hoc 簽章（`mac.identity: "-"`，沒有憑證、沒有公證），Windows 不簽章；設定了 Developer ID、App Store Connect API key 或 Windows 憑證的 secrets，下一次發版就自動改用正式簽章、公證與 staple（secret 名稱與取得方式見 [docs/dev/release-signing.md](docs/dev/release-signing.md)）。接著 `scripts/check-mac-bundle.mjs` 掛載 dmg 檢查：`codesign --verify --deep --strict` 要通過、fuses 要等於 `build.electronFuses`、每個 Mach-O 與 `*.node` 都要是目標架構；正式簽章時另外檢查 Developer ID、hardened runtime、`spctl` 與公證票據，Windows 簽章時檢查兩個 `.exe` 的 Authenticode 狀態。任何一項不符就讓發版失敗。release job 會把 `SHA256SUMS.txt` 跟安裝檔一起上傳。electron-builder 從 GitHub releases 下載 Electron 或工具失敗，且輸出看起來是下載或網路錯誤（簽章或公證失敗會直接失敗、不重試）時，會改經 `scripts/release-asset-mirror.mjs` 再試兩次：它只聽 127.0.0.1，經 GitHub API 下載同一個 release 檔案，checksum 仍由 electron-builder 驗證。
 
 ## 授權
 

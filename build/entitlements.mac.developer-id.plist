@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  只在「正式簽章（Developer ID）」路徑使用，由 release.yml 以
+  --config.mac.entitlements / --config.mac.entitlementsInherit 傳給 electron-builder。
+  不叫 entitlements.mac.plist：electron-builder 會自動採用該檔名，連 ad-hoc 路徑也會被改變。
+  同一份檔案同時給主程式與 Helper（Renderer、GPU、Plugin）使用。
+
+  - allow-jit：V8 與 koffi 的 trampoline 需要 MAP_JIT 可執行記憶體，hardened runtime 下必須明講。
+  - 刻意不加 disable-library-validation：正式簽章時 electron-builder 會用同一個 Developer ID
+    簽整個 bundle（含 app.asar.unpacked 內的 koffi *.node），dlopen 時 Team ID 一致，
+    library validation 可以通過。ad-hoc 路徑沒有 Team ID，所以 ad-hoc 才需要這個 entitlement
+    （ad-hoc 仍沿用 electron-builder 預設 entitlements，不受此檔影響）。
+  - 刻意不加 allow-unsigned-executable-memory：Electron 43 的 V8 只需要 allow-jit。
+    若第一次正式簽章的 app 在啟動時被系統終止，再依 Console 的 crash log 決定是否補上。
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+  </dict>
+</plist>

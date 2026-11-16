@@ -10,8 +10,21 @@ import { registerPanelThemeIpc, type PanelThemeIpcDependencies } from '../electr
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { prepareUserImage, storeUserImage, deleteUserImage } from '../electron/panel-theme-images.ts'
 import { readUserPanelThemeImportFile, writeUserPanelThemeExportFile } from '../electron/panel-theme-user-store.ts'
-import { USER_PANEL_THEME_NAME_MAX, USER_PANEL_THEME_OWNER } from '../src/types/panel-theme-user.ts'
+import { USER_PANEL_THEME_NAME_MAX, USER_PANEL_THEME_OWNER, type PanelThemeValidateIpcResult, type UserPanelThemeIpcResult } from '../src/types/panel-theme-user.ts'
+import type { PanelThemeIpcResult } from '../src/types/panel-theme.ts'
 import { builtinDefinition, png } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
+
+// 先斷言 ok 分支再取值：讀錯分支的欄位只會得到 undefined，斷言訊息會很難看懂。
+function okValue<V>(result: { ok: true; value: V } | { ok: false }): V {
+  assert.ok(result.ok, JSON.stringify(result))
+  return result.value
+}
+
+function failure<R extends { ok: boolean }>(result: R): Extract<R, { ok: false }> {
+  assert.equal(result.ok, false, JSON.stringify(result))
+  return result as Extract<R, { ok: false }>
+}
 
 const USER_CHANNELS = [
   IPC_CHANNELS.panelThemeValidate, IPC_CHANNELS.panelThemeUserList, IPC_CHANNELS.panelThemeUserCreate, IPC_CHANNELS.panelThemeUserUpdate,
@@ -88,8 +101,12 @@ function setup(dialog: { open?: string[]; save?: string } = {}) {
     pluginPanelError: () => 'plugin_action_failed',
     now: () => Date.parse('2026-11-08T00:00:00.000Z'),
   })
-  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)!('panel' as unknown as IpcMainInvokeEvent, ...args) as Promise<any> | any
-  return { userData, runtime, sent, handlers, invoke, dialogFilters, cleanup: () => fs.rmSync(userData, { recursive: true, force: true }) }
+  const invoke = (channel: string, ...args: unknown[]): unknown => handlers.get(channel)!('panel' as unknown as IpcMainInvokeEvent, ...args)
+  const validate = (...args: unknown[]) => invoke(IPC_CHANNELS.panelThemeValidate, ...args) as PanelThemeValidateIpcResult
+  const user = (channel: string, ...args: unknown[]) => invoke(channel, ...args) as UserPanelThemeIpcResult
+  const userAsync = (channel: string, ...args: unknown[]) => invoke(channel, ...args) as Promise<UserPanelThemeIpcResult>
+  const theme = (channel: string, ...args: unknown[]) => invoke(channel, ...args) as PanelThemeIpcResult | Promise<PanelThemeIpcResult>
+  return { userData, runtime, sent, handlers, invoke, validate, user, userAsync, theme, dialogFilters, cleanup: () => removeTempTree(userData) }
 }
 
 test('every user theme channel rejects senders other than the panel main frame', async () => {
@@ -110,55 +127,52 @@ test('validate returns structured diagnostics, rejects oversized or extra payloa
     assert.deepEqual(context.invoke(IPC_CHANNELS.panelThemeValidate, builtinDefinition()), { ok: true, value: { valid: true, issues: [], minDim: {} } })
     const bad = builtinDefinition()
     bad.modes.dark.colors.textMuted = 'rgb(60 60 60 / 1)'
-    const result = context.invoke(IPC_CHANNELS.panelThemeValidate, bad)
-    assert.equal(result.ok, true)
-    assert.equal(result.value.valid, false)
-    const issue = result.value.issues[0]
+    const result = okValue(context.validate(bad))
+    assert.equal(result.valid, false)
+    const issue = result.issues[0]
     assert.equal(issue.mode, 'dark')
     assert.equal(issue.path, 'colors.textMuted')
     assert.equal(issue.required, 4.5)
     assert.equal(typeof issue.suggested, 'string')
     // 相同內容（屬性順序不同）直接命中快取，回傳同一個物件。
     const reordered = { modes: structuredClone(bad.modes), shape: { ...bad.shape }, typography: { ...bad.typography } }
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeValidate, reordered).value, result.value)
+    assert.equal(okValue(context.validate(reordered)), result)
     assert.deepEqual(context.invoke(IPC_CHANNELS.panelThemeValidate, { ...builtinDefinition(), padding: 'x'.repeat(17 * 1024) }), { ok: false, error: 'invalid_request' })
     assert.deepEqual(context.invoke(IPC_CHANNELS.panelThemeValidate, builtinDefinition(), 'extra'), { ok: false, error: 'invalid_request' })
-    const schema = context.invoke(IPC_CHANNELS.panelThemeValidate, { nope: true })
-    assert.equal(schema.value.valid, false)
-    assert.equal(typeof schema.value.schemaError.path, 'string')
+    const schema = okValue(context.validate({ nope: true }))
+    assert.equal(schema.valid, false)
+    assert.equal(typeof schema.schemaError?.path, 'string')
   } finally { context.cleanup() }
 })
 
 test('my themes appear in the catalog, apply through the slot channel and fall back to built-in when deleted', async () => {
   const context = setup()
   try {
-    const created = context.invoke(IPC_CHANNELS.panelThemeUserCreate, 'Sakura', builtinDefinition())
-    assert.equal(created.ok, true)
-    const id = created.value.id as string
+    const created = okValue(context.user(IPC_CHANNELS.panelThemeUserCreate, 'Sakura', builtinDefinition()))
+    const id = created.id as string
     const ref = { pluginId: USER_PANEL_THEME_OWNER, themeId: id }
     const entry = context.runtime.getState().themes.find(theme => theme.ref.themeId === id)
     assert.deepEqual(entry?.ref, ref)
     assert.equal(entry?.displayName['en-US'], 'Sakura')
     assert.equal(entry?.pluginName['en-US'], 'My themes')
     // 插件全部關閉也照樣可以套用（使用者主題不是插件）。
-    const applied = context.invoke(IPC_CHANNELS.panelThemeSlotSet, 'dark', ref)
+    const applied = await context.theme(IPC_CHANNELS.panelThemeSlotSet, 'dark', ref)
     assert.equal(applied.ok, true)
     assert.equal(context.runtime.getState().slots.dark.status, 'active')
     assert.equal(context.runtime.getPetStatus().dark !== null, true)
     const invalid = builtinDefinition()
     invalid.modes.light.colors.text = 'rgb(240 240 240 / 1)'
-    const rejected = context.invoke(IPC_CHANNELS.panelThemeUserUpdate, id, invalid)
-    assert.equal(rejected.ok, false)
+    const rejected = failure(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, invalid))
     assert.equal(rejected.error, 'invalid_panel_theme')
-    assert.equal(rejected.validation.valid, false)
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserRename, id, 'Night').value.themes[0].name, 'Night')
-    const copy = context.invoke(IPC_CHANNELS.panelThemeUserDuplicate, id, 'Night copy')
-    assert.equal(copy.value.themes.length, 2)
+    assert.equal(rejected.validation?.valid, false)
+    assert.equal(okValue(context.user(IPC_CHANNELS.panelThemeUserRename, id, 'Night')).themes[0].name, 'Night')
+    const copy = okValue(context.user(IPC_CHANNELS.panelThemeUserDuplicate, id, 'Night copy'))
+    assert.equal(copy.themes.length, 2)
     assert.deepEqual(context.invoke(IPC_CHANNELS.panelThemeUserDelete, 'u-../../x'), { ok: false, error: 'invalid_request' })
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserDelete, id).ok, true)
+    assert.equal(context.user(IPC_CHANNELS.panelThemeUserDelete, id).ok, true)
     assert.equal(context.runtime.getState().slots.dark.status, 'builtin')
     assert.equal(context.runtime.getState().slots.dark.ref, null)
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserDelete, id).error, 'theme_not_found')
+    assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserDelete, id)).error, 'theme_not_found')
   } finally { context.cleanup() }
 })
 
@@ -172,10 +186,9 @@ test('user background images reuse the host import, are served with panel CORS f
     definition.modes.light.colors.textMuted = 'rgb(80 72 60 / 1)'
     definition.modes.light.colors.accent = 'rgb(120 60 140 / 1)'
     definition.modes.light.image = { fit: 'cover', overlayColor: definition.modes.light.colors.bg, dim: 0.95 }
-    const created = context.invoke(IPC_CHANNELS.panelThemeUserCreate, 'Photo', definition)
-    assert.equal(created.ok, true, JSON.stringify(created))
-    const ref = { pluginId: USER_PANEL_THEME_OWNER, themeId: created.value.id }
-    const imported = await context.invoke(IPC_CHANNELS.panelThemeUserImageImport, ref, 'light')
+    const created = okValue(context.user(IPC_CHANNELS.panelThemeUserCreate, 'Photo', definition))
+    const ref = { pluginId: USER_PANEL_THEME_OWNER, themeId: created.id }
+    const imported = await context.theme(IPC_CHANNELS.panelThemeUserImageImport, ref, 'light')
     assert.equal(imported.ok, true, JSON.stringify(imported))
     const current = context.runtime.getState().themes[0]!.modes.light!.userImage!.current!
     const response = await context.runtime.handleRequest(current.url, 'GET')
@@ -186,12 +199,12 @@ test('user background images reuse the host import, are served with panel CORS f
     // 啟動清掃不會把「我的主題」的圖片目錄當成孤兒刪掉。
     context.runtime.sweep()
     assert.equal(fs.readdirSync(directory).length, 1)
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserDelete, ref.themeId).ok, true)
+    assert.equal(context.user(IPC_CHANNELS.panelThemeUserDelete, ref.themeId).ok, true)
     assert.deepEqual(context.runtime.store.get().userImages, {})
     assert.equal(fs.existsSync(directory) ? fs.readdirSync(directory).length : 0, 0)
   } finally {
     context.cleanup()
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })
 
@@ -200,8 +213,8 @@ test('export writes only name and definition; import is strictly validated and c
   const target = path.join(scratch, 'out.json')
   const context = setup({ save: target })
   try {
-    const id = context.invoke(IPC_CHANNELS.panelThemeUserCreate, 'Sakura <night>', builtinDefinition()).value.id
-    assert.equal((await context.invoke(IPC_CHANNELS.panelThemeUserExport, id)).ok, true)
+    const id = okValue(context.user(IPC_CHANNELS.panelThemeUserCreate, 'Sakura <night>', builtinDefinition())).id
+    assert.equal((await context.userAsync(IPC_CHANNELS.panelThemeUserExport, id)).ok, true)
     const exported = JSON.parse(fs.readFileSync(target, 'utf8'))
     assert.deepEqual(Object.keys(exported).sort(), ['definition', 'format', 'name', 'schemaVersion'])
     assert.doesNotMatch(fs.readFileSync(target, 'utf8'), new RegExp(context.userData.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
@@ -216,28 +229,27 @@ test('export writes only name and definition; import is strictly validated and c
     fs.writeFileSync(unreadable, JSON.stringify(weak))
     const importer = setup({ open: [target, bad, huge, unreadable] })
     try {
-      const imported = await importer.invoke(IPC_CHANNELS.panelThemeUserImport)
-      assert.equal(imported.ok, true)
-      assert.equal(imported.value.themes[0].name, exported.name)
-      assert.deepEqual(imported.value.themes[0].definition, exported.definition)
-      assert.equal((await importer.invoke(IPC_CHANNELS.panelThemeUserImport)).error, 'theme_import_invalid')
-      assert.equal((await importer.invoke(IPC_CHANNELS.panelThemeUserImport)).error, 'theme_import_invalid')
-      const rejected = await importer.invoke(IPC_CHANNELS.panelThemeUserImport)
+      const imported = okValue(await importer.userAsync(IPC_CHANNELS.panelThemeUserImport))
+      assert.equal(imported.themes[0].name, exported.name)
+      assert.deepEqual(imported.themes[0].definition, exported.definition)
+      assert.equal(failure(await importer.userAsync(IPC_CHANNELS.panelThemeUserImport)).error, 'theme_import_invalid')
+      assert.equal(failure(await importer.userAsync(IPC_CHANNELS.panelThemeUserImport)).error, 'theme_import_invalid')
+      const rejected = failure(await importer.userAsync(IPC_CHANNELS.panelThemeUserImport))
       assert.equal(rejected.error, 'invalid_panel_theme')
-      assert.equal(rejected.validation.valid, false)
-      assert.equal((await importer.invoke(IPC_CHANNELS.panelThemeUserImport)).error, 'cancelled')
+      assert.equal(rejected.validation?.valid, false)
+      assert.equal(failure(await importer.userAsync(IPC_CHANNELS.panelThemeUserImport)).error, 'cancelled')
       assert.equal(importer.runtime.userThemes.list().length, 1)
     } finally { importer.cleanup() }
   } finally {
     context.cleanup()
-    fs.rmSync(scratch, { recursive: true, force: true })
+    removeTempTree(scratch)
   }
 })
 
 test('names are size-checked before normalisation on every channel that takes one', () => {
   const context = setup()
   try {
-    const id = context.invoke(IPC_CHANNELS.panelThemeUserCreate, 'Mine', builtinDefinition()).value.id
+    const id = okValue(context.user(IPC_CHANNELS.panelThemeUserCreate, 'Mine', builtinDefinition())).id
     const huge = 'あ'.repeat(USER_PANEL_THEME_NAME_MAX * 4 + 1)
     const calls: Array<[string, ...unknown[]]> = [
       [IPC_CHANNELS.panelThemeUserCreate, huge, builtinDefinition()],
@@ -250,7 +262,7 @@ test('names are size-checked before normalisation on every channel that takes on
     ]
     for (const [channel, ...args] of calls) assert.deepEqual(context.invoke(channel, ...args), { ok: false, error: 'invalid_request' }, channel)
     // 上限內但清理後仍太長的名稱，由 store 的規則拒絕。
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserRename, id, 'x'.repeat(USER_PANEL_THEME_NAME_MAX + 1)).error, 'invalid_request')
+    assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserRename, id, 'x'.repeat(USER_PANEL_THEME_NAME_MAX + 1))).error, 'invalid_request')
     assert.deepEqual(context.runtime.userThemes.list().map(theme => theme.name), ['Mine'])
   } finally { context.cleanup() }
 })
@@ -258,24 +270,23 @@ test('names are size-checked before normalisation on every channel that takes on
 test('update can rename in the same atomic write; a bad name or definition leaves the record unchanged', () => {
   const context = setup()
   try {
-    const id = context.invoke(IPC_CHANNELS.panelThemeUserCreate, 'Mine', builtinDefinition()).value.id as string
+    const id = okValue(context.user(IPC_CHANNELS.panelThemeUserCreate, 'Mine', builtinDefinition())).id as string
     const file = path.join(context.runtime.userThemes.directory, `${id}.json`)
     const definition = builtinDefinition()
     definition.shape = { radiusSm: 2, radiusMd: 4, radiusLg: 6 }
-    const saved = context.invoke(IPC_CHANNELS.panelThemeUserUpdate, id, definition, '  Renamed  ')
-    assert.equal(saved.ok, true)
-    assert.deepEqual(saved.value.themes.map((theme: { name: string }) => theme.name), ['Renamed'])
+    const saved = okValue(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, definition, '  Renamed  '))
+    assert.deepEqual(saved.themes.map(theme => theme.name), ['Renamed'])
     const onDisk = JSON.parse(fs.readFileSync(file, 'utf8'))
     assert.equal(onDisk.name, 'Renamed')
     assert.equal(onDisk.definition.shape.radiusLg, 6)
     // 只改定義時名稱不變；三個以上的引數一律拒絕。
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition()).value.themes[0].name, 'Renamed')
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition(), 'A', 'extra').error, 'invalid_request')
+    assert.equal(okValue(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition())).themes[0].name, 'Renamed')
+    assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition(), 'A', 'extra')).error, 'invalid_request')
     const before = fs.readFileSync(file, 'utf8')
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserUpdate, id, definition, '   ').error, 'invalid_request')
+    assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, definition, '   ')).error, 'invalid_request')
     const invalid = builtinDefinition()
     invalid.modes.light.colors.text = 'rgb(240 240 240 / 1)'
-    assert.equal(context.invoke(IPC_CHANNELS.panelThemeUserUpdate, id, invalid, 'Other').error, 'invalid_panel_theme')
+    assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, invalid, 'Other')).error, 'invalid_panel_theme')
     assert.equal(fs.readFileSync(file, 'utf8'), before)
   } finally { context.cleanup() }
 })
@@ -297,7 +308,7 @@ test('export file names keep letters in any script and drop everything unsafe', 
 test('dialog filter names come from the locale table', async () => {
   const context = setup()
   try {
-    const id = context.invoke(IPC_CHANNELS.panelThemeUserCreate, 'Mine', builtinDefinition()).value.id
+    const id = okValue(context.user(IPC_CHANNELS.panelThemeUserCreate, 'Mine', builtinDefinition())).id
     await context.invoke(IPC_CHANNELS.panelThemeUserExport, id)
     await context.invoke(IPC_CHANNELS.panelThemeUserImport)
     assert.deepEqual(context.dialogFilters, ['design.themeEditor.fileFilter', 'design.themeEditor.fileFilter'])

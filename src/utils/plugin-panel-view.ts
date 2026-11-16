@@ -27,10 +27,12 @@ export function maximizedPluginPanelWindowSize(current: PluginPanelWindowSize, a
 }
 
 export function pluginPanelViewCloseError(reason: PluginPanelViewCloseReason): string {
-  if (reason === 'hidden') return 'hidden'
-  if (reason === 'load_failed') return 'panel_load_failed'
-  if (reason === 'renderer_crashed') return 'panel_crashed'
-  if (reason === 'renderer_unavailable') return 'panel_unavailable'
-  if (reason === 'disabled') return 'disabled'
-  return 'panel_closed'
+  switch (reason) {
+    case 'hidden': return 'hidden'
+    case 'load_failed': return 'panel_load_failed'
+    case 'renderer_crashed': return 'panel_crashed'
+    case 'renderer_unavailable': return 'panel_unavailable'
+    case 'disabled': return 'disabled'
+    default: return 'panel_closed'
+  }
 }

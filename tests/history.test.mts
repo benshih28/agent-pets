@@ -5,7 +5,22 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import test from 'node:test'
 import { HistoryStore, safeModelId, trimQueuedEvents } from '../electron/history.ts'
-import type { AgentStatusEvent } from '../src/types/agent.ts'
+import type { AgentState, AgentStatusEvent } from '../src/types/agent.ts'
+import { removeTempTree } from './support/temp-dir.mts'
+
+interface RawDatabase {
+  exec(sql: string): void
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown
+    get(...params: unknown[]): Record<string, unknown> | undefined
+    all(...params: unknown[]): Array<Record<string, unknown>>
+  }
+}
+
+// database 是 HistoryStore 的 private 欄位且沒有公開 API；測試要直接查 SQLite（索引、EXPLAIN、造資料），只在此處集中穿透一次。
+function rawDatabase(store: HistoryStore): RawDatabase {
+  return (store as unknown as { database: RawDatabase }).database
+}
 
 function databasePath(): { filePath: string; directory: string } {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-history-'))
@@ -31,7 +46,7 @@ test('history writes idempotent events and serves seven-day aggregates', (t) => 
     now: () => now,
     localDate: timestamp => timestamp < Date.UTC(2026, 7, 13) ? '2026-08-10' : '2026-08-13',
   })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
 
   assert.equal(store.recordEvent(event({ timestamp: dayOne, eventId: 'start' })), true)
   assert.equal(store.recordEvent(event({ state: 'tool-running', timestamp: dayOne + 60_000, eventId: 'tool' })), true)
@@ -61,7 +76,7 @@ test('history distinguishes estimated and exact token quality and redacts event 
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
 
   assert.equal(store.recordEvent(event({
     eventId: 'estimated',
@@ -90,7 +105,7 @@ test('quota snapshots are bounded and history clear is independent from XP stora
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
 
   assert.equal(store.recordQuotaSnapshot({
     updatedAt: new Date(now).toISOString(),
@@ -117,7 +132,7 @@ test('history filters by project and keeps identical session IDs isolated', (t) 
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
 
   const projectA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
   const projectB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -158,7 +173,7 @@ test('history counts each terminal session once across distinct completion event
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
 
   assert.equal(store.recordEvent(event({ eventId: 'success-1', state: 'success', timestamp: now })), true)
   assert.equal(store.recordEvent(event({ eventId: 'success-2', state: 'success', timestamp: now + 1_000 })), true)
@@ -199,12 +214,12 @@ test('daily summary pet/date index preserves 1,000 seeded query results', (t) =>
     now: () => now,
     localDate: timestamp => new Date(timestamp).toISOString().slice(0, 10),
   })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
 
   const dates = Array.from({ length: 7 }, (_, index) => `2026-10-${String(20 + index).padStart(2, '0')}`)
   const pets = ['aang-airbender', 'local-usage', 'wolf']
   const adapters = ['claude-code', 'codex', 'generic-http']
-  const insert = store.database.prepare(`
+  const insert = rawDatabase(store).prepare(`
     INSERT INTO daily_stats(
       local_date, pet_id, project_id, adapter_id, sessions_completed, sessions_failed,
       active_ms, token_input, token_output, token_quality
@@ -242,7 +257,7 @@ test('daily summary pet/date index preserves 1,000 seeded query results', (t) =>
     }
     return Array.from({ length: 1_000 }, () => {
       const petId = pets[next() % pets.length]!
-      const rows = store.database.prepare(querySql).all(petId, 'local-usage', ...dates)
+      const rows = rawDatabase(store).prepare(querySql).all(petId, 'local-usage', ...dates)
       return rows.map(row => [
         row.local_date, row.pet_id, row.project_id, row.adapter_id, row.sessions_completed,
         row.sessions_failed, row.active_ms, row.token_input, row.token_output, row.token_quality,
@@ -250,14 +265,14 @@ test('daily summary pet/date index preserves 1,000 seeded query results', (t) =>
     })
   }
 
-  store.database.exec('DROP INDEX idx_daily_stats_pet_date')
+  rawDatabase(store).exec('DROP INDEX idx_daily_stats_pet_date')
   const withoutIndex = runCases()
-  store.database.exec(`
+  rawDatabase(store).exec(`
     CREATE INDEX idx_daily_stats_pet_date ON daily_stats(pet_id, local_date)
   `)
   const withIndex = runCases()
   assert.deepEqual(withIndex, withoutIndex)
-  const plan = store.database.prepare(`EXPLAIN QUERY PLAN ${querySql}`).all('aang-airbender', 'local-usage', ...dates)
+  const plan = rawDatabase(store).prepare(`EXPLAIN QUERY PLAN ${querySql}`).all('aang-airbender', 'local-usage', ...dates)
   assert.ok(plan.some(row => String(row.detail).includes('idx_daily_stats_pet_date')))
 })
 
@@ -288,7 +303,7 @@ test('history v4 migration repairs inflated completion aggregates from unique se
   raw.close()
 
   const repaired = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { repaired.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { repaired.close(); removeTempTree(database.directory) })
   assert.equal(repaired.getSummary().totals.sessionsCompleted, 1)
   assert.equal(repaired.getSummary().totals.tokenInput, 10)
   assert.equal(repaired.getSummary().totals.tokenOutput, 5)
@@ -321,7 +336,7 @@ test('history v6 migration adds cache columns and downgrades legacy exact local-
   raw.close()
 
   const migrated = new HistoryStore(database.filePath, { now: () => now, localDate: () => '2026-08-13' })
-  t.after(() => { migrated.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { migrated.close(); removeTempTree(database.directory) })
   const summary = migrated.getSummary()
   assert.equal(summary.totals.tokenInput, 900)
   assert.equal(summary.totals.tokenCacheRead, 0)
@@ -340,7 +355,7 @@ test('history v6 migration adds cache columns and downgrades legacy exact local-
 test('quota snapshots clamp out-of-range remaining percentages instead of dropping the window', (t) => {
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => Date.UTC(2026, 7, 13, 1, 0, 0) })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   assert.equal(store.recordQuotaSnapshot({
     updatedAt: '2026-08-13T01:00:00.000Z',
     providers: [{ id: 'claude', name: 'Claude', windows: [
@@ -358,7 +373,7 @@ test('summary supports 30 and 90 day ranges with a previous-period comparison', 
   const now = Date.UTC(2026, 7, 13, 12, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   const add = (daysAgo: number, id: string) => store.recordEvent(event({
     state: 'success', sessionId: id, eventId: id, timestamp: now - daysAgo * day, tokenUsage: { input: 10, output: 5, quality: 'exact' },
   }))
@@ -384,8 +399,8 @@ test('summary supports 30 and 90 day ranges with a previous-period comparison', 
   // Unsupported ranges fall back to a week.
   assert.equal(store.getSummary('aang-airbender', undefined, 12).days.length, 7)
   // The range query is served by the covering index, not a table scan.
-  const plan = (store as unknown as { database: { prepare(sql: string): { all(...p: unknown[]): Array<{ detail: string }> } } })
-    .database.prepare('EXPLAIN QUERY PLAN SELECT local_date FROM daily_stats WHERE pet_id IN (?, ?) AND local_date BETWEEN ? AND ?')
+  const plan = rawDatabase(store)
+    .prepare('EXPLAIN QUERY PLAN SELECT local_date FROM daily_stats WHERE pet_id IN (?, ?) AND local_date BETWEEN ? AND ?')
     .all('a', 'b', '2026-01-01', '2026-02-01').map(row => row.detail).join(' ')
   assert.match(plan, /idx_daily_stats_pet_date|sqlite_autoindex_daily_stats/)
 })
@@ -394,7 +409,7 @@ test('unchanged quota readings are not rewritten, changed ones are, and old snap
   let now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   const snapshot = (updatedAt: number, remaining: number) => ({
     updatedAt: new Date(updatedAt).toISOString(),
     providers: [{ id: 'codex', name: 'Codex', windows: [{ id: 's', label: 'Session', remainingPercent: remaining }] }],
@@ -404,7 +419,7 @@ test('unchanged quota readings are not rewritten, changed ones are, and old snap
   assert.equal(store.recordQuotaSnapshot(snapshot(now + 240_000, 79)), true)
   now += 31 * 24 * 60 * 60 * 1000
   assert.equal(store.recordQuotaSnapshot(snapshot(now, 50)), true)
-  const rows = (store as unknown as { database: { prepare(s: string): { all(): unknown[] } } }).database
+  const rows = rawDatabase(store)
     .prepare('SELECT snapshot_id FROM quota_snapshots').all()
   assert.equal(rows.length, 1)
 })
@@ -414,7 +429,7 @@ test('achievement completed-session facts can be read incrementally', (t) => {
   const now = Date.UTC(2026, 7, 13, 12, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   store.recordEvent(event({ eventId: 'old', sessionId: 'old', state: 'success', timestamp: now - 5 * day }))
   store.recordEvent(event({ eventId: 'new', sessionId: 'new', state: 'success', timestamp: now - 1000 }))
   assert.equal(store.getAchievementReconciledAt(), 0)
@@ -427,9 +442,9 @@ test('achievement completed-session facts can be read incrementally', (t) => {
 test('history database runs WAL with synchronous=NORMAL and partial success indexes (v7)', (t) => {
   const database = databasePath()
   const store = new HistoryStore(database.filePath)
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   assert.deepEqual(store.getPragmaState(), { journalMode: 'wal', synchronous: 1 })
-  const raw = store.database as unknown as { prepare(sql: string): { all(...p: unknown[]): Array<Record<string, unknown>> } }
+  const raw = rawDatabase(store)
   const indexes = raw.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('events', 'daily_stats')").all()
   const names = indexes.map(row => String(row.name))
   assert.ok(names.includes('idx_history_events_success_identity'))
@@ -446,12 +461,14 @@ test('history database runs WAL with synchronous=NORMAL and partial success inde
 test('single-statement daily upsert accumulates, floors at zero and merges quality', (t) => {
   const database = databasePath()
   const store = new HistoryStore(database.filePath)
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
-  const priv = store as unknown as { updateDailyStat(...a: unknown[]): void, database: { prepare(sql: string): { get(...p: unknown[]): Record<string, unknown> } } }
+  t.after(() => { store.close(); removeTempTree(database.directory) })
+  // updateDailyStat 是 private；這個測試直接驗證單一 upsert 陳述式的累加與下限，不經過事件流程。
+  const priv = store as unknown as { updateDailyStat(...a: unknown[]): void }
   priv.updateDailyStat('2026-01-01', 'p', '', 'codex', 'success', 1000, 10, 5, 'estimated', 2, 3)
   priv.updateDailyStat('2026-01-01', 'p', '', 'codex', 'error', 500, 1, 1, 'exact', 0, 0)
   priv.updateDailyStat('2026-01-01', 'p', '', 'codex', null, 0, -100, -1, 'none', -1, -50)
-  const row = priv.database.prepare('SELECT * FROM daily_stats WHERE pet_id = ?').get('p')
+  const row = rawDatabase(store).prepare('SELECT * FROM daily_stats WHERE pet_id = ?').get('p')
+  assert.ok(row)
   assert.equal(row.sessions_completed, 1)
   assert.equal(row.sessions_failed, 1)
   assert.equal(row.active_ms, 1500)
@@ -465,15 +482,15 @@ test('single-statement daily upsert accumulates, floors at zero and merges quali
 test('queueEvent micro-batches into one commit and isolates a failing event', (t) => {
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => 2_000_000 })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   let recorded = 0
   const base = { source: 'codex', sessionId: 's1', project: 'p', projectId: 'a'.repeat(32) } as const
   const onRecorded = () => { recorded += 1 }
   for (let i = 0; i < 50; i += 1) {
-    store.queueEvent({ ...base, state: 'tool-running', timestamp: 1_000_000 + i * 1000 } as never, 'aang-airbender', onRecorded)
+    store.queueEvent({ ...base, state: 'tool-running', timestamp: 1_000_000 + i * 1000 }, 'aang-airbender', onRecorded)
   }
-  store.queueEvent({ ...base, state: 'success', timestamp: 1_100_000, sessionId: '' } as never, 'aang-airbender')
-  store.queueEvent({ ...base, state: 'success', timestamp: 1_100_000 } as never, 'aang-airbender', onRecorded)
+  store.queueEvent({ ...base, state: 'success', timestamp: 1_100_000, sessionId: '' }, 'aang-airbender')
+  store.queueEvent({ ...base, state: 'success', timestamp: 1_100_000 }, 'aang-airbender', onRecorded)
   assert.equal(store.flushQueued(), 51)
   assert.equal(recorded, 1)
   const summary = store.getSummary('aang-airbender', undefined, 7)
@@ -499,27 +516,27 @@ test('heartbeats roll up into one row per session-day with identical active time
   const start = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => start + 10 * 24 * 3600_000, localDate: ts => new Date(ts).toISOString().slice(0, 10) })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   let seed = 7
   const rand = () => { seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0; return seed / 2 ** 32 }
   const sent: Array<{ state: string, timestamp: number }> = []
   let ts = start
-  const states = ['thinking', 'tool-running', 'thinking', 'tool-running', 'waiting-input', 'idle']
+  const states: AgentState[] = ['thinking', 'tool-running', 'thinking', 'tool-running', 'waiting-input', 'idle']
   for (let i = 0; i < 1500; i += 1) {
     ts += Math.floor(rand() * 400_000) + 1
     const state = states[Math.floor(rand() * states.length)]!
     sent.push({ state, timestamp: ts })
-    assert.equal(store.recordEvent(event({ state: state as never, timestamp: ts, sessionId: 'long' })), true)
+    assert.equal(store.recordEvent(event({ state, timestamp: ts, sessionId: 'long' })), true)
   }
   const expected = activeOracle(sent)
   const read = () => store.getSummary('aang-airbender', undefined, 30).totals.activeMs
   assert.equal(read(), expected)
-  const raw = store.database as unknown as { prepare(sql: string): { get(): Record<string, number>, all(): Array<Record<string, unknown>> } }
-  const heartbeatRows = Number(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE state IN ('thinking','tool-running')").get().n)
+  const raw = rawDatabase(store)
+  const heartbeatRows = Number(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE state IN ('thinking','tool-running')").get()?.n)
   assert.equal(heartbeatRows, 0, 'no per-heartbeat rows')
-  const rollupRows = Number(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'agent.active_rollup'").get().n)
+  const rollupRows = Number(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'agent.active_rollup'").get()?.n)
   assert.ok(rollupRows >= 1 && rollupRows <= 20, `rollup rows ${rollupRows}`)
-  const sessionMs = Number(raw.prepare('SELECT SUM(active_ms) AS n FROM sessions').get().n)
+  const sessionMs = Number(raw.prepare('SELECT SUM(active_ms) AS n FROM sessions').get()?.n)
   assert.equal(sessionMs, expected)
   store.rebuildDailyStats()
   assert.equal(read(), expected, 'daily_stats rebuilt from rollup rows keeps active time')
@@ -529,7 +546,7 @@ test('heartbeat replays and stale heartbeats do not change state; tokens keep a 
   const start = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => start + 3600_000 })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   assert.equal(store.recordEvent(event({ timestamp: start })), true)
   assert.equal(store.recordEvent(event({ state: 'tool-running', timestamp: start + 60_000 })), true)
   assert.equal(store.recordEvent(event({ state: 'tool-running', timestamp: start + 60_000 })), false)
@@ -538,17 +555,17 @@ test('heartbeat replays and stale heartbeats do not change state; tokens keep a 
   assert.equal(store.recordEvent(event({ state: 'thinking', timestamp: start + 30_000 })), false, 'stale heartbeat cannot reopen a finished session')
   assert.equal(store.getSummary().totals.activeMs, 90_000)
   assert.equal(store.recordEvent(event({ state: 'thinking', timestamp: start + 120_000, tokenUsage: { input: 5, output: 1, quality: 'estimated' } })), true)
-  const raw = store.database as unknown as { prepare(sql: string): { get(): Record<string, number> } }
-  assert.equal(Number(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'agent.working'").get().n), 1)
+  const raw = rawDatabase(store)
+  assert.equal(Number(raw.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'agent.working'").get()?.n), 1)
 })
 
 test('runtime prune deletes expired events and sessions in bounded batches', async (t) => {
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now, retentionDays: 30 })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   const old = now - 60 * 24 * 3600_000
-  const raw = store.database as unknown as { exec(sql: string): void, prepare(sql: string): { get(): Record<string, number>, run(...p: unknown[]): unknown } }
+  const raw = rawDatabase(store)
   store.batch(() => {
     const insertEvent = raw.prepare(`INSERT INTO events(event_id, schema_version, type, trust, adapter_id, agent_id, session_id, project_id, pet_id, local_date, occurred_at, received_at, state, payload_json)
       VALUES (?, 2, 'agent.working', 'adapter_verified', 'codex', 'codex', 's', '', 'p', '2026-06-01', ?, ?, 'success', '{}')`)
@@ -563,8 +580,8 @@ test('runtime prune deletes expired events and sessions in bounded batches', asy
   const rest = await store.pruneInBatches(40, async () => { yields += 1 })
   assert.deepEqual(rest, { events: 55, sessions: 55 })
   assert.equal(yields, 1)
-  assert.equal(Number(raw.prepare('SELECT COUNT(*) AS n FROM events').get().n), 5)
-  assert.equal(Number(raw.prepare('SELECT COUNT(*) AS n FROM sessions').get().n), 5)
+  assert.equal(Number(raw.prepare('SELECT COUNT(*) AS n FROM events').get()?.n), 5)
+  assert.equal(Number(raw.prepare('SELECT COUNT(*) AS n FROM sessions').get()?.n), 5)
 })
 
 test('v6 migration is set-based: 50k events rebuild identically to the legacy row-by-row logic within a time bound', (t) => {
@@ -633,7 +650,7 @@ test('v6 migration is set-based: 50k events rebuild identically to the legacy ro
   const started = Date.now()
   const migrated = new HistoryStore(database.filePath, { now: () => now, localDate })
   const elapsedMs = Date.now() - started
-  t.after(() => { migrated.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { migrated.close(); removeTempTree(database.directory) })
   t.diagnostic(`v6 rebuild of ${EVENTS} events: ${elapsedMs} ms`)
   assert.ok(elapsedMs < 10_000, `v6/v7 migration of ${EVENTS} events took ${elapsedMs} ms`)
 
@@ -687,7 +704,7 @@ test('v6 migration is set-based: 50k events rebuild identically to the legacy ro
 test('a failed batch commit re-queues events in order, sheds heartbeats first and retries', async (t) => {
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => 2_000_000 })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   const priv = store as unknown as { transaction: (work: () => unknown) => unknown, queuedEvents: unknown[] }
   const original = priv.transaction.bind(store)
   let failures = 1
@@ -699,8 +716,8 @@ test('a failed batch commit re-queues events in order, sheds heartbeats first an
   const originalError = console.error
   console.error = () => {}
   t.after(() => { console.error = originalError })
-  store.queueEvent({ ...base, state: 'thinking', timestamp: 1_000_000 } as never)
-  store.queueEvent({ ...base, state: 'success', timestamp: 1_001_000 } as never)
+  store.queueEvent({ ...base, state: 'thinking', timestamp: 1_000_000 })
+  store.queueEvent({ ...base, state: 'success', timestamp: 1_001_000 })
   assert.equal(store.flushQueued(), 0)
   assert.equal(priv.queuedEvents.length, 2, 'events survive the failed commit')
   assert.equal(store.flushQueued(), 2, 'retry persists them')
@@ -708,7 +725,7 @@ test('a failed batch commit re-queues events in order, sheds heartbeats first an
 })
 
 test('trimQueuedEvents drops oldest heartbeats and never terminal events while heartbeats remain', () => {
-  const mk = (state: string, n: number) => ({ event: { source: 'codex', sessionId: 's', state, timestamp: n } as never, petId: 'p', receivedAt: n })
+  const mk = (state: AgentState, n: number) => ({ event: { source: 'codex', sessionId: 's', state, timestamp: n } satisfies AgentStatusEvent, petId: 'p', receivedAt: n })
   const items = [mk('thinking', 1), mk('success', 2), mk('thinking', 3), mk('error', 4), mk('thinking', 5)]
   const trimmed = trimQueuedEvents(items, 3)
   assert.deepEqual(trimmed.map(item => item.receivedAt), [2, 4, 5])
@@ -718,7 +735,7 @@ test('trimQueuedEvents drops oldest heartbeats and never terminal events while h
 test('v8 migration adds the model column, model aggregates and token-time index to a v7 database, idempotently', (t) => {
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
-  t.after(() => fs.rmSync(database.directory, { recursive: true, force: true }))
+  t.after(() => removeTempTree(database.directory))
   const first = new HistoryStore(database.filePath, { now: () => now, localDate: () => '2026-08-13' })
   first.recordTokenUsageBatch([
     { adapterId: 'claude-code', agentId: 'claude', sourceEventId: 'a', occurredAt: now - 1_000, input: 30, output: 5, cacheRead: 2, quality: 'exact', model: 'claude-opus-4-5' },
@@ -745,7 +762,7 @@ test('v8 migration adds the model column, model aggregates and token-time index 
       ['codex', '', 12, 3],
     ])
     assert.equal(summary.totals.tokenInput, 42)
-    const db = (store as unknown as { database: typeof raw }).database
+    const db = rawDatabase(store)
     const versions = db.prepare('SELECT version FROM schema_migrations WHERE version = 8').all()
     assert.equal(versions.length, 1)
     const plan = db.prepare(`EXPLAIN QUERY PLAN
@@ -765,7 +782,7 @@ test('model aggregates follow updates, moves, clear and rebuild, and usage block
   let now = Date.UTC(2026, 7, 13, 10, 30, 0)
   const database = databasePath()
   const store = new HistoryStore(database.filePath, { now: () => now, localDate: timestamp => new Date(timestamp).toISOString().slice(0, 10), timezoneOffsetMinutes: () => 0 })
-  t.after(() => { store.close(); fs.rmSync(database.directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(database.directory) })
   const base = { adapterId: 'claude-code', agentId: 'claude', quality: 'exact' as const }
   store.recordTokenUsage({ ...base, sourceEventId: 'm1', occurredAt: now - 20 * 60_000, input: 10, output: 1, model: 'claude-sonnet-4-5' })
   // Streaming update of the same message: replaced, not added.
@@ -795,7 +812,7 @@ test('model aggregates follow updates, moves, clear and rebuild, and usage block
 test('a v8 database whose model aggregate is missing or empty is rebuilt on open', (t) => {
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const database = databasePath()
-  t.after(() => fs.rmSync(database.directory, { recursive: true, force: true }))
+  t.after(() => removeTempTree(database.directory))
   const options = { now: () => now, localDate: () => '2026-08-13' }
   const first = new HistoryStore(database.filePath, options)
   first.recordTokenUsage({ adapterId: 'codex', agentId: 'codex', sourceEventId: 'a', occurredAt: now - 1_000, input: 8, output: 2, quality: 'exact', model: 'gpt-5-codex' })

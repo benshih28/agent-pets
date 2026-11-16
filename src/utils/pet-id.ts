@@ -1,5 +1,8 @@
 import { PLUGIN_ID_SOURCE } from '../types/id-patterns.ts'
 
+/** 永遠可用的預設寵物（PetAnimation 載圖失敗與其他預設值都退回它），所以不能移除或隱藏。 */
+export const DEFAULT_PET_ID = 'aang-airbender'
+
 const REGULAR_PET_ID_PATTERN = /^[A-Za-z0-9._-]+$/
 const PLUGIN_SKIN_PET_ID_PATTERN = new RegExp(`^plugin:(${PLUGIN_ID_SOURCE}):([a-z0-9-]{1,32})$`)
 

@@ -78,7 +78,8 @@ function onError(): void {
 <style scoped>
 .panel-theme-backdrop {
   position: absolute;
-  z-index: -1;
+  /* 在 isolated 面板內墊底；沿用 --z-base 當區域堆疊原點，不另開刻度。 */
+  z-index: calc(var(--z-base) - 1);
   overflow: hidden;
   border-radius: inherit;
   inset: 0;

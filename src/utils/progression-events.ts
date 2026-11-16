@@ -1,8 +1,8 @@
+import { isOpaqueId128 } from '../types/id-patterns.ts'
 import type { EvolutionStage, ProgressionAwardEvent } from '../types/progression.ts'
 
 const STAGES = new Set<string>(['egg', 'baby', 'teen', 'adult', 'master'])
 const RULE_ID = /^[A-Za-z0-9._-]{1,64}$/
-const PET_ID = /^[A-Za-z0-9._:-]{1,128}$/
 const MAX_AWARDS_PER_EVENT = 8
 const MAX_AMOUNT = 1_000
 
@@ -29,7 +29,7 @@ export interface LevelUpEvent {
 export function normalizeProgressionAwardEvent(value: unknown): ProgressionAwardEvent | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>
-  if (typeof raw.petId !== 'string' || !PET_ID.test(raw.petId)) return null
+  if (!isOpaqueId128(raw.petId)) return null
   if (!Array.isArray(raw.awards) || raw.awards.length === 0) return null
   if (!Number.isSafeInteger(raw.at) || (raw.at as number) < 0) return null
   const levels = [raw.levelBefore, raw.levelAfter]

@@ -1,13 +1,15 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
-import { timingSafeEqual } from 'node:crypto'
 import type { AgentStatusEvent } from '../src/types/agent'
 import { createOrderedBatchCoalescer } from './ipc/broadcast-coalescer.ts'
+import { IPC_CHANNELS } from './ipc/channels.ts'
 import { createEventRateLimiter } from './event-rate-limit.ts'
 import { eventPipelineStats } from './event-stats.ts'
+import { hasJsonContentType, readBoundedJson, sendJson, tokenMatches } from './loopback-http.ts'
 import { listenOnLocalPort, type LocalServerListenHandle, type LocalServerListenOptions } from './local-server-listen.ts'
 import { AGENT_PETS_SERVER_HEADER } from './main/server-health.ts'
+import { DEFAULT_LOCAL_PORTS, LOCAL_WIRE_HEADERS, LOCAL_WIRE_HOST, LOCAL_WIRE_PATHS } from '../src/types/local-wire.ts'
 import { normalizeAgentStatusEvent, type EventNormalizationResult } from './event-normalizer'
 export type { AgentStatusEvent } from '../src/types/agent'
 
@@ -29,7 +31,15 @@ export function createEventServer(
   eventToken: string,
   onEvent?: (event: AgentStatusEvent) => void,
   normalizeEvent: EventIngressNormalizer = normalizeAgentStatusEvent,
-  listenHooks: Pick<LocalServerListenOptions, 'onStatus' | 'onPersistentFailure'> & { onHandle?: (handle: LocalServerListenHandle) => void; port?: number } = {},
+  listenHooks: Pick<LocalServerListenOptions, 'onStatus' | 'onPersistentFailure'> & {
+    onHandle?: (handle: LocalServerListenHandle) => void
+    port?: number
+    /**
+     * 給主程序自己產生的事件用（例如從對話紀錄檔補上的回合結束）：拿到一個把事件送進
+     * 跟 hook 事件相同流程的函式。事件必須已經是正規化過的；不經過 HTTP、token 與流量限制。
+     */
+    onDispatcher?: (dispatch: (event: AgentStatusEvent) => void) => void
+  } = {},
 ) {
   const limiter = createEventRateLimiter()
   let lastSendFailureLogAt = 0
@@ -42,7 +52,7 @@ export function createEventServer(
     }
     for (const [window, events] of eventsByWindow) {
       if (window.isDestroyed()) continue
-      try { window.webContents.send('agent-status-event', events) } catch (error) {
+      try { window.webContents.send(IPC_CHANNELS.agentStatusEvent, events) } catch (error) {
         eventPipelineStats.sendFailures += events.length
         const current = Date.now()
         if (current - lastSendFailureLogAt >= SEND_FAILURE_LOG_INTERVAL_MS) {
@@ -58,10 +68,37 @@ export function createEventServer(
     onDrop: () => { eventPipelineStats.droppedByBackpressure += 1 },
   })
 
-  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+  const expectedToken = Buffer.from(eventToken)
+
+  function sendToWindows(event: AgentStatusEvent): void {
+    try {
+      for (const win of getWindows()) enqueueAgentEvent({ window: win, event })
+    } catch (error) {
+      console.error('Event dispatch failed', error)
+    }
+  }
+
+  // Side effects (notifications, XP, history). setImmediate keeps arrival order, and a failure
+  // here is our bug, not the caller's, so it is logged rather than surfaced.
+  function runSideEffects(event: AgentStatusEvent): void {
+    setImmediate(() => {
+      try {
+        onEvent?.(event)
+      } catch (error) {
+        console.error('Event handler failed', error)
+      }
+    })
+  }
+
+  listenHooks.onDispatcher?.((event) => {
+    sendToWindows(event)
+    runSideEffects(event)
+  })
+
+  const server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
     // Lets a second Agent Pets instance recognise this port owner without a token.
     response.setHeader(AGENT_PETS_SERVER_HEADER, 'event')
-    if (request.method !== 'POST' || request.url !== '/v1/events') {
+    if (request.method !== 'POST' || request.url !== LOCAL_WIRE_PATHS.events) {
       response.writeHead(404)
       response.end()
       return
@@ -70,116 +107,86 @@ export function createEventServer(
     // CLI hooks do not send Origin. Reject browser-originated requests so an
     // arbitrary website cannot spoof agent state through the loopback server.
     if (request.headers.origin) {
-      response.writeHead(403)
-      response.end(JSON.stringify({ error: 'browser origins are not allowed' }))
+      sendJson(response, 403, { error: 'browser origins are not allowed' })
       return
     }
 
-    const suppliedToken = request.headers['x-agent-pets-token']
-    const supplied = typeof suppliedToken === 'string' ? Buffer.from(suppliedToken) : Buffer.alloc(0)
-    const expected = Buffer.from(eventToken)
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      response.writeHead(401)
-      response.end(JSON.stringify({ error: 'unauthorized' }))
+    if (!tokenMatches(request.headers[LOCAL_WIRE_HEADERS.eventToken], expectedToken)) {
+      sendJson(response, 401, { error: 'unauthorized' })
       request.resume()
       return
     }
 
-    const contentType = request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase()
-    if (contentType !== 'application/json') {
-      response.writeHead(415)
-      response.end(JSON.stringify({ error: 'application/json required' }))
+    if (!hasJsonContentType(request)) {
+      sendJson(response, 415, { error: 'application/json required' })
       return
     }
 
     if (!limiter.allowRequest()) {
       eventPipelineStats.rateLimited += 1
-      response.writeHead(429, { 'retry-after': '10' })
-      response.end(JSON.stringify({ error: 'too many events' }))
+      sendJson(response, 429, { error: 'too many events' }, { 'retry-after': '10' })
       request.resume()
       return
     }
 
-    const chunks: Buffer[] = []
-    let totalBytes = 0
-    let bodyRejected = false
-
-    request.on('data', (chunk: Buffer) => {
-      if (bodyRejected) return
-      totalBytes += chunk.length
-      if (totalBytes > MAX_BODY_BYTES) {
-        bodyRejected = true
-        response.writeHead(413)
-        response.end(JSON.stringify({ error: 'request too large' }))
-        return
-      }
-      chunks.push(chunk)
-    })
-
-    request.on('end', async () => {
-      if (bodyRejected) return
-
-      let event: AgentStatusEvent
-      try {
-        const parsed: unknown = JSON.parse(
-          Buffer.concat(chunks).toString('utf8')
-        )
-        const normalized = await normalizeEvent(parsed, Date.now())
-        if (!normalized.ok) {
-          response.writeHead(400)
-          response.end(JSON.stringify({ error: normalized.error }))
+    // 錯誤字串是既有契約（與 presentation 的 `request_too_large` 不同），不在這裡統一。
+    const body = await readBoundedJson(request, MAX_BODY_BYTES)
+    if (!body.ok) {
+      switch (body.reason) {
+        case 'too_large':
+          sendJson(response, 413, { error: 'request too large' })
           return
-        }
-        event = normalized.event
-      } catch {
-        response.writeHead(400)
-        response.end(JSON.stringify({ error: 'invalid JSON' }))
+        case 'empty':
+        case 'invalid_json':
+          sendJson(response, 400, { error: 'invalid JSON' })
+          return
+        case 'aborted':
+          return
+      }
+    }
+
+    let event: AgentStatusEvent
+    try {
+      const normalized = await normalizeEvent(body.value, Date.now())
+      if (!normalized.ok) {
+        sendJson(response, 400, { error: normalized.error })
         return
       }
+      event = normalized.event
+    } catch {
+      sendJson(response, 400, { error: 'invalid JSON' })
+      return
+    }
 
-      // Budgets are per source session, with a separate one for terminal
-      // events, so one runaway hook cannot starve other agents' completions.
-      if (!limiter.allowEvent(`${event.source}:${event.sessionId}`, TERMINAL_STATES.has(event.state))) {
-        eventPipelineStats.rateLimited += 1
-        response.writeHead(429, { 'retry-after': '10' })
-        response.end(JSON.stringify({ error: 'too many events' }))
-        return
-      }
+    // Budgets are per source session, with a separate one for terminal
+    // events, so one runaway hook cannot starve other agents' completions.
+    if (!limiter.allowEvent(`${event.source}:${event.sessionId}`, TERMINAL_STATES.has(event.state))) {
+      eventPipelineStats.rateLimited += 1
+      sendJson(response, 429, { error: 'too many events' }, { 'retry-after': '10' })
+      return
+    }
 
-      try {
-        for (const win of getWindows()) enqueueAgentEvent({ window: win, event })
-      } catch (error) {
-        console.error('Event dispatch failed', error)
-      }
+    sendToWindows(event)
 
-      // Acknowledge first: the hook must never wait on synchronous SQLite work.
-      response.writeHead(204)
-      response.end()
+    // Acknowledge first: the hook must never wait on synchronous SQLite work.
+    response.writeHead(204)
+    response.end()
 
-      // Side effects (notifications, XP, history) run right after the response
-      // is flushed. setImmediate keeps arrival order, and a failure here is our
-      // bug, not the caller's, so it is logged rather than surfaced.
-      setImmediate(() => {
-        try {
-          onEvent?.(event)
-        } catch (error) {
-          console.error('Event handler failed', error)
-        }
-      })
-    })
+    // Runs right after the response is flushed.
+    runSideEffects(event)
   })
 
   // 本機 hook 的請求都很小；縮短逾時，避免慢速連線長時間佔用 socket。
   server.headersTimeout = 10_000
   server.requestTimeout = 15_000
 
-  const port = listenHooks.port ?? 17373
+  const port = listenHooks.port ?? DEFAULT_LOCAL_PORTS.event
   const handle = listenOnLocalPort(server, port, {
     label: 'Event',
     onStatus: listenHooks.onStatus,
     onPersistentFailure: listenHooks.onPersistentFailure,
     onListening: () => {
-      if (!app.isPackaged) console.log(`Event server listening on http://127.0.0.1:${port}/v1/events`)
+      if (!app.isPackaged) console.log(`Event server listening on http://${LOCAL_WIRE_HOST}:${port}${LOCAL_WIRE_PATHS.events}`)
     },
   })
 

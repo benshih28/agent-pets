@@ -80,15 +80,15 @@ test('status line text keeps the project and variants for the tooltip, never an 
 
 test('the pet template no longer renders a (+N) session count', async () => {
   const fs = await import('node:fs')
-  const source = fs.readFileSync(new URL('../src/components/DesktopPet.vue', import.meta.url), 'utf8')
+  const source = ['DesktopPet.vue', 'desktop-pet/PetStatusLine.vue'].map(file => fs.readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8')).join('\n')
   assert.doesNotMatch(source, /line\.count - 1/)
   assert.doesNotMatch(source, /line-more/)
   // One thin line: no second project row on the pill (the project is in the tooltip / aria-label).
   assert.doesNotMatch(source, /line-project|line-main/)
-  assert.equal(source.match(/:aria-label="lineView\(line\.key\)\.aria"/g)?.length, 2)
+  assert.equal(source.match(/:aria-label="view\.aria"/g)?.length, 1)
   // A generic div only gets its aria-label announced with a role.
-  assert.equal(source.match(/class="status-line[^"]*"\s+role="group"/g)?.length, 2)
-  assert.equal(source.match(/<span class="line-state">\{\{ stateLineLabel\(line\.state\) \}\}<\/span>/g)?.length, 2)
+  assert.equal(source.match(/class="status-line[^"]*"\s+role="group"/g)?.length, 1)
+  assert.equal(source.match(/<span class="line-state">\{\{ stateLineLabel\(line\.state\) \}\}<\/span>/g)?.length, 1)
 })
 
 test('on-pet state words are short English for every state; the catalogs no longer carry them', async () => {

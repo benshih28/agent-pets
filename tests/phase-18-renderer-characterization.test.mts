@@ -5,7 +5,7 @@ import test from 'node:test'
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 test('agent session store keeps the existing bounded eviction and presentation behavior', () => {
-  const source = read('../src/stores/agentStore.ts')
+  const source = ['../src/stores/agentStore.ts', '../src/stores/agent/sessions.ts'].map(read).join('\n')
   assert.match(source, /const MAX_SESSION_COUNT = 200/)
   assert.match(source, /new Map<string, AgentSession>\(\)/)
   assert.match(source, /sessionIndex\.upsert\([\s\S]*?MAX_SESSION_COUNT\)/)
@@ -23,6 +23,7 @@ test('status panel preserves dashboard and settings navigation contracts', () =>
     '../src/components/status-panel/StatusPanelHistory.vue',
     '../src/components/status-panel/SettingsPage.vue',
     '../src/composables/useRovingTabs.ts',
+    '../src/utils/tab-navigation.ts',
     '../src/components/ui/SegmentedControl.vue',
     '../src/utils/settingsRegistry.ts',
   ].map(read).join('\n')
@@ -32,7 +33,7 @@ test('status panel preserves dashboard and settings navigation contracts', () =>
   assert.match(source, /'tablist'/)
   assert.match(source, /role="tabpanel"/)
   assert.match(source, /ArrowRight/)
-  assert.match(source, /localStorage\.getItem\(SETTINGS_GROUP_STORAGE_KEY\)/)
+  assert.match(source, /readStored\(STORAGE_KEYS\.settingsGroup\)/)
   assert.match(source, /onPanelOpenPluginView/)
   assert.match(source, /store\.decidePermission\(store\.permissionRequest\.requestId, \$event\)/)
   assert.match(source, /store\.clearOfflineSessions\(\)/)

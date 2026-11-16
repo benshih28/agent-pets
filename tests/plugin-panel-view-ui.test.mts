@@ -56,7 +56,7 @@ test('plugin panel maximize control exposes its state and translations', () => {
 })
 
 test('plugin panel maximize state resets on close and plugin switches', () => {
-  const controller = readFileSync(new URL('../src/composables/usePluginPanelController.ts', import.meta.url), 'utf8')
+  const controller = readFileSync(new URL('../src/composables/plugin/usePluginPanelView.ts', import.meta.url), 'utf8')
   assert.match(controller, /watch\(panelViewPluginId, async \(pluginId, previousPluginId\) => \{\s*if \(shouldResetPluginPanelMaximized\(previousPluginId, pluginId\)\)/)
   assert.match(controller, /watch\(panelViewPlugin, plugin => \{\s*if \(!plugin\) void restorePluginPanelViewMaximized\(\)/)
   assert.equal(shouldResetPluginPanelMaximized('first-plugin', ''), true)
@@ -68,7 +68,7 @@ test('maximizing enlarges the panel window to the plugin page limit without shri
   assert.deepEqual(maximizedPluginPanelWindowSize({ width: 460, height: 720 }, { width: 1512, height: 944 }), { width: 1500, height: 932 })
   assert.deepEqual(maximizedPluginPanelWindowSize({ width: 460, height: 720 }, { width: 800, height: 600 }), { width: 788, height: 720 })
   assert.deepEqual(maximizedPluginPanelWindowSize({ width: 1500, height: 932 }, { width: 1512, height: 944 }), { width: 1500, height: 932 })
-  const controller = readFileSync(new URL('../src/composables/usePluginPanelController.ts', import.meta.url), 'utf8')
+  const controller = readFileSync(new URL('../src/composables/plugin/usePluginPanelView.ts', import.meta.url), 'utf8')
   // 以既有的面板尺寸 API 加大與還原視窗（不在測試中寫出 API 名稱，避免 IPC 清冊把本檔當成該頻道的測試）。
   assert.match(controller, /window\.electronAPI\?\.\w+\(target\.height, target\.width\)/)
   assert.match(controller, /if \(restoreWindowSize && previousSize\) window\.electronAPI\?\.\w+\(\{ release: true \}\)/)

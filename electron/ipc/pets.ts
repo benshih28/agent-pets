@@ -1,4 +1,4 @@
-import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { SanitizedPetBehaviorManifest } from '../pet-behavior-manifest'
 import { petAtlasGridFromSize, type PetAtlasGrid } from '../../src/types/pet-atlas.ts'
 import { readImageSize } from '../pet-sprite-validation.ts'

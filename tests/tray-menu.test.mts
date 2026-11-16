@@ -1,21 +1,29 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildTrayMenuTemplate } from '../electron/tray-menu.ts'
+import type { MenuItemConstructorOptions } from 'electron'
+import { buildTrayMenuTemplate, type TrayMenuContext } from '../electron/tray-menu.ts'
+import type { DesktopPreferences } from '../src/types/desktop.ts'
 
-const preferences = {
+const preferences: DesktopPreferences = {
   dndEnabled: false, dndUntil: null, notificationsEnabled: true, permissionBubbleEnabled: true,
+  claudePermissionRespondEnabled: false, claudePermissionWaitSeconds: 60,
   presentationMcpEnabled: true, achievementsEnabled: true, edgeModeEnabled: false, shimejiEnabled: false,
   captureExclusionEnabled: false, fullscreenAutoHideEnabled: false, rightClickHideEnabled: false,
-  soundEnabled: false, launchAtStartup: false, launchAtStartupSupported: true, launchAtStartupStatus: 'disabled', locale: 'zh-TW',
-  visibilityCapabilities: { captureExclusion: { supported: false }, fullscreenAutoHide: { supported: true } },
-} as never
+  completionMarkersEnabled: true, sessionJumpEnabled: true, sessionJumpSwitchAppEnabled: true,
+  soundEnabled: false, soundVolume: 60, soundOnPermission: true, soundOnError: true, soundOnSuccess: true,
+  launchAtStartup: false, launchAtStartupSupported: true, launchAtStartupStatus: 'disabled', locale: 'zh-TW',
+  visibilityCapabilities: {
+    captureExclusion: { supported: false, mode: 'unsupported' },
+    fullscreenAutoHide: { supported: true, mode: 'windows-native' },
+  },
+}
 
-function build(overrides: Record<string, unknown> = {}, calls: string[] = []) {
+function build(overrides: Partial<TrayMenuContext> = {}, calls: string[] = []) {
   return buildTrayMenuTemplate({
     preferences, petVisible: true, petMode: 'normal',
     attention: { permission: 0, external: 0, input: 0, total: 0 }, attentionText: '',
     pluginMenu: null, pluginOmittedCount: 0, now: 0, ...overrides,
-  } as never, {
+  }, {
     updatePreferences: (patch) => calls.push(JSON.stringify(patch)),
     showPet() {}, hidePet() { calls.push('hide') }, openPanel() { calls.push('panel') },
     openSettings() {}, toggleMiniMode() {}, quit() {},
@@ -60,9 +68,9 @@ test('plugin submenu sits before Settings and notes omitted commands', () => {
 })
 
 test('launch at login tray item reflects intent and marks pending approval', () => {
-  const flat = (menu: Array<Record<string, unknown>>): Array<Record<string, unknown>> =>
-    menu.flatMap(item => [item, ...(Array.isArray(item.submenu) ? flat(item.submenu as never) : [])])
-  const find = (overrides: Record<string, unknown>) => flat(build({ preferences: { ...(preferences as object), ...overrides } }) as never)
+  const flat = (menu: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+    menu.flatMap(item => [item, ...(Array.isArray(item.submenu) ? flat(item.submenu) : [])])
+  const find = (overrides: Partial<DesktopPreferences>) => flat(build({ preferences: { ...preferences, ...overrides } }))
     .find(item => typeof item.label === 'string' && item.label.includes('啟動'))
   const pending = find({ launchAtStartup: true, launchAtStartupStatus: 'requires-approval' })
   assert.equal(pending?.checked, true)

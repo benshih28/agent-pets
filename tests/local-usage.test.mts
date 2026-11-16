@@ -12,6 +12,7 @@ import {
   parseUsageFile,
   type UsageProvider,
 } from '../electron/local-usage.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function seededRandom(seed: number): () => number {
   let state = seed >>> 0
@@ -26,7 +27,7 @@ function setup(): { home: string; database: string; cleanup: () => void } {
   return {
     home: path.join(root, 'home'),
     database: path.join(root, 'history.sqlite'),
-    cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+    cleanup: () => removeTempTree(root),
   }
 }
 
@@ -536,7 +537,7 @@ test('large file is parsed in slices with the same totals, one project lookup pe
   const originalSetImmediate = globalThis.setImmediate
   globalThis.setImmediate = ((fn: () => void, ...args: unknown[]) => { yields += 1; return originalSetImmediate(fn, ...(args as [])) }) as typeof setImmediate
   try {
-    const reader = new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now, projectRouting: projectRouting as never })
+    const reader = new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now, projectRouting })
     const result = await reader.scan()
     assert.equal(result.recordsImported, RECORDS)
   } finally {
@@ -849,4 +850,107 @@ test('undated lines inherit the previous real timestamp, never the file mtime, s
   const rescan = await new LocalUsageReader(options).scan()
   assert.equal(rescan.recordsImported, 0)
   assert.deepEqual(seen.map(record => record.occurredAt), [dated, dated])
+})
+
+test('scans the folders configDirs returns (CLAUDE_CONFIG_DIR／CODEX_HOME) instead of ~/.claude and ~/.codex', async t => {
+  const fixture = setup()
+  const now = Date.UTC(2026, 10, 10, 1, 0, 0)
+  const store = new HistoryStore(fixture.database, { now: () => now, localDate: () => '2026-11-10' })
+  t.after(() => { store.close(); fixture.cleanup() })
+  const moved = { claude: path.join(fixture.home, 'moved-claude'), codex: path.join(fixture.home, 'moved-codex') }
+  const claudeRecord = (id: string, input: number) => ({
+    type: 'assistant',
+    timestamp: new Date(now).toISOString(),
+    session_id: `claude-${id}`,
+    message: { id, usage: { input_tokens: input, output_tokens: 1 } },
+  })
+  // 預設位置的舊紀錄不應被讀到：使用者搬目錄後，agent 不再寫那裡。
+  writeJsonl(path.join(fixture.home, '.claude', 'projects', 'p', 'old.jsonl'), [claudeRecord('old', 1_000)])
+  writeJsonl(path.join(moved.claude, 'projects', 'p', 'new.jsonl'), [claudeRecord('new', 40)])
+  writeJsonl(path.join(moved.claude, 'transcripts', 't.jsonl'), [claudeRecord('transcript', 2)])
+  writeJsonl(path.join(moved.codex, 'sessions', 's.jsonl'), [{
+    type: 'event_msg',
+    timestamp: new Date(now).toISOString(),
+    session_id: 'codex-moved',
+    payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 7, output_tokens: 1 }, total_token_usage: { input_tokens: 7, output_tokens: 1 } } },
+  }])
+
+  let calls = 0
+  const reader = new LocalUsageReader({
+    homeDir: fixture.home,
+    configDirs: () => { calls += 1; return moved },
+    history: store,
+    now: () => now,
+  })
+  const scan = await reader.scan()
+  assert.equal(calls, 1, 'resolved once per scan')
+  assert.equal(scan.filesScanned, 3)
+  assert.equal(store.getSummary().totals.tokenInput, 49)
+})
+
+test('imports in small batches without changing the result and notifies the consumer per batch', async t => {
+  const fixture = setup()
+  const now = Date.UTC(2026, 7, 13, 1, 0, 0)
+  const store = new HistoryStore(fixture.database, { now: () => now, localDate: () => '2026-08-13' })
+  t.after(() => { store.close(); fixture.cleanup() })
+  writeJsonl(path.join(fixture.home, '.claude', 'projects', 'p', 'session.jsonl'), Array.from({ length: 25 }, (_, index) => ({
+    type: 'assistant',
+    timestamp: new Date(now + index * 1_000).toISOString(),
+    session_id: 'claude-session',
+    message: { id: `message-${index}`, usage: { input_tokens: 10, output_tokens: 2 } },
+  })))
+  const batchSizes: number[] = []
+  const reader = new LocalUsageReader({
+    homeDir: fixture.home,
+    history: store,
+    now: () => now,
+    importBatchRecords: 10,
+    onRecordsImported: records => { batchSizes.push(records.length) },
+  })
+  const scan = await reader.scan()
+  assert.equal(scan.recordsImported, 25)
+  assert.deepEqual(batchSizes, [10, 10, 5])
+  assert.equal(store.getSummary().totals.tokenInput, 250)
+})
+
+test('Codex usage joins the hook session through the session_meta thread id', async t => {
+  const fixture = setup()
+  const now = Date.UTC(2026, 7, 13, 1, 0, 0)
+  const store = new HistoryStore(fixture.database, { now: () => now, localDate: () => '2026-08-13' })
+  t.after(() => { store.close(); fixture.cleanup() })
+  const thread = '01a1c920-5aab-7890-83c5-dc49d939c6d9'
+  store.recordEvent({ adapterId: 'codex', source: 'codex', sessionId: thread, state: 'thinking', timestamp: now - 60_000 })
+  const at = new Date(now - 30_000).toISOString()
+  writeJsonl(path.join(fixture.home, '.codex', 'sessions', `rollout-${thread}.jsonl`), [
+    { type: 'session_meta', timestamp: at, payload: { session_id: thread, id: thread, cwd: '/nonexistent/codex' } },
+    { type: 'turn_context', timestamp: at, payload: { model: 'gpt-5-codex' } },
+    // Real token_count lines carry no session id of their own.
+    { type: 'event_msg', timestamp: at, payload: { type: 'token_count', info: {
+      last_token_usage: { input_tokens: 120 },
+      total_token_usage: { input_tokens: 120, cached_input_tokens: 20, output_tokens: 15 },
+    } } },
+  ])
+  await new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now }).scan()
+  const [item] = store.listSessions('aang-airbender', {}).items
+  assert.equal(item?.tokenSource, 'local')
+  assert.equal(item?.tokenInput, 100)
+  assert.equal(item?.tokenCacheRead, 20)
+  assert.equal(item?.tokenOutput, 15)
+  assert.equal(item?.topModel, 'gpt-5-codex')
+})
+
+test('the Codex thread id survives a chunk boundary and falls back to the older id field', () => {
+  const lines = [
+    JSON.stringify({ type: 'session_meta', timestamp: '2026-08-13T01:00:00.000Z', payload: { id: 'thread-1' } }),
+    JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: {
+      last_token_usage: { input_tokens: 5 }, total_token_usage: { input_tokens: 5, output_tokens: 1 },
+    } } }),
+  ]
+  const bytes = Buffer.from(`${lines.join('\n')}\n`)
+  const state = createIncrementalLocalUsageParserState()
+  const split = lines[0]!.length + 1
+  assert.deepEqual(parseIncrementalLocalUsageChunk('codex', 'k', bytes.subarray(0, split), 0, 4_096, state), [])
+  const [record] = parseIncrementalLocalUsageChunk('codex', 'k', bytes.subarray(split), split, 4_096, state)
+  assert.equal(record?.sessionId, 'thread-1')
+  assert.equal(parseUsageFile('codex', 'k', bytes.toString('utf8'), 4_096)[0]?.sessionId, 'thread-1')
 })

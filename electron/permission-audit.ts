@@ -6,7 +6,8 @@ import { renameSyncWithRetry } from './fs-rename.ts'
 // Append-only JSON Lines: one small append per decision instead of reading,
 // rewriting and fsyncing the whole file, so a burst of requests cannot block
 // the main thread. The file is trimmed to the newest records now and then.
-const MAX_AUDIT_RECORDS = 500
+// permission-broker 的記憶體稽核清單也用這個上限：兩邊保留的是同一份紀錄，筆數不該各自漂移。
+export const MAX_AUDIT_RECORDS = 500
 const TRIM_EVERY = 100
 // Never read more than this from disk; a larger file is read from its tail only.
 const MAX_AUDIT_READ_BYTES = 512 * 1024

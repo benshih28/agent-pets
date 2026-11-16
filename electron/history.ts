@@ -27,9 +27,10 @@ import {
 import { latestUsageBlocks, USAGE_BLOCK_MS, type UsageBlockEntry } from '../src/utils/usage-blocks.ts'
 import { dateOffset, localDateKey } from '../src/utils/local-date.ts'
 import { applyWalPragmas, type SqlitePragmaState } from './sqlite-pragmas.ts'
+import { optimizeAndVacuum } from './sqlite-maintenance.ts'
 import { StatementCache } from './sqlite-statements.ts'
 import { eventPipelineStats } from './event-stats.ts'
-import { isValidPetId } from '../src/utils/pet-id.ts'
+import { DEFAULT_PET_ID, isValidPetId } from '../src/utils/pet-id.ts'
 import {
   MAX_PERMISSION_WAIT_MS,
   SESSION_LIST_COLUMNS,
@@ -45,7 +46,10 @@ import {
   sanitizeToolName,
   type StoredSessionFinalState,
 } from './history-sessions.ts'
-import { isProjectId } from '../src/types/id-patterns.ts'
+import { isOpaqueId256, isProjectId } from '../src/types/id-patterns.ts'
+import { MAX_SESSION_ID_LENGTH, MAX_TOKEN_COUNT } from './event-normalizer.ts'
+import { MAX_ACTIVE_GAP_MS } from './progression.ts'
+import { asRecord } from './value-guards.ts'
 
 type SqliteRow = Record<string, unknown>
 
@@ -59,6 +63,7 @@ interface SqliteDatabase {
   exec(sql: string): void
   prepare(sql: string): SqliteStatement
   close(): void
+  isTransaction?: boolean
 }
 
 type DatabaseSyncConstructor = new (filePath: string) => SqliteDatabase
@@ -71,13 +76,10 @@ export interface HistoryStoreOptions {
   retentionDays?: number
 }
 
-const DEFAULT_PET_ID = 'aang-airbender'
 const LOCAL_USAGE_PET_ID = 'local-usage'
 const DEFAULT_RETENTION_DAYS = 90
 const MAX_RETENTION_DAYS = 3650
 const MAX_TEXT_LENGTH = 128
-const MAX_SESSION_ID_LENGTH = 256
-const MAX_TOKEN_COUNT = 1_000_000_000_000
 const MAX_QUOTA_SNAPSHOTS = 500
 const QUOTA_SNAPSHOT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const ACHIEVEMENT_RECONCILED_KEY = 'achievement_reconciled_at'
@@ -88,12 +90,10 @@ const FLUSH_RETRY_BASE_MS = 250
 const FLUSH_RETRY_MAX_MS = 5000
 const PRUNE_BATCH_ROWS = 5000
 const ACTIVE_ROLLUP_STATE = 'active-rollup'
-const MAX_ACTIVE_GAP_MS = 5 * 60 * 1000
 const COMPLETED_SESSION_PAGE_ROWS = 5000
 const LOCAL_USAGE_CUTOFF_KEY = 'local_usage_cutoff_at'
 const HISTORY_RANGES: readonly number[] = [7, 30, 90]
 const ACTIVE_STATES = new Set<AgentState>(['thinking', 'tool-running'])
-const SAFE_ID = /^[A-Za-z0-9._:-]{1,256}$/
 // 模型 id 只允許常見識別字元，最多一個 `provider/model` 斜線段；`<synthetic>` 之類的佔位值、
 // 含空白、`..`、磁碟代號或看起來像本機路徑（Users/、home/…）的字串一律視為未知，避免路徑外洩到 UI 或匯出。
 const MODEL_SEGMENT = '[A-Za-z0-9][A-Za-z0-9._:@+-]{0,63}'
@@ -180,14 +180,16 @@ function mergeTokenQuality(left: HistoryTokenQuality, right: HistoryTokenQuality
 }
 
 function eventType(state: AgentState): string {
-  if (state === 'success') return 'agent.session.completed'
-  if (state === 'error') return 'agent.session.failed'
-  if (state === 'offline') return 'agent.session.cancelled'
-  if (state === 'waiting-input') return 'agent.waiting_input'
-  if (state === 'waiting-permission') return 'agent.permission.requested'
-  if (state === 'tool-running') return 'agent.tool.started'
-  if (state === 'thinking') return 'agent.working'
-  return 'agent.session.started'
+  switch (state) {
+    case 'success': return 'agent.session.completed'
+    case 'error': return 'agent.session.failed'
+    case 'offline': return 'agent.session.cancelled'
+    case 'waiting-input': return 'agent.waiting_input'
+    case 'waiting-permission': return 'agent.permission.requested'
+    case 'tool-running': return 'agent.tool.started'
+    case 'thinking': return 'agent.working'
+    default: return 'agent.session.started'
+  }
 }
 
 function tokenUsage(event: AgentStatusEvent): {
@@ -322,7 +324,7 @@ function isQueuedHeartbeat(item: HistoryQueuedEvent): boolean {
   const { event } = item
   return isActiveState(event.state)
     && tokenUsage(event).quality === 'none'
-    && !SAFE_ID.test(event.eventId ?? '')
+    && !isOpaqueId256(event.eventId)
     && !event.sourceEventId
 }
 
@@ -403,7 +405,7 @@ export class HistoryStore {
   recordEvent(event: AgentStatusEvent, petId = DEFAULT_PET_ID, receivedAt = this.now()): boolean {
     if (event.originalEvent === 'AgentPetsIntegrationTest') return false
     const safePet = safePetId(petId)
-    const adapterId = SAFE_ID.test(event.adapterId ?? '') ? event.adapterId! : 'generic-http'
+    const adapterId = isOpaqueId256(event.adapterId) ? event.adapterId : 'generic-http'
     const agentId = safeText(event.source, 'unknown')
     const externalId = safeText(event.sessionId).slice(0, MAX_SESSION_ID_LENGTH)
     if (!externalId) return false
@@ -419,8 +421,8 @@ export class HistoryStore {
     const safeReceivedAt = Number.isFinite(receivedAt) ? receivedAt : this.now()
     const state = event.state
     const usage = tokenUsage(event)
-    const eventId = SAFE_ID.test(event.eventId ?? '')
-      ? event.eventId!
+    const eventId = isOpaqueId256(event.eventId)
+      ? event.eventId
       : digest(`${adapterId}:${agentId}:${externalId}:${state}:${occurredAt}:${projectId}:${event.originalEvent ?? ''}`)
     const sourceEventId = typeof event.sourceEventId === 'string' ? safeText(event.sourceEventId) : null
     const localDate = this.localDate(occurredAt)
@@ -456,7 +458,7 @@ export class HistoryStore {
       // rebuild only sums active_delta_ms, which the rollup row preserves.
       const isHeartbeat = isActiveState(state)
         && usage.quality === 'none'
-        && !SAFE_ID.test(event.eventId ?? '')
+        && !isOpaqueId256(event.eventId)
         && sourceEventId === null
       let inserted: number
       if (isHeartbeat) {
@@ -761,7 +763,7 @@ export class HistoryStore {
 
   private applyTokenUsage(record: HistoryTokenUsageRecord, receivedAt: number): boolean {
     const safePet = LOCAL_USAGE_PET_ID
-    const adapterId = SAFE_ID.test(record.adapterId) ? record.adapterId : ''
+    const adapterId = isOpaqueId256(record.adapterId) ? record.adapterId : ''
     const agentId = safeText(record.agentId, 'unknown')
     const sourceEventId = safeText(record.sourceEventId)
     if (!adapterId || !agentId || !sourceEventId) return false
@@ -812,6 +814,8 @@ export class HistoryStore {
           && previousProjectId === projectId
           && previousOccurredAt === occurredAt
           && previousQuality === record.quality
+          // A rescan that learned the real session id re-attributes the row.
+          && (existing.session_id ?? null) === sessionId
           // A rescan of a row imported before model tracking backfills its model.
           && (previousModel === model || model === '')
         ) return false
@@ -1366,6 +1370,12 @@ export class HistoryStore {
 
   prune(): number {
     return this.pruneEvents()
+  }
+
+  /** 使用者觸發的資料庫整理（optimize + VACUUM）；排隊事件先寫入，交易進行中會丟 SqliteBusyError。 */
+  compact(): void {
+    if (this.transactionDepth === 0) this.flushQueued()
+    optimizeAndVacuum(this.database, this.transactionDepth > 0)
   }
 
   rebuildDailyStats(): void {
@@ -2246,14 +2256,14 @@ function addDaily(left: HistoryDailyStat, right: HistoryDailyStat): HistoryDaily
 }
 
 function normalizeQuotaSnapshot(value: unknown): HistoryQuotaSnapshot | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const raw = value as Record<string, unknown>
+  const raw = asRecord(value)
+  if (!raw) return null
   if (typeof raw.updatedAt !== 'string' || !Number.isFinite(Date.parse(raw.updatedAt))) return null
   if (!Array.isArray(raw.providers)) return null
   const providers: HistoryQuotaProvider[] = []
   for (const item of raw.providers.slice(0, MAX_QUOTA_PROVIDERS)) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
-    const provider = item as Record<string, unknown>
+    const provider = asRecord(item)
+    if (!provider) continue
     const id = safeText(provider.id)
     const name = safeText(provider.name)
     if (!id || !name || !Array.isArray(provider.windows)) continue
@@ -2262,8 +2272,8 @@ function normalizeQuotaSnapshot(value: unknown): HistoryQuotaSnapshot | null {
     // them as if they were measured at this snapshot's time.
     const retained = provider.stale === true ? [] : provider.windows
     for (const entry of retained.slice(0, MAX_QUOTA_WINDOWS)) {
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
-      const window = entry as Record<string, unknown>
+      const window = asRecord(entry)
+      if (!window) continue
       const windowId = safeText(window.id)
       const label = safeText(window.label)
       const remaining = Number(window.remainingPercent)

@@ -39,7 +39,7 @@ test('project-pet IPC handlers only trust the panel window', () => {
 })
 
 test('loadPets does not reach project-pet IPC, since the pet window calls it', () => {
-  const body = functionBody(read('src/stores/agentStore.ts'), 'async function loadPets() {')
+  const body = functionBody(read('src/stores/agent/pets.ts'), 'async function loadPets() {')
   assert.doesNotMatch(body, /refreshProjectPets|ProjectPets/)
 })
 

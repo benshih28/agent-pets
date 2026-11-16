@@ -40,16 +40,17 @@ const renameError = computed(() => {
   return length === 0 || length > USER_PANEL_THEME_NAME_MAX ? t('design.themeEditor.invalidName') : ''
 })
 
-function menuItems(): ActionMenuItem[] {
+function menuItems() {
   return [
     { id: 'duplicate', label: t('design.themeEditor.duplicate'), disabled: full.value },
     { id: 'rename', label: t('design.themeEditor.rename') },
     { id: 'export', label: t('design.themeEditor.export') },
     { id: 'delete', label: t('design.themeEditor.delete'), danger: true },
-  ]
+  ] as const satisfies readonly ActionMenuItem[]
 }
+type MenuId = ReturnType<typeof menuItems>[number]['id']
 
-const MENU_ACTIONS: Record<string, (record: UserPanelThemeRecord) => void> = {
+const MENU_ACTIONS = {
   duplicate: record => {
     void userActions.run(() => window.electronAPI?.duplicateUserPanelTheme(record.id, copyName(record.name)), t('design.themeEditor.duplicated'))
   },
@@ -61,7 +62,7 @@ const MENU_ACTIONS: Record<string, (record: UserPanelThemeRecord) => void> = {
     void userActions.run(() => window.electronAPI?.exportUserPanelTheme(record.id), t('design.themeEditor.exported'))
   },
   delete: record => { deleting.value = record },
-}
+} satisfies Record<MenuId, (record: UserPanelThemeRecord) => void>
 
 /** 「<名稱> 副本」，超過長度上限時截短名稱本身。 */
 function copyName(name: string): string {
@@ -115,7 +116,7 @@ onMounted(() => {
       >
         <template #actions>
           <Button size="sm" variant="secondary" :disabled="busy" :data-testid="`my-theme-edit-${row.record.id}`" @click="openPanelThemeEditor(row.record.id)">{{ t('design.themeEditor.edit') }}</Button>
-          <ActionMenu :items="menuItems()" icon-only :aria-label="t('design.themeEditor.actions', { name: row.record.name })" :disabled="busy" :data-testid="`my-theme-menu-${row.record.id}`" @select="id => MENU_ACTIONS[id]?.(row.record)">
+          <ActionMenu :items="menuItems()" icon-only :aria-label="t('design.themeEditor.actions', { name: row.record.name })" :disabled="busy" :data-testid="`my-theme-menu-${row.record.id}`" @select="id => MENU_ACTIONS[id](row.record)">
             <Icon name="more" :size="16" />
           </ActionMenu>
         </template>

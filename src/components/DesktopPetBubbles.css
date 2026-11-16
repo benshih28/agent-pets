@@ -460,3 +460,8 @@
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Bubbles would be clipped by the small mini window; DesktopPet.css shows a ring + corner badge instead. */
+.desktop-pet.mode-mini .pet-toast {
+  display: none;
+}

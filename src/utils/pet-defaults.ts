@@ -2,6 +2,7 @@
 // of the box; decorative ambient motion and the tool-activity bubble stay
 // opt-in. A user who ever flipped a switch has an explicit '0' / '1' stored and
 // keeps that choice; only never-touched settings follow the new defaults.
+import { STORAGE_KEYS } from './storage-keys.ts'
 
 export interface PetPrefStorage {
   getItem(key: string): string | null
@@ -33,12 +34,13 @@ export interface PetFeedbackDefaults {
  * opted into (legacy '1'), everyone else gets them off.
  */
 export function readPetFeedbackDefaults(storage: PetPrefStorage): PetFeedbackDefaults {
-  const legacyFx = storage.getItem('agent-pet-fx') === '1'
-  const legacyBubble = storage.getItem('agent-pet-bubble') === '1'
+  const { reactions, bubble, ambient, activityBubble } = STORAGE_KEYS
+  const legacyFx = storage.getItem(reactions.key) === '1'
+  const legacyBubble = storage.getItem(bubble.key) === '1'
   return {
-    reactions: readBooleanPref(storage, 'agent-pet-fx', true),
-    bubble: readBooleanPref(storage, 'agent-pet-bubble', true),
-    ambient: readBooleanPref(storage, 'agent-pet-ambient', legacyFx),
-    activity: readBooleanPref(storage, 'agent-pet-activity', legacyBubble),
+    reactions: readBooleanPref(storage, reactions.key, true),
+    bubble: readBooleanPref(storage, bubble.key, true),
+    ambient: readBooleanPref(storage, ambient.key, legacyFx),
+    activity: readBooleanPref(storage, activityBubble.key, legacyBubble),
   }
 }

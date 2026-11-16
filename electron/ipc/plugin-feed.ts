@@ -5,6 +5,7 @@ import type { PluginEventSourceController } from '../plugin-event-source.ts'
 import { isPluginPanelNotificationId } from '../plugin-panel-validation.ts'
 import { IPC_CHANNELS } from './channels.ts'
 import { isSafeItemId } from '../../src/types/id-patterns.ts'
+import type { PluginLocalizedText } from '../../src/types/plugin.ts'
 
 export interface PluginFeedIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -19,12 +20,12 @@ export interface PluginFeedIpcDependencies {
   isPluginSkinPetId(value: unknown): value is string
   getPendingSkinFallbacks(): Map<string, {
     pluginId: string
-    pluginName: { 'zh-TW': string; 'en-US': string }
-    skinName: { 'zh-TW': string; 'en-US': string }
+    pluginName: PluginLocalizedText
+    skinName: PluginLocalizedText
   }>
   getEnabledPluginSkinIds(): Set<string>
-  fallbackCopy(info: { pluginName: { 'zh-TW': string; 'en-US': string }; skinName: { 'zh-TW': string; 'en-US': string } }): { title: string; body: string }
-  addSystemNotification(pluginId: string, pluginName: { 'zh-TW': string; 'en-US': string }, title: string, body: string): boolean
+  fallbackCopy(info: { pluginName: PluginLocalizedText; skinName: PluginLocalizedText }): { title: string; body: string }
+  addSystemNotification(pluginId: string, pluginName: PluginLocalizedText, title: string, body: string): boolean
   broadcastUnreadCount(): void
   hasPluginContext(pluginId: string): boolean
   isPluginLinkHostAllowed(pluginId: string, host: string): boolean

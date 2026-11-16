@@ -10,6 +10,37 @@ export interface PluginSecretEncryption {
   decryptString(value: Buffer): string
 }
 
+/** The subset of Electron's safeStorage that the platform check below needs. */
+export interface SafeStorageLike extends PluginSecretEncryption {
+  getSelectedStorageBackend?(): string
+}
+
+/**
+ * Wraps Electron's safeStorage. On Linux without a keyring (no gnome-libsecret / kwallet)
+ * Chromium falls back to the `basic_text` backend, which only obfuscates with a hard-coded
+ * key; that is not encryption, so report it as unavailable and keep secrets out of the file.
+ */
+export function createSafeStorageEncryption(
+  storage: SafeStorageLike,
+  platform: NodeJS.Platform = process.platform,
+): PluginSecretEncryption {
+  const available = (): boolean => {
+    try {
+      if (!storage.isEncryptionAvailable()) return false
+      if (platform !== 'linux') return true
+      const backend = storage.getSelectedStorageBackend?.()
+      return backend !== undefined && backend !== 'basic_text' && backend !== 'unknown'
+    } catch {
+      return false
+    }
+  }
+  return {
+    isEncryptionAvailable: available,
+    encryptString: value => storage.encryptString(value),
+    decryptString: value => storage.decryptString(value),
+  }
+}
+
 export class PluginSecretsStore {
   private readonly userDataDirectory: string
   private readonly encryption: PluginSecretEncryption

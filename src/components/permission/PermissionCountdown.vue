@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { t } from '@/i18n'
 import type { PermissionRequestView } from '@/types/permission'
 import { PERMISSION_CLOCK_INTERVAL_MS } from '@/components/permission/usePermissionClock'
+import { formatClockDuration } from '@/utils/intl-format'
 import {
-  formatDuration,
   permissionIsUrgent,
   permissionRemainingFraction,
   permissionRemainingMs,
@@ -15,7 +15,7 @@ const props = defineProps<{
   now: number
 }>()
 
-const remaining = computed(() => formatDuration(permissionRemainingMs(props.request, props.now)))
+const remaining = computed(() => formatClockDuration(permissionRemainingMs(props.request, props.now)))
 const urgent = computed(() => permissionIsUrgent(props.request, props.now))
 const percent = computed(() => Math.round(permissionRemainingFraction(props.request, props.now) * 100))
 // 補間剛好一個時鐘間隔，倒數條才會連續滑動而不是一格一格跳。

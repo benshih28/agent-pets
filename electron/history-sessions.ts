@@ -14,7 +14,8 @@ import {
   type HistorySessionOutcome,
   type HistorySessionQuery,
 } from '../src/types/history.ts'
-import { isProjectId } from '../src/types/id-patterns.ts'
+import { isOpaqueId64, isProjectId } from '../src/types/id-patterns.ts'
+import { asRecord, recordOrEmpty } from './value-guards.ts'
 
 // 工作階段清單的純函式：輸入驗證、SQL 組裝與資料列轉換。與 HistoryStore 分開，
 // 讓 IPC 驗證與 SQL 形狀可以單獨測試，history.ts 只負責交易與寫入。
@@ -34,7 +35,6 @@ export const MAX_PERMISSION_WAIT_MS = 6 * 60 * 60 * 1000
 // session_pk = `${adapterId}:${agentId}:${hash24}`；agent 部分是自由文字，
 // 所以只檢查長度、不含控制字元且以雜湊結尾（它一律以參數綁定）。
 const SESSION_ID = /^[^\u0000-\u001f\u007f]{1,400}:[a-f0-9]{24}$/
-const ADAPTER_ID = /^[A-Za-z0-9._:-]{1,64}$/
 const TOOL_NAME_UNSAFE = /[^A-Za-z0-9._:/@+ -]/g
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 const MAX_TOOL_NAME_LENGTH = 64
@@ -101,11 +101,11 @@ function finiteTimestamp(value: unknown, max: number): number | undefined {
  * 認得的欄位要嘛有效、要嘛丟掉，絕不原樣傳下去。
  */
 export function normalizeSessionQuery(input: unknown, now: number): HistorySessionQuery & { limit: number } {
-  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}
+  const raw = recordOrEmpty(input)
   const maxTime = now + MAX_FUTURE_SKEW_MS
   const query: HistorySessionQuery & { limit: number } = { limit: HISTORY_SESSION_PAGE_DEFAULT }
   if (isProjectId(raw.projectId)) query.projectId = raw.projectId
-  if (typeof raw.adapterId === 'string' && ADAPTER_ID.test(raw.adapterId)) query.adapterId = raw.adapterId
+  if (isOpaqueId64(raw.adapterId)) query.adapterId = raw.adapterId
   const from = finiteTimestamp(raw.from, maxTime)
   const to = finiteTimestamp(raw.to, maxTime)
   if (from !== undefined) query.from = from
@@ -122,7 +122,7 @@ export function normalizeSessionQuery(input: unknown, now: number): HistorySessi
   if (typeof raw.limit === 'number' && Number.isInteger(raw.limit)) {
     query.limit = Math.min(HISTORY_SESSION_PAGE_MAX, Math.max(1, raw.limit))
   }
-  const cursor = raw.cursor && typeof raw.cursor === 'object' ? raw.cursor as Record<string, unknown> : null
+  const cursor = asRecord(raw.cursor)
   const cursorAt = cursor ? finiteTimestamp(cursor.lastSeenAt, Number.MAX_SAFE_INTEGER) : undefined
   if (cursor && cursorAt !== undefined && isHistorySessionId(cursor.id)) {
     query.cursor = { lastSeenAt: cursorAt, id: cursor.id }

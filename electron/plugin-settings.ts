@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import type { PluginManifest, PluginSettingDefinition, PluginSettingScalar } from '../src/types/plugin.ts'
 import { ensurePluginDataDirectory, readPluginDataJson, writePluginDataJson } from './plugin-data-file.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_SETTINGS_FILENAME = 'settings.json'
 export const PLUGIN_SETTINGS_MAX_BYTES = 64 * 1024
@@ -86,7 +87,7 @@ export function isValidSettingValue(definition: PluginSettingDefinition, value: 
 
 /** 只接受一般物件（原型為 Object.prototype 或 null）；設定值不能是類別實例或帶 getter 的代理。 */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  if (!isRecord(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
 }

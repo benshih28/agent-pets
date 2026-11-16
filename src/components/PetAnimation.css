@@ -65,6 +65,7 @@
   pointer-events: none;
 }
 
+/* 只出現一次的裝飾動畫保留字面時長；--transition-* 自帶 easing，放進 animation 簡寫會讓整條宣告失效。 */
 .pet-ghost-canvas.fading {
   animation: pet-ghost-fade 150ms ease-out forwards;
 }
@@ -75,7 +76,7 @@
 }
 
 .pet-canvas.pet-offline-ambient {
-  animation: pet-offline-breathe 3.8s ease-in-out infinite;
+  animation: pet-offline-breathe var(--duration-breathe) ease-in-out infinite;
 }
 
 .pet-canvas.pet-frozen {
@@ -86,7 +87,7 @@
    reactions setting. The spritesheet remains responsible for the main pose;
    these small loops keep long-running states from feeling frozen. */
 .pet-canvas.pet-idle-ambient {
-  animation: pet-breathe 3.8s ease-in-out infinite;
+  animation: pet-breathe var(--duration-breathe) ease-in-out infinite;
 }
 
 .pet-canvas.pet-thinking-ambient {
@@ -202,11 +203,11 @@
 }
 
 .pet-canvas.pet-cursor-look-left {
-  animation: pet-cursor-look-left 0.42s ease;
+  animation: pet-cursor-look-left var(--duration-glance) ease;
 }
 
 .pet-canvas.pet-cursor-look-right {
-  animation: pet-cursor-look-right 0.42s ease;
+  animation: pet-cursor-look-right var(--duration-glance) ease;
 }
 
 @keyframes pet-cursor-look-left {

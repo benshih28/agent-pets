@@ -572,19 +572,33 @@ export class PluginFeedController {
 
   private addToCenter(item: PluginFeedItem, read: boolean): void {
     this.center.push({ item: cloneFeedItem(item), read })
-    const pluginIndexes = this.center
-      .map((record, index) => record.item.pluginId === item.pluginId ? index : -1)
-      .filter(index => index >= 0)
-    while (pluginIndexes.length > PLUGIN_FEED_MAX_PER_PLUGIN) {
-      const oldestIndex = pluginIndexes.shift()
-      if (oldestIndex !== undefined) this.center.splice(oldestIndex, 1)
-      for (let index = 0; index < pluginIndexes.length; index += 1) {
-        const nextIndex = pluginIndexes[index]
-        if (nextIndex !== undefined && oldestIndex !== undefined && nextIndex > oldestIndex) pluginIndexes[index] = nextIndex - 1
-      }
-    }
-    while (this.center.length > PLUGIN_FEED_MAX_CENTER_ITEMS) this.center.shift()
+    // 先做單一 plugin 修剪再做總量修剪：順序反過來會多刪到其他 plugin 的最舊紀錄。
+    this.trimPluginOverflow(item.pluginId)
+    const globalOverflow = this.center.length - PLUGIN_FEED_MAX_CENTER_ITEMS
+    if (globalOverflow > 0) this.center.splice(0, globalOverflow)
     this.notifyNotificationsChanged()
+  }
+
+  // 不另外維護 per-plugin 計數 Map：center 有新增、刪除、清空、修剪多條修改路徑，
+  // 每條都要同步計數容易出錯；n 上限只有 500，每次新增掃一次就夠。
+  private trimPluginOverflow(pluginId: string): void {
+    let pluginCount = 0
+    for (const record of this.center) {
+      if (record.item.pluginId === pluginId) pluginCount += 1
+    }
+    let toDrop = pluginCount - PLUGIN_FEED_MAX_PER_PLUGIN
+    if (toDrop <= 0) return
+    // 原地壓縮一次，避免在迴圈裡反覆 splice 搬移整個陣列。
+    let writeIndex = 0
+    for (const record of this.center) {
+      if (toDrop > 0 && record.item.pluginId === pluginId) {
+        toDrop -= 1
+        continue
+      }
+      this.center[writeIndex] = record
+      writeIndex += 1
+    }
+    this.center.length = writeIndex
   }
 
   private notifyNotificationsChanged(): void {

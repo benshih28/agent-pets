@@ -42,10 +42,6 @@ export interface PluginPanelInsets {
   bottom: number
 }
 
-const MIN_WIDTH = 320
-const MAX_WIDTH = 960
-const MIN_HEIGHT = 240
-const MAX_HEIGHT = 800
 const CHROME_HEADER_MIN_HEIGHT = 48
 
 function finite(value: unknown): value is number {

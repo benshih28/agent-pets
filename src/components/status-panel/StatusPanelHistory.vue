@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { t, type TranslationKey } from '@/i18n'
+import { t, tPlural, type TranslationKey } from '@/i18n'
 import { useHistoryFormat } from '@/composables/useHistoryFormat'
 import { useProgressionLabels } from '@/composables/useProgressionLabels'
 import { useQuotaFormat } from '@/composables/useQuotaFormat'
@@ -26,6 +26,8 @@ import Select from '@/components/ui/Select.vue'
 import TabPanel from '@/components/ui/TabPanel.vue'
 import Tabs from '@/components/ui/Tabs.vue'
 import { formatDate } from '@/utils/intl-format'
+import { STORAGE_KEYS, type HistoryView } from '@/utils/storage-keys'
+import { readStored, writeStored } from '@/utils/local-storage'
 
 const props = defineProps<{ active: boolean }>()
 const store = useAgentStore()
@@ -49,35 +51,18 @@ let actionTimer: ReturnType<typeof setTimeout> | null = null
 let dayWatchTimer: ReturnType<typeof setInterval> | null = null
 
 // --- remembered per-viewer view state (all optional conveniences) -----------
-const RANGE_KEY = 'agent-pet-history-range'
-const COLLAPSE_KEY = 'agent-pet-history-collapsed'
-const INTRO_KEY = 'agent-pet-history-intro-dismissed'
-const VIEW_KEY = 'agent-pet-history-view'
-type HistoryView = 'overview' | 'sessions'
-
-function readRange(): HistoryRangeDays {
-  try {
-    const stored = Number(localStorage.getItem(RANGE_KEY))
-    return HISTORY_RANGE_OPTIONS.find(option => option === stored) ?? 7
-  } catch { return 7 }
-}
-function readCollapsed(): Record<string, boolean> {
-  try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}') as Record<string, boolean> } catch { return {} }
-}
-const historyRange = ref<HistoryRangeDays>(readRange())
-const collapsed = ref<Record<string, boolean>>(readCollapsed())
-const historyView = ref<HistoryView>('overview')
-try { if (localStorage.getItem(VIEW_KEY) === 'sessions') historyView.value = 'sessions' } catch { /* convenience only */ }
+const historyRange = ref<HistoryRangeDays>(readStored(STORAGE_KEYS.historyRange))
+const collapsed = ref<Record<string, boolean>>(readStored(STORAGE_KEYS.historyCollapsed))
+const historyView = ref<HistoryView>(readStored(STORAGE_KEYS.historyView))
 const viewItems = computed(() => [
   { id: 'overview', label: t('growth.viewOverview') },
   { id: 'sessions', label: t('growth.viewSessions') },
 ])
 function selectView(view: string): void {
   historyView.value = view === 'sessions' ? 'sessions' : 'overview'
-  try { localStorage.setItem(VIEW_KEY, historyView.value) } catch { /* convenience only */ }
+  writeStored(STORAGE_KEYS.historyView, historyView.value)
 }
-const introDismissed = ref(true)
-try { introDismissed.value = localStorage.getItem(INTRO_KEY) === '1' } catch { introDismissed.value = false }
+const introDismissed = ref(readStored(STORAGE_KEYS.historyIntroDismissed))
 
 const RANGE_LABEL_KEYS = { 7: 'growth.range7', 30: 'growth.range30', 90: 'growth.range90' } as const
 const TOKEN_LABEL_KEYS: Partial<Record<HistorySummary['tokenQuality'], TranslationKey>> = {
@@ -87,18 +72,18 @@ const TOKEN_LABEL_KEYS: Partial<Record<HistorySummary['tokenQuality'], Translati
 function selectRange(days: HistoryRangeDays): void {
   if (historyRange.value === days) return
   historyRange.value = days
-  try { localStorage.setItem(RANGE_KEY, String(days)) } catch { /* convenience only */ }
+  writeStored(STORAGE_KEYS.historyRange, days)
   void refreshHistory()
 }
 
 function toggleSection(key: string, event: Event): void {
   collapsed.value = { ...collapsed.value, [key]: !(event.target as HTMLDetailsElement).open }
-  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed.value)) } catch { /* convenience only */ }
+  writeStored(STORAGE_KEYS.historyCollapsed, collapsed.value)
 }
 
 function dismissIntro(): void {
   introDismissed.value = true
-  try { localStorage.setItem(INTRO_KEY, '1') } catch { /* convenience only */ }
+  writeStored(STORAGE_KEYS.historyIntroDismissed, true)
 }
 
 // --- derived data ------------------------------------------------------------
@@ -154,6 +139,13 @@ function agentHeadline(agent: HistoryAgentStat): string {
     : duration(agent.activeMs)
 }
 
+// 每列的占比與標題一次算好，模板不再為同一列重複呼叫兩次 agentShare。
+const agentRows = computed(() => (historySummary.value?.agents ?? []).map(agent => ({
+  agent,
+  share: agentShare(agent),
+  headline: agentHeadline(agent),
+})))
+
 function trackingDate(): string {
   const since = historySummary.value?.tokenTrackingSince
   if (!since) return ''
@@ -167,11 +159,11 @@ const scanLine = computed(() => {
 })
 const skippedLine = computed(() => {
   const skipped = historySummary.value?.scan?.filesSkipped ?? 0
-  return skipped > 0 ? t('growth.scanSkipped', { count: skipped }) : ''
+  return skipped > 0 ? tPlural('growth.scanSkipped', skipped) : ''
 })
 const deferredLine = computed(() => {
   const deferred = historySummary.value?.scan?.filesDeferred ?? 0
-  return deferred > 0 ? t('growth.scanDeferred', { count: deferred }) : ''
+  return deferred > 0 ? tPlural('growth.scanDeferred', deferred) : ''
 })
 
 // --- loading -------------------------------------------------------------------
@@ -403,9 +395,9 @@ onUnmounted(() => {
               <Button size="sm" :active="agentMetric === 'time'" @click="agentMetric = 'time'">{{ t('growth.agentByTime') }}</Button>
             </div>
             <div class="history-agent-list">
-              <div v-for="agent in historySummary.agents" :key="agent.adapterId" class="history-agent-row">
-                <div class="history-agent-heading"><span>{{ agentDisplayName(agent.adapterId) }}</span><strong>{{ agentHeadline(agent) }} · {{ agentShare(agent) }}%</strong></div>
-                <ProgressTrack :value="agentShare(agent)" tone="success" decorative />
+              <div v-for="{ agent, share, headline } in agentRows" :key="agent.adapterId" class="history-agent-row">
+                <div class="history-agent-heading"><span>{{ agentDisplayName(agent.adapterId) }}</span><strong>{{ headline }} · {{ share }}%</strong></div>
+                <ProgressTrack :value="share" tone="success" decorative />
                 <div class="history-muted">{{ tokens(agent.tokenInput, 'full') }} {{ t('historyTokenIn') }} · {{ tokens(agent.tokenOutput, 'full') }} {{ t('historyTokenOut') }} · {{ tokenLabel(agent.tokenQuality) }}</div>
                 <div class="history-muted history-agent-outcomes">
                   <span>{{ duration(agent.activeMs) }}</span>

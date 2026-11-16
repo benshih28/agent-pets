@@ -95,7 +95,7 @@ test('fixture-only adapters can satisfy the contract without product changes', a
 test('Claude Code reports respond only while answering from the pet is turned on', async () => {
   let enabled = false
   const registry = createAgentAdapterRegistry({
-    inspect: () => ({ installed: true, health: 'ready', message: 'fixture', checks: [] }),
+    inspect: async () => ({ installed: true, health: 'ready', message: 'fixture', checks: [] }),
     install: () => {},
     uninstall: () => {},
     capabilities: (id, base) => projectAdapterCapabilities(id, base, enabled),

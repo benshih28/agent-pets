@@ -137,13 +137,13 @@ function revert(): void {
 .field-help {
   color: var(--text-muted);
   font-size: var(--font-xs);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .field-error {
   color: var(--text-danger);
   font-size: var(--font-xs);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .sr-only {

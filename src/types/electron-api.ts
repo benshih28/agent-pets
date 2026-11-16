@@ -1,21 +1,23 @@
 /// <reference types="vite/client" />
 
-import type { OnboardingAction, OnboardingState } from './onboarding'
-import type { DesktopPreferences, DesktopPreferencesPatch } from './desktop'
-import type { SessionJumpRequest, SessionJumpResult } from './session-jump'
-import type { PermissionDecisionValue, PermissionRequestStatus, PermissionRequestView, PermissionAuditEntry } from './permission'
-import type { ProgressionAwardEvent, ProgressionInsights, ProgressionSnapshot } from './progression'
-import type { AchievementSnapshot, AchievementUnlock } from './achievement'
-import type { HistoryClearResult, HistoryCommandResult, HistoryExportRequest, HistorySessionDetail, HistorySessionPage, HistorySessionQuery, HistorySummary, HistoryUsageBlock } from './history'
-import type { PetWindowMode, PetWindowModeState } from './pet-window'
-import type { PetBehaviorManifest, PluginSkinPetSource } from './pet'
-import type { PetImportCommitResult, PetImportDecision, PetImportPrepareResult } from './pet-import'
-import type { AgentSession, AgentSource, QuotaFamilyKey } from './agent'
-import type { AgentAdapterId } from './agent-adapter'
-import type { LocalServerHealthSnapshot, LocalServerId } from './reliability'
-import type { PresentationIntent, PresentationStatusUpdate } from './presentation'
-import type { PanelThemeIpcResult, PanelThemeMode, PanelThemeRef, PanelThemeState, PanelThemeUserImageOptions, PetThemeState } from './panel-theme'
-import type { PanelThemeValidateIpcResult, UserPanelThemeDefinition, UserPanelThemeIpcResult } from './panel-theme-user'
+import type { OnboardingAction, OnboardingState } from '@/types/onboarding'
+import type { DesktopPreferences, DesktopPreferencesPatch } from '@/types/desktop'
+import type { AppUpdateCheckResponse, AppUpdateState } from '@/types/app-update'
+import type { SessionJumpRequest, SessionJumpResult } from '@/types/session-jump'
+import type { PermissionDecisionValue, PermissionRequestStatus, PermissionRequestView, PermissionAuditEntry } from '@/types/permission'
+import type { ProgressionAwardEvent, ProgressionInsights, ProgressionSnapshot } from '@/types/progression'
+import type { AchievementSnapshot, AchievementUnlock } from '@/types/achievement'
+import type { DbMaintenanceResult, GrowthResetArmResult, GrowthResetResult } from '@/types/growth-maintenance'
+import type { HistoryClearResult, HistoryCommandResult, HistoryExportRequest, HistorySessionDetail, HistorySessionPage, HistorySessionQuery, HistorySummary, HistoryUsageBlock } from '@/types/history'
+import type { PetWindowMode, PetWindowModeState } from '@/types/pet-window'
+import type { PetBehaviorManifest, PluginSkinPetSource } from '@/types/pet'
+import type { PetImportCommitResult, PetImportDecision, PetImportPrepareResult } from '@/types/pet-import'
+import type { AgentSession, AgentSource, AgentStatusEvent, QuotaFamilyKey } from '@/types/agent'
+import type { AgentAdapterId } from '@/types/agent-adapter'
+import type { LocalServerHealthSnapshot, LocalServerId } from '@/types/reliability'
+import type { PresentationIntent, PresentationStatusUpdate } from '@/types/presentation'
+import type { PanelThemeIpcResult, PanelThemeMode, PanelThemeRef, PanelThemeState, PanelThemeUserImageOptions, PetThemeState } from '@/types/panel-theme'
+import type { PanelThemeValidateIpcResult, UserPanelThemeDefinition, UserPanelThemeIpcResult } from '@/types/panel-theme-user'
 import type {
   PluginBadgeView,
   PluginBrokerDiagnostic,
@@ -32,23 +34,22 @@ import type {
   PluginPanelViewClosedEvent,
   PluginPreferences,
   PluginSettingScalar,
-} from './plugin'
-import type { PluginCatalogPanelItem } from './plugin-catalog'
+} from '@/types/plugin'
+import type { PluginCatalogPanelItem } from '@/types/plugin-catalog'
 import type {
   ProjectMcpApplyRequest,
   ProjectMcpPlan,
   ProjectMcpRegistrySnapshot,
   ProjectMcpRemovalSummary,
   ProjectMcpSetupSummary,
-} from './project-mcp'
-import type { ProjectPetArchiveResult, ProjectPetCommandResult, ProjectPetView } from './project-pet'
+} from '@/types/project-mcp'
+import type { ProjectPetArchiveResult, ProjectPetCommandResult, ProjectPetView } from '@/types/project-pet'
 
 import type {
   AdapterDiagnoseIpcResult,
   AdapterInstallIpcResult,
   AdapterIntegrationStatusIpcResult,
-  AdapterUninstallIpcResult,
-} from './ipc'
+} from '@/types/ipc'
 
 export interface ElectronAPI {
       reportRendererError: (report: { message: string; stack?: string; kind: 'vue' | 'unhandledrejection' | 'error' }) => void
@@ -59,7 +60,7 @@ export interface ElectronAPI {
       getServerHealth: () => Promise<LocalServerHealthSnapshot>
       retryServerHealth: (id?: LocalServerId) => Promise<LocalServerHealthSnapshot>
       onServerHealthChanged: (callback: (snapshot: LocalServerHealthSnapshot) => void) => () => void
-      onAgentStatusEvent: (callback: (event: any) => void) => () => void
+      onAgentStatusEvent: (callback: (event: AgentStatusEvent) => void) => () => void
       onPresentationIntent: (callback: (intent: PresentationIntent) => void) => () => void
       onPluginFeedItem: (callback: (item: PluginFeedItem) => void) => () => void
       onPluginFeedUnreadCount: (callback: (count: number) => void) => () => void
@@ -143,6 +144,10 @@ export interface ElectronAPI {
       onPanelOpenPluginView: (callback: (pluginId: string) => void) => () => void
       initializeDesktopPreferences: (legacySoundEnabled: boolean) => Promise<DesktopPreferences>
       openLoginItemsSettings: () => Promise<boolean>
+      getAppUpdateState: () => Promise<AppUpdateState>
+      setAppUpdateEnabled: (enabled: boolean) => Promise<AppUpdateState>
+      checkAppUpdate: () => Promise<AppUpdateCheckResponse>
+      openAppUpdateRelease: () => Promise<boolean>
       setDesktopPreferences: (patch: DesktopPreferencesPatch) => Promise<DesktopPreferences>
       getPowerSaveState: () => Promise<boolean>
       onPowerSaveStateUpdated: (callback: (powerSave: boolean) => void) => () => void
@@ -205,6 +210,9 @@ export interface ElectronAPI {
       archiveProjectPet: (projectId: string) => Promise<ProjectPetArchiveResult>
       getProjectPetsEnabled: () => Promise<boolean>
       setProjectPetsEnabled: (enabled: boolean) => Promise<boolean>
+      armGrowthReset: () => Promise<GrowthResetArmResult>
+      resetGrowth: (token: string) => Promise<GrowthResetResult>
+      runDbMaintenance: () => Promise<DbMaintenanceResult>
       clearHistory: () => Promise<HistoryClearResult>
       exportHistory: (request?: HistoryExportRequest) => Promise<HistoryCommandResult>
       revealHistoryExport: () => Promise<boolean>

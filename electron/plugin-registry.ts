@@ -1,16 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { writeFileAtomicSync } from './atomic-file-write.ts'
 import { renameSyncWithRetry } from './fs-rename.ts'
 import { zipSync } from 'fflate'
 import { guardArchive } from './archive-guard.ts'
 import { parsePluginManifest } from './plugin-manifest.ts'
+import { rasterImageTypeIn, type RasterImageType } from './raster-image.ts'
 import { checkPanelThemePackagedImage, isWoff2, panelThemeAssetPaths, PANEL_THEME_FONT_MAX_BYTES, PANEL_THEME_IMAGE_MAX_BYTES } from './plugin-panel-themes.ts'
 import { verifyPluginSignature } from './plugin-signature.ts'
 import type { PluginManifest, PluginRuntimeState } from '../src/types/plugin.ts'
 import type { PluginRegistryError } from '../src/types/ipc.ts'
 import { isPluginId, isKeyFingerprint, isSemverCore } from '../src/types/id-patterns.ts'
 import { isRecord } from './value-guards.ts'
+import { grantedPermissionUnits } from '../src/utils/plugin-permission-units.ts'
 
 export const PLUGIN_ARCHIVE_MAX_BYTES = 5 * 1024 * 1024
 export const PLUGIN_ARCHIVE_SKIN_MAX_BYTES = 25 * 1024 * 1024
@@ -77,45 +80,11 @@ function compareVersions(left: string, right: string): number {
   return 0
 }
 
-function permissionUnits(manifest: PluginManifest): string[] {
-  const result = new Set<string>()
-  for (const [key, value] of Object.entries(manifest.permissions)) {
-    if (key === 'network' && value && typeof value === 'object' && !Array.isArray(value) && 'hosts' in value) {
-      const network = value as { hosts: string[]; userGranted?: boolean }
-      for (const host of network.hosts) result.add(`network:${host}`)
-      if (network.userGranted) result.add('network:userGranted')
-    } else if (key === 'links' && value && typeof value === 'object' && !Array.isArray(value) && 'hosts' in value) {
-      for (const host of (value as { hosts: string[] }).hosts) result.add(`links:${host}`)
-    } else if (key === 'secrets' && Array.isArray(value)) {
-      for (const secret of value) result.add(`secrets:${secret}`)
-    } else if (key === 'schedule' && value) {
-      result.add('schedule')
-    } else if (value === true) {
-      result.add(key)
-    }
-  }
-  if (manifest.contributes.feed) result.add('contributes:feed')
-  if (manifest.contributes.reaction) result.add('contributes:reaction')
-  if (manifest.contributes.panelView) result.add('contributes:panelView')
-  if (manifest.contributes.commands?.length) result.add('contributes:commands')
-  if (manifest.contributes.tray?.commands.length) result.add('contributes:tray')
-  if (manifest.contributes.badge) result.add('contributes:badge')
-  if (manifest.contributes.skins?.length) result.add(`contributes:skins:${manifest.contributes.skins.length}`)
-  if (manifest.contributes.eventSource) result.add('contributes:eventSource')
-  const panelThemes = manifest.contributes.panelThemes ?? []
-  if (panelThemes.length) result.add(`contributes:panelThemes:${panelThemes.length}`)
-  if (panelThemes.some(theme => theme.fonts.length > 0)) result.add('contributes:panelThemeFonts')
-  return [...result].sort()
-}
+// 套件內的 icon 與 skin spritesheet 只接受 PNG、WebP（比寵物 spritesheet 的白名單窄，不含 JPEG）。
+const PLUGIN_ARCHIVE_RASTER_TYPES: ReadonlySet<RasterImageType> = new Set(['image/png', 'image/webp'])
 
 function hasRasterSignature(data: Uint8Array): boolean {
-  const png = data.length >= 8
-    && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47
-    && data[4] === 0x0d && data[5] === 0x0a && data[6] === 0x1a && data[7] === 0x0a
-  const webp = data.length >= 12
-    && Buffer.from(data.subarray(0, 4)).toString('ascii') === 'RIFF'
-    && Buffer.from(data.subarray(8, 12)).toString('ascii') === 'WEBP'
-  return png || webp
+  return rasterImageTypeIn(data, PLUGIN_ARCHIVE_RASTER_TYPES) !== null
 }
 
 function regularDirectory(directory: string): boolean {
@@ -151,14 +120,8 @@ function assertSafeExistingDirectory(directory: string): void {
 function atomicWriteJson(filePath: string, value: unknown): void {
   const directory = path.dirname(filePath)
   ensureDirectory(directory)
-  const temporary = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`)
-  try {
-    fs.writeFileSync(temporary, JSON.stringify(value, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    renameSyncWithRetry(temporary, filePath)
-  } catch (error) {
-    try { fs.rmSync(temporary, { force: true }) } catch {}
-    throw error
-  }
+  const temporaryPath = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`)
+  writeFileAtomicSync(filePath, JSON.stringify(value, null, 2), { temporaryPath, mode: 0o600 })
 }
 
 function readRegistry(filePath: string): Record<string, PluginRegistryEntry> {
@@ -392,7 +355,7 @@ export class PluginRegistry {
       ? 'new'
       : comparison > 0 ? 'update'
         : comparison < 0 ? 'downgrade' : 'reinstall'
-    const requestedPermissions = permissionUnits(manifest)
+    const requestedPermissions = grantedPermissionUnits(manifest)
     const grantedPermissions = isRecord(existing?.grantedPermissions) && Array.isArray(existing.grantedPermissions.units)
       ? existing.grantedPermissions.units.filter((value): value is string => typeof value === 'string')
       : []
@@ -551,7 +514,7 @@ export class PluginRegistry {
         currentVersion: manifest.version,
         status: 'installed',
         installedAt: now,
-        grantedPermissions: { units: permissionUnits(manifest) },
+        grantedPermissions: { units: grantedPermissionUnits(manifest) },
         signatureStatus: prepared.publicPlan.developerMode ? 'unverified' : prepared.publicPlan.signatureStatus ?? 'unsigned',
         ...(signatureFingerprint ? { signatureFingerprint } : {}),
         ...(trustedKeyFingerprint ? { trustedKeyFingerprint } : {}),

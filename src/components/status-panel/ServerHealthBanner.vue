@@ -76,7 +76,7 @@ onUnmounted(() => dispose?.())
 }
 
 .server-health-summary {
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .server-health-details {

@@ -14,6 +14,7 @@ import {
   verifyPluginSignature,
 } from '../electron/plugin-signature.ts'
 import { PluginRegistry } from '../electron/plugin-registry.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function createTestKeyPair() {
   const pair = generateKeyPairSync('ed25519')
@@ -62,17 +63,16 @@ function makeArchive(version: string, pair?: ReturnType<typeof createTestKeyPair
 
 function withUserData(run: (directory: string) => void): void {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-signature-'))
-  try { run(directory) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { run(directory) } finally { removeTempTree(directory) }
 }
 
 async function withUserDataAsync(run: (directory: string) => Promise<void> | void): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-signature-'))
-  try { await run(directory) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { await run(directory) } finally { removeTempTree(directory) }
 }
 
 function successfulPlan(registry: PluginRegistry, archive: Uint8Array) {
   const result = registry.planInstall(archive)
-  assert.equal(result.ok, true)
   if (!result.ok) throw new Error(result.error)
   return result.value
 }
@@ -276,7 +276,7 @@ test('developer folder plans skip signatures and mark the installed package unve
       assert.equal(install(registry, planned.value.token).ok, true)
       assert.equal(registry.list()[0]?.signatureStatus, 'unverified')
     } finally {
-      fs.rmSync(source, { recursive: true, force: true })
+      removeTempTree(source)
     }
   })
 })

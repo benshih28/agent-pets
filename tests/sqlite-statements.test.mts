@@ -5,6 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { StatementCache } from '../electron/sqlite-statements.ts'
 import { HistoryStore } from '../electron/history.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 test('statement cache prepares each SQL string once', () => {
   const prepared: string[] = []
@@ -25,7 +26,7 @@ test('history batch commits nested writes once and rolls back as a unit', (t) =>
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-batch-'))
   const now = Date.UTC(2026, 7, 13, 1, 0, 0)
   const store = new HistoryStore(path.join(directory, 'history.sqlite'), { now: () => now })
-  t.after(() => { store.close(); fs.rmSync(directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(directory) })
 
   const usage = (id: string) => ({
     adapterId: 'codex',

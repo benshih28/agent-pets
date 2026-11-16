@@ -14,6 +14,10 @@ function unionMembers(source: string, typeName: string): string[] {
   return [...match![1]!.matchAll(/'([\w-]+)'/g)].map(entry => entry[1]!)
 }
 
+// 精靈的文字對照表在 setup-wizard/，元件只引用。
+const readWizard = () => ['src/components/SetupWizard.vue', 'src/components/setup-wizard/SetupWizardToolCard.vue', 'src/components/setup-wizard/setup-wizard-text.ts']
+  .map(read).join('\n')
+
 test('every project MCP result code and install error code has text in both locales', () => {
   const mcp = unionMembers(read('src/types/project-mcp.ts'), 'ProjectMcpResultCode')
   for (const code of mcp) {
@@ -21,7 +25,7 @@ test('every project MCP result code and install error code has text in both loca
     assert.ok(en[`onboarding.mcpCode.${code}`], `en-US missing mcpCode.${code}`)
   }
   const install = unionMembers(read('src/types/agent-adapter.ts'), 'InstallErrorCode')
-  const wizard = read('src/components/SetupWizard.vue')
+  const wizard = readWizard()
   for (const code of install) {
     const mapped = new RegExp(`${code}: '(onboarding\\.[\\w.]+)'`).exec(wizard)?.[1]
     assert.ok(mapped, `wizard has no text key for install error ${code}`)
@@ -30,7 +34,7 @@ test('every project MCP result code and install error code has text in both loca
 })
 
 test('every diagnostic check code emitted by the backend has localized text', () => {
-  const wizard = read('src/components/SetupWizard.vue')
+  const wizard = readWizard()
   const sources = ['electron/agent-adapter-operations.ts', 'electron/agent-adapter.ts'].map(read).join('\n')
   const ids = new Set([...sources.matchAll(/check\('([\w-]+)',/g)].map(entry => entry[1]!))
   assert.ok(ids.size >= 10)

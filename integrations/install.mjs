@@ -68,14 +68,14 @@ const target = flag ? TARGETS[flag] : undefined
 
 try {
   if (uninstall) {
-    setup.uninstallIntegration(target ?? (everything ? 'all' : undefined))
+    await setup.uninstallIntegration(target ?? (everything ? 'all' : undefined))
     console.log('Agent Pets integrations removed. Restart your coding tools.')
   } else {
     if (target !== 'opencode') {
       // Resolve Node.js up front so a missing install fails before any file is touched.
       await setup.prepareNodeForInstall()
     }
-    const results = setup.installIntegration(target)
+    const results = await setup.installIntegration(target)
     for (const result of results) {
       console.log(`${result.status === 'written' ? 'wrote     ' : 'unchanged '} ${result.path}`)
       if (result.backupPath) console.log(`  backup: ${result.backupPath}`)

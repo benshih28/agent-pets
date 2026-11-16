@@ -1,20 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, useId } from 'vue'
 import { useDialogA11y } from '@/composables/useDialogA11y'
-import type {
-  AdapterRuntimeStatus,
-  AgentAdapterId,
-  DiagnosticReport,
-  InstallErrorCode,
-  InstallOutcome,
-} from '@/types/agent-adapter'
-import { SOURCE_LABELS, type AgentSource } from '@/types/agent'
+import type { AgentAdapterId, InstallOutcome } from '@/types/agent-adapter'
+import type { AgentSource } from '@/types/agent'
 import { locale, t, translateBackendError, type TranslationKey } from '@/i18n'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Icon from '@/components/ui/Icon.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { formatNumber, formatTimeFull } from '@/utils/intl-format'
+import SetupWizardToolCard from '@/components/setup-wizard/SetupWizardToolCard.vue'
+import type { ToolStatus } from '@/components/setup-wizard/setup-wizard-text'
+import { useRealEventWait } from '@/composables/useRealEventWait'
+import { formatNumber } from '@/utils/intl-format'
 
 const props = defineProps<{
   /** Opened automatically on the first launch: start with the short intro. */
@@ -43,17 +40,6 @@ function finish() {
   emit('close')
 }
 
-interface ToolStatus extends AdapterRuntimeStatus {
-  verifiedAt?: number
-  testError?: string
-  diagnosis?: DiagnosticReport
-  /** Result of the last install/repair, shown inside the card until the next one. */
-  outcome?: InstallOutcome
-  /** A genuine event from the tool itself (not the built-in receiver test). */
-  realEvent?: { source: AgentSource, at: number }
-  realEventTimedOut?: boolean
-}
-
 const tools = ref<ToolStatus[]>([])
 
 const loading = ref(true)
@@ -62,45 +48,7 @@ const installing = ref<AgentAdapterId | 'all' | null>(null)
 const testing = ref<AgentSource | null>(null)
 const diagnosing = ref<AgentAdapterId | null>(null)
 
-// "Wait for a real event": listens for an event the tool itself sends, so a broken hook or a wrong
-// Node path cannot be hidden by the receiver test (which never involves the tool).
-const REAL_EVENT_WAIT_MS = 30_000
-const waitingFor = ref<AgentAdapterId | null>(null)
-const waitRemainingMs = ref(0)
-let stopWaiting: (() => void) | null = null
-
-function cancelRealEventWait() {
-  stopWaiting?.()
-  stopWaiting = null
-  waitingFor.value = null
-}
-
-function waitForRealEvent(tool: ToolStatus) {
-  cancelRealEventWait()
-  tool.realEvent = undefined
-  tool.realEventTimedOut = false
-  waitingFor.value = tool.id
-  const deadline = Date.now() + REAL_EVENT_WAIT_MS
-  waitRemainingMs.value = REAL_EVENT_WAIT_MS
-  const tick = setInterval(() => {
-    waitRemainingMs.value = Math.max(0, deadline - Date.now())
-    if (waitRemainingMs.value === 0) {
-      tool.realEventTimedOut = true
-      cancelRealEventWait()
-    }
-  }, 250)
-  const unsubscribe = window.electronAPI?.onAgentStatusEvent((raw: unknown) => {
-    const event = raw as { source?: AgentSource, sessionId?: string, originalEvent?: string }
-    if (!event?.source || !tool.sources.includes(event.source)) return
-    if (event.originalEvent === 'AgentPetsIntegrationTest' || event.sessionId?.startsWith('agent-pets-test-')) return
-    tool.realEvent = { source: event.source, at: Date.now() }
-    cancelRealEventWait()
-  })
-  stopWaiting = () => {
-    clearInterval(tick)
-    unsubscribe?.()
-  }
-}
+const { waitingFor, waitRemainingMs, start: waitForRealEvent, cancel: cancelRealEventWait } = useRealEventWait()
 const installError = ref('')
 const removing = ref<AgentAdapterId | 'all' | null>(null)
 const pendingRemoval = ref<AgentAdapterId | 'all' | null>(null)
@@ -156,28 +104,6 @@ async function detectTools() {
   stopElapsedTimer()
 }
 
-const INSTALL_ERROR_KEYS: Record<InstallErrorCode, TranslationKey> = {
-  config_unparseable: 'onboarding.errorConfigUnparseable',
-  config_unsafe: 'onboarding.errorConfigUnsafe',
-  config_too_large: 'onboarding.errorConfigTooLarge',
-  permission_denied: 'onboarding.errorPermissionDenied',
-  file_busy: 'onboarding.errorFileBusy',
-  read_only: 'onboarding.errorReadOnly',
-  node_missing: 'onboarding.errorNodeMissing',
-  node_unsupported: 'onboarding.errorNodeUnsupported',
-  unknown: 'onboarding.errorUnknown',
-}
-
-function outcomeText(outcome: InstallOutcome): string {
-  if (outcome.action === 'failed') {
-    const code = outcome.errorCode ?? 'unknown'
-    const raw = outcome.errorPath ?? ''
-    const isConfigIssue = code.startsWith('config_')
-    return t(INSTALL_ERROR_KEYS[code], { path: isConfigIssue ? raw : raw ? ` (${raw})` : '' })
-  }
-  return t(`onboarding.outcome.${outcome.action}`, { count: outcome.changedFiles.length })
-}
-
 const installSummary = ref('')
 
 // Every selected tool is installed independently; one failure never blocks the others.
@@ -227,13 +153,6 @@ function actionLabel(tool: ToolStatus): string {
   if (installing.value === tool.id) return t('installing')
   if (tool.health === 'ready') return t('reinstall')
   return t(tool.health === 'degraded' ? 'onboarding.repair' : 'install')
-}
-
-const RESTART_KEYS: Record<AgentAdapterId, TranslationKey> = {
-  opencode: 'onboarding.restartOpenCode',
-  codex: 'onboarding.restartCodex',
-  'claude-code': 'onboarding.restartClaudeCode',
-  'generic-http': 'onboarding.restartOpenCode',
 }
 
 function requestRemoval(target: AgentAdapterId | 'all') {
@@ -309,107 +228,6 @@ async function diagnoseAdapter(tool: ToolStatus) {
   diagnosing.value = null
 }
 
-const CHECK_KEYS: Readonly<Record<string, TranslationKey>> = {
-  'runtime.warn': 'onboarding.check.runtime.warn',
-  'opencode-cli.pass': 'onboarding.check.opencode-cli.pass',
-  'opencode-cli.warn': 'onboarding.check.opencode-cli.warn',
-  'opencode-desktop.pass': 'onboarding.check.opencode-desktop.pass',
-  'opencode-desktop.warn': 'onboarding.check.opencode-desktop.warn',
-  'plugin-current.pass': 'onboarding.check.plugin-current.pass',
-  'plugin-current.warn': 'onboarding.check.plugin-current.warn',
-  'permission-channel.pass': 'onboarding.check.permission-channel.pass',
-  'hooks-file.pass': 'onboarding.check.hooks-file.pass',
-  'hooks-file.fail': 'onboarding.check.hooks-file.fail',
-  'hooks-enabled.pass': 'onboarding.check.hooks-enabled.pass',
-  'hooks-enabled.fail': 'onboarding.check.hooks-enabled.fail',
-  'settings-file.pass': 'onboarding.check.settings-file.pass',
-  'settings-file.fail': 'onboarding.check.settings-file.fail',
-  'hook-script.pass': 'onboarding.check.hook-script.pass',
-  'hook-script.fail': 'onboarding.check.hook-script.fail',
-  'hook-script-current.pass': 'onboarding.check.hook-script-current.pass',
-  'hook-script-current.warn': 'onboarding.check.hook-script-current.warn',
-  'hook-command.pass': 'onboarding.check.hook-command.pass',
-  'hook-command.fail': 'onboarding.check.hook-command.fail',
-  'node.pass': 'onboarding.check.node.pass',
-  'node.fail': 'onboarding.check.node.fail',
-  'agent-present.pass': 'onboarding.check.agent-present.pass',
-  'agent-present.warn': 'onboarding.check.agent-present.warn',
-  'loopback.pass': 'onboarding.check.loopback.pass',
-  'token.pass': 'onboarding.check.token.pass',
-  'permissions.pass': 'onboarding.check.permissions.pass',
-}
-
-const FIX_KEYS: Readonly<Record<string, TranslationKey>> = {
-  'hooks-file': 'onboarding.fix.hooks-file',
-  'hooks-enabled': 'onboarding.fix.hooks-enabled',
-  'settings-file': 'onboarding.fix.settings-file',
-  'hook-script': 'onboarding.fix.hook-script',
-  'hook-script-current': 'onboarding.fix.hook-script-current',
-  'plugin-current': 'onboarding.fix.plugin-current',
-  'hook-command': 'onboarding.fix.hook-command',
-  'node': 'onboarding.fix.node',
-}
-
-const SUMMARY_KEYS: Readonly<Record<string, TranslationKey>> = {
-  ready: 'onboarding.summary.ready',
-  needs_install: 'onboarding.summary.needs_install',
-  degraded: 'onboarding.summary.degraded',
-  needs_approval: 'onboarding.summary.needs_approval',
-  error: 'onboarding.summary.error',
-}
-
-function checkText(check: { id: string, status: string, code?: string, message: string }): string {
-  const key = check.code ? CHECK_KEYS[check.code] : undefined
-  return key ? t(key) : check.message
-}
-
-function checkFix(check: { id: string, status: string }): string {
-  const key = check.status === 'pass' ? undefined : FIX_KEYS[check.id]
-  return key ? t(key) : ''
-}
-
-function summaryText(tool: ToolStatus): string {
-  const key = SUMMARY_KEYS[tool.health]
-  return key ? t(key) : (tool.message ?? "")
-}
-
-const HEALTH_LABEL_KEYS: Partial<Record<ToolStatus['health'], TranslationKey>> = {
-  ready: 'healthReady',
-  needs_install: 'healthNeedsInstall',
-  degraded: 'healthDegraded',
-  needs_approval: 'healthNeedsApproval',
-}
-
-function healthLabel(tool: ToolStatus): string {
-  return t(HEALTH_LABEL_KEYS[tool.health] ?? 'healthError')
-}
-
-interface CapabilityRow {
-  id: string
-  supported: boolean
-  label: string
-}
-
-// Plain-language capability matrix. Permission distinguishes "answer on the pet" from "shown on the
-// pet, answer in the tool" because that is the difference users actually run into.
-function capabilityRows(tool: ToolStatus): CapabilityRow[] {
-  const c = tool.capabilities
-  const name = tool.displayName
-  const permission = c.permissions === 'respond'
-    ? t('onboarding.capPermissionRespond')
-    : c.permissions === 'observe'
-      ? t('onboarding.capPermissionObserve', { name })
-      : t('onboarding.capPermissionNone')
-  return [
-    { id: 'status', supported: c.lifecycle, label: t('onboarding.capStatus') },
-    { id: 'tools', supported: c.toolActivity, label: t('onboarding.capTools') },
-    { id: 'input', supported: c.waitingInput, label: t('onboarding.capInput') },
-    { id: 'permission', supported: c.permissions !== 'none', label: permission },
-    { id: 'tokens', supported: c.tokenUsage !== 'none', label: t(c.tokenUsage === 'exact' ? 'onboarding.capTokensExact' : 'onboarding.capTokensEstimated') },
-    { id: 'quota', supported: c.quota !== 'none', label: t('onboarding.capQuota') },
-  ]
-}
-
 const overlayRef = ref<HTMLElement | null>(null)
 const wizardRef = ref<HTMLElement | null>(null)
 const titleId = `setup-wizard-${useId()}-title`
@@ -425,7 +243,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  cancelRealEventWait()
   stopElapsedTimer()
 })
 </script>
@@ -468,119 +285,24 @@ onUnmounted(() => {
       </div>
 
       <div v-else class="tools-list">
-        <Card
+        <SetupWizardToolCard
           v-for="tool in tools"
           :key="tool.id"
-          class="tool-item"
-          :class="[`health-${tool.health}`, { connected: tool.health === 'ready', detected: tool.health !== 'ready' && tool.health !== 'error' }]"
-          :tone="tool.health === 'ready' ? 'success' : tool.health === 'needs_install' ? 'accent' : 'neutral'"
-        >
-          <div class="tool-status">
-            <span class="status-dot" :class="{ green: tool.health === 'ready', yellow: tool.health !== 'ready' && tool.health !== 'error', red: tool.health === 'error' }" />
-            <span class="tool-name">{{ tool.displayName }}</span>
-            <span class="tool-health">{{ healthLabel(tool) }}</span>
-            <div class="tool-actions">
-              <Button
-                variant="secondary"
-                size="sm"
-                class="tool-action test-btn"
-                v-if="tool.installable"
-                :disabled="installing !== null || testing !== null || diagnosing !== null || removing !== null"
-                :title="t('onboarding.waitRealTitle')"
-                @click="waitingFor === tool.id ? cancelRealEventWait() : waitForRealEvent(tool)"
-              >
-                {{ waitingFor === tool.id ? t('cancel') : t('onboarding.waitReal') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                class="tool-action test-btn"
-                v-if="tool.testSource"
-                :disabled="installing !== null || testing !== null || diagnosing !== null"
-                :title="t('onboarding.testReceiverTitle')"
-                @click="testIntegration(tool)"
-              >
-                {{ testing === tool.testSource ? t('testing') : t('onboarding.testReceiver') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                class="tool-action test-btn"
-                :disabled="installing !== null || testing !== null || diagnosing !== null"
-                @click="diagnoseAdapter(tool)"
-              >
-                {{ diagnosing === tool.id ? t('diagnosing') : t('diagnose') }}
-              </Button>
-              <Button
-                :variant="tool.health === 'ready' ? 'secondary' : 'primary'"
-                size="sm"
-                class="tool-action install-action install-btn"
-                v-if="tool.installable && tool.installTarget"
-                :disabled="installing !== null || testing !== null || diagnosing !== null || removing !== null"
-                @click="install(tool.id)"
-              >
-                {{ actionLabel(tool) }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                class="tool-action remove-btn"
-                v-if="tool.installable && (tool.installed || tool.health === 'degraded')"
-                :disabled="installing !== null || testing !== null || diagnosing !== null || removing !== null"
-                @click="requestRemoval(tool.id)"
-              >
-                {{ removing === tool.id ? t('removing') : t('remove') }}
-              </Button>
-            </div>
-          </div>
-          <div class="tool-desc">{{ summaryText(tool) }}</div>
-          <div class="source-list">
-            <span v-for="source in tool.sourceLabels" :key="source" class="source-chip">{{ source }}</span>
-          </div>
-          <ul class="capability-list" :aria-label="t('onboarding.capTitle')">
-            <li v-for="row in capabilityRows(tool)" :key="row.id" :class="row.supported ? 'cap-yes' : 'cap-no'">
-              <Icon :name="row.supported ? 'check' : 'close'" :size="13" />
-              <span>{{ row.label }}</span>
-              <span class="visually-hidden">{{ row.supported ? t('onboarding.capSupported') : t('onboarding.capUnsupported') }}</span>
-            </li>
-          </ul>
-          <div
-            v-if="tool.outcome"
-            class="test-result"
-            :class="tool.outcome.action === 'failed' ? 'failed' : 'passed'"
-            :role="tool.outcome.action === 'failed' ? 'alert' : 'status'"
-          >
-            {{ outcomeText(tool.outcome) }}
-            <template v-if="tool.outcome.backupPaths.length">
-              {{ t('onboarding.backupMade', { path: tool.outcome.backupPaths[0] ?? '' }) }}
-            </template>
-            <template v-if="tool.outcome.action === 'installed' || tool.outcome.action === 'repaired'">
-              {{ t(RESTART_KEYS[tool.id]) }}
-            </template>
-          </div>
-          <div v-if="waitingFor === tool.id" class="test-result" role="status">
-            {{ t('onboarding.waitingReal', { name: tool.displayName, seconds: Math.ceil(waitRemainingMs / 1000) }) }}
-          </div>
-          <div v-else-if="tool.realEvent" class="test-result passed" role="status">
-            {{ t('onboarding.realEventOk', { source: SOURCE_LABELS[tool.realEvent.source], time: formatTimeFull(tool.realEvent.at, locale) }) }}
-          </div>
-          <div v-else-if="tool.realEventTimedOut" class="test-result failed" role="alert">
-            {{ t('onboarding.realEventTimeout', { name: tool.displayName }) }}
-          </div>
-          <div v-if="tool.verifiedAt" class="test-result passed">
-            {{ t('receiverVerifiedAt', { time: formatTimeFull(tool.verifiedAt, locale) }) }}
-          </div>
-          <div v-else-if="tool.testError" class="test-result failed">{{ tool.testError }}</div>
-          <div v-if="tool.diagnosis" class="diagnosis-list">
-            <div v-for="check in tool.diagnosis.checks" :key="check.id" class="diagnosis-row" :class="`diagnosis-${check.status}`">
-              <Icon
-                :name="check.status === 'pass' ? 'check' : check.status === 'warn' ? 'warning' : 'close'"
-                :size="14"
-              />
-              <span>{{ checkText(check) }}<template v-if="checkFix(check)"> {{ checkFix(check) }}</template></span>
-            </div>
-          </div>
-        </Card>
+          :tool="tool"
+          :action-label="actionLabel(tool)"
+          :busy="installing !== null || testing !== null || diagnosing !== null"
+          :removing-any="removing !== null"
+          :removing="removing === tool.id"
+          :testing="testing !== null && testing === tool.testSource"
+          :diagnosing="diagnosing === tool.id"
+          :waiting="waitingFor === tool.id"
+          :wait-remaining-ms="waitRemainingMs"
+          @install="install(tool.id)"
+          @remove="requestRemoval(tool.id)"
+          @test="testIntegration(tool)"
+          @diagnose="diagnoseAdapter(tool)"
+          @toggle-wait="waitingFor === tool.id ? cancelRealEventWait() : waitForRealEvent(tool)"
+        />
       </div>
 
       <template v-if="step === 'intro'">
@@ -591,11 +313,11 @@ onUnmounted(() => {
       </template>
       <template v-else>
       <p class="wizard-note">{{ t('adapterNote') }}</p>
-  
+
         <div v-if="installError" class="error-msg" role="alert">{{ installError }}</div>
         <p v-if="installSummary" class="wizard-note" role="status">{{ installSummary }}</p>
         <p v-else-if="removalNotice" class="wizard-note" role="status">{{ removalNotice }}</p>
-  
+
         <div class="wizard-actions">
           <Button
             variant="ghost"

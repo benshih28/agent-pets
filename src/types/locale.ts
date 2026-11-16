@@ -4,7 +4,8 @@ export type AppLocale = typeof SUPPORTED_LOCALES[number]
 
 export const DEFAULT_LOCALE: AppLocale = 'zh-TW'
 
+const SUPPORTED_LOCALE_SET: ReadonlySet<string> = new Set(SUPPORTED_LOCALES)
+
 export function isAppLocale(value: unknown): value is AppLocale {
-  return typeof value === 'string'
-    && (value === 'zh-TW' || value === 'en-US')
+  return typeof value === 'string' && SUPPORTED_LOCALE_SET.has(value)
 }

@@ -1,4 +1,5 @@
 import type {
+  AdapterConfigDirStatus,
   AdapterContext,
   AdapterDetection,
   AdapterHealth,
@@ -17,6 +18,8 @@ import { normalizeAgentStatusEvent } from './event-normalizer.ts'
 import { buildOutcome, failedOutcome } from './install-outcome.ts'
 import { AGENT_ADAPTER_REGISTRY } from '../src/types/agent-adapter.ts'
 import { familyOfSource } from '../src/types/agent.ts'
+import { LOCAL_WIRE_PATHS } from '../src/types/local-wire.ts'
+import { recordOrEmpty } from './value-guards.ts'
 
 const ADAPTER_VERSION = '1.0.0'
 const ADAPTER_IDS: ReadonlySet<string> = new Set(AGENT_ADAPTER_REGISTRY.map(definition => definition.id))
@@ -26,14 +29,17 @@ export interface AdapterInspection {
   health: AdapterHealth
   message: string
   checks: DiagnosticReport['checks']
+  configDir?: AdapterConfigDirStatus
 }
 
 export interface AgentAdapterOperations {
-  inspect(id: AgentAdapterId): AdapterInspection
+  inspect(id: AgentAdapterId): Promise<AdapterInspection>
+  /** Resolves once the agents' config folders are known (login-shell lookup); install and uninstall wait for it. */
+  ready?(): Promise<void>
   /** Async preconditions (e.g. resolving Node.js) that must pass before install writes anything. */
   prepare?(target: AdapterInstallTarget): Promise<void>
-  install(target: AdapterInstallTarget): InstallReport | void
-  uninstall(target: AdapterInstallTarget): void
+  install(target: AdapterInstallTarget): InstallReport | void | Promise<InstallReport | void>
+  uninstall(target: AdapterInstallTarget): void | Promise<void>
   /**
    * Runtime capability projection. Claude Code answers permissions only while the user has
    * turned that on, so its reported capability follows the main-process preference.
@@ -49,7 +55,7 @@ function inspectGenericHttp(): AdapterInspection {
   return {
     installed: true,
     health: 'ready',
-    message: 'The local /v1/events ingress is available through the authenticated receiver.',
+    message: `The local ${LOCAL_WIRE_PATHS.events} ingress is available through the authenticated receiver.`,
     checks: [
       check('loopback', 'pass', 'The receiver binds to loopback only.'),
       check('token', 'pass', 'Requests need the token created at install time.'),
@@ -70,11 +76,12 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
     sources: definition.sources,
     capabilities: definition.capabilities,
     detect: async () => {
-      const inspection = definition.id === 'generic-http' ? inspectGenericHttp() : operations.inspect(definition.id)
+      const inspection = definition.id === 'generic-http' ? inspectGenericHttp() : await operations.inspect(definition.id)
       return {
         installed: inspection.installed,
         health: inspection.health,
         message: inspection.message,
+        ...(inspection.configDir ? { configDir: inspection.configDir } : {}),
         capabilities: operations.capabilities?.(definition.id, definition.capabilities) ?? definition.capabilities,
         sources: definition.sources,
         sourceLabels: definition.sourceLabels,
@@ -84,13 +91,15 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
       }
     },
     install: async () => {
+      // Before the first detect, so "before" and the write both use the final folders.
+      if (definition.installTarget) await operations.ready?.()
       const self = createAdapter(definition, operations)
       const before = (await self.detect(context())).health
       let report: InstallReport = { changedFiles: [], backupPaths: [] }
       try {
         if (definition.installTarget) {
           await operations.prepare?.(definition.installTarget)
-          report = operations.install(definition.installTarget) ?? report
+          report = await operations.install(definition.installTarget) ?? report
         }
       } catch (error) {
         // Keep the failure structured; the IPC layer turns this into a per-adapter result.
@@ -101,11 +110,14 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
       return { ...(await self.detect(context())), outcome: buildOutcome(definition.id, report, before) }
     },
     uninstall: async () => {
-      if (definition.installTarget) operations.uninstall(definition.installTarget)
+      if (definition.installTarget) {
+        await operations.ready?.()
+        await operations.uninstall(definition.installTarget)
+      }
       return (await createAdapter(definition, operations).detect(context()))
     },
     diagnose: async ctx => {
-      const inspection = definition.id === 'generic-http' ? inspectGenericHttp() : operations.inspect(definition.id)
+      const inspection = definition.id === 'generic-http' ? inspectGenericHttp() : await operations.inspect(definition.id)
       return {
         adapterId: definition.id,
         health: inspection.health,
@@ -154,10 +166,10 @@ export function isAgentAdapterId(value: unknown): value is AgentAdapterId {
 }
 
 const DEFAULT_OPERATIONS: AgentAdapterOperations = {
-  inspect: id => ({
+  inspect: async id => ({
     installed: id === 'generic-http',
     health: id === 'generic-http' ? 'ready' : 'needs_install',
-    message: id === 'generic-http' ? 'The local /v1/events ingress is available.' : 'The adapter is not installed.',
+    message: id === 'generic-http' ? `The local ${LOCAL_WIRE_PATHS.events} ingress is available.` : 'The adapter is not installed.',
     checks: id === 'generic-http'
       ? inspectGenericHttp().checks
       : [check('runtime', 'warn', 'Setup operations are unavailable in this runtime.')],
@@ -195,9 +207,7 @@ export function createAgentAdapterRegistry(operations: AgentAdapterOperations = 
       return byId.get(id)?.uninstall(context()) ?? Promise.resolve(null)
     },
     async normalize(input, receivedAt = Date.now()) {
-      const raw = input && typeof input === 'object' && !Array.isArray(input)
-        ? input as Record<string, unknown>
-        : {}
+      const raw = recordOrEmpty(input)
       const requestedId = raw.adapterId
       if (requestedId !== undefined) {
         if (!isAgentAdapterId(requestedId)) return { ok: false, error: 'unknown_adapter' }

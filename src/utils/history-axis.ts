@@ -3,26 +3,17 @@
 // other. The label is split into a date line and an optional weekday line;
 // the full date stays in each bar's aria-label and the detail line.
 
+import { dateTimeFormatter } from './intl-format.ts'
+
 export interface AxisLabelParts {
   date: string
   weekday: string
 }
 
-// 建一個 Intl.DateTimeFormat 不便宜，而圖表一次要格式化最多 90 天，所以依語系與選項快取。
-const formatters = new Map<string, Intl.DateTimeFormat>()
-function formatter(loc: string | undefined, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = `${loc ?? ''}|${JSON.stringify(options)}`
-  let cached = formatters.get(key)
-  if (!cached) {
-    cached = new Intl.DateTimeFormat(loc, options)
-    formatters.set(key, cached)
-  }
-  return cached
-}
-
-const MONTH_DAY: Intl.DateTimeFormatOptions = { month: 'numeric', day: 'numeric' }
-const WEEKDAY: Intl.DateTimeFormatOptions = { weekday: 'short' }
-const FULL: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'numeric', day: 'numeric' }
+// 圖表一次要格式化最多 90 天，formatter 由 intl-format.ts 依語系與選項快取。
+const MONTH_DAY = { month: 'numeric', day: 'numeric' } as const satisfies Intl.DateTimeFormatOptions
+const WEEKDAY = { weekday: 'short' } as const satisfies Intl.DateTimeFormatOptions
+const FULL = { weekday: 'short', month: 'numeric', day: 'numeric' } as const satisfies Intl.DateTimeFormatOptions
 
 function noon(localDate: string): Date | null {
   const date = new Date(`${localDate}T12:00:00`)
@@ -33,8 +24,8 @@ export function axisLabelParts(localDate: string, withWeekday: boolean, loc?: st
   const date = noon(localDate)
   if (!date) return { date: localDate, weekday: '' }
   return {
-    date: formatter(loc, MONTH_DAY).format(date),
-    weekday: withWeekday ? formatter(loc, WEEKDAY).format(date) : '',
+    date: dateTimeFormatter(loc, MONTH_DAY).format(date),
+    weekday: withWeekday ? dateTimeFormatter(loc, WEEKDAY).format(date) : '',
   }
 }
 
@@ -42,7 +33,7 @@ export function axisLabelParts(localDate: string, withWeekday: boolean, loc?: st
 export function dayLabel(localDate: string, withWeekday: boolean, loc?: string): string {
   const date = noon(localDate)
   if (!date) return localDate
-  return formatter(loc, withWeekday ? FULL : MONTH_DAY).format(date)
+  return dateTimeFormatter(loc, withWeekday ? FULL : MONTH_DAY).format(date)
 }
 
 /** Every `step`-th label counted back from the newest day, so today is always labelled. */

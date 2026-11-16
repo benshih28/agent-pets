@@ -1,21 +1,27 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { BrowserWindow, IpcMainEvent } from 'electron'
 import type { DesktopPreferences } from '../src/types/desktop.ts'
 import type { PetMotionIpcDependencies } from '../electron/ipc/pet-motion.ts'
 import { registerPetMotionIpc } from '../electron/ipc/pet-motion.ts'
+import { fakeBrowserWindow, fakeIpcMainEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 function fixture() {
-  const listeners = new Map<string, (event: unknown, payload?: unknown) => void>()
+  const { ipcMain, listeners } = createFakeIpcMain()
+  // 以物件身分辨識來源，取代原本的字串哨兵。
+  const petEvent = fakeIpcMainEvent()
+  const foreignEvent = fakeIpcMainEvent()
   const calls: string[] = []
   let position: [number, number] = [100, 200]
-  let size: [number, number] = [80, 80]
+  const size: [number, number] = [80, 80]
   let bounds = { x: 100, y: 200, width: 80, height: 80 }
   let cursor = { x: 10, y: 10 }
   let dragHandle: ReturnType<typeof setInterval> | null = null
   let intervalCallback: (() => void) | null = null
-  const handle = 123 as unknown as ReturnType<typeof setInterval>
-  const pet = {
+  // 只需要一個可用物件身分比對的 timer handle；立刻清掉，避免真的排程。
+  const handle = setInterval(() => undefined, 60_000)
+  clearInterval(handle)
+  const pet = fakeBrowserWindow({
     getPosition: () => position,
     getSize: () => size,
     getBounds: () => bounds,
@@ -29,18 +35,13 @@ function fixture() {
       bounds = { ...next }
       calls.push(`position:${next.x},${next.y}`)
     },
-  } as unknown as BrowserWindow
-  const panel = { hide: () => calls.push('panel:hide') } as unknown as BrowserWindow
+  })
+  const panel = fakeBrowserWindow({ hide: () => { calls.push('panel:hide') } })
   const preferences = { shimejiEnabled: true, dndEnabled: false } as DesktopPreferences
-  const ipcMain = {
-    on: (channel: string, listener: (...args: unknown[]) => unknown) => {
-      listeners.set(channel, listener as (event: unknown, payload?: unknown) => void)
-    },
-  } as unknown as PetMotionIpcDependencies['ipcMain']
   const deps: PetMotionIpcDependencies = {
     ipcMain,
     getPetWindow: () => pet,
-    isTrustedIpcSender: event => event === 'pet',
+    isTrustedIpcSender: event => event === petEvent,
     clearEdgeDwell: () => calls.push('edge:clear'),
     clearShimejiPersist: () => calls.push('persist:clear'),
     getDragPollHandle: () => dragHandle,
@@ -66,6 +67,8 @@ function fixture() {
   registerPetMotionIpc(deps)
   return {
     listeners,
+    petEvent,
+    foreignEvent,
     calls,
     deps,
     pet,
@@ -79,10 +82,10 @@ function fixture() {
 test('pet drag IPC polls OS cursor coordinates and persists once when drag ends', () => {
   const state = fixture()
   const start = state.listeners.get('pet-drag-start')!
-  start('foreign' as unknown as IpcMainEvent)
-  assert.deepEqual(state.calls, [])
+  start(state.foreignEvent)
+  assert.equal(state.calls.length, 0)
 
-  start('pet' as unknown as IpcMainEvent)
+  start(state.petEvent)
   assert.equal(state.getIntervalCallback() !== null, true)
   assert.deepEqual(state.calls.slice(0, 4), ['edge:clear', 'persist:clear', 'edge-restore:null', 'anchor:null'])
   assert.ok(state.calls.includes('panel:hide'))
@@ -92,7 +95,10 @@ test('pet drag IPC polls OS cursor coordinates and persists once when drag ends'
   state.getIntervalCallback()?.()
   assert.equal(state.calls.filter(call => call === 'position:105,202').length, 1)
 
-  state.listeners.get('pet-drag-end')!('pet' as unknown as IpcMainEvent, { moved: true })
+  // 陣列上就算帶了 moved 欄位也不算有效 payload，不排程貼邊。
+  state.listeners.get('pet-drag-end')!(state.petEvent, Object.assign([], { moved: true }))
+  assert.ok(!state.calls.includes('edge:schedule'))
+  state.listeners.get('pet-drag-end')!(state.petEvent, { moved: true })
   assert.ok(state.calls.includes('state:persist'))
   assert.ok(state.calls.includes('edge:schedule'))
 })
@@ -100,11 +106,14 @@ test('pet drag IPC polls OS cursor coordinates and persists once when drag ends'
 test('shimeji movement clamps one step and stops for DND', () => {
   const state = fixture()
   const walk = state.listeners.get('shimeji-walk-step')!
-  walk('pet' as unknown as IpcMainEvent, { deltaX: 100 })
+  walk(state.petEvent, Object.assign([], { deltaX: 100 }))
+  walk(state.petEvent, 'x')
+  assert.ok(!state.calls.includes('shimeji:persist'))
+  walk(state.petEvent, { deltaX: 100 })
   assert.deepEqual(state.getPosition(), [124, 200])
   assert.ok(state.calls.includes('shimeji:persist'))
 
   state.deps.getDesktopPreferences().dndEnabled = true
-  walk('pet' as unknown as IpcMainEvent, { deltaX: 20 })
+  walk(state.petEvent, { deltaX: 20 })
   assert.deepEqual(state.getPosition(), [124, 200])
 })

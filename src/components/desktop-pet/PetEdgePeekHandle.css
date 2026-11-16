@@ -1,0 +1,176 @@
+.edge-peek-handle {
+  pointer-events: auto;
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border-strong);
+  background:
+    linear-gradient(145deg, var(--pet-gloss), transparent 58%),
+    var(--surface-panel);
+  box-shadow: var(--shadow-edge-handle);
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+  user-select: none;
+}
+
+.edge-peek-handle:hover {
+  border-color: var(--border-accent-strong);
+  background:
+    linear-gradient(145deg, var(--pet-gloss), transparent 58%),
+    var(--surface-panel);
+  transform: scale(1.03);
+}
+
+.edge-peek-handle:active {
+  transform: scale(0.97);
+}
+
+.edge-peek-handle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: calc(0px - var(--focus-ring-offset));
+}
+
+.edge-peek-avatar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.edge-peek-avatar .pet-visual {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) scale(var(--edge-peek-avatar-scale, 0.5));
+  transform-origin: top center;
+}
+
+.edge-peek-avatar .pet-aura-canvas {
+  display: none;
+}
+
+.edge-peek-avatar,
+.edge-peek-avatar * {
+  pointer-events: none !important;
+}
+
+.edge-peek-grip {
+  position: absolute;
+  width: 2px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+
+.edge-peek-result-badge {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 var(--space-1);
+  place-items: center;
+  border: 1px solid var(--surface-panel);
+  border-radius: var(--radius-pill);
+  background: var(--state-success);
+  color: var(--color-bg);
+  font: 700 var(--font-xs)/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.edge-peek-result-badge.error {
+  background: var(--state-error);
+}
+
+.edge-peek-unread-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 var(--space-1);
+  place-items: center;
+  border: 1px solid var(--surface-panel);
+  border-radius: var(--radius-pill);
+  background: var(--status-error);
+  color: var(--color-bg);
+  font: 700 var(--font-xs)/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.desktop-pet.mode-edge.edge-left .edge-peek-handle {
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+}
+
+.desktop-pet.mode-edge.edge-left .edge-peek-grip {
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+}
+
+.desktop-pet.mode-edge.edge-right .edge-peek-handle {
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+}
+
+.desktop-pet.mode-edge.edge-right .edge-peek-grip {
+  top: 50%;
+  left: var(--space-2);
+  transform: translateY(-50%);
+}
+
+.desktop-pet.mode-edge.edge-top .edge-peek-handle {
+  border-radius: 0 0 var(--radius-pill) var(--radius-pill);
+}
+
+.desktop-pet.mode-edge.edge-top .edge-peek-grip {
+  bottom: var(--space-2);
+  left: 50%;
+  width: 12px;
+  height: 2px;
+  transform: translateX(-50%);
+}
+
+.desktop-pet.mode-edge.edge-bottom .edge-peek-handle {
+  border-radius: var(--radius-pill) var(--radius-pill) 0 0;
+}
+
+.desktop-pet.mode-edge.edge-bottom .edge-peek-grip {
+  top: var(--space-2);
+  left: 50%;
+  width: 12px;
+  height: 2px;
+  transform: translateX(-50%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .edge-peek-handle {
+    background: var(--surface-overlay);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .edge-peek-handle {
+    border-width: 2px;
+    border-color: var(--text-primary);
+    background: var(--surface-overlay);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge-peek-handle {
+    transition: none;
+  }
+
+  .edge-peek-handle:hover,
+  .edge-peek-handle:active {
+    transform: none;
+  }
+}

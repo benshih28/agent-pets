@@ -1,13 +1,11 @@
+import { clamp } from '../src/utils/number.ts'
+import { QUOTA_TOOLTIP_HEADROOM_H } from '../src/utils/pet-window-size.ts'
 import type { WindowBounds, WorkArea } from './pet-window-mode.ts'
 
-/** Transparent headroom the pet window reserves above the sprite (see agentStore). */
-export const PET_WINDOW_HEADROOM_PX = 190
+/** Transparent headroom the pet window reserves above the sprite. */
+export const PET_WINDOW_HEADROOM_PX = QUOTA_TOOLTIP_HEADROOM_H
 /** How much of the sprite must stay inside the display while dragging. */
 export const MIN_VISIBLE_SPRITE_FRACTION = 0.6
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max))
-}
 
 /** The part of the window that actually paints the pet (the lower body). */
 export function spriteRect(bounds: WindowBounds, headroom: number = PET_WINDOW_HEADROOM_PX): WindowBounds {

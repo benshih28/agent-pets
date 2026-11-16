@@ -19,8 +19,8 @@ import { playCue } from '@/utils/sound'
 import { formatDateParts } from '@/utils/intl-format'
 
 const store = useAgentStore()
-// "Switch to app" uses macOS LaunchServices; on Windows it is not offered yet (docs/ux-overhaul/windows-todo.md).
-const isMac = /Mac/i.test(navigator.platform)
+// 「切換到 App」只在 macOS（LaunchServices）與 Windows（白名單視窗活化）實作；Linux 不提供。
+const canSwitchApp = /Mac|Win/i.test(navigator.platform)
 
 // Product names are proper nouns, not translatable copy. Claude Code moves to
 // the approver list only while answering from the pet is turned on.
@@ -34,9 +34,11 @@ function setClaudeWait(seconds: number): void {
 const launchHelp = computed(() => {
   if (!store.launchAtStartupSupported) return t('availablePackaged')
   if (store.launchAtStartup) {
-    if (store.launchAtStartupStatus === 'requires-approval') return t('reliability.launch.pending')
-    if (store.launchAtStartupStatus === 'not-in-applications') return t('reliability.launch.notInApplications')
-    if (store.launchAtStartupStatus === 'error') return t('reliability.launch.error')
+    switch (store.launchAtStartupStatus) {
+      case 'requires-approval': return t('reliability.launch.pending')
+      case 'not-in-applications': return t('reliability.launch.notInApplications')
+      case 'error': return t('reliability.launch.error')
+    }
   }
   return t('launchAtStartupHelp')
 })
@@ -64,11 +66,13 @@ function auditResult(entry: PermissionAuditEntry): string {
   // Claude Code keeps its terminal prompt open, so a decision sent from here may have
   // arrived after the user had already answered there.
   const maybeTerminal = alsoAnswerableKey(entry.agentId) ? t('permission.auditMaybeTerminal') : ''
-  if (entry.status === 'allowed') return t('permission.auditAllowed') + maybeTerminal
-  if (entry.status === 'denied') return t('permission.auditDenied') + maybeTerminal
-  if (entry.status === 'expired') return t('permission.auditExpired')
-  if (entry.status === 'delivery_failed') return t('permission.auditFailed')
-  return t('permission.auditCancelled')
+  switch (entry.status) {
+    case 'allowed': return t('permission.auditAllowed') + maybeTerminal
+    case 'denied': return t('permission.auditDenied') + maybeTerminal
+    case 'expired': return t('permission.auditExpired')
+    case 'delivery_failed': return t('permission.auditFailed')
+    default: return t('permission.auditCancelled')
+  }
 }
 
 function auditTime(timestamp: number): string {
@@ -122,7 +126,7 @@ function preview(cue: SoundCue): void {
   <Card :title="t('panel.jumpSettingsHeading')">
     <ToggleRow :model-value="store.sessionJumpEnabled" :label="t('panel.jumpSetting')" :help="t('panel.jumpSettingHelp')" @update:model-value="store.setSessionJumpEnabled($event)" />
     <ToggleRow
-      v-if="isMac"
+      v-if="canSwitchApp"
       :model-value="store.sessionJumpSwitchAppEnabled"
       :disabled="!store.sessionJumpEnabled"
       :label="t('panel.jumpSwitchSetting')"

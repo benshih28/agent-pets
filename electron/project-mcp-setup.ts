@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
-import { renameSyncWithRetry } from './fs-rename.ts'
+import { pidTimestampTemporaryPath, writeFileAtomicSync } from './atomic-file-write.ts'
 import {
   addLocalExcludes,
   findGitLocation,
@@ -19,6 +19,7 @@ import type {
   ProjectMcpSetupSummary,
 } from '../src/types/project-mcp.ts'
 import { PROJECT_MCP_CLIENTS } from '../src/types/project-mcp.ts'
+import { currentAgentConfigDirs } from './agent-config-dirs.ts'
 import { isRecord } from './value-guards.ts'
 
 const MAX_CONFIG_BYTES = 1024 * 1024
@@ -106,30 +107,17 @@ function readBoundedText(filePath: string): string | null {
 
 function writeTextAtomic(filePath: string, content: string): void {
   ensureSafeDirectory(path.dirname(filePath))
+  // Project config files are often shared with teammates: keep an existing file's mode.
+  // 已確認是一般檔案（不是 symlink），lstat 的 mode 就是 stat 的 mode，不必再 stat 一次。
+  let mode = 0o644
   if (fs.existsSync(filePath)) {
     const stat = fs.lstatSync(filePath)
     if (!stat.isFile() || stat.isSymbolicLink()) {
       throw new Error(`Refusing to replace an unsafe configuration file: ${filePath}`)
     }
+    mode = stat.mode & 0o777
   }
-
-  // Project config files are often shared with teammates: keep an existing file's mode.
-  let mode = 0o644
-  try { mode = fs.statSync(filePath).mode & 0o777 } catch { /* new file */ }
-  const temporaryPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  )
-  try {
-    fs.writeFileSync(temporaryPath, content, { encoding: 'utf8', flag: 'wx', mode })
-    renameSyncWithRetry(temporaryPath, filePath)
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(filePath, mode) } catch {}
-    }
-  } catch (error) {
-    try { fs.rmSync(temporaryPath, { force: true }) } catch {}
-    throw error
-  }
+  writeFileAtomicSync(filePath, content, { temporaryPath: pidTimestampTemporaryPath(filePath), mode, enforceMode: true })
 }
 
 function configPath(projectPath: string, client: ProjectMcpClientId): string {
@@ -717,7 +705,7 @@ export function installProjectMcp(
       const excludable = relativePaths.filter(relative => !tracked?.has(relative))
       try {
         summary.excluded = addLocalExcludes(location, excludable)
-      } catch (error) {
+      } catch {
         summary.warnings = ['exclude_write_failed']
       }
       if (trackedFiles.length > 0) summary.trackedFiles = trackedFiles
@@ -726,14 +714,16 @@ export function installProjectMcp(
   return summary
 }
 
-// Folders and files that signal which agent clients the user actually uses.
+// Folders and files that signal which agent clients the user actually uses. The user-level folders
+// follow CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME; the project-level ones are not affected by them.
 function detectClients(projectPath: string, homeDirectory: string): Record<ProjectMcpClientId, boolean> {
   const exists = (target: string) => fs.existsSync(target)
+  const userDirs = currentAgentConfigDirs({ homeDir: homeDirectory })
   return {
-    codex: exists(path.join(projectPath, '.codex')) || exists(path.join(homeDirectory, '.codex')),
+    codex: exists(path.join(projectPath, '.codex')) || exists(userDirs.codex.path),
     claude: exists(path.join(projectPath, '.mcp.json')) || exists(path.join(projectPath, '.claude'))
-      || exists(path.join(homeDirectory, '.claude')),
-    opencode: exists(path.join(projectPath, 'opencode.json')) || exists(path.join(homeDirectory, '.config', 'opencode')),
+      || exists(userDirs.claude.path),
+    opencode: exists(path.join(projectPath, 'opencode.json')) || exists(userDirs.opencode.path),
   }
 }
 

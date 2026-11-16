@@ -42,6 +42,7 @@ test('permission surfaces use translated labels and the removed keys stay remove
     '../src/components/permission/PermissionNoticeBubble.vue',
     '../src/components/ui/InlinePermissionCard.vue',
     '../src/components/DesktopPet.vue',
+    '../src/components/desktop-pet/PetBubbleStack.vue',
     '../electron/desktop-tray.ts',
     '../electron/tray-menu.ts',
   ].map(read).join('\n')
@@ -74,5 +75,6 @@ test('every permission-domain key is referenced by the app', async () => {
   const source = files.map((file) => readFileSync(file, 'utf8')).join('\n')
   const keys = Object.keys(JSON.parse(readFileSync(join(root, 'src/locales/permission/zh-TW.json'), 'utf8')) as object)
   // Keys picked through lookup tables are listed literally in those tables.
-  for (const key of keys) assert.ok(source.includes(`'${key}'`), `unused locale key ${key}`)
+  // tPlural 以基底 key 取用 `.one`／`.other`，所以複數 key 以基底名稱比對。
+  for (const key of keys) assert.ok(source.includes(`'${key.replace(/\.(?:one|other)$/, '')}'`), `unused locale key ${key}`)
 })

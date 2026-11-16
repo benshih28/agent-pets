@@ -32,7 +32,7 @@ withDefaults(defineProps<{
   color: var(--text-secondary);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   white-space: nowrap;
 }
 

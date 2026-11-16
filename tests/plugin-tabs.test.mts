@@ -4,21 +4,39 @@ import {
   hasPluginTabContent, parseStoredDashboardTab, pluginIdOfTab, pluginTabBadgeText, pluginTabSections, pluginTabValue,
   resolveDashboardTab, unreadCountByPlugin, visiblePluginTabPlugins,
 } from '../src/utils/plugin-tabs.ts'
+import { DEFAULT_PLUGIN_PREFERENCES } from '../electron/plugin-preferences.ts'
+import type {
+  PluginContributions, PluginLocalizedText, PluginManifest, PluginNotificationRecord, PluginPanelPlugin,
+  PluginPanelThemeContribution, PluginSkinContribution,
+} from '../src/types/plugin.ts'
 import { overflowState, pageScrollDelta, scrollLeftToReveal, wheelScrollDelta } from '../src/utils/tab-overflow.ts'
 
 type Snap = Parameters<typeof visiblePluginTabPlugins>[0]
 
-function plugin(id: string, over: Record<string, unknown> = {}, enabled = true) {
+function text(value: string): PluginLocalizedText {
+  return { 'zh-TW': value, 'en-US': value }
+}
+
+function manifestOf(id: string, contributes: PluginContributions): PluginManifest {
+  return { id, name: text(id), version: '1.0.0', apiVersion: '1', author: 'test', permissions: {}, contributes }
+}
+
+const skin: PluginSkinContribution = { id: 'fox', displayName: text('fox'), spritesheet: 'fox.png', kind: 'animal' }
+const panelTheme: PluginPanelThemeContribution = {
+  id: 'aurora', displayName: text('aurora'), fonts: [], typography: { scale: 1 }, shape: { radiusSm: 1, radiusMd: 2, radiusLg: 3 }, modes: {},
+}
+
+function plugin(id: string, over: Partial<PluginPanelPlugin> = {}, enabled = true): PluginPanelPlugin {
   return {
     id, currentVersion: '1.0.0', status: 'installed', installedAt: 1, grantedPermissions: {},
-    manifest: { id, name: { 'zh-TW': id, 'en-US': id }, contributes: { feed: true } }, development: false,
+    manifest: manifestOf(id, { feed: true }), development: false,
     preference: { enabled, muted: false, rateLimitPer10Min: 10, targetPetId: null, grantedHosts: [] },
     ...over,
   }
 }
 
-function snap(plugins: unknown[], pluginsEnabled = true): Snap {
-  return { preferences: { pluginsEnabled }, plugins } as unknown as Snap
+function snap(plugins: PluginPanelPlugin[], pluginsEnabled = true): Snap {
+  return { preferences: { ...DEFAULT_PLUGIN_PREFERENCES, pluginsEnabled }, plugins }
 }
 
 test('only enabled plugins get a tab, in list order', () => {
@@ -55,7 +73,10 @@ test('stored tab parsing accepts built-in and well-formed plugin tabs only', () 
 })
 
 test('unread counts per plugin and badge text are capped', () => {
-  const rec = (pluginId: string, read: boolean) => ({ read, item: { pluginId } }) as never
+  const rec = (pluginId: string, read: boolean): PluginNotificationRecord => ({
+    read,
+    item: { id: `${pluginId}-item`, pluginId, pluginName: text(pluginId), title: 't', body: 'b', priority: 'normal', createdAt: 1, expiresAt: 2 },
+  })
   const counts = unreadCountByPlugin([rec('aaa', false), rec('aaa', false), rec('aaa', true), rec('bbb', false)])
   assert.equal(counts.get('aaa'), 2)
   assert.equal(counts.get('bbb'), 1)
@@ -91,20 +112,20 @@ test('wheel redirects vertical and shift wheel only when overflowing', () => {
 })
 
 test('a tab shows only the sections the plugin can use, and a plugin with none gets no tab', () => {
-  const manifest = (contributes: Record<string, unknown>) => ({ contributes }) as never
+  const manifest = (contributes: PluginContributions) => ({ contributes })
   // 只提供面板主題：分頁主體是主題清單，沒有通知、命令或設定。
-  assert.deepEqual(pluginTabSections(manifest({ panelThemes: [{ id: 'aurora' }] })), { panelView: false, panelThemes: true, feed: false, commands: false, settings: false })
+  assert.deepEqual(pluginTabSections(manifest({ panelThemes: [panelTheme] })), { panelView: false, panelThemes: true, feed: false, commands: false, settings: false })
   // 能送通知的插件才有通知區；空的設定 schema 不算設定。
   assert.deepEqual(pluginTabSections(manifest({ feed: true, settings: { type: 'object', properties: {} } })), { panelView: false, panelThemes: false, feed: true, commands: false, settings: false })
   assert.equal(pluginTabSections(manifest({ settings: { type: 'object', properties: { interval: { type: 'number' } } } })).settings, true)
-  assert.equal(pluginTabSections(manifest({ commands: [{ id: 'go' }] })).commands, true)
-  assert.equal(pluginTabSections(manifest({ panelView: { entry: 'ui/index.html' } })).panelView, true)
+  assert.equal(pluginTabSections(manifest({ commands: [{ id: 'go', title: text('go') }] })).commands, true)
+  assert.equal(pluginTabSections(manifest({ panelView: { entry: 'ui/index.html', title: text('panel') } })).panelView, true)
   // 只有寵物外觀、只有反應或徽章：沒有分頁。
-  for (const contributes of [{ skins: [{ id: 'fox' }] }, { reaction: true, badge: true }, {}]) {
+  for (const contributes of [{ skins: [skin] }, { reaction: true, badge: true }, {}] satisfies PluginContributions[]) {
     assert.equal(hasPluginTabContent(pluginTabSections(manifest(contributes))), false, JSON.stringify(contributes))
   }
-  const skins = plugin('skin-pack', { manifest: { id: 'skin-pack', name: { 'zh-TW': 's', 'en-US': 's' }, contributes: { skins: [{ id: 'fox' }] } } })
-  const themes = plugin('theme-pack', { manifest: { id: 'theme-pack', name: { 'zh-TW': 't', 'en-US': 't' }, contributes: { panelThemes: [{ id: 'aurora' }] } } })
+  const skins = plugin('skin-pack', { manifest: manifestOf('skin-pack', { skins: [skin] }) })
+  const themes = plugin('theme-pack', { manifest: manifestOf('theme-pack', { panelThemes: [panelTheme] }) })
   assert.deepEqual(visiblePluginTabPlugins(snap([skins, themes])).map(p => p.id), ['theme-pack'])
   assert.equal(pluginTabSections(null).feed, false)
 })

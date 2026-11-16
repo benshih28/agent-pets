@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
-import { locale, t } from '@/i18n'
+import { locale, t, tPlural } from '@/i18n'
 import { FAMILY_SOURCES, familyOfSource, isAgentFamilyKey, QUOTA_FAMILY_KEYS, SOURCE_FAMILIES, SOURCE_LABELS } from '@/types/agent'
 import type { PluginEventSourceState, PluginEventSourceStatusView } from '@/types/plugin'
 import { useQuotaFormat } from '@/composables/useQuotaFormat'
@@ -134,7 +134,7 @@ function formatTime(timestamp: number): string {
         <section v-for="group in visibleGroups" :key="group.id" class="session-group">
           <div class="session-group-heading">
             <span>{{ group.title }} ({{ group.sessions.length }})</span>
-            <small v-if="group.id === visibleGroups[0].id">{{ t('activeToolFamilies', { count: activeToolFamilyCount }) }}</small>
+            <small v-if="group.id === visibleGroups[0].id">{{ tPlural('activeToolFamilies', activeToolFamilyCount) }}</small>
           </div>
           <Card class="session-card">
             <SessionRow

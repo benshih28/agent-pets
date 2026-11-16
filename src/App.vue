@@ -10,6 +10,8 @@ import { shouldPlayCue } from '@/utils/sound-policy'
 import type { DesktopPreferences } from '@/types/desktop'
 import type { AchievementSnapshot, AchievementUnlock } from '@/types/achievement'
 import { setLocale as applyLocale } from '@/i18n'
+import { STORAGE_KEYS } from '@/utils/storage-keys'
+import { listenStorageSync, syncOn } from '@/utils/local-storage'
 import { EDGE_HOVER_EXPAND_MS } from '@/utils/pet-edge'
 import { HIT_DILATE_PX, decidePassthrough, hasOpaquePixel } from '@/utils/pet-hit-test'
 import { PET_CELL_WIDTH } from '@/types/pet-atlas'
@@ -64,6 +66,7 @@ let cleanupPresentationIntent: (() => void) | null = null
 let cleanupPluginFeedItem: (() => void) | null = null
 let cleanupPluginFeedUnreadCount: (() => void) | null = null
 let cleanupPluginSkinsChanged: (() => void) | null = null
+let cleanupStorageSync: (() => void) | null = null
 let staleTimer: ReturnType<typeof setInterval> | null = null
 let successTimer: ReturnType<typeof setInterval> | null = null
 let quotaTimer: ReturnType<typeof setInterval> | null = null
@@ -260,35 +263,29 @@ function stopLayoutWatch(): void {
 // share one localStorage (same origin), so a plain `storage` event (fired
 // in every OTHER same-origin window when one of them writes to it) is all
 // that's needed to keep them in sync, no custom IPC round-trip required.
-function handleStorage(e: StorageEvent) {
-  if (e.key === 'agent-pet-scale' && e.newValue) {
-    store.petScale = parseFloat(e.newValue)
-  } else if (e.key === 'agent-pet-id' && e.newValue) {
-    store.loadPets().then(() => {
-      store.selectedPet = e.newValue as string
-      void store.setProgressionPet(e.newValue as string)
-    })
-  } else if (e.key === 'agent-pet-family-map') {
-    store.syncFamilyPetIds(e.newValue)
-  } else if (e.key === 'agent-pet-sound') {
-    store.soundEnabled = e.newValue === '1'
-  } else if (e.key === 'agent-pet-multi') {
-    store.multiPetEnabled = e.newValue === '1'
-  } else if (e.key === 'agent-pet-fx') {
-    store.reactionsEnabled = e.newValue !== '0'
-  } else if (e.key === 'agent-pet-bubble') {
-    store.bubbleEnabled = e.newValue !== '0'
-  } else if (e.key === 'agent-pet-ambient') {
-    store.ambientEnabled = e.newValue === '1'
-  } else if (e.key === 'agent-pet-activity') {
-    store.activityBubbleEnabled = e.newValue === '1'
-  } else if (e.key === 'agent-pet-mood' && e.newValue) {
-    store.mood = parseFloat(e.newValue)
-  } else if (e.key === 'agent-pet-mood-visuals') {
-    store.moodVisualsEnabled = e.newValue !== '0'
-  } else if (e.key === 'agent-pet-locale' && e.newValue) {
-    applyLocale(e.newValue)
-  }
+// 值由 registry 解析；寵物、大小、心情與語言照舊只在新值非空時才更新（key 被移除時不動）。
+// 外觀（theme／pet-theme）由 useTheme.ts 自己同步。
+function listenPreferenceSync(): () => void {
+  return listenStorageSync([
+    syncOn(STORAGE_KEYS.petScale, (scale, raw) => { if (raw) store.petScale = scale }),
+    syncOn(STORAGE_KEYS.petId, (petId, raw) => {
+      if (!raw) return
+      void store.loadPets().then(() => {
+        store.selectedPet = petId
+        void store.setProgressionPet(petId)
+      })
+    }),
+    syncOn(STORAGE_KEYS.familyPetIds, map => store.syncFamilyPetIds(map)),
+    syncOn(STORAGE_KEYS.sound, enabled => { store.soundEnabled = enabled }),
+    syncOn(STORAGE_KEYS.multiPet, enabled => { store.multiPetEnabled = enabled }),
+    syncOn(STORAGE_KEYS.reactions, enabled => { store.reactionsEnabled = enabled }),
+    syncOn(STORAGE_KEYS.bubble, enabled => { store.bubbleEnabled = enabled }),
+    syncOn(STORAGE_KEYS.ambient, enabled => { store.ambientEnabled = enabled }),
+    syncOn(STORAGE_KEYS.activityBubble, enabled => { store.activityBubbleEnabled = enabled }),
+    syncOn(STORAGE_KEYS.mood, (mood, raw) => { if (raw) store.mood = mood }),
+    syncOn(STORAGE_KEYS.moodVisuals, enabled => { store.moodVisualsEnabled = enabled }),
+    syncOn(STORAGE_KEYS.locale, (locale, raw) => { if (raw) applyLocale(locale) }),
+  ])
 }
 
 function soundGate() {
@@ -329,10 +326,10 @@ onMounted(() => {
   // CSS 裡的 sprite 格寬也從 types/pet-atlas.ts 來，不另外寫死。
   document.documentElement.style.setProperty('--pet-cell-w', `${PET_CELL_WIDTH}px`)
 
-  const electronAPI = (window as any).electronAPI
+  const electronAPI = window.electronAPI
   if (electronAPI?.onAgentStatusEvent) {
-    cleanupListener = electronAPI.onAgentStatusEvent((event: unknown) => {
-      const cue = store.handleEvent(event as any)
+    cleanupListener = electronAPI.onAgentStatusEvent((event) => {
+      const cue = store.handleEvent(event)
       if (cue) playCueIfAllowed(cue)
     })
   }
@@ -438,7 +435,7 @@ onMounted(() => {
     document.documentElement.addEventListener('mouseleave', cancelEdgeHover)
   }
 
-  window.addEventListener('storage', handleStorage)
+  cleanupStorageSync = listenPreferenceSync()
 
   document.addEventListener('visibilitychange', onDocumentVisibilityChange)
   syncRecurringTimers()
@@ -538,7 +535,8 @@ onUnmounted(() => {
   cancelEdgeHover()
   document.documentElement.removeEventListener('mouseenter', handleEdgeHoverEnter)
   document.documentElement.removeEventListener('mouseleave', cancelEdgeHover)
-  window.removeEventListener('storage', handleStorage)
+  cleanupStorageSync?.()
+  cleanupStorageSync = null
   document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
   stopRecurringTimers()
 })

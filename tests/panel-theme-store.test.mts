@@ -13,10 +13,11 @@ import {
 } from '../electron/panel-theme-store.ts'
 import type { PanelThemeStoredUserImage } from '../src/types/panel-theme.ts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function withDirectory(run: (directory: string) => void): void {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-panel-theme-store-'))
-  try { run(directory) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { run(directory) } finally { removeTempTree(directory) }
 }
 
 function image(file = `${'a'.repeat(64)}.png`): PanelThemeStoredUserImage {

@@ -2,11 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerProjectMcpIpc } from '../electron/ipc/project-mcp.ts'
+import type { ProjectMcpRegistryStore } from '../electron/project-mcp-registry.ts'
+import { fakeBrowserWindow, fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+import { fakeService } from './support/fake-service.mts'
+
 
 test('project MCP IPC preserves setup, list, remove, and forget contracts through injected services', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   const calls: string[] = []
-  const panelWindow = { isDestroyed: () => false }
+  const panelWindow = fakeBrowserWindow({ isDestroyed: () => false })
   const tracked = new Set<string>()
   const registry = {
     register: (projectPath: string) => { calls.push(`register:${projectPath}`); tracked.add(projectPath) },
@@ -15,7 +20,7 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
     forget: (projectPath: string) => { calls.push(`forget:${projectPath}`); return true },
   }
   registerProjectMcpIpc({
-    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     assertTrustedIpcSender: () => undefined,
     getPanelWindow: () => panelWindow,
     getPetWindow: () => null,
@@ -24,7 +29,7 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
     showOpenDialog: async () => ({ canceled: false, filePaths: ['test-project'] }),
     ensurePresentationMcpScript: () => calls.push('ensure'),
     installOptions: () => ({ nodeExecutable: 'node', bridgePath: 'bridge-script' }),
-    getRegistry: () => registry as never,
+    getRegistry: () => fakeService<ProjectMcpRegistryStore>(registry),
     planProjectMcp: (projectPath: string) => {
       calls.push(`plan:${projectPath}`)
       return { ok: true, projectPath, isGitRepo: false, clients: [] }
@@ -39,7 +44,7 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
     },
   })
 
-  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
+  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.(fakeIpcMainInvokeEvent(), ...args)
   assert.deepEqual([...handlers.keys()], [
     IPC_CHANNELS.projectMcpSetup,
     IPC_CHANNELS.projectMcpApply,

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { durationParts, formatTokens, niceCeiling } from '../src/utils/token-format.ts'
+import { formatTokens, niceCeiling } from '../src/utils/token-format.ts'
+import { durationParts, HISTORY_DURATION } from '../src/utils/intl-format.ts'
 
 test('token formatting is locale-stable: exact below 1,000, K/M/B above, grouped when full', () => {
   for (const locale of ['zh-TW', 'en-US']) {
@@ -17,11 +18,12 @@ test('token formatting is locale-stable: exact below 1,000, K/M/B above, grouped
   assert.equal(formatTokens(-5, 'en-US'), '0')
 })
 
-test('durations break down into days, hours and minutes', () => {
-  assert.deepEqual(durationParts(0), { days: 0, hours: 0, minutes: 0 })
-  assert.deepEqual(durationParts(20_000), { days: 0, hours: 0, minutes: 1 })
-  assert.deepEqual(durationParts(90 * 60_000), { days: 0, hours: 1, minutes: 30 })
-  assert.deepEqual(durationParts((30 * 60 + 12) * 60_000), { days: 1, hours: 6, minutes: 12 })
+test('history durations break down into days, hours and minutes', () => {
+  const parts = (ms: number) => durationParts(ms, HISTORY_DURATION)
+  assert.deepEqual(parts(0), { days: 0, hours: 0, minutes: 0, seconds: 0 })
+  assert.deepEqual(parts(20_000), { days: 0, hours: 0, minutes: 1, seconds: 0 })
+  assert.deepEqual(parts(90 * 60_000), { days: 0, hours: 1, minutes: 30, seconds: 0 })
+  assert.deepEqual(parts((30 * 60 + 12) * 60_000), { days: 1, hours: 6, minutes: 12, seconds: 0 })
 })
 
 test('chart ceilings snap to 1/2/5 steps', () => {

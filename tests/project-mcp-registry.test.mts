@@ -6,6 +6,7 @@ import test from 'node:test'
 
 import { ProjectMcpRegistryStore } from '../electron/project-mcp-registry.ts'
 import { installProjectMcp, removeProjectMcp } from '../electron/project-mcp-setup.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function createProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-project-registry-'))
@@ -19,7 +20,7 @@ function options(projectPath: string) {
 }
 
 function cleanup(projectPath: string): void {
-  fs.rmSync(projectPath, { recursive: true, force: true })
+  removeTempTree(projectPath)
 }
 
 test('registry tracks multiple projects and reflects their client status', () => {
@@ -54,7 +55,7 @@ test('registry marks missing folders and can forget only the selected record', (
   const store = new ProjectMcpRegistryStore(registryPath, { now: () => '2026-08-13T01:00:00.000Z' })
   try {
     store.register(project)
-    fs.rmSync(project, { recursive: true, force: true })
+    removeTempTree(project)
     const missing = store.list(options(root))
     assert.equal(missing.projects[0].status, 'missing')
     assert.equal(store.forget(project), true)

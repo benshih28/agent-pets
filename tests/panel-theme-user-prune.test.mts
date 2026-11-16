@@ -14,6 +14,7 @@ import {
 import { USER_PANEL_THEME_OWNER, type UserPanelThemeDefinition, type UserPanelThemeRecord } from '../src/types/panel-theme-user.ts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 import { builtinDefinition, png } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 // H1／M8：「我的主題」的修剪只能依「磁碟上確定不存在」來刪插槽與背景圖。
 
@@ -69,7 +70,7 @@ function setup() {
     assert.ok(fs.existsSync(image))
     return runtime
   }
-  return { userData, folder, runtimeIn, sync, applied, kept, cleanup: () => fs.rmSync(userData, { recursive: true, force: true }) }
+  return { userData, folder, runtimeIn, sync, applied, kept, cleanup: () => removeTempTree(userData) }
 }
 
 test('a store directory that becomes unsafe keeps every My-themes slot and image', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {

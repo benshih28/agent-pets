@@ -3,25 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron/simple'
 import type { SpawnOptions } from 'node:child_process'
 import { resolve } from 'path'
-
-export const GPU_SAFE_DEV_MODE = 'gpu-safe'
-
-/** Keep Vite's Electron launch equivalent to `electron .`. */
-export const electronDevArgv = (): string[] => ['.']
-
-/** Build an isolated child environment for the selected development mode. */
-export const electronDevEnvironment = (
-  environment: NodeJS.ProcessEnv,
-  gpuSafeMode: boolean,
-): NodeJS.ProcessEnv => {
-  const childEnvironment = { ...environment }
-  if (gpuSafeMode) {
-    childEnvironment.AGENT_PETS_GPU_SAFE_MODE = '1'
-  } else {
-    delete childEnvironment.AGENT_PETS_GPU_SAFE_MODE
-  }
-  return childEnvironment
-}
+// 啟動參數與環境放在不依賴 vite 的模組：測試只載入它，tests 的型別檢查才不會經由 vite 的宣告檔多帶進一份 @types/node。
+import { electronDevArgv, electronDevEnvironment, GPU_SAFE_DEV_MODE } from './electron/dev-runtime.ts'
 
 const createElectronStarter = (gpuSafeMode: boolean) => ({
   startup,
@@ -39,6 +22,16 @@ export default defineConfig(({ mode }) => {
   const startElectron = createElectronStarter(mode === GPU_SAFE_DEV_MODE)
 
   return {
+    build: {
+      rollupOptions: {
+        output: {
+          // Vue 執行期與 Pinia 兩個視窗一開始都會載入，獨立成一個 chunk，讓共用 chunk 只放 app 程式碼、
+          // 不超過 scripts/check-bundle-size.mjs 的單一 chunk 上限；只挑這幾個套件，避免把只在延遲載入頁面
+          // 用到的相依拉進首屏。
+          manualChunks: (id: string) => (/[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@vue|vue|pinia)[\\/]/.test(id) ? 'vue-vendor' : undefined),
+        },
+      },
+    },
     plugins: [
       vue(),
       electron({

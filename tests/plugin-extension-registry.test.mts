@@ -83,14 +83,19 @@ test('plugin contribution and error registries match their public docs', () => {
 })
 
 test('remaining production double assertions document narrow external API seams', () => {
-  const runtimeLines = read('electron/main/runtime.ts').split('\n')
-  const castOccurrences = runtimeLines.flatMap((line, index) =>
-    [...line.matchAll(/as unknown as|as PluginPanelViewSession/g)].map(() => index))
-  assert.equal(castOccurrences.length, 6)
-  for (const index of castOccurrences) {
-    const explanation = runtimeLines.slice(Math.max(0, index - 4), index).join(' ')
-    assert.match(explanation, /Node's bundled declarations|structural test seam|structural controller seam|Electron's concrete Session/)
+  // plugin 組裝搬進 plugin-runtime.ts 後，這些轉型分散在兩個檔案；總數仍固定為 6。
+  let total = 0
+  for (const file of ['electron/main/runtime.ts', 'electron/main/plugin-runtime.ts']) {
+    const lines = read(file).split('\n')
+    const castOccurrences = lines.flatMap((line, index) =>
+      [...line.matchAll(/as unknown as|as PluginPanelViewSession/g)].map(() => index))
+    total += castOccurrences.length
+    for (const index of castOccurrences) {
+      const explanation = lines.slice(Math.max(0, index - 4), index).join(' ')
+      assert.match(explanation, /Node's bundled declarations|structural test seam|structural controller seam|Electron's concrete Session/, file)
+    }
   }
+  assert.equal(total, 6)
 })
 
 test('Electron preload and renderer use one shared API type contract', () => {

@@ -11,7 +11,7 @@ function setup(overrides: Record<string, unknown> = {}) {
   const logs: string[] = []
   const gaveUp: string[] = []
   const recovered: string[] = []
-  const recovery = attachRendererRecovery(contents as never, {
+  const recovery = attachRendererRecovery(contents, {
     label: 'pet',
     reload: () => reloads.push(clock),
     log: (_l, m) => logs.push(m),

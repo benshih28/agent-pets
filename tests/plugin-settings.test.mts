@@ -8,6 +8,7 @@ import { PluginSettingsStore, publishPluginSettingsChanged } from '../electron/p
 import { PluginSecretConsentStore, PLUGIN_SECRET_CONSENT_FILENAME } from '../electron/plugin-secret-consent.ts'
 import type { PluginManifest } from '../src/types/plugin.ts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const NAME = { 'zh-TW': '設定範例', 'en-US': 'Settings Sample' }
 const manifest: PluginManifest = {
@@ -41,7 +42,7 @@ function fixture() {
   return {
     userData, dataDirectory, secrets, settings,
     setEncryptionAvailable: (value: boolean) => { encryptionAvailable = value },
-    cleanup: () => fs.rmSync(userData, { recursive: true, force: true }),
+    cleanup: () => removeTempTree(userData),
   }
 }
 
@@ -129,7 +130,7 @@ test('secret storage consent persists once and rejects a symlink marker', { skip
     assert.equal(consent.hasAccepted(), false)
     assert.throws(() => consent.accept(), { code: 'unsafe_file' })
     assert.equal(fs.readFileSync(target, 'utf8'), '{}')
-  } finally { fs.rmSync(userData, { recursive: true, force: true }) }
+  } finally { removeTempTree(userData) }
 })
 
 test('secret storage rejects symlinked files without writing through them', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, () => {

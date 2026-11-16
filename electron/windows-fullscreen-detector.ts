@@ -212,6 +212,12 @@ function createWin32Binding(koffi: KoffiModule): Win32Binding {
     'void __stdcall AgentPetsWinEventProc(void *hook, uint32_t event, void *hwnd, int32_t objectId, int32_t childId, uint32_t threadId, uint32_t time)',
   )
 
+  // Win32 BOOL 是 4-byte int，不是 1-byte bool：宣告 int 再以 !== 0 轉成 boolean，避免讀到未定義的高位元組。
+  const isWindowVisible = user32.func('int IsWindowVisible(void *hwnd)')
+  const isIconic = user32.func('int IsIconic(void *hwnd)')
+  const getMonitorInfo = user32.func('int GetMonitorInfoW(void *monitor, _Inout_ AgentPetsFullscreenMonitorInfo *info)')
+  const unhookWinEvent = user32.func('int UnhookWinEvent(void *hook)')
+
   return {
     koffi,
     eventCallbackPointerType: koffi.pointer(eventCallbackType),
@@ -219,8 +225,8 @@ function createWin32Binding(koffi: KoffiModule): Win32Binding {
     monitorInfoSize: koffi.sizeof(monitorInfoType),
     api: {
       getForegroundWindow: user32.func('void *GetForegroundWindow()') as Win32Api['getForegroundWindow'],
-      isWindowVisible: user32.func('bool IsWindowVisible(void *hwnd)') as Win32Api['isWindowVisible'],
-      isIconic: user32.func('bool IsIconic(void *hwnd)') as Win32Api['isIconic'],
+      isWindowVisible: windowHandle => isWindowVisible(windowHandle) !== 0,
+      isIconic: windowHandle => isIconic(windowHandle) !== 0,
       getWindowThreadProcessId: user32.func(
         'uint32_t GetWindowThreadProcessId(void *hwnd, _Out_ uint32_t *processId)',
       ) as Win32Api['getWindowThreadProcessId'],
@@ -230,9 +236,7 @@ function createWin32Binding(koffi: KoffiModule): Win32Binding {
       monitorFromWindow: user32.func(
         'void *MonitorFromWindow(void *hwnd, uint32_t flags)',
       ) as Win32Api['monitorFromWindow'],
-      getMonitorInfo: user32.func(
-        'bool GetMonitorInfoW(void *monitor, _Inout_ AgentPetsFullscreenMonitorInfo *info)',
-      ) as Win32Api['getMonitorInfo'],
+      getMonitorInfo: (monitorHandle, info) => getMonitorInfo(monitorHandle, info) !== 0,
       dwmGetWindowFrameAttribute: dwmapi.func(
         'long DwmGetWindowAttribute(void *hwnd, uint32_t attribute, _Out_ AgentPetsFullscreenRect *value, uint32_t size)',
       ) as Win32Api['dwmGetWindowFrameAttribute'],
@@ -242,9 +246,7 @@ function createWin32Binding(koffi: KoffiModule): Win32Binding {
       setWinEventHook: user32.func(
         'void *SetWinEventHook(uint32_t eventMin, uint32_t eventMax, void *module, AgentPetsWinEventProc *callback, uint32_t processId, uint32_t threadId, uint32_t flags)',
       ) as Win32Api['setWinEventHook'],
-      unhookWinEvent: user32.func(
-        'bool UnhookWinEvent(void *hook)',
-      ) as Win32Api['unhookWinEvent'],
+      unhookWinEvent: hook => unhookWinEvent(hook) !== 0,
     },
   }
 }

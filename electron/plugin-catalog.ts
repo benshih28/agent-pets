@@ -274,10 +274,12 @@ export function createPluginCatalogGateway(dependencies: PluginCatalogDependenci
         return result
       } catch (error) {
         const code = transportErrorCode(error)
-        if (code === 'host_not_allowed') return { ok: false, error: 'host_not_allowed' }
-        if (code === 'too_large') return { ok: false, error: 'catalog_invalid' }
-        if (code === 'catalog_not_found') return { ok: false, error: 'catalog_not_found' }
-        return { ok: false, error: 'catalog_unavailable' }
+        switch (code) {
+          case 'host_not_allowed': return { ok: false, error: 'host_not_allowed' }
+          case 'too_large': return { ok: false, error: 'catalog_invalid' }
+          case 'catalog_not_found': return { ok: false, error: 'catalog_not_found' }
+          default: return { ok: false, error: 'catalog_unavailable' }
+        }
       }
     },
     async download(version: PluginCatalogVersion): Promise<PluginCatalogResult<Uint8Array>> {

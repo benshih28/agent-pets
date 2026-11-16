@@ -2,6 +2,7 @@ import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { PermissionBroker } from '../permission-broker'
 import type { PermissionAuditEntry } from '../../src/types/permission'
 import { IPC_CHANNELS } from './channels.ts'
+import { isRecord } from '../value-guards.ts'
 
 export interface PermissionIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -32,19 +33,16 @@ export function registerPermissionIpc(deps: PermissionIpcDependencies): void {
     const fromPanel = Boolean(panelWindow && !panelWindow.isDestroyed() && event.sender === panelWindow.webContents)
     const fromPet = Boolean(petWindow && !petWindow.isDestroyed() && event.sender === petWindow.webContents)
     if (!fromPanel && !fromPet) throw new Error('Unauthorized IPC sender')
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return { ok: false, error: 'invalid_decision' }
-    }
-    const data = payload as Record<string, unknown>
     if (
-      typeof data.requestId !== 'string'
-      || (data.decision !== 'allow_once' && data.decision !== 'deny')
+      !isRecord(payload)
+      || typeof payload.requestId !== 'string'
+      || (payload.decision !== 'allow_once' && payload.decision !== 'deny')
     ) {
       return { ok: false, error: 'invalid_decision' }
     }
     const broker = deps.getPermissionBroker()
     if (!broker) return { ok: false, error: 'not_found' }
-    return broker.decide(data.requestId, data.decision, fromPanel ? 'panel' : 'bubble')
+    return broker.decide(payload.requestId, payload.decision, fromPanel ? 'panel' : 'bubble')
   })
 
   deps.ipcMain.handle(IPC_CHANNELS.permissionAuditList, (event) => {

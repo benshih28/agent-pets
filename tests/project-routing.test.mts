@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { ProjectRoutingStore } from '../electron/project-routing.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function databasePath(): { filePath: string; directory: string; project: string } {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-project-routing-'))
@@ -45,7 +46,7 @@ test('project identity is anonymous, stable across path variants, and persists b
     reopened.close()
     const rawDatabase = fs.readFileSync(database.filePath)
     assert.equal(rawDatabase.includes(Buffer.from(database.project)), false)
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })
 
@@ -61,7 +62,7 @@ test('project pet bindings accept the dedicated plugin skin id format', () => {
     assert.deepEqual(store.route(project.projectId, available), { petId: pluginSkinId, fallback: false })
   } finally {
     store.close()
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })
 
@@ -89,7 +90,7 @@ test('trackSeen resolves without hitting the filesystem twice and throttles the 
     assert.equal(afterThrottleExpires?.lastSeenAt, now)
   } finally {
     store.close()
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })
 
@@ -108,7 +109,7 @@ test('archiveProject removes a project from listProjects', () => {
     assert.equal(store.archiveProject('not-a-valid-id'), false)
   } finally {
     store.close()
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })
 
@@ -137,7 +138,7 @@ test('disabling routing suppresses new resolution but keeps stored bindings for 
     assert.ok(store.resolvePath(database.project))
   } finally {
     store.close()
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })
 
@@ -154,7 +155,7 @@ test('the enabled flag persists across reopening the store', () => {
     assert.equal(reopened.isEnabled(), false)
   } finally {
     reopened.close()
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })
 
@@ -170,6 +171,6 @@ test('invalid and missing project paths fail closed without touching the filesys
     assert.equal(store.registerPath(missing)?.displayName, 'does-not-exist')
   } finally {
     store.close()
-    fs.rmSync(database.directory, { recursive: true, force: true })
+    removeTempTree(database.directory)
   }
 })

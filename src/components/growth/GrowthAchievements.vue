@@ -10,6 +10,8 @@ import ProgressTrack from '@/components/ui/ProgressTrack.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import ToggleRow from '@/components/ui/ToggleRow.vue'
 import { formatDateDefault } from '@/utils/intl-format'
+import { STORAGE_KEYS } from '@/utils/storage-keys'
+import { readStored, writeStored } from '@/utils/local-storage'
 
 const store = useAgentStore()
 const filter = ref<AchievementFilter>('all')
@@ -39,9 +41,7 @@ const starterId = computed(() => (
 
 // Unlocks newer than the last time this view was opened are marked "New".
 // Per-viewer convenience only, so storage failures are simply ignored.
-const SEEN_KEY = 'agent-pet-achievements-seen-at'
-let seenAt = 0
-try { seenAt = Number(localStorage.getItem(SEEN_KEY)) || 0 } catch { seenAt = 0 }
+const seenAt = readStored(STORAGE_KEYS.achievementsSeenAt)
 
 function isNew(unlockedAt?: number): boolean {
   return unlockedAt !== undefined && unlockedAt > seenAt
@@ -54,7 +54,7 @@ function unlockedDate(unlockedAt?: number): string {
 }
 
 function markSeen(): void {
-  try { localStorage.setItem(SEEN_KEY, String(Date.now())) } catch { /* ignore */ }
+  writeStored(STORAGE_KEYS.achievementsSeenAt, Date.now())
 }
 onBeforeUnmount(markSeen)
 onMounted(() => window.addEventListener('pagehide', markSeen))

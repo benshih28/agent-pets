@@ -1,7 +1,16 @@
 name: Release
 
 # 當 main 上的 package.json 版本號變更（且該版本尚未有 tag）時，
-# 自動建置 macOS 與 Windows 版本，並建立 v<version> tag 與 GitHub Release。
+# 自動建置 macOS、Windows 與 Linux 版本，並建立 v<version> tag 與 GitHub Release。
+#
+# 簽章是選用的：沒有設定下列 repository secrets 時，行為與過去相同（macOS ad-hoc、Windows 不簽章）；
+# 設定之後下一次發版自動啟用正式簽章，不需要改 workflow。設定方式見 docs/dev/release-signing.md。
+#   MACOS_CERTIFICATE_P12 / MACOS_CERTIFICATE_PASSWORD   Developer ID Application 憑證（base64 的 .p12）與密碼
+#   APPLE_API_KEY_P8 / APPLE_API_KEY_ID / APPLE_API_ISSUER   公證用 App Store Connect API key（三個都有才公證）
+#   WINDOWS_CERTIFICATE_P12 / WINDOWS_CERTIFICATE_PASSWORD   Windows 程式碼簽章憑證（base64 的 .pfx）與密碼
+# 本 workflow 只在 push 到 main 與手動觸發時執行，不會在 fork 的 pull request 上取得這些 secrets。
+# 手動觸發可以選任何分支，但只有 main 會讀取簽章 secrets 與發版：其他分支仍會建置並上傳 artifact
+# （可用來試打包），不簽章也不建立 tag／Release，避免有寫入權者推分支就拿 secret 簽未審查的 commit。
 on:
   push:
     branches: [main]
@@ -25,7 +34,9 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release: ${{ steps.version.outputs.release }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: version
         name: Check whether this version is already released
@@ -47,9 +58,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -80,29 +93,42 @@ jobs:
             builder-args: --mac --x64
             mac-arch: x64
             artifact-glob: release/*.dmg
+          # 明確匹配 portable（AgentPets-<版本>.exe）與 NSIS（AgentPets-Setup-<版本>.exe）；
+          # NSIS 的 AgentPets-Setup-<版本>.__uninstaller.exe 中間檔與 .blockmap 不會被匹配
           - name: windows
             os: windows-latest
             builder-args: --win --x64
-            artifact-glob: release/*.exe
+            artifact-glob: |
+              release/AgentPets-[0-9]*.exe
+              release/AgentPets-Setup-*[0-9].exe
+          - name: linux
+            os: ubuntu-latest
+            builder-args: --linux --x64
+            artifact-glob: |
+              release/*.AppImage
+              release/*.deb
     runs-on: ${{ matrix.os }}
     env:
-      # 目前沒有簽章憑證：關閉 macOS 自動尋找簽章身分。package.json 的 mac.identity 是 "-"，
-      # electron-builder 會在寫入 fuses 之後對整個 bundle 做 ad-hoc 簽章（不是正式簽章，也不公證）
+      # 預設（沒有簽章 secrets）：關閉 macOS 自動尋找簽章身分。package.json 的 mac.identity 是 "-"，
+      # electron-builder 會在寫入 fuses 之後對整個 bundle 做 ad-hoc 簽章（不是正式簽章，也不公證）。
+      # 有 macOS 簽章 secrets 時，Package 步驟會覆寫這個值並改用 Developer ID 簽章。
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       # 統一快取位置，讓 Electron 與 electron-builder 下載的二進位檔可跨次重用
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             .cache/electron
@@ -111,6 +137,72 @@ jobs:
           restore-keys: electron-${{ matrix.name }}-
 
       - run: pnpm install --frozen-lockfile
+
+      # 判斷這次要不要簽章。secret 只透過 env 傳進 shell，這裡只輸出 true/false，不會印出任何值。
+      # 每個輸出只在對應的作業系統 runner 上才會是 true。
+      # 只有 main 才會把 secret 帶進這個步驟：其他分支手動觸發時 env 全是空字串，三個輸出都是 false，
+      # 後續的 Prepare signing files 與簽章相關 env 因此都不會拿到 secret。
+      - id: signing
+        name: Detect signing credentials
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12: ${{ github.ref == 'refs/heads/main' && secrets.MACOS_CERTIFICATE_P12 || '' }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
+          APPLE_API_KEY_P8: ${{ github.ref == 'refs/heads/main' && secrets.APPLE_API_KEY_P8 || '' }}
+          APPLE_API_KEY_ID: ${{ github.ref == 'refs/heads/main' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ github.ref == 'refs/heads/main' && secrets.APPLE_API_ISSUER || '' }}
+          WINDOWS_CERTIFICATE_P12: ${{ github.ref == 'refs/heads/main' && secrets.WINDOWS_CERTIFICATE_P12 || '' }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+        run: |
+          mac=false
+          notarize=false
+          windows=false
+          if [ "$RUNNER_OS" = macOS ] && [ -n "$MACOS_CERTIFICATE_P12" ] && [ -n "$MACOS_CERTIFICATE_PASSWORD" ]; then
+            mac=true
+            # 公證必須在正式簽章之上，三個 API key 值缺一不可
+            if [ -n "$APPLE_API_KEY_P8" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+              notarize=true
+            fi
+          fi
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$WINDOWS_CERTIFICATE_P12" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; then
+            windows=true
+          fi
+          {
+            echo "mac=$mac"
+            echo "notarize=$notarize"
+            echo "windows=$windows"
+          } >> "$GITHUB_OUTPUT"
+          echo "macOS Developer ID signing: $mac; notarization: $notarize; Windows signing: $windows"
+
+      # 把 base64 的憑證解碼成 $RUNNER_TEMP 下的檔案，只把「路徑」寫進後續步驟的環境變數；
+      # 密碼與 API key ID 由 Package 步驟的 env 直接取自 secrets。檔案在最後的 Clean up 步驟刪除。
+      - name: Prepare signing files
+        if: steps.signing.outputs.mac == 'true' || steps.signing.outputs.windows == 'true'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12: ${{ steps.signing.outputs.mac == 'true' && secrets.MACOS_CERTIFICATE_P12 || '' }}
+          APPLE_API_KEY_P8: ${{ steps.signing.outputs.notarize == 'true' && secrets.APPLE_API_KEY_P8 || '' }}
+          WINDOWS_CERTIFICATE_P12: ${{ steps.signing.outputs.windows == 'true' && secrets.WINDOWS_CERTIFICATE_P12 || '' }}
+        run: |
+          signing_dir="$RUNNER_TEMP/signing"
+          mkdir -p "$signing_dir"
+          chmod 700 "$signing_dir"
+          # 用 node 解碼：各平台行為一致，也會忽略貼上時夾帶的換行
+          decode() {
+            DECODE_INPUT="$1" node -e "require('fs').writeFileSync(process.argv[1], Buffer.from(process.env.DECODE_INPUT, 'base64'), { mode: 0o600 })" "$2"
+          }
+          if [ -n "$MACOS_CERTIFICATE_P12" ]; then
+            decode "$MACOS_CERTIFICATE_P12" "$signing_dir/mac-certificate.p12"
+            echo "CSC_LINK=$signing_dir/mac-certificate.p12" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            decode "$APPLE_API_KEY_P8" "$signing_dir/AuthKey.p8"
+            echo "APPLE_API_KEY=$signing_dir/AuthKey.p8" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$WINDOWS_CERTIFICATE_P12" ]; then
+            decode "$WINDOWS_CERTIFICATE_P12" "$signing_dir/windows-certificate.pfx"
+            echo "WIN_CSC_LINK=$signing_dir/windows-certificate.pfx" >> "$GITHUB_ENV"
+          fi
 
       # 不走 pnpm build：其 prebuild 會清理本機 Agent Pets 程序，CI 不需要
       - run: pnpm exec vite build
@@ -122,18 +214,54 @@ jobs:
       # 檔案（例如 SHASUMS256.txt）持續回 504，但同一個檔案經 API 下載正常。第一次失敗後
       # 改用 scripts/release-asset-mirror.mjs（只聽 127.0.0.1，經 GitHub API 下載）再試兩次，
       # 間隔 30、60 秒。checksum 仍由打包工具照原本方式驗證。
+      # 只有輸出看起來是下載或網路錯誤時才重試（判斷見 scripts/is-download-error.sh）：
+      # 簽章、公證被拒或逾時等其他失敗直接結束，不重跑（公證每次可能數十分鐘，重跑會超過 45 分鐘上限，
+      # 還會用後面的失敗蓋掉真正的原因）。
       - name: Package
         shell: bash
         env:
           BUILDER_ARGS: ${{ matrix.builder-args }}
           GITHUB_TOKEN: ${{ github.token }}
+          SIGN_MAC: ${{ steps.signing.outputs.mac }}
+          # 以下只在對應的簽章路徑才有值；沒有時是空字串，electron-builder 視同未設定
+          CSC_KEY_PASSWORD: ${{ steps.signing.outputs.mac == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ steps.signing.outputs.notarize == 'true' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ steps.signing.outputs.notarize == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ steps.signing.outputs.windows == 'true' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
         run: |
+          # macOS 正式簽章（Developer ID）：
+          # - mac.identity 設成空字串（覆寫 package.json 的 "-"），electron-builder 會從 CSC_LINK 匯入的
+          #   暫時鑰匙圈自動挑選 Developer ID Application；不能設成 null，那代表「不簽章」。
+          # - forceCodeSigning：找不到身分就失敗，不會悄悄發出沒簽章的 dmg。
+          # - entitlements 只在這條路徑使用（見檔內說明）；hardened runtime 是 electron-builder 的預設。
+          # - 公證（有 APPLE_API_KEY 時）由 electron-builder 在簽章後對 .app 執行並 staple，之後才封裝成 dmg。
+          extra_args=()
+          if [ "$SIGN_MAC" = true ]; then
+            export CSC_IDENTITY_AUTO_DISCOVERY=true
+            extra_args+=(
+              --config.mac.identity=
+              --config.forceCodeSigning=true
+              --config.mac.entitlements=build/entitlements.mac.developer-id.plist
+              --config.mac.entitlementsInherit=build/entitlements.mac.developer-id.plist
+            )
+          fi
+          build_log="$RUNNER_TEMP/electron-builder.log"
           build() {
+            # 輸出同時顯示在 log 並存檔，供失敗後判斷原因；pipefail 讓 tee 不會吃掉 electron-builder 的結束碼。
+            set -o pipefail
             # BUILDER_ARGS 是 matrix 內的固定參數，需要拆成多個引數，所以不加引號。
             # shellcheck disable=SC2086
-            pnpm exec electron-builder $BUILDER_ARGS --publish never
+            pnpm exec electron-builder $BUILDER_ARGS "${extra_args[@]}" --publish never 2>&1 | tee "$build_log"
+          }
+          not_download_error() {
+            if ! bash scripts/is-download-error.sh "$build_log"; then
+              echo "::error::electron-builder failed and the output does not look like a download or network error; not retrying (see the log above)"
+              return 0
+            fi
+            return 1
           }
           build && exit 0
+          not_download_error && exit 1
 
           node scripts/release-asset-mirror.mjs > "$RUNNER_TEMP/asset-mirror.log" 2>&1 &
           for _ in $(seq 1 50); do
@@ -151,20 +279,24 @@ jobs:
 
           for attempt in 2 3; do
             delay=$((30 * (attempt - 1)))
-            echo "::warning::electron-builder failed; retrying through the API download mirror in ${delay}s (attempt $attempt of 3)"
+            echo "::warning::electron-builder failed with a download or network error; retrying through the API download mirror in ${delay}s (attempt $attempt of 3)"
             sleep "$delay"
             build && exit 0
+            not_download_error && break
           done
           cat "$RUNNER_TEMP/asset-mirror.log"
           exit 1
 
       # 驗證使用者實際下載到的 dmg：整個 bundle 簽章完整（codesign --verify --deep --strict）、
       # fuses 等於 build.electronFuses、每個 Mach-O 與 *.node 都是目標架構。任何一項不符就讓發版失敗。
+      # 正式簽章路徑另外檢查 Developer ID 簽章、hardened runtime、spctl；有公證時再檢查公證與 staple。
       - name: Verify macOS bundle
         if: runner.os == 'macOS'
         shell: bash
         env:
           MAC_ARCH: ${{ matrix.mac-arch }}
+          SIGN_MAC: ${{ steps.signing.outputs.mac }}
+          NOTARIZE: ${{ steps.signing.outputs.notarize }}
         run: |
           shopt -s nullglob
           dmgs=(release/*.dmg)
@@ -175,23 +307,52 @@ jobs:
           mountpoint=$(mktemp -d)
           hdiutil attach -nobrowse -readonly -mountpoint "$mountpoint" "${dmgs[0]}"
           trap 'hdiutil detach "$mountpoint" || hdiutil detach -force "$mountpoint"' EXIT
-          node scripts/check-mac-bundle.mjs --app "$mountpoint/Agent Pets.app" --arch "$MAC_ARCH"
+          check_args=()
+          if [ "$SIGN_MAC" = true ]; then check_args+=(--expect-signed developer-id); fi
+          if [ "$NOTARIZE" = true ]; then check_args+=(--expect-notarized); fi
+          node scripts/check-mac-bundle.mjs --app "$mountpoint/Agent Pets.app" --arch "$MAC_ARCH" "${check_args[@]}"
 
-      - uses: actions/upload-artifact@v7
+      # 只在 Windows 簽章路徑：portable 與 NSIS 安裝檔的 Authenticode 簽章都必須是 Valid
+      - name: Verify Windows signatures
+        if: steps.signing.outputs.windows == 'true'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -Path release -Filter 'AgentPets-*.exe' | Where-Object { $_.Name -notlike '*__uninstaller*' })
+          if ($files.Count -ne 2) {
+            Write-Error "expected 2 executables (portable and NSIS setup), found $($files.Count)"
+            exit 1
+          }
+          $invalid = 0
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
+            Write-Host "$($file.Name): $($signature.Status)"
+            if ($signature.Status -ne 'Valid') { $invalid++ }
+          }
+          if ($invalid -gt 0) { exit 1 }
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.artifact-glob }}
           if-no-files-found: error
 
+      # 不論成功或失敗都刪除解碼出來的憑證與 API key（self-hosted runner 也不會留下）
+      - name: Clean up signing files
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/signing"
+
   release:
     name: release
     needs: [version, verify, build]
+    # 非 main 的手動觸發只建置並上傳 artifact，不建立 tag 與 Release（needs 全部成功是隱含條件）
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist-release
           merge-multiple: true

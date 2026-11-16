@@ -1,9 +1,13 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import * as path from 'node:path'
 import type { PermissionDecisionValue, PermissionRisk } from '../src/types/permission'
 import { FAMILY_SOURCES, familySourceSet, type SourceOfFamily } from '../src/types/agent.ts'
+import { isOpaqueId128 as isIdentifier } from '../src/types/id-patterns.ts'
+import { LOCAL_WIRE_HEADERS, LOCAL_WIRE_PATHS } from '../src/types/local-wire.ts'
+import { hasJsonContentType, JSON_RESPONSE_HEADERS, readBoundedJson, sendJson, tokenMatches } from './loopback-http.ts'
+import { isRecord } from './value-guards.ts'
 import {
   PermissionBroker,
   type AdapterPermissionDecision,
@@ -19,7 +23,12 @@ import {
   isNetworkPermission,
 } from './permission-risk.ts'
 
-export const PERMISSION_ADAPTER_PORT = 17_374
+// 與請求的 `${method} ${pathname}` 比對的路由 key；在載入時從契約組好一次。
+const ROUTE_REQUEST = `POST ${LOCAL_WIRE_PATHS.permissionRequest}`
+const ROUTE_DECISION = `POST ${LOCAL_WIRE_PATHS.permissionDecision}`
+const ROUTE_RESULT = `POST ${LOCAL_WIRE_PATHS.permissionResult}`
+const ROUTE_RESOLVED = `POST ${LOCAL_WIRE_PATHS.permissionResolved}`
+const ROUTE_RESOLVED_SESSION = `POST ${LOCAL_WIRE_PATHS.permissionResolvedSession}`
 
 const MAX_BODY_BYTES = 16 * 1024
 // Per plugin instance (source + instanceId), so one noisy instance cannot use up
@@ -28,7 +37,6 @@ const MAX_CREATE_REQUESTS_PER_MINUTE = 60
 const MAX_CREATE_REQUESTS_PER_MINUTE_PER_HOST = 240
 const MAX_BUDGET_WINDOWS = 256
 const MAX_EXTERNAL_RECORDS = 400
-const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 // The broker applies the final display limits (and counts what it cuts); the
 // adapter only bounds how much it accepts so memory use stays predictable.
 const MAX_PATTERNS = 20
@@ -182,6 +190,7 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
   const randomId = options.randomId ?? randomUUID
   const records = new Map<string, ExternalRequestRecord>()
   const createWindows = new Map<string, { startedAt: number; count: number }>()
+  const expectedToken = Buffer.from(options.token)
 
   return createServer(async (request, response) => {
     setSecurityHeaders(response)
@@ -193,18 +202,17 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
       sendJson(response, 403, { error: 'forbidden' })
       return
     }
-    if (!hasValidToken(request, options.token)) {
+    if (!tokenMatches(request.headers[LOCAL_WIRE_HEADERS.permissionToken], expectedToken)) {
       sendJson(response, 401, { error: 'unauthorized' })
       return
     }
-    const contentType = request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase()
-    if (contentType !== 'application/json') {
+    if (!hasJsonContentType(request)) {
       sendJson(response, 415, { error: 'application_json_required' })
       return
     }
 
     const route = `${request.method ?? ''} ${request.url?.split('?')[0] ?? ''}`
-    if (route === 'POST /v1/permission/request') {
+    if (route === ROUTE_REQUEST) {
       if (!consumeCreateBudget(createWindows, `host:${request.socket.remoteAddress ?? 'loopback'}`, now(), MAX_CREATE_REQUESTS_PER_MINUTE_PER_HOST)) {
         sendJson(response, 429, { error: 'rate_limited' })
         return
@@ -286,7 +294,7 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
       return
     }
 
-    if (route === 'POST /v1/permission/decision') {
+    if (route === ROUTE_DECISION) {
       const lookup = normalizeLookupPayload(await readJsonBody(request))
       if (!lookup) {
         sendJson(response, 400, { error: 'invalid_request' })
@@ -315,7 +323,7 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
       return
     }
 
-    if (route === 'POST /v1/permission/result') {
+    if (route === ROUTE_RESULT) {
       const result = normalizeResultPayload(await readJsonBody(request))
       if (!result) {
         sendJson(response, 400, { error: 'invalid_request' })
@@ -335,7 +343,7 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
       return
     }
 
-    if (route === 'POST /v1/permission/resolved') {
+    if (route === ROUTE_RESOLVED) {
       const lookup = normalizeLookupPayload(await readJsonBody(request))
       if (!lookup) {
         sendJson(response, 400, { error: 'invalid_request' })
@@ -355,7 +363,7 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
 
     // Claude has no per-request "answered in the terminal" event; when a turn
     // or session ends, everything still pending for that session is settled.
-    if (route === 'POST /v1/permission/resolved-session') {
+    if (route === ROUTE_RESOLVED_SESSION) {
       const lookup = normalizeSessionLookupPayload(await readJsonBody(request))
       if (!lookup) {
         sendJson(response, 400, { error: 'invalid_request' })
@@ -372,17 +380,11 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
 }
 
 function isRelayHandle(value: unknown): value is RelayHandle {
-  return Boolean(
-    value
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && isIdentifier((value as Record<string, unknown>).relayKey),
-  )
+  return isRecord(value) && isIdentifier(value.relayKey)
 }
 
-function normalizeCreatePayload(value: unknown): CreatePayload | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const data = value as Record<string, unknown>
+function normalizeCreatePayload(data: unknown): CreatePayload | null {
+  if (!isRecord(data)) return null
   if (
     typeof data.source !== 'string'
     || !SOURCES.has(data.source)
@@ -426,9 +428,8 @@ function normalizeCreatePayload(value: unknown): CreatePayload | null {
   }
 }
 
-function normalizeSessionLookupPayload(value: unknown): (Pick<CreatePayload, 'source' | 'instanceId'> & { scope?: string }) | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const data = value as Record<string, unknown>
+function normalizeSessionLookupPayload(data: unknown): (Pick<CreatePayload, 'source' | 'instanceId'> & { scope?: string }) | null {
+  if (!isRecord(data)) return null
   if (typeof data.source !== 'string' || !SOURCES.has(data.source) || !isIdentifier(data.instanceId)) return null
   if (data.scope !== undefined && !isIdentifier(data.scope)) return null
   return {
@@ -453,9 +454,8 @@ function resolveScope(
   }
 }
 
-function normalizeLookupPayload(value: unknown): (Pick<CreatePayload, 'source' | 'instanceId' | 'permissionId'> & { nonce?: string }) | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const data = value as Record<string, unknown>
+function normalizeLookupPayload(data: unknown): (Pick<CreatePayload, 'source' | 'instanceId' | 'permissionId'> & { nonce?: string }) | null {
+  if (!isRecord(data)) return null
   if (
     typeof data.source !== 'string'
     || !SOURCES.has(data.source)
@@ -470,19 +470,14 @@ function normalizeLookupPayload(value: unknown): (Pick<CreatePayload, 'source' |
   }
 }
 
-function normalizeResultPayload(value: unknown): (
+function normalizeResultPayload(data: unknown): (
   Pick<CreatePayload, 'source' | 'instanceId' | 'permissionId'>
   & { nonce?: string; decisionId: string; result: PermissionDeliveryResult }
 ) | null {
-  const lookup = normalizeLookupPayload(value)
-  if (!lookup || !value || typeof value !== 'object') return null
-  const data = value as Record<string, unknown>
+  const lookup = normalizeLookupPayload(data)
+  if (!lookup || !isRecord(data)) return null
   if (!isIdentifier(data.decisionId) || !isDeliveryResult(data.result)) return null
   return { ...lookup, decisionId: data.decisionId, result: data.result }
-}
-
-function isIdentifier(value: unknown): value is string {
-  return typeof value === 'string' && ID_PATTERN.test(value)
 }
 
 function isDeliveryResult(value: unknown): value is PermissionDeliveryResult {
@@ -552,42 +547,18 @@ function isLoopback(address: string | undefined): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
-function hasValidToken(request: IncomingMessage, expected: string): boolean {
-  const value = request.headers['x-agent-pets-permission-token']
-  if (typeof value !== 'string') return false
-  const actualBuffer = Buffer.from(value)
-  const expectedBuffer = Buffer.from(expected)
-  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
-}
-
+/**
+ * 這個 server 的 client 不區分 body 失敗的原因：過大、空 body、錯誤 JSON 與中斷都回 null，
+ * 由各路由的 normalize 函式轉成 400 `invalid_request`（沒有 413）。
+ */
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const declaredLength = Number(request.headers['content-length'] ?? 0)
-  if (!Number.isFinite(declaredLength) || declaredLength < 0 || declaredLength > MAX_BODY_BYTES) return null
-  const chunks: Buffer[] = []
-  let size = 0
-  try {
-    for await (const chunk of request) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      size += buffer.length
-      if (size > MAX_BODY_BYTES) return null
-      chunks.push(buffer)
-    }
-    if (size === 0) return null
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    return null
-  }
+  const body = await readBoundedJson(request, MAX_BODY_BYTES)
+  return body.ok ? body.value : null
 }
 
+/** 先設好，讓沒有 body 的 204 回應也帶同一組 header。 */
 function setSecurityHeaders(response: ServerResponse): void {
-  response.setHeader('cache-control', 'no-store')
-  response.setHeader('content-type', 'application/json; charset=utf-8')
-  response.setHeader('x-content-type-options', 'nosniff')
-}
-
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.statusCode = status
-  response.end(JSON.stringify(body))
+  for (const [name, value] of Object.entries(JSON_RESPONSE_HEADERS)) response.setHeader(name, value)
 }
 
 function consumeCreateBudget(

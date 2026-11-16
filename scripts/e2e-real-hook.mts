@@ -4,8 +4,9 @@
 // 從那份 settings 讀出 hook 指令、以 stdin 送 payload，再經 CDP 讀寵物畫面。可選的寵物包會先經主程序 loadPets 清理。
 // 用法（先 pnpm exec vite build，並用預設隔離埠啟動 node scripts/e2e-isolated-electron.mjs）：
 //   node --experimental-strip-types scripts/e2e-real-hook.mts --home <啟動日誌的 home> [--debug-port 9348]
-//        [--hook-port-base 27373] [--pet-pack] [--rounds 1]
-// --rounds N 把整組 8 個事件重複 N 輪（每輪換新 session），用來大量確認每個事件都畫到寵物上。
+//        [--hook-port-base 27373] [--pet-pack] [--rounds 1] [--agent-config-dirs]
+// --agent-config-dirs 對應啟動器的同名旗標：hook 裝到 <home>/moved/claude/settings.json（CLAUDE_CONFIG_DIR）。
+// --rounds N 把整組 14 個事件重複 N 輪（每輪換新 session），用來大量確認每個事件都畫到寵物上。
 // 冷啟動模式（先結束隔離 app，HOME 要是跑過一次這支腳本的）：
 //   node --experimental-strip-types scripts/e2e-real-hook.mts --home <home> --cold-start 150 [--interval 40]
 // 以 --reuse-root 重新啟動隔離 app，從啟動那一刻起每 --interval ms 對一個新 session 送一個 Stop，
@@ -16,6 +17,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const arg = (name: string, fallback?: string) => {
@@ -36,10 +38,15 @@ assert.ok(Number.isInteger(portBase) && portBase >= 1024 && portBase <= 65533 &&
 const realHome = os.homedir()
 assert.ok(home && fs.existsSync(path.join(home, '.desktop-pet', 'event-token')) && !home.startsWith(realHome + path.sep) && home !== realHome, 'isolated HOME required')
 
-const { configureSetupEnvironment } = await import(path.join(repoRoot, 'electron/setup-environment.ts'))
-const { hookStartupMarkerName } = await import(path.join(repoRoot, 'electron/main/hook-startup-marker.ts'))
-const setup = await import(path.join(repoRoot, 'electron/setup.ts'))
+const { configureSetupEnvironment } = await import(pathToFileURL(path.join(repoRoot, 'electron/setup-environment.ts')).href)
+const { hookStartupMarkerName } = await import(pathToFileURL(path.join(repoRoot, 'electron/main/hook-startup-marker.ts')).href)
+const setup = await import(pathToFileURL(path.join(repoRoot, 'electron/setup.ts')).href)
+// 不帶本機的 CLAUDE_CONFIG_DIR 等變數；--agent-config-dirs 時只用隔離 HOME 內、與啟動器相同的位置。
+const agentConfigEnv = process.argv.includes('--agent-config-dirs')
+  ? { CLAUDE_CONFIG_DIR: path.join(home, 'moved', 'claude'), CODEX_HOME: path.join(home, 'moved', 'codex'), XDG_CONFIG_HOME: path.join(home, 'moved', 'xdg') }
+  : {}
 configureSetupEnvironment({
+  agentConfigEnv: () => agentConfigEnv,
   homeDir: () => home,
   appData: () => path.join(home, 'AppData'),
   userData: () => path.join(home, 'userData'),
@@ -52,7 +59,7 @@ const hookPath: string = setup.hookScriptPath()
 for (const target of [settingsPath, hookPath]) {
   assert.ok(target.startsWith(home + path.sep), `refusing to write outside the isolated HOME: ${target}`)
 }
-setup.installIntegration('claudeCode')
+await setup.installIntegration('claudeCode')
 
 // 已安裝的腳本寫死 17373/17374；隔離 app 聽在 portBase，只改這兩個網址。
 const deployed = fs.readFileSync(hookPath, 'utf8')
@@ -82,13 +89,20 @@ async function cdp(expression: string): Promise<unknown> {
   })
 }
 
+// Windows 的 os.homedir() 讀 USERPROFILE，只給 HOME 時 hook 會去讀真實家目錄的 token。
+const hookEnv = {
+  PATH: process.env.PATH ?? '',
+  HOME: home,
+  ...(process.platform === 'win32' ? { USERPROFILE: home, SystemRoot: process.env.SystemRoot ?? 'C:\\Windows' } : {}),
+}
+
 function runHook(eventName: string, payload: Record<string, unknown>): number | null {
   const entry = settings.hooks[eventName]?.[0]?.hooks?.[0]
   assert.ok(entry?.type === 'command', `no command hook for ${eventName}`)
   const result = spawnSync(entry.command, entry.args ?? [], {
     input: JSON.stringify({ hook_event_name: eventName, ...payload }),
     // Claude Code 會帶自己的環境；這裡只給最小環境，不帶任何帳號或 CLAUDE_* 變數。
-    env: { PATH: process.env.PATH ?? '', HOME: home },
+    env: hookEnv,
     timeout: 10_000,
   })
   return result.status
@@ -170,7 +184,7 @@ async function measureColdStart(startedAt: number, marks: Record<string, number 
     await new Promise(resolve => setTimeout(resolve, Math.max(0, due - performance.now())))
     runs.push(new Promise(resolve => {
       const sentAt = performance.now() - startedAt
-      const child = spawn(command, args, { env: { PATH: process.env.PATH ?? '', HOME: home }, stdio: ['pipe', 'ignore', 'ignore'] })
+      const child = spawn(command, args, { env: hookEnv, stdio: ['pipe', 'ignore', 'ignore'] })
       child.once('exit', code => { results[i] = { sentAt, ms: performance.now() - startedAt - sentAt, code }; resolve() })
       child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: `${sessionTag}-${i}`, cwd: '/tmp/hook-e2e' }))
     }))
@@ -253,6 +267,13 @@ const stepsFor = (base: Record<string, unknown>): Step[] => [
   ['PreToolUse', { ...base, tool_name: 'Bash', tool_input: { command: 'ls' } }, 'tool-running', 'running@7', 'running@7'],
   ['PostToolUse', { ...base, tool_name: 'Bash', tool_input: { command: 'ls' } }, 'thinking', 'review@8', 'review@10'],
   ['Notification', { ...base, message: 'Claude is waiting for your input' }, 'waiting-input', 'waiting@6', 'waiting@6'],
+  // 新版 Claude Code 帶 notification_type；文字刻意不含 permission，確認是依類型判斷。
+  ['Notification', { ...base, notification_type: 'permission_prompt', message: 'Claude needs your attention' }, 'waiting-permission', 'waiting@6', 'waiting@6'],
+  ['PreCompact', { ...base, trigger: 'auto' }, 'thinking', 'review@8', 'review@10'],
+  ['PostCompact', { ...base, trigger: 'auto' }, 'thinking', 'review@8', 'review@10'],
+  ['Notification', { ...base, notification_type: 'idle_prompt', message: 'Claude is waiting for your input' }, 'waiting-input', 'waiting@6', 'waiting@6'],
+  ['PreCompact', { ...base, trigger: 'manual' }, 'thinking', 'review@8', 'review@10'],
+  ['PostCompact', { ...base, trigger: 'manual' }, 'idle', 'idle@0', 'idle@9'],
   ['StopFailure', base, 'error', 'failed@5', 'failed@5'],
   ['Stop', base, 'success', 'jumping@4', 'jumping@4'],
   ['SessionEnd', base, 'offline', 'idle@0', 'idle@9'],

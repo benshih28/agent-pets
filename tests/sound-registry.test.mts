@@ -54,7 +54,7 @@ class FakeAudioContext {
   }
 }
 
-;(globalThis as any).window = { AudioContext: FakeAudioContext }
+;(globalThis as { window?: unknown }).window = { AudioContext: FakeAudioContext }
 const { playCue, setSoundVolume } = await import('../src/utils/sound.ts')
 
 function reset() {

@@ -2,6 +2,7 @@ import { isIP } from 'node:net'
 import { parsePetBehaviorManifest } from './pet-behavior-manifest.ts'
 import { normalizePluginEventSourceFamily } from './plugin-event-source.ts'
 import { PanelThemeValidationError, parsePanelThemes } from './plugin-panel-themes.ts'
+import { SUPPORTED_LOCALES } from '../src/types/locale.ts'
 import { PLUGIN_CONTRIBUTION_REGISTRY } from '../src/types/plugin.ts'
 import { isPluginId, isPluginCommandId, isSemverCore } from '../src/types/id-patterns.ts'
 import type {
@@ -71,7 +72,7 @@ function normalizePlainText(value: unknown, maxLength: number): string | null {
 }
 
 function parseLocalizedText(value: unknown, maxLength: number): PluginLocalizedText | null {
-  if (!isRecord(value) || !hasOnlyKeys(value, ['zh-TW', 'en-US'])) return null
+  if (!isRecord(value) || !hasOnlyKeys(value, SUPPORTED_LOCALES)) return null
   const zhTW = normalizePlainText(value['zh-TW'], maxLength)
   const enUS = normalizePlainText(value['en-US'], maxLength)
   if (!zhTW || !enUS) return null

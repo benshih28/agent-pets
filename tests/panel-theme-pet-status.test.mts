@@ -64,10 +64,15 @@ test('petStatus contrast is checked over worst-case black and white desktops', (
   assert.equal(PET_STATUS_TOKENS.filter(token => token.required).map(token => token.key).join(), 'background,text')
 })
 
+// Object.fromEntries 只會推成 string 索引型別；鍵來自 const 陣列，所以這個轉型是精確的。
+function uniformRecord<K extends string>(keys: readonly K[], value: string): Record<K, string> {
+  return Object.fromEntries(keys.map(key => [key, value])) as Record<K, string>
+}
+
 test('pet renderer accepts each canonical set whole, and suspends under forced colours', () => {
   const rgb = 'rgb(1 2 3 / 1)'
-  const colors = Object.fromEntries(PET_THEME_COLOR_PROPERTIES.map(name => [name, rgb])) as never
-  const status = Object.fromEntries(PET_STATUS_PROPERTIES.map(name => [name, rgb])) as never
+  const colors = uniformRecord(PET_THEME_COLOR_PROPERTIES, rgb)
+  const status = uniformRecord(PET_STATUS_PROPERTIES, rgb)
   const plain = { forcedColors: false, highContrast: false }
   const both = PET_THEME_COLOR_PROPERTIES.length + PET_STATUS_PROPERTIES.length
   assert.equal(petThemeTargetProperties({ light: { colors, status }, dark: null }, 'light', plain).size, both)
@@ -76,7 +81,9 @@ test('pet renderer accepts each canonical set whole, and suspends under forced c
   assert.equal(petThemeTargetProperties({ light: { colors, status }, dark: null }, 'light', { ...plain, forcedColors: true }).size, 0)
   // 任一值不是主機標準 rgb()、缺一個或多一個名稱：整組拒絕。
   assert.equal(petThemeTargetProperties({ light: { colors: { ...colors, '--organic-text': 'red' }, status }, dark: null }, 'light', plain).size, 0)
-  assert.equal(petThemeTargetProperties({ light: { colors: { ...colors, '--organic-font-body': rgb }, status }, dark: null }, 'light', plain).size, 0)
+  // 多出的名稱要經過一個寬鬆型別的變數，否則物件字面值的多餘屬性檢查在編譯期就擋掉了。
+  const extraName: Record<string, string> = { ...colors, '--organic-font-body': rgb }
+  assert.equal(petThemeTargetProperties({ light: { colors: extraName, status }, dark: null }, 'light', plain).size, 0)
   assert.equal(petThemeTargetProperties({ light: { colors, status: { ...status, '--pet-status-text': 'red' } }, dark: null }, 'light', plain).size, PET_THEME_COLOR_PROPERTIES.length)
   const contrast = petThemeTargetProperties({ light: { colors, status: null }, dark: null }, 'light', { ...plain, highContrast: true })
   assert.equal(contrast.get('--organic-border'), 'rgb(1 2 3 / 0.6)')
@@ -84,8 +91,9 @@ test('pet renderer accepts each canonical set whole, and suspends under forced c
 
 test('the pet window receives exactly the palette properties its CSS reaches', () => {
   // 從寵物視窗用到的 token 出發，沿著 tokens.css 的 var() 找出最終依賴的可套主題屬性。
-  const files = ['src/components/DesktopPet.vue', 'src/components/DesktopPet.css', 'src/components/DesktopPetBubbles.css', 'src/components/PetAnimation.vue',
-    'src/components/PetAnimation.css', 'src/components/permission/PermissionBubble.vue', 'src/components/permission/PermissionCountdown.vue',
+  const files = ['src/components/DesktopPet.vue', 'src/components/DesktopPet.css', 'src/components/desktop-pet/PetStatusLine.vue', 'src/components/desktop-pet/PetStatusLine.css',
+    'src/components/desktop-pet/PetBubbleStack.vue', 'src/components/desktop-pet/PetEdgePeekHandle.vue', 'src/components/desktop-pet/PetEdgePeekHandle.css', 'src/components/DesktopPetBubbles.css', 'src/components/PetAnimation.vue',
+    'src/components/PetAnimation.css', 'src/components/permission/PermissionBubble.vue', 'src/components/permission/PermissionBubble.css', 'src/components/permission/PermissionCountdown.vue',
     'src/components/permission/PermissionDetails.vue', 'src/components/permission/PermissionNoticeBubble.vue', 'src/components/permission/PermissionRiskBadge.vue',
     'src/components/ui/Button.vue', 'src/components/ui/Icon.vue', 'src/utils/agent-state-presentation.ts', 'src/styles/base.css']
   const used = new Set(files.flatMap(file => [...readFileSync(file, 'utf8').matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]!)))
@@ -112,18 +120,18 @@ test('the pet window receives exactly the palette properties its CSS reaches', (
 })
 
 test('only the status pill reads --pet-status-*; bubbles, permission UI, dots and badges follow the palette', () => {
-  const css = readFileSync('src/components/DesktopPet.css', 'utf8')
+  const css = ['src/components/DesktopPet.css', 'src/components/desktop-pet/PetStatusLine.css', 'src/components/desktop-pet/PetEdgePeekHandle.css'].map(file => readFileSync(file, 'utf8')).join('\n')
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*--pet-status-[^{}]*)\}/g)]
   assert.ok(rules.length > 0)
   for (const [, selector] of rules) {
     assert.match(selector!.trim(), /status-line|quota-meter|^:root\[data-pet-status-theme\] \.desktop-pet/, selector)
     assert.doesNotMatch(selector!, /bubble|permission|badge|tooltip|line-dot|marker|edge|context/, selector)
   }
-  for (const file of ['src/components/DesktopPetBubbles.css', 'src/components/permission/PermissionBubble.vue', 'src/components/permission/PermissionNoticeBubble.vue', 'src/components/PetAnimation.css']) {
+  for (const file of ['src/components/DesktopPetBubbles.css', 'src/components/permission/PermissionBubble.vue', 'src/components/permission/PermissionBubble.css', 'src/components/permission/PermissionNoticeBubble.vue', 'src/components/PetAnimation.css']) {
     assert.doesNotMatch(readFileSync(file, 'utf8'), /--pet-status-|--organic-bg|panel-theme/, file)
   }
   const pet = readFileSync('src/components/DesktopPet.vue', 'utf8')
   assert.match(pet, /usePetTheme\(\)/)
   assert.doesNotMatch(pet, /usePanelTheme\b/)
-  assert.match(readFileSync('src/components/DesktopPet.css', 'utf8'), /\.status-line\[data-quota-tier='low'\] \{\n  --quota-color: var\(--organic-quota-error\);/)
+  assert.match(readFileSync('src/components/desktop-pet/PetStatusLine.css', 'utf8'), /\.status-line\[data-quota-tier='low'\] \{\n {2}--quota-color: var\(--organic-quota-error\);/)
 })

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { writeFileAtomicSync } from './atomic-file-write.ts'
 import { renameSyncWithRetry } from './fs-rename.ts'
 import { isFutureUserPanelThemeRecord, parseUserPanelThemeDefinition, parseUserPanelThemeName, parseUserPanelThemeRecord } from './panel-theme-user.ts'
 import { userPanelThemeSchemaFailure, validateUserPanelTheme } from './panel-theme-diagnostics.ts'
@@ -375,17 +376,9 @@ export class UserPanelThemeStore {
     } catch (error) {
       if (!isErrorCode(error, 'ENOENT')) throw error
     }
-    const temporary = path.join(this.directory, `.${record.id}.${randomUUID()}.tmp`)
-    try {
-      fs.writeFileSync(temporary, encoded, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-      renameSyncWithRetry(temporary, target)
-      if (process.platform !== 'win32') {
-        try { fs.chmodSync(target, 0o600) } catch {}
-      }
-    } catch (error) {
-      try { fs.rmSync(temporary, { force: true }) } catch {}
-      throw error
-    }
+    // 名稱要符合 TEMPORARY_FILE，下次載入才會清掉中斷寫入留下的暫存檔。
+    const temporaryPath = path.join(this.directory, `.${record.id}.${randomUUID()}.tmp`)
+    writeFileAtomicSync(target, encoded, { temporaryPath, mode: 0o600, enforceMode: true })
     this.load().set(record.id, structuredClone(record))
   }
 }
@@ -404,12 +397,6 @@ export function readUserPanelThemeImportFile(filePath: string): { ok: true; valu
 export function writeUserPanelThemeExportFile(filePath: string, contents: string): void {
   if (!path.isAbsolute(filePath)) throw new TypeError('export path must be absolute')
   if (Buffer.byteLength(contents, 'utf8') > USER_PANEL_THEME_MAX_BYTES) throw new UserPanelThemeStoreError('too_large')
-  const temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`)
-  try {
-    fs.writeFileSync(temporary, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    renameSyncWithRetry(temporary, filePath)
-  } catch (error) {
-    try { fs.rmSync(temporary, { force: true }) } catch {}
-    throw error
-  }
+  const temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`)
+  writeFileAtomicSync(filePath, contents, { temporaryPath, mode: 0o600 })
 }

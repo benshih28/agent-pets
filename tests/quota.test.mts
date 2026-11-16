@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseClaudeCliUsage, parseClaudeResetTime } from '../electron/quota.ts'
+import { parseClaudeCliUsage, parseClaudeResetTime, type QuotaErrorKind, type QuotaProvider } from '../electron/quota.ts'
 import { setLocale, translateBackendError } from '../src/i18n.ts'
 
 const HOUR = 60 * 60_000
@@ -148,8 +148,8 @@ test('quota error kinds are derived from the sanitized failure', async () => {
 test('failing providers back off exponentially and a success resets the ladder', async () => {
   const quota = await import('../electron/quota.ts')
   quota.resetQuotaCacheForTests()
-  const provider = (errorKind?: string) => ({ id: 'claude', name: 'Claude', windows: [], ...(errorKind ? { error: 'x', errorKind } : {}) }) as never
-  const ttl = (...providers: unknown[]) => quota.nextQuotaCacheTtl(providers as never)
+  const provider = (errorKind?: QuotaErrorKind): QuotaProvider => ({ id: 'claude', name: 'Claude', windows: [], ...(errorKind ? { error: 'x', errorKind } : {}) })
+  const ttl = (...providers: QuotaProvider[]) => quota.nextQuotaCacheTtl(providers)
   assert.deepEqual([1, 2, 3].map(() => ttl(provider('timeout'))), [10_000, 20_000, 40_000])
   assert.equal(ttl(provider()), 90_000)
   assert.deepEqual([1, 2, 3].map(() => ttl(provider('rate-limited'))), [60_000, 120_000, 240_000])

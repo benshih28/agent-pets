@@ -68,15 +68,21 @@ app 啟動後要先建好寵物視窗、插件、權限等服務，最後才綁�
 
 ### 做法
 
-- `electron/main/hook-startup-marker.ts`：`electron/main.ts` 一開始就寫 `~/.desktop-pet/event-port-<事件埠>.starting`，內容是 pid。事件埠開始監聽 2 秒後移除，多留 2 秒是為了蓋過「hook 剛被拒、還沒來得及看標記」的空檔。埠一直綁不上、啟動失敗、第二個實例或 app 結束時立刻移除。移除前會核對 pid，所以 `--relaunch` 的新實例寫的標記不會被舊實例刪掉。
+- `electron/main/hook-startup-marker.ts`：`electron/main.ts` 的第一個 import（`electron/main/early-hook-startup-marker.ts`，1.13.2 起）就寫 `~/.desktop-pet/event-port-<事件埠>.starting`，內容是 pid。事件埠開始監聽 2 秒後移除，多留 2 秒是為了蓋過「hook 剛被拒、還沒來得及看標記」的空檔。埠一直綁不上、啟動失敗、第二個實例或 app 結束時立刻移除。移除前會核對 pid，所以 `--relaunch` 的新實例寫的標記不會被舊實例刪掉。寫入發生在單一實例鎖之前，所以若已有「比 20 秒新、擁有者 pid 還活著」的標記就不覆寫（`process.kill(pid, 0)`，ESRCH 才算已結束），否則第二個啟動的程序會蓋掉第一個實例的標記、再因拿不到鎖而清掉它。`--relaunch` 時舊實例可能還沒結束，新實例因此沒寫標記；`main.ts` 在取得單一實例鎖之後呼叫 `claim()`，此時只剩本程序，直接接手標記（埠已在監聽則不寫）。
 - 先刪再用 `wx` 建立，被換成 symlink 的路徑不會被跟著寫入。
 - 檔名帶埠，開發版或 e2e 改用 27373 時不影響送往 17373 的 hook。
-- hook 只有在連線被拒時才看標記：標記存在且不到 20 秒，就每 100 ms 重試，最多 5 秒。權限呼叫不重試，被拒照舊退回終端機。
+- hook 只有在連線被拒時才看標記：標記存在且不到 20 秒，就每 100 ms 重試，最多 5 秒。權限呼叫只有建立請求（`request`）會重試，見下方「權限請求的啟動期重試」。
 
 ### 限制
 
 - 每個 hook 事件是獨立的程序，重試計時器各自獨立。啟動期間如果同一個 session 有兩個事件都在重試（例如 PreToolUse 後馬上 PostToolUse），埠一開啟時哪一個先連上不一定，較舊的狀態可能蓋掉較新的狀態，直到下一個事件。`agent-hook.mjs` 裡 `postStatus` 註解寫「同一個 session 的事件順序不會亂」只在單一 hook 程序內成立。event server 以收到的時間為準（`event-normalizer.ts` 用 `receivedAt` 取代 hook 送的 `timestamp`），因為事件來源也包含插件，不能拿對方給的時間決定先後。只影響埠開啟前那幾百毫秒內送出的事件。
-- 權限呼叫（`PermissionRequest`，事件埠 +1）沒有啟動期重試，啟動期間被拒就照舊退回終端機，屬於安全的失敗方式。
+- 權限呼叫只有 `request` 在啟動期間重試；`decision`、`result`、`resolved`、`resolved-session` 與任何非「連線被拒」的結果都不重試。
+
+### 權限請求的啟動期重試
+
+- 只在 `request` 被拒（ECONNREFUSED，請求完全沒送出，不可能重複）且啟動標記還新時，每 `STARTUP_RETRY_INTERVAL_MS` 重試，最多 `PERMISSION_STARTUP_WAIT_MS`（5000）。重試沿用同一個 nonce。逾時、4xx/5xx、409 都不重試。
+- 標記是事件埠的，但 `electron/main.ts` 在事件伺服器之前就建立權限伺服器（權限埠先監聽），標記存活到事件埠監聽後 2 秒，所以涵蓋權限埠的啟動；萬一權限埠更晚才開，重試停止後照舊退回終端機（安全）。
+- 時限預算：hook 時限 135 秒（`CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS`），最壞情況 2.5 + 122 + 2.5 + 2.5 = 129.5 秒（waitSeconds = 120）。已花在重試的秒數（進位）從送給 broker 的 `ttlSeconds` 扣掉，輪詢期限由實際送出的 ttl 算出，所以重試時間加上 ttl 不超過 waitSeconds，最壞情況不變。
 
 ### 量測
 
@@ -99,6 +105,37 @@ app 啟動後要先建好寵物視窗、插件、權限等服務，最後才綁�
 | PreToolUse，第二輪 | 117.7／118.3±1.1 | 117.9／119.2±1.2 |
 
 差異都在量測誤差內。
+
+## 冷啟動空窗再縮小（1.13.2）
+
+### 做法
+
+1.12.5 的標記寫在 `main.ts` 的頂層程式碼，也就是整個靜態 import 圖（runtime、SQLite、插件服務等）都執行完之後。1.13.2 改成由 `main.ts` 的第一個 import `electron/main/early-hook-startup-marker.ts` 寫入：ES 模組依 import 順序執行，這個模組只依賴 `electron` 的 `app`、`hook-startup-location.ts`（埠與資料夾的純函式，`tests/hook-startup-marker.test.mts` 比對它與 `localPorts()`、`hookScriptDeployPath()` 相同）與標記模組本身。建置後的 `dist-electron/main.js`（約 1.75 MB）裡，寫標記的程式碼在前 3 KB 內，早於所有大型模組的頂層程式碼。
+
+### 量測
+
+`scripts/e2e-real-hook.mts --cold-start 150 --interval 40`，同一個 HOME，舊版（HEAD `38a75fa` 的建置）與新版交錯各 3 輪。量測時其他工作線同時在跑測試，load average 250–386（12 核），各階段都比 1.12.5 量測時慢一個數量級，遺失數主要受負載波動影響，不能拿來比較：
+
+| | main.js 開始載入 → 寫入標記 | Electron 建立 → main.js 開始載入 | 遺失（各 150 個） |
+|---|---|---|---|
+| 舊版 | 1159／857／2090 ms | 8.2／11.7／7.2 s | 78／149／85 |
+| 新版 | 635／759／816 ms | 10.2／6.3／8.9 s | 126／54／110 |
+
+複審修正後（含標記擁有者檢查），負載降到 16–224 時再交錯量 3 輪：
+
+| | main.js 開始載入 → 寫入標記 | 遺失（各 150 個） | 最後一個遺失事件的送出時間 |
+|---|---|---|---|
+| 舊版 | 510／996／828 ms | 25／75／31 | 0.96／3.32／1.28 s |
+| 新版 | 412／702／379 ms | 24／73／27 | 1.04／3.31／1.28 s |
+
+新版縮短的是第一欄：第一輪中位數 1159 → 759 ms，這一輪 828 → 412 ms。遺失數每輪少 1–4 個，在負載波動範圍內。剩下的遺失主要發生在 main.js 開始載入之前（Electron 本身的啟動）。1.12.5 在一般負載量到這段約 0.1 s，所以平常的改善在 0.1 s 以內。新版第 3 輪主程序收到 57 個、寵物畫面在量測時刻只畫到 40 個，是極高負載下 renderer 還沒處理完；這次沒有改動 renderer 與 event server。
+
+### 評估過但不做
+
+- hook 在「連線被拒且沒有標記」時也短暫等待：寵物沒開時每個 hook（每次工具呼叫）都會被拖慢，違反「寵物沒開時不拖慢 agent」。
+- 另開一個只寫標記的小 entry，再載入 main.js：可以再省掉 V8 編譯 1.75 MB bundle 的時間，但要改建置設定與 `package.json` 的 `main`，平常負載下可省的時間不到 0.1 s，不划算。
+- Electron 程序建立到 main.js 開始執行之間（一般負載約 0.4 s），app 還沒有任何程式碼能執行，hook 也無從得知 app 正在啟動，仍是殘餘風險。
+- 依 hook 送的 `timestamp` 排序：事件來源也包含插件，不能信任對方給的時間（見上方「限制」）。
 
 ## 權限回覆流程（1.12.5）
 
@@ -130,4 +167,4 @@ app 啟動後要先建好寵物視窗、插件、權限等服務，最後才綁�
 - 標記存在但埠一直沒開時，hook 最多等約 5 秒。
 - 權限請求送出時 hook 被卡住 1.1 秒：修正前退回終端機，修正後照常輸出 deny，而且回覆內容逐字相同。
 
-`tests/hook-startup-marker.test.mts` 檢查標記的檔名、權限、pid 核對、延遲移除與 symlink。
+`tests/hook-startup-marker.test.mts` 檢查標記的檔名、權限、pid 核對、延遲移除與 symlink，以及擁有權：新鮮且擁有者還活著的標記不被第二個程序覆寫或清掉、過期或擁有者已結束的標記會被取代、`claim()` 接手後舊實例的 `clear()` 不會刪掉新標記。`tests/agent-hook-delivery.test.mts` 的耗時判斷都相對於「空 node 程序的啟動時間」，機器忙時不會誤判。

@@ -2,7 +2,47 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { isValidPluginNetworkHost, parsePluginManifest } from '../electron/plugin-manifest.ts'
 
-function validManifest() {
+// 草稿型別刻意放寬：測試要塞入惡意或畸形資料來驗證解析器，不能被成功路徑的型別擋住。
+interface SettingDraft {
+  type: unknown
+  title?: unknown
+  maxLength?: number
+  minimum?: number
+  maximum?: number
+  enum?: unknown[]
+  format?: string
+  default?: unknown
+}
+
+interface ManifestDraft {
+  id: string
+  name: unknown
+  version: string
+  apiVersion: string
+  author: string
+  entry: string
+  icon: string
+  permissions: {
+    network?: { hosts: string[]; userGranted: unknown }
+    links: { hosts: string[] }
+    secrets?: string[]
+    schedule?: { minIntervalSec: number }
+    storage?: unknown
+    agentStatus?: unknown
+  }
+  contributes: {
+    feed?: unknown
+    reaction?: unknown
+    panelView?: { entry: string; title: unknown; preferredSize: { width: number; height: number } }
+    settings?: { type: unknown; properties: Record<string, SettingDraft> }
+    commands?: unknown
+    tray?: unknown
+    badge?: unknown
+    skins?: unknown
+  }
+}
+
+function validManifest(): ManifestDraft {
   return {
     id: 'ajambrosino-watch',
     name: { 'zh-TW': '@ajambrosino 推文提醒', 'en-US': '@ajambrosino Watch' },
@@ -40,7 +80,7 @@ function validManifest() {
   }
 }
 
-function withManifest(update: (manifest: ReturnType<typeof validManifest>) => void) {
+function withManifest(update: (manifest: ManifestDraft) => void) {
   const manifest = validManifest()
   update(manifest)
   return parsePluginManifest(manifest)
@@ -203,10 +243,10 @@ test('manifest paths must be safe relative files with the required extensions', 
 test('settings schemas bound properties, fields, enums, values, and types', () => {
   const twentyOneProperties = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`p${index}`, { type: 'string' }]))
   assert.equal(withManifest(manifest => {
-    manifest.contributes.settings = { type: 'object', properties: twentyOneProperties } as typeof manifest.contributes.settings
+    manifest.contributes.settings = { type: 'object', properties: twentyOneProperties }
   }).ok, false)
   assert.equal(withManifest(manifest => {
-    manifest.contributes.settings!.properties.username.type = 'object' as 'string'
+    manifest.contributes.settings!.properties.username.type = 'object'
   }).ok, false)
   assert.equal(withManifest(manifest => {
     manifest.contributes.settings!.properties.username.enum = Array.from({ length: 51 }, (_, index) => String(index))
@@ -225,15 +265,15 @@ test('settings schemas bound properties, fields, enums, values, and types', () =
     manifest.contributes.settings!.properties.username.default = 'x'.repeat(33)
   }).ok, false)
   assert.equal(withManifest(manifest => {
-    manifest.contributes.settings!.properties.username.enum = [1, 2] as unknown as string[]
+    manifest.contributes.settings!.properties.username.enum = [1, 2]
   }).ok, false)
 })
 
 test('optional manifest structures reject malformed shapes and nonboolean flags', () => {
-  assert.equal(withManifest(manifest => { manifest.permissions.storage = 'true' as unknown as boolean }).ok, false)
-  assert.equal(withManifest(manifest => { manifest.permissions.network = { hosts: ['api.example.com'], userGranted: 1 } as never }).ok, false)
-  assert.equal(withManifest(manifest => { manifest.contributes.panelView!.title = 'Panel' as never }).ok, false)
-  assert.equal(withManifest(manifest => { manifest.contributes.settings = { type: 'array', properties: {} } as never }).ok, false)
+  assert.equal(withManifest(manifest => { manifest.permissions.storage = 'true' }).ok, false)
+  assert.equal(withManifest(manifest => { manifest.permissions.network = { hosts: ['api.example.com'], userGranted: 1 } }).ok, false)
+  assert.equal(withManifest(manifest => { manifest.contributes.panelView!.title = 'Panel' }).ok, false)
+  assert.equal(withManifest(manifest => { manifest.contributes.settings = { type: 'array', properties: {} } }).ok, false)
 })
 
 
@@ -242,13 +282,13 @@ test('manifest validates commands, tray references, badge, and localized skins',
     manifest.contributes.commands = [
       { id: 'start', title: { 'zh-TW': '開始', 'en-US': 'Start' } },
       { id: 'stop', title: { 'zh-TW': '停止', 'en-US': 'Stop' } },
-    ] as never
-    manifest.contributes.tray = { commands: ['start'] } as never
-    manifest.contributes.badge = true as never
+    ]
+    manifest.contributes.tray = { commands: ['start'] }
+    manifest.contributes.badge = true
     manifest.contributes.skins = [{
       id: 'winter-cat', displayName: { 'zh-TW': '冬日貓', 'en-US': 'Winter Cat' },
       spritesheet: 'skins/winter.webp', kind: 'animal', behaviorManifest: { walk: { row: 1, frames: 4 } },
-    }] as never
+    }]
   })
   assert.equal(result.ok, true)
   if (result.ok) {
@@ -260,12 +300,12 @@ test('manifest validates commands, tray references, badge, and localized skins',
 
 test('manifest rejects malformed commands, undeclared tray commands, and invalid skin paths', () => {
   for (const result of [
-    withManifest(manifest => { manifest.contributes.commands = Array.from({ length: 11 }, (_, index) => ({ id: `c${index}`, title: { 'zh-TW': '命令', 'en-US': 'Command' } })) as never }),
-    withManifest(manifest => { manifest.contributes.commands = [{ id: 'Bad_ID', title: { 'zh-TW': '命令', 'en-US': 'Command' } }] as never }),
-    withManifest(manifest => { manifest.contributes.commands = [{ id: 'start', title: { 'zh-TW': '命令', 'en-US': 'x'.repeat(33) } }] as never }),
-    withManifest(manifest => { manifest.contributes.commands = [{ id: 'start', title: { 'zh-TW': '命令', 'en-US': 'Start' } }, { id: 'start', title: { 'zh-TW': '重複', 'en-US': 'Duplicate' } }] as never }),
-    withManifest(manifest => { manifest.contributes.tray = { commands: ['undeclared'] } as never }),
-    withManifest(manifest => { manifest.contributes.skins = [{ id: 'cat', displayName: { 'zh-TW': '貓', 'en-US': 'Cat' }, spritesheet: '../cat.webp', kind: 'animal' }] as never }),
+    withManifest(manifest => { manifest.contributes.commands = Array.from({ length: 11 }, (_, index) => ({ id: `c${index}`, title: { 'zh-TW': '命令', 'en-US': 'Command' } })) }),
+    withManifest(manifest => { manifest.contributes.commands = [{ id: 'Bad_ID', title: { 'zh-TW': '命令', 'en-US': 'Command' } }] }),
+    withManifest(manifest => { manifest.contributes.commands = [{ id: 'start', title: { 'zh-TW': '命令', 'en-US': 'x'.repeat(33) } }] }),
+    withManifest(manifest => { manifest.contributes.commands = [{ id: 'start', title: { 'zh-TW': '命令', 'en-US': 'Start' } }, { id: 'start', title: { 'zh-TW': '重複', 'en-US': 'Duplicate' } }] }),
+    withManifest(manifest => { manifest.contributes.tray = { commands: ['undeclared'] } }),
+    withManifest(manifest => { manifest.contributes.skins = [{ id: 'cat', displayName: { 'zh-TW': '貓', 'en-US': 'Cat' }, spritesheet: '../cat.webp', kind: 'animal' }] }),
   ]) assert.equal(result.ok, false)
 })
 

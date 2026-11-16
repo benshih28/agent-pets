@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { writeJsonAtomic } from './desktop-preferences.ts'
+import { isRecord } from './value-guards.ts'
 
 export const PLUGIN_SECRET_CONSENT_FILENAME = 'plugin-secret-consent.json'
 
@@ -22,8 +23,7 @@ export class PluginSecretConsentStore {
       const stat = fs.fstatSync(descriptor)
       if (!stat.isFile() || stat.size > 1_024) return false
       const value: unknown = JSON.parse(fs.readFileSync(descriptor, 'utf8'))
-      return Boolean(value && typeof value === 'object' && !Array.isArray(value)
-        && 'accepted' in value && value.accepted === true)
+      return isRecord(value) && value.accepted === true
     } catch {
       return false
     } finally {

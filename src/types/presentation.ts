@@ -68,4 +68,4 @@ export interface PresentationStatusSnapshot {
   enabled: boolean
 }
 
-export interface PresentationStatusUpdate extends PresentationStatusSnapshot {}
+export type PresentationStatusUpdate = PresentationStatusSnapshot

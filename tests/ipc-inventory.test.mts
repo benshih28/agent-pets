@@ -7,6 +7,7 @@ import { analyzeIpcInventory, renderIpcInventory } from '../scripts/generate-ipc
 
 const mainSource = readFileSync(path.resolve('electron/main.ts'), 'utf8')
 const runtimeSource = readFileSync(path.resolve('electron/main/runtime.ts'), 'utf8')
+const pluginRuntimeSource = readFileSync(path.resolve('electron/main/plugin-runtime.ts'), 'utf8')
 const hostSource = readFileSync(path.resolve('electron/plugin-host-window.ts'), 'utf8')
 const panelViewSource = readFileSync(path.resolve('electron/plugin-panel-view.ts'), 'utf8')
 const pluginUiPreloadSource = readFileSync(path.resolve('electron/plugin-ui-preload.ts'), 'utf8')
@@ -40,6 +41,21 @@ test('IPC inventory matches main registrations, preload APIs, and sender guards'
   assert.match(pluginUiBridgeSource, /export interface PluginPanelPublicApi/)
 })
 
+test('growth reset and database maintenance IPC are panel-only handlers with preload APIs', () => {
+  const inventory = analyzeIpcInventory()
+  for (const channel of [IPC_CHANNELS.growthResetArm, IPC_CHANNELS.growthReset, IPC_CHANNELS.dbMaintenanceRun]) {
+    const row = inventory.rows.find(item => item.channel === channel)
+    assert.ok(row, channel)
+    assert.match(row.sender, /設定面板 main frame/)
+    assert.equal(row.hasSenderGuard, true)
+    assert.equal(row.hasPreloadApi, true)
+  }
+  const registrar = readFileSync(path.resolve('electron/ipc/growth-maintenance.ts'), 'utf8')
+  assert.match(registrar, /handleTrusted\(deps\.ipcMain, IPC_CHANNELS\.growthResetArm, deps\.getPanelWindow/)
+  assert.match(registrar, /handleTrusted\(deps\.ipcMain, IPC_CHANNELS\.growthReset, deps\.getPanelWindow/)
+  assert.match(registrar, /handleTrusted\(deps\.ipcMain, IPC_CHANNELS\.dbMaintenanceRun, deps\.getPanelWindow/)
+})
+
 test('renderer windows and plugin views explicitly retain Electron security defaults', () => {
   assert.ok(mainSource.split('\n').length < 1_200)
   assert.equal((runtimeSource.match(/new BrowserWindow\(/g) ?? []).length, 2)
@@ -69,13 +85,14 @@ test('renderer windows and plugin views explicitly retain Electron security defa
 })
 
 test('plugin panel views keep a transparent native background so plugins can round their own corners', () => {
-  assert.match(runtimeSource, /createView: options => \{\s+const view = new WebContentsView\(options\)[\s\S]{0,200}view\.setBackgroundColor\('#00000000'\)/)
+  assert.match(pluginRuntimeSource, /createView: options => \{\s+const view = deps\.createWebContentsView\(options\)[\s\S]{0,200}view\.setBackgroundColor\('#00000000'\)/)
+  assert.match(runtimeSource, /createWebContentsView: options => new WebContentsView\(options\)/)
 })
 
 test('every non-default Electron session rejects permission requests and checks', () => {
-  const networkSessionStart = runtimeSource.indexOf("const pluginNetworkSession = session.fromPartition('plugin-network')")
+  const networkSessionStart = pluginRuntimeSource.indexOf("const pluginNetworkSession = session.fromPartition('plugin-network')")
   assert.notEqual(networkSessionStart, -1)
-  const networkSession = runtimeSource.slice(networkSessionStart, networkSessionStart + 1_200)
+  const networkSession = pluginRuntimeSource.slice(networkSessionStart, networkSessionStart + 1_200)
   assert.match(networkSession, /setPermissionRequestHandler\([^\n]+callback\(false\)/)
   assert.match(networkSession, /setPermissionCheckHandler\(\(\) => false\)/)
 

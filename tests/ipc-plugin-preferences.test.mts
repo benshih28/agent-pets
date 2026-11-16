@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { IpcMainInvokeEvent } from 'electron'
+import type { PluginPreferencesStore } from '../electron/plugin-preferences.ts'
+import type { PluginRegistry } from '../electron/plugin-registry.ts'
 import type { PluginPreferencesIpcDependencies } from '../electron/ipc/plugin-preferences.ts'
 import { registerPluginPreferencesIpc } from '../electron/ipc/plugin-preferences.ts'
 import { isPluginPanelPluginId, isPluginPanelPreferencePatch } from '../electron/plugin-panel-validation.ts'
+import { fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+import { fakeService } from './support/fake-service.mts'
+
 
 function fixture() {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   const calls: string[] = []
+  const panelEvent = fakeIpcMainInvokeEvent()
   const pluginEnableOrder = new Map<string, number>()
   const sequence = { value: 0 }
   let enabledCount = 0
@@ -19,7 +25,7 @@ function fixture() {
   }
   const registry = {
     list: () => [{ id: 'sample-plugin' }],
-    setStatus: (id: string, status: string) => calls.push(`status:${id}:${status}`),
+    setStatus: (id: string, status: string) => { calls.push(`status:${id}:${status}`) },
   }
   const store = {
     get: () => preferences,
@@ -33,16 +39,13 @@ function fixture() {
       return preferences
     },
   }
-  const ipcMain = {
-    handle: (channel: string, handler: (...args: unknown[]) => unknown) => { handlers.set(channel, handler) },
-  } as unknown as PluginPreferencesIpcDependencies['ipcMain']
   const deps: PluginPreferencesIpcDependencies = {
     ipcMain,
-    assertPluginPanelSender: event => { if (event !== 'panel') throw new Error('untrusted panel') },
+    assertPluginPanelSender: event => { if (event !== panelEvent) throw new Error('untrusted panel') },
     isPluginPanelPluginId,
     isPluginPanelPreferencePatch,
-    getPreferencesStore: () => store as never,
-    getRegistry: () => registry as never,
+    getPreferencesStore: () => fakeService<PluginPreferencesStore>(store),
+    getRegistry: () => fakeService<PluginRegistry>(registry),
     enabledPluginContext: () => false,
     enabledPluginCount: () => enabledCount,
     maxEnabledPlugins: () => maxEnabled,
@@ -50,17 +53,17 @@ function fixture() {
     nextPluginEnableOrder: sequence,
     onCatalogPreferencesChanged: (_previous, next) => calls.push(`catalog:${next.onlineCatalogEnabled}`),
     checkCatalogIfDue: () => calls.push('catalog:check'),
-    syncPluginHost: () => calls.push('host:sync'),
+    syncPluginHost: () => { calls.push('host:sync') },
     pluginPanelError: () => 'plugin_action_failed',
   }
   registerPluginPreferencesIpc(deps)
-  return { handlers, calls, pluginEnableOrder, sequence, setEnabledCount: (value: number) => { enabledCount = value }, setMaxEnabled: (value: number) => { maxEnabled = value } }
+  return { handlers, panelEvent, calls, pluginEnableOrder, sequence, setEnabledCount: (value: number) => { enabledCount = value }, setMaxEnabled: (value: number) => { maxEnabled = value } }
 }
 
 test('global plugin preferences notify catalog state, sync the host, and schedule opted-in checks', async () => {
   const state = fixture()
   const handler = state.handlers.get('plugin-preferences-global-set')!
-  assert.deepEqual(await handler('panel' as unknown as IpcMainInvokeEvent, { onlineCatalogEnabled: true, dailyUpdateCheck: true }), {
+  assert.deepEqual(await handler(state.panelEvent, { onlineCatalogEnabled: true, dailyUpdateCheck: true }), {
     ok: true,
     value: {
       onlineCatalogEnabled: true,
@@ -75,14 +78,14 @@ test('plugin enable preferences enforce the limit and update registry order only
   const state = fixture()
   const handler = state.handlers.get('plugin-preferences-instance-set')!
   state.setEnabledCount(1)
-  assert.deepEqual(await handler('panel' as unknown as IpcMainInvokeEvent, 'sample-plugin', { enabled: true }), {
+  assert.deepEqual(await handler(state.panelEvent, 'sample-plugin', { enabled: true }), {
     ok: false,
     error: 'too_many_enabled',
   })
   assert.deepEqual(state.calls, [])
 
   state.setEnabledCount(0)
-  assert.deepEqual(await handler('panel' as unknown as IpcMainInvokeEvent, 'sample-plugin', { enabled: true }), {
+  assert.deepEqual(await handler(state.panelEvent, 'sample-plugin', { enabled: true }), {
     ok: true,
     value: {
       onlineCatalogEnabled: false,

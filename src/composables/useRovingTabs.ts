@@ -1,8 +1,9 @@
-// Shared arrow-key behaviour for tablists and radio groups: ←/→ (or ↑/↓ when
-// vertical) wrap around, Home/End jump to the ends. Pure helper kept separate
-// from the DOM wiring so it can be unit tested.
+// Shared arrow-key wiring for tablists and radio groups. 演算法只有一份
+// （utils/tab-navigation 的 nextTabId）；這裡只負責把純字串 id 轉成它的輸入，
+// 並保留 nextRovingId 這個匯出名稱給既有呼叫端與測試。
+import { nextTabId, type TabOrientation } from '../utils/tab-navigation.ts'
 
-export type RovingOrientation = 'horizontal' | 'vertical'
+export type RovingOrientation = TabOrientation
 
 export function nextRovingId(
   ids: readonly string[],
@@ -10,15 +11,7 @@ export function nextRovingId(
   key: string,
   orientation: RovingOrientation = 'horizontal',
 ): string | null {
-  if (ids.length === 0) return null
-  const index = ids.indexOf(current)
-  const forward = orientation === 'horizontal' ? 'ArrowRight' : 'ArrowDown'
-  const backward = orientation === 'horizontal' ? 'ArrowLeft' : 'ArrowUp'
-  if (key === 'Home') return ids[0]
-  if (key === 'End') return ids[ids.length - 1]
-  if (key === forward) return ids[(index + 1 + ids.length) % ids.length]
-  if (key === backward) return ids[(index - 1 + ids.length) % ids.length]
-  return null
+  return nextTabId(ids.map(id => ({ id })), current, key, orientation)
 }
 
 interface RovingTabsOptions {

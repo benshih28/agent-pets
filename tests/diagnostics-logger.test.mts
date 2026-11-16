@@ -17,11 +17,12 @@ test('redacts tokens, secrets, hashes and home paths', () => {
 })
 
 test('redactValue drops content-bearing keys', () => {
-  const out = redactValue({ prompt: 'secret plan', toolName: 'Bash', nested: { token: 'x', ok: 1 } }) as Record<string, any>
+  const out = redactValue({ prompt: 'secret plan', toolName: 'Bash', nested: { token: 'x', ok: 1 } }) as Record<string, unknown>
   assert.equal(out.prompt, '[redacted]')
   assert.equal(out.toolName, 'Bash')
-  assert.equal(out.nested.token, '[redacted]')
-  assert.equal(out.nested.ok, 1)
+  const nested = out.nested as Record<string, unknown>
+  assert.equal(nested.token, '[redacted]')
+  assert.equal(nested.ok, 1)
 })
 
 test('logger writes redacted lines and respects the level', () => {

@@ -1,0 +1,19 @@
+{
+  "update.title": "應用程式更新",
+  "update.currentVersion": "目前版本 {version}",
+  "update.autoCheck": "自動檢查新版",
+  "update.autoCheckHelp": "預設關閉。開啟後每天最多向 GitHub 查詢一次最新版本，只提示、不會自動下載或安裝。",
+  "update.lastChecked": "上次檢查",
+  "update.neverChecked": "尚未檢查",
+  "update.checkNow": "立即檢查",
+  "update.checking": "檢查中…",
+  "update.upToDate": "已是最新版本",
+  "update.available": "有新版 {version}",
+  "update.availableCheckFailed": "有新版 {version}（最近一次檢查失敗）",
+  "update.failed": "檢查失敗，請稍後再試",
+  "update.rateLimited": "檢查太頻繁，請稍後再試",
+  "update.viewRelease": "查看版本",
+  "update.openFailed": "無法開啟版本頁面",
+  "update.notifyTitle": "Agent Pets 有新版",
+  "update.notifyBody": "版本 {version} 已發布。請到設定的進階頁查看；不會自動下載或安裝。"
+}

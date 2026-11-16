@@ -3,6 +3,7 @@ import type { PluginPanelResult, PluginPanelSnapshot } from '../../src/types/plu
 import { pluginPanelViewInsets, type PluginPanelInsets, type PluginPanelRect, type PluginPanelSize } from '../plugin-panel-window.ts'
 import { handleWithSenderGuard, onWithSenderGuard } from './trusted.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { isRecord, recordOrEmpty } from '../value-guards.ts'
 
 const MAX_VIEWPORT_SIZE = 16_384
 
@@ -53,11 +54,10 @@ export function registerPluginPanelUiIpc(deps: PluginPanelUiIpcDependencies): vo
     return deps.invokePluginCommand(pluginId, commandId) ?? { ok: false, error: 'disabled' }
   })
   handleWithSenderGuard(deps.ipcMain, IPC_CHANNELS.pluginPanelViewOpen, deps.assertPluginPanelSender, async (_event, pluginId: unknown, payload: unknown) => {
-    if (!deps.isPluginPanelPluginId(pluginId) || !payload || typeof payload !== 'object' || Array.isArray(payload)
+    if (!deps.isPluginPanelPluginId(pluginId) || !isRecord(payload)
       || deps.openSequence.value >= Number.MAX_SAFE_INTEGER) return { ok: false, error: 'invalid_request' }
-    const bounds = payload as Record<string, unknown>
     const openToken = ++deps.openSequence.value
-    return deps.openPluginPanelView(pluginId, openToken, bounds.frame, bounds.content)
+    return deps.openPluginPanelView(pluginId, openToken, payload.frame, payload.content)
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginPanelViewOpenFromPet, (event, pluginId: unknown) => {
     const petWindow = deps.getPetWindow()
@@ -72,9 +72,7 @@ export function registerPluginPanelUiIpc(deps: PluginPanelUiIpcDependencies): vo
     const panelWindow = deps.getPanelWindow()
     const controller = deps.getPluginPanelViewController()
     if (!panelWindow || panelWindow.isDestroyed() || !controller) return
-    const data = payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? payload as Record<string, unknown>
-      : {}
+    const data = recordOrEmpty(payload)
     const openToken = deps.finiteNumber(data.openToken)
     if (openToken === null || !Number.isSafeInteger(openToken)) return
     if (!panelWindow.isVisible()) {

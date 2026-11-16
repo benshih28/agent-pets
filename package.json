@@ -1,6 +1,6 @@
 {
   "name": "agent-pets",
-  "version": "1.12.5",
+  "version": "1.14.4",
   "description": "Desktop pet that shows the status of AI coding agents",
   "author": "Upfloor5",
   "license": "MIT",
@@ -17,12 +17,15 @@
     "prebuild:fast": "node scripts/stop-agent-pets.mjs",
     "build:fast": "vue-tsc --noEmit && vite build && electron-builder --config.compression=store",
     "test:unit": "node --test --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/*.test.mts",
-    "lint": "node scripts/lint-main-process.mjs",
+    "test:smoke": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ci-smoke-electron.mjs",
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/ && node scripts/lint-main-process.mjs && pnpm run typecheck:tests",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "test:coverage": "node --test --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-test-coverage --test-coverage-include='electron/main/**' --test-coverage-include='electron/diagnostics/**' --test-coverage-include='electron/event-*.ts' --test-coverage-include='electron/local-server-listen.ts' --test-coverage-lines=85 tests/*.test.mts",
     "test:unit:watch": "node --test --watch --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/*.test.mts",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "check:bundle": "node scripts/check-plugin-panel-tokens-bundle.mjs",
     "bench:lag": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bench/event-loop-lag.mjs",
+    "bench:lag:check": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bench/event-loop-lag.mjs --check",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:design": "node scripts/check-design-tokens.mjs",
     "check:design:strict": "node scripts/check-design-tokens.mjs --strict --raw-colors=fail",
@@ -35,22 +38,32 @@
   "dependencies": {
     "fflate": "^0.8.3",
     "koffi": "3.2.1",
-    "pinia": "^2.1.7",
-    "vue": "^3.5.44"
+    "pinia": "^2.3.1",
+    "vue": "^3.5.45"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.8",
+    "@eslint/js": "^9.39.5",
+    "@vitejs/plugin-vue": "^6.0.10",
     "@vue/tsconfig": "^0.9.1",
-    "electron": "^43.3.0",
-    "electron-builder": "^26.15.3",
-    "typescript": "^5.4.3",
-    "vite": "^8.2.1",
-    "vite-plugin-electron": "^1.1.1",
-    "vue-tsc": "^2.0.7"
+    "electron": "^43.8.7",
+    "electron-builder": "^26.18.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-vue": "^10.12.0",
+    "globals": "^17.14.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.7",
+    "vite-plugin-electron": "^1.2.0",
+    "vue-eslint-parser": "^10.4.2",
+    "vue-tsc": "^2.2.12"
   },
   "build": {
     "appId": "com.agent-pets.app",
     "productName": "Agent Pets",
+    "extraMetadata": {
+      "homepage": "https://github.com/Ponpon55837/agent-pets",
+      "desktopName": "agent-pets.desktop"
+    },
     "asar": true,
     "electronFuses": {
       "runAsNode": false,
@@ -83,7 +96,16 @@
       }
     ],
     "win": {
-      "target": "portable",
+      "target": [
+        {
+          "target": "portable",
+          "arch": "x64"
+        },
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
+      ],
       "icon": "build/icon.png"
     },
     "mac": {
@@ -91,8 +113,40 @@
       "identity": "-",
       "category": "public.app-category.entertainment"
     },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": "x64"
+        },
+        {
+          "target": "deb",
+          "arch": "x64"
+        }
+      ],
+      "category": "Utility",
+      "syncDesktopName": true,
+      "maintainer": "Agent Pets <https://github.com/Ponpon55837/agent-pets>",
+      "icon": "build/icon.png"
+    },
     "portable": {
       "artifactName": "AgentPets-${version}.exe"
+    },
+    "nsis": {
+      "artifactName": "AgentPets-Setup-${version}.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "appImage": {
+      "artifactName": "AgentPets-${version}-${arch}.AppImage"
+    },
+    "deb": {
+      "artifactName": "AgentPets-${version}-${arch}.deb"
     },
     "dmg": {
       "artifactName": "AgentPets-${version}-${arch}.dmg"

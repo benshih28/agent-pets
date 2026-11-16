@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { PluginSettingDefinition } from '../src/types/plugin.ts'
 import { defaultSettingsDraft, isSettingsDirty, validateSetting, validateSettings } from '../src/utils/plugin-settings-form.ts'
 
 const properties = {
@@ -8,10 +9,10 @@ const properties = {
   enabled: { type: 'boolean' },
   mode: { type: 'string', enum: ['a', 'b'], default: 'a' },
   token: { type: 'string', format: 'secret' },
-} as const
+} satisfies Record<string, PluginSettingDefinition>
 
 test('dirty state compares against saved values with defaults filled in', () => {
-  const props = properties as never
+  const props: Record<string, PluginSettingDefinition> = properties
   assert.equal(isSettingsDirty(props, {}, {}), false)
   assert.equal(isSettingsDirty(props, { interval: 10 }, {}), false)
   assert.equal(isSettingsDirty(props, { interval: 10 }, { interval: 11 }), true)
@@ -21,14 +22,14 @@ test('dirty state compares against saved values with defaults filled in', () => 
 })
 
 test('defaults draft skips secrets and fills boolean/number fallbacks', () => {
-  assert.deepEqual(defaultSettingsDraft(properties as never), { interval: 10, label: 'ab', enabled: false, mode: 'a' })
+  assert.deepEqual(defaultSettingsDraft(properties), { interval: 10, label: 'ab', enabled: false, mode: 'a' })
 })
 
 test('validation reports range, length and enum problems per field', () => {
-  assert.equal(validateSetting(properties.interval as never, 0), 'range')
-  assert.equal(validateSetting(properties.interval as never, Number.NaN), 'required')
-  assert.equal(validateSetting(properties.interval as never, 30), null)
-  assert.equal(validateSetting(properties.label as never, 'toolong'), 'too_long')
-  assert.equal(validateSetting(properties.mode as never, 'z'), 'not_allowed')
-  assert.deepEqual(validateSettings(properties as never, { interval: 99, label: 'ok' }), { interval: 'range' })
+  assert.equal(validateSetting(properties.interval, 0), 'range')
+  assert.equal(validateSetting(properties.interval, Number.NaN), 'required')
+  assert.equal(validateSetting(properties.interval, 30), null)
+  assert.equal(validateSetting(properties.label, 'toolong'), 'too_long')
+  assert.equal(validateSetting(properties.mode, 'z'), 'not_allowed')
+  assert.deepEqual(validateSettings(properties, { interval: 99, label: 'ok' }), { interval: 'range' })
 })

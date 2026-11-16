@@ -11,6 +11,8 @@ import {
   PermissionAdapterRelay,
   type PermissionAdapterSource,
 } from '../electron/permission-adapter-server.ts'
+import { linkDirectory } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const TOKEN = 'a'.repeat(64)
 
@@ -19,6 +21,8 @@ async function withServer(
     broker: PermissionBroker
     relay: PermissionAdapterRelay
     post: (path: string, body: unknown, token?: string) => Promise<Response>
+    /** Sends `init` as is (raw body, own headers) to this server. */
+    raw: (path: string, init: RequestInit) => Promise<Response>
   }) => Promise<void>,
   options: { isSourceEnabled?: (source: PermissionAdapterSource) => boolean, now?: () => number } = {},
 ) {
@@ -54,8 +58,10 @@ async function withServer(
     body: JSON.stringify(body),
   })
 
+  const raw = (path: string, init: RequestInit) => fetch(`http://127.0.0.1:${port}${path}`, init)
+
   try {
-    await run({ broker, relay, post })
+    await run({ broker, relay, post, raw })
   } finally {
     broker.shutdown()
     relay.shutdown()
@@ -404,10 +410,10 @@ test('a new prompt or PreToolUse in the same agent scope takes older Claude prom
 test('a file edit is medium only inside the project and never for execution-relevant paths', async () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-edit-risk-')))
   const project = path.join(root, 'project')
-  fs.mkdirSync(path.join(project, 'src'), { recursive: true })
-  fs.mkdirSync(path.join(root, 'outside'))
-  fs.symlinkSync(path.join(root, 'outside'), path.join(project, 'linked'))
   try {
+    fs.mkdirSync(path.join(project, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(root, 'outside'))
+    linkDirectory(path.join(root, 'outside'), path.join(project, 'linked'))
     await withServer(async ({ broker, post }) => {
       const cases: Array<[string, unknown, string, string?]> = [
         ['Write', path.join(project, 'src', 'app.ts'), 'medium', path.join('src', 'app.ts')],
@@ -448,6 +454,43 @@ test('a file edit is medium only inside the project and never for execution-rele
       assert.equal(broker.listRequests().find(request => request.requestId === requestId)!.risk, 'high')
     })
   } finally {
-    fs.rmSync(root, { recursive: true, force: true })
+    removeTempTree(root)
   }
+})
+
+// 既有 client（agent-hook.mjs、OpenCode plugin）只讀狀態碼與成功時的 body；這裡固定錯誤回應，
+// 讓共用的 body 讀取與 token 比對改動時不會悄悄改變它們看到的東西。
+test('body failures are all 400 invalid_request (no 413), and auth failures keep their codes', async () => {
+  await withServer(async ({ raw }) => {
+    const headers = { 'content-type': 'application/json', 'x-agent-pets-permission-token': TOKEN }
+    const expectError = async (response: Response, status: number, error: string) => {
+      assert.equal(response.status, status)
+      assert.deepEqual(await response.json(), { error })
+      assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8')
+      assert.equal(response.headers.get('cache-control'), 'no-store')
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+    }
+    for (const route of ['request', 'decision', 'result', 'resolved', 'resolved-session']) {
+      const routePath = `/v1/permission/${route}`
+      await expectError(await raw(routePath, { method: 'POST', headers }), 400, 'invalid_request')
+      await expectError(await raw(routePath, { method: 'POST', headers, body: '{not json' }), 400, 'invalid_request')
+      await expectError(await raw(routePath, { method: 'POST', headers, body: JSON.stringify({ pad: 'x'.repeat(17 * 1024) }) }), 400, 'invalid_request')
+    }
+    const missing = await raw('/v1/permission/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    await expectError(missing, 401, 'unauthorized')
+    const short = await raw('/v1/permission/request', { method: 'POST', headers: { ...headers, 'x-agent-pets-permission-token': 'a' }, body: '{}' })
+    await expectError(short, 401, 'unauthorized')
+    const wrongType = await raw('/v1/permission/request', { method: 'POST', headers: { ...headers, 'content-type': 'text/plain' }, body: '{}' })
+    await expectError(wrongType, 415, 'application_json_required')
+    await expectError(await raw('/v1/permission/nope', { method: 'POST', headers, body: '{}' }), 404, 'not_found')
+
+    // 沒有 body 的 204 也帶同一組安全 header。
+    const resolved = await raw('/v1/permission/resolved', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ source: 'opencode-cli', instanceId: 'plugin-1', permissionId: 'unknown-1' }),
+    })
+    assert.equal(resolved.status, 204)
+    assert.equal(resolved.headers.get('x-content-type-options'), 'nosniff')
+  })
 })

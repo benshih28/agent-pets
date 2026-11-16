@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { locale, t } from '@/i18n'
+import { t } from '@/i18n'
 import Button from '@/components/ui/Button.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Icon from '@/components/ui/Icon.vue'
+import RelativeTime from '@/components/ui/RelativeTime.vue'
 import Select from '@/components/ui/Select.vue'
 import { usePluginController } from '@/composables/plugin/context'
-import { formatRelativeTime, linkHost } from '@/utils/relative-time'
-import { formatDateTimeFull } from '@/utils/intl-format'
-import type { PluginNotificationRecord } from '@/types/plugin'
+import { linkHost } from '@/utils/link-host'
+import { FEED_RELATIVE_TIME } from '@/utils/intl-format'
 
 const {
   visibleNotifications, notificationSource, markNotificationRead, markAllNotificationsRead,
@@ -17,7 +17,6 @@ const {
 
 const pluginFilter = ref('')
 const expanded = ref(new Set<string>())
-const now = Date.now()
 
 const sources = computed(() => {
   const seen = new Map<string, string>()
@@ -31,10 +30,6 @@ function toggle(id: string): void {
   const next = new Set(expanded.value)
   if (!next.delete(id)) next.add(id)
   expanded.value = next
-}
-
-function when(record: PluginNotificationRecord): string {
-  return formatRelativeTime(record.item.createdAt, now, locale.value)
 }
 </script>
 
@@ -67,7 +62,7 @@ function when(record: PluginNotificationRecord): string {
           <div class="copy">
             <div class="head">
               <span class="source">{{ notificationSource(record) }}</span>
-              <time class="time" :datetime="new Date(record.item.createdAt).toISOString()" :title="formatDateTimeFull(record.item.createdAt, locale)">{{ when(record) }}</time>
+              <RelativeTime class="time" :at="record.item.createdAt" :options="FEED_RELATIVE_TIME" />
               <span v-if="!record.read" class="sr-only">{{ t('plugins.unread') }}</span>
             </div>
             <strong class="title">{{ record.item.title }}</strong>

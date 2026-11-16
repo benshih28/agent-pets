@@ -9,7 +9,11 @@ import {
   isProjectId,
   isSafeItemId,
   isSemverCore,
+  isOpaqueId128,
+  isOpaqueId256,
+  isOpaqueId64,
   isUuidV4,
+  OPAQUE_ID_128_PATTERN,
   PLUGIN_COMMAND_ID_PATTERN,
   PLUGIN_ID_PATTERN,
   PLUGIN_ID_SOURCE,
@@ -40,6 +44,10 @@ test('identifier guards accept the documented formats and reject everything else
   for (const version of ['01.2.3', '1.2', '1.2.3-beta', 'v1.2.3']) assert.equal(isSemverCore(version), false, version)
   assert.equal(isUuidV4('3f2a8c1e-9b4d-4c1a-8e2f-0a1b2c3d4e5f'), true)
   assert.equal(isUuidV4('3f2a8c1e-9b4d-1c1a-8e2f-0a1b2c3d4e5f'), false)
+  for (const [guard, max] of [[isOpaqueId64, 64], [isOpaqueId128, 128], [isOpaqueId256, 256]] as const) {
+    for (const id of ['a', 'A.b_c:d-9', 'x'.repeat(max)]) assert.equal(guard(id), true, `${max}: ${id}`)
+    for (const id of ['', 'x'.repeat(max + 1), 'a b', 'a/b', 'a\n', 'ü', 7, null, undefined]) assert.equal(guard(id), false, `${max}: ${String(id)}`)
+  }
   assert.equal(isRecord({}), true)
   for (const value of [null, [], 'x', 1]) assert.equal(isRecord(value), false)
 })
@@ -52,6 +60,7 @@ test('each identifier format has exactly one source: no copied regex literal or 
     '[a-f0-9]{16}$/',
     '[a-f0-9]{32}$/',
     '[89ab][a-f0-9]{3}',
+    '[A-Za-z0-9._:-]{1,',
     String.raw`(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/`,
   ]
   const offenders: string[] = []
@@ -69,12 +78,14 @@ test('each identifier format has exactly one source: no copied regex literal or 
 
 test('the worker host and the test packer use the same plugin id rule', () => {
   assert.equal(PLUGIN_ID_PATTERN.source, `^${PLUGIN_ID_SOURCE}$`)
-  for (const asset of ['host.js', 'worker-bootstrap.js']) {
-    const source = pluginHostAssets[asset]!
+  for (const asset of ['host.js', 'worker-bootstrap.js'] as const) {
+    const source = pluginHostAssets[asset]
     assert.ok(source.includes(`${PLUGIN_ID_PATTERN}.test(`), asset)
     assert.ok(source.includes(`${PLUGIN_COMMAND_ID_PATTERN}.test(data.commandId)`), asset)
   }
   // scripts/pack-test-plugin.mjs 直接以 node 執行（無型別剝除），所以保留字面值，但必須與來源相同。
   const packer = readFileSync('scripts/pack-test-plugin.mjs', 'utf8')
   assert.ok(packer.includes(`${PLUGIN_ID_PATTERN}.test(pluginId)`))
+  // integrations/agent-hook.mjs 同樣由 Node 直接執行，保留字面值。
+  assert.ok(readFileSync('integrations/agent-hook.mjs', 'utf8').includes(`const IDENTIFIER_PATTERN = ${OPAQUE_ID_128_PATTERN}\n`))
 })

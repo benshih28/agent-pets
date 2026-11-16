@@ -15,7 +15,7 @@ test('latest-value coalescing preserves the final projection in 1,000 seeded eve
   for (let sample = 0; sample < 1_000; sample += 1) {
     const scheduled: Array<() => void> = []
     const delivered: number[] = []
-    const enqueue = createLatestValueCoalescer(value => delivered.push(value), callback => scheduled.push(callback))
+    const enqueue = createLatestValueCoalescer<number>(value => delivered.push(value), callback => scheduled.push(callback))
     const count = 1 + Math.floor(random() * 100)
     let expected = 0
     for (let index = 0; index < count; index += 1) {
@@ -33,7 +33,7 @@ test('ordered batch coalescing preserves every event and original order in 1,000
   for (let sample = 0; sample < 1_000; sample += 1) {
     const scheduled: Array<() => void> = []
     const delivered: number[] = []
-    const enqueue = createOrderedBatchCoalescer(values => delivered.push(...values), callback => scheduled.push(callback))
+    const enqueue = createOrderedBatchCoalescer<number>(values => delivered.push(...values), callback => scheduled.push(callback))
     const expected = Array.from({ length: 1 + Math.floor(random() * 100) }, () => Math.floor(random() * 10_000))
     expected.forEach(enqueue)
     assert.equal(scheduled.length, 1, `scheduled callbacks for case ${sample}`)

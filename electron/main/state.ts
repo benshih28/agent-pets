@@ -12,6 +12,7 @@ import type { PetImportStaging } from '../pet-import.ts'
 import type { PermissionAdapterRelay } from '../permission-adapter-server'
 import type { PluginBadgeController } from '../plugin-badges.ts'
 import type { PluginBroker, PluginBrokerContext } from '../plugin-broker.ts'
+import type { PluginLocalizedText } from '../../src/types/plugin.ts'
 import type { PluginCatalogDocument } from '../../src/types/plugin-catalog.ts'
 import type { PluginCatalogAutoCheckSchedule } from '../plugin-catalog-updates'
 import type { PluginCommandController } from '../plugin-commands.ts'
@@ -47,8 +48,8 @@ import { SessionSnapshotStore } from './session-snapshot'
 
 export interface PluginSkinFallbackInfo {
   pluginId: string
-  pluginName: { 'zh-TW': string; 'en-US': string }
-  skinName: { 'zh-TW': string; 'en-US': string }
+  pluginName: PluginLocalizedText
+  skinName: PluginLocalizedText
 }
 
 export const mainState = {

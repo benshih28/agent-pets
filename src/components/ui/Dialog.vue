@@ -83,8 +83,10 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
               <Icon name="close" :size="14" />
             </Button>
           </header>
-          <p v-if="description" :id="descriptionId" class="description">{{ description }}</p>
-          <slot />
+          <div v-if="description || $slots.default" class="body">
+            <p v-if="description" :id="descriptionId" class="description">{{ description }}</p>
+            <slot />
+          </div>
           <footer v-if="$slots.footer" class="footer"><slot name="footer" /></footer>
         </div>
         <!-- A dialog opened from inside this one: inside the scope (so its siblings go inert and this
@@ -115,7 +117,8 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
   max-height: 100%;
   flex-direction: column;
   gap: var(--space-2);
-  overflow: auto;
+  /* 捲動的是 .body，標題列（含關閉鈕）與頁尾固定在原位。 */
+  overflow: hidden;
   padding: var(--space-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -123,6 +126,7 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
   box-shadow: var(--shadow-panel);
 }
 
+/* 對話框容器是程式聚焦（tabindex=-1）的備援目標；滑鼠點到時不畫環，鍵盤導覽（:focus-visible）仍走全域焦點環。 */
 .dialog:focus:not(:focus-visible) {
   outline: none;
 }
@@ -130,11 +134,14 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
 .size-sm { max-width: 300px; }
 .size-md { max-width: 420px; }
 .size-lg { max-width: 560px; }
-/* 全面板的工具（主題編輯器）：對話框本身不捲動，標題與底部按鈕一直看得到，也不會出現兩層
-   捲軸。內容自己是捲動區（min-height: 0; flex: 1 1 auto; overflow-y: auto）。 */
+/* 全面板的工具（主題編輯器）：撐滿面板高度，.body 不捲動，內容自己是捲動區
+   （min-height: 0; flex: 1 1 auto; overflow-y: auto），所以不會出現兩層捲軸。 */
 .size-full {
   max-width: none;
   height: 100%;
+}
+
+.size-full > .body {
   overflow: hidden;
 }
 
@@ -143,6 +150,24 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+/* 說明與內容的捲動區：標題列、頁尾固定，內容過長時只有這裡捲動。
+   負外距加等量內距，讓捲動容器不會裁掉子元素的焦點框。 */
+.body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-1));
+  padding: var(--space-1);
+  overflow-y: auto;
+}
+
+.head,
+.footer {
+  flex: 0 0 auto;
 }
 
 .title {

@@ -1,5 +1,6 @@
 import { locale, t } from '@/i18n'
 import { roundQuotaPercent } from '@/utils/format'
+import type { QuotaForecast } from '@/utils/quota-forecast'
 import { quotaTone, relativeAge, resetCountdown, type QuotaTone } from '@/utils/quota-math'
 import { formatDateParts, formatTime } from '@/utils/intl-format'
 
@@ -62,5 +63,23 @@ export function useQuotaFormat(now: () => number) {
     return ''
   }
 
-  return { quotaPercent, formatReset, formatResetAt, formatClock, formatAge, usedRemaining, quotaTone, toneLabel }
+  // 預測文案：資料不足與已用完不回傳文字（用完已有獨立警示），避免顯示猜測值。
+  function forecastText(forecast: QuotaForecast): string {
+    switch (forecast.kind) {
+      case 'idle': return t('growth.forecastIdle')
+      case 'safe': return t('growth.forecastSafe')
+      case 'exhausts': {
+        const countdown = resetCountdown(new Date(forecast.exhaustAtMs).toISOString(), now())
+        switch (countdown.kind) {
+          case 'minutes': return t('growth.forecastMinutes', { minutes: countdown.minutes })
+          case 'hours': return t('growth.forecastHours', { hours: countdown.hours, minutes: countdown.minutes })
+          case 'days': return t('growth.forecastDays', { days: countdown.days, hours: countdown.hours })
+          default: return t('growth.forecastSoon')
+        }
+      }
+      default: return ''
+    }
+  }
+
+  return { forecastText, quotaPercent, formatReset, formatResetAt, formatClock, formatAge, usedRemaining, quotaTone, toneLabel }
 }

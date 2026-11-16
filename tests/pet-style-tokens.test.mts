@@ -6,6 +6,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 const files = [
   '../src/components/DesktopPet.css',
+  '../src/components/desktop-pet/PetStatusLine.css',
+  '../src/components/desktop-pet/PetEdgePeekHandle.css',
   '../src/components/DesktopPetBubbles.css',
   '../src/components/PetAnimation.css',
 ]
@@ -39,17 +41,18 @@ test('no pet text is smaller than the 11px token floor', () => {
 })
 
 test('the quota tooltip does not nest a backdrop-filter inside the glass status line', () => {
-  const css = stripComments(read('../src/components/DesktopPet.css'))
+  const css = stripComments(read('../src/components/desktop-pet/PetStatusLine.css'))
   const tooltip = css.slice(css.indexOf('.quota-tooltip {'), css.indexOf('.quota-tooltip-row {'))
   assert.doesNotMatch(tooltip, /backdrop-filter/)
 })
 
 test('the pet permission bubble never grows past the reserved headroom, so the source and risk badge stay on screen', async () => {
-  const { QUOTA_TOOLTIP_HEADROOM_H } = await import('../src/utils/pet-window-height.ts')
-  const runtime = readFileSync('electron/main/runtime.ts', 'utf8')
-  assert.match(runtime, new RegExp(`PET_WINDOW_TOP_HEADROOM = ${QUOTA_TOOLTIP_HEADROOM_H}\\b`))
+  const { QUOTA_TOOLTIP_HEADROOM_H } = await import('../src/utils/pet-window-size.ts')
+  const { PET_WINDOW_HEADROOM_PX } = await import('../electron/pet-drag.ts')
+  assert.equal(PET_WINDOW_HEADROOM_PX, QUOTA_TOOLTIP_HEADROOM_H)
+  assert.match(readFileSync('electron/main/panel-geometry.ts', 'utf8'), /petHeadroom: QUOTA_TOOLTIP_HEADROOM_H,/)
   assert.match(readFileSync('src/styles/tokens.css', 'utf8'), new RegExp(`--pet-bubble-headroom: ${QUOTA_TOOLTIP_HEADROOM_H}px;`))
-  const bubble = readFileSync('src/components/permission/PermissionBubble.vue', 'utf8')
+  const bubble = readFileSync('src/components/permission/PermissionBubble.css', 'utf8')
   assert.match(bubble, /\.permission-request \{[^}]*max-height: calc\(var\(--pet-bubble-headroom\) - 4px\);[^}]*flex-direction: column;/)
   // 只有指令細節區會縮短或捲動；標題、風險徽章、倒數與按鈕不縮。
   assert.match(bubble, /\.permission-request > \* \{\n {2}flex: none;\n\}/)
@@ -57,6 +60,6 @@ test('the pet permission bubble never grows past the reserved headroom, so the s
 })
 
 test('state dots stay visible under forced colors (the shape still carries the state)', () => {
-  assert.match(readFileSync('src/components/DesktopPet.css', 'utf8'), /@media \(forced-colors: active\) \{\n {2}\.line-dot \{\n {4}background: CanvasText !important;/)
+  assert.match(readFileSync('src/components/desktop-pet/PetStatusLine.css', 'utf8'), /@media \(forced-colors: active\) \{\n {2}\.line-dot \{\n {4}background: CanvasText !important;/)
   assert.match(readFileSync('src/components/StatusPanel.css', 'utf8'), /@media \(forced-colors: active\) \{\n {2}\.status-panel :deep\(\.session-status-dot\) \{\n {4}background: CanvasText;/)
 })

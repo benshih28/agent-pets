@@ -14,14 +14,6 @@ const EXPIRY_SLACK_MS = 2_000
 export const PERMISSION_OUTCOME_VISIBLE_MS = 5_000
 export const PERMISSION_FAILURE_VISIBLE_MS = 8_000
 
-/** Formats a duration as m:ss (never 83.4s). Negative values clamp to 0:00. */
-export function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.ceil((Number.isFinite(ms) ? ms : 0) / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
-}
-
 export function permissionRemainingMs(
   request: Pick<PermissionRequestView, 'expiresAt'>,
   now: number,

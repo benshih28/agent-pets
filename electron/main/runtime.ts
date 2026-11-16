@@ -1,5 +1,6 @@
 import { IPC_CHANNELS } from '../ipc/channels'
 import { sanitizePetId } from '../pet-id.ts'
+import { rasterContentType } from '../pet-sprite-validation.ts'
 import { app, BrowserWindow, WebContentsView, screen, ipcMain, dialog, net, session, protocol, globalShortcut, powerMonitor, shell, safeStorage, Notification, nativeTheme } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import { attachRendererRecovery, type RendererRecovery } from './renderer-recovery'
@@ -7,12 +8,10 @@ import { logMain, mainLogger } from '../diagnostics/main-log'
 import { buildDiagnosticsReport, registerDiagnosticsSection } from '../diagnostics/report'
 import { eventPipelineStats } from '../event-stats'
 import { resolveLocalPorts } from './ports'
-import { openWithCorruptionRecovery } from './db-recovery'
-import { localUsageCatchUpDelayMs, LOCAL_USAGE_TICK_MS, shouldRunLocalUsageTick } from './scan-schedule'
+import { LOCAL_WIRE_HEADERS, LOCAL_WIRE_HOST, LOCAL_WIRE_PATHS } from '../../src/types/local-wire.ts'
 import { createServerHealthTracker, type ServerHealthTracker } from './server-health'
 import { createSessionJumpService, withSessionJumpContext } from './session-jump-runtime'
 import { join, resolve } from 'path'
-import { randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { Readable } from 'node:stream'
 import * as fs from 'fs'
@@ -38,33 +37,16 @@ import { listenOnLocalPort } from '../local-server-listen'
 import { normalizePresentationStatus, PresentationController } from '../presentation-controller'
 
 import { ProjectRoutingStore } from '../project-routing'
-import { PluginRegistry, PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES, PLUGIN_ARCHIVE_SKIN_MAX_BYTES } from '../plugin-registry'
+import { PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES } from '../plugin-registry'
 import { PanelSizeStore } from '../panel-size-store'
-import { PluginPreferencesStore, pluginHostMemoryBudgetMb } from '../plugin-preferences'
+import { PluginPreferencesStore } from '../plugin-preferences'
 import { PluginHostWindowController, type PluginHostDescriptor } from '../plugin-host-window'
 import { selectEnabledPluginDescriptors } from '../plugin-host-selection'
-import { PluginBroker, type PluginBrokerContext, type PluginReactionRequest } from '../plugin-broker.ts'
-import { PluginCommandController } from '../plugin-commands.ts'
-import { PluginBadgeController } from '../plugin-badges.ts'
-import { PluginFeedController } from '../plugin-feed.ts'
-import { filterPluginRequestHeaders, PluginNetworkClient, stripPluginSetCookieHeaders } from '../plugin-net.ts'
-import { isPublicPluginNetworkHost } from '../plugin-net.ts'
-import { PluginHostGrantController, sanitizePluginHostRequestReason } from '../plugin-host-grants.ts'
-import { PluginSecretsStore } from '../plugin-secrets.ts'
-import { PluginSecretConsentStore } from '../plugin-secret-consent.ts'
-import { PluginSettingsStore } from '../plugin-settings.ts'
-import { PluginAgentStatusController } from '../plugin-agent-status.ts'
-import { PluginEventSourceController } from '../plugin-event-source.ts'
-import { PluginExternalLinkController } from '../plugin-external-links.ts'
-import { DEFAULT_PLUGIN_ISSUE_REPORT_URL } from '../plugin-report.ts'
+import type { PluginBrokerContext } from '../plugin-broker.ts'
 import { effectivePluginScheduleMinimum } from '../plugin-schedule.ts'
 
-import { PluginDeveloperModeWatcher } from '../plugin-developer-mode.ts'
-import { catalogFingerprintMatches, createPluginCatalogGateway, isPluginCatalogUrl, PLUGIN_CATALOG_ALLOWED_HOSTS, PLUGIN_CATALOG_MAX_PACKAGE_BYTES, selectLatestCompatiblePluginVersion } from '../plugin-catalog.ts'
-import { buildPluginCatalogPanelItems, PluginCatalogAutoCheckSchedule } from '../plugin-catalog-updates.ts'
-import { PluginPanelViewController, type PluginPanelNativeView, type PluginPanelViewSession } from '../plugin-panel-view.ts'
-import { PROGRAMMATIC_PANEL_RESIZE_WINDOW_MS, shouldRecordUserPanelSize, validatePluginPanelViewBounds, type PluginPanelRect } from '../plugin-panel-window.ts'
-import { isPluginPanelInstallConfirmation, isPluginPanelPluginId, isPluginPanelPreferencePatch, pluginPanelErrorCode } from '../plugin-panel-validation.ts'
+import { shouldRecordUserPanelSize, validatePluginPanelViewBounds, type PluginPanelRect } from '../plugin-panel-window.ts'
+import { isPluginPanelPluginId, pluginPanelErrorCode } from '../plugin-panel-validation.ts'
 import { handlePluginProtocolRequest } from '../plugin-protocol'
 import { pluginHostAssets } from '../plugin-host-assets'
 import { parsePluginManifest } from '../plugin-manifest'
@@ -73,44 +55,40 @@ import type { DesktopPreferences } from '../../src/types/desktop'
 import { CLAUDE_ANSWERABLE_GRACE_MS, withAnswerableClaudeNotice } from '../claude-permission-notice'
 import { locale, setLocale, t } from '../../src/i18n'
 import tokensCss from '../../src/styles/tokens.css?raw'
-import type { ProgressionAwardEvent, ProgressionEventResult, ProgressionSnapshot } from '../../src/types/progression'
-import type { AchievementUnlock } from '../../src/types/achievement'
-import type { HistorySummary, HistoryTokenUsageRecord } from '../../src/types/history'
+import type { HistorySummary } from '../../src/types/history'
 import type { PresentationIntent } from '../../src/types/presentation'
 import type { PluginEventSourceStatusView, PluginPanelPlugin, PluginPanelResult, PluginPanelSnapshot } from '../../src/types/plugin'
 import type { IpcErrorCode } from '../../src/types/ipc'
 
-import type { PetEdge, PetWindowMode, PetWindowModeState } from '../../src/types/pet-window'
-import { createPluginSkinPetId, isPluginSkinPetId, isValidPetId, isValidRegularPetId } from '../../src/utils/pet-id.ts'
+import { createPluginSkinPetId, DEFAULT_PET_ID, isValidPetId, isValidRegularPetId } from '../../src/utils/pet-id.ts'
 import { availablePluginSkinPetIds } from '../plugin-skins.ts'
-import { EDGE_DWELL_MS, EDGE_REDOCK_AFTER_MS, EDGE_TRIGGER_DISTANCE_PX, clampWindowBounds, edgeWindowBounds, miniWindowBounds, nearestEdge, type WindowBounds } from '../pet-window-mode'
 import { IS_MAC, hookScriptDeployPath, readWindowState, syncClaudePermissionRespondOptIn, writeWindowState } from '../setup'
 
 import { createWindowsFullscreenDetector, nativeWindowHandleToPointer, type WindowsFullscreenState } from '../windows-fullscreen-detector'
 
-import { registerPluginFeedIpc } from '../ipc/plugin-feed'
 import { createLatestValueCoalescer } from '../ipc/broadcast-coalescer.ts'
-import { createProgressionChangeGate, createVisibleSender } from '../ipc/progression-broadcast-gate.ts'
+import { createVisibleSender } from '../ipc/progression-broadcast-gate.ts'
+import { createDbMaintenanceService } from './db-maintenance-service.ts'
+import { createGrowthService } from './growth-service.ts'
 
 import { type IntegrationTestSource } from '../ipc/integrations'
 
-import { registerPluginPanelUiIpc } from '../ipc/plugin-panel-ui'
 
-import { registerPluginSettingsIpc } from '../ipc/plugin-settings'
-import { registerPluginPreferencesIpc } from '../ipc/plugin-preferences'
-import { registerPluginCatalogIpc } from '../ipc/plugin-catalog'
-import { registerPluginInstallIpc } from '../ipc/plugin-install'
-import { registerPanelThemeIpc } from '../ipc/panel-theme'
-import { registerUserPanelThemeIpc } from '../ipc/panel-theme-user'
-import { readUserPanelThemeImportFile, writeUserPanelThemeExportFile } from '../panel-theme-user-store'
-import { PanelThemeRuntime } from './panel-theme-runtime'
-import { emptyPanelThemeState } from '../plugin-panel-themes'
-import { deleteUserImage, prepareUserImage, readUserImageSource, storeUserImage } from '../panel-theme-images'
 import { mainState, type PluginSkinFallbackInfo } from './state'
+import { appUserDataPaths } from './app-user-data'
+import { createPanelGeometry } from './panel-geometry'
+import { createPetWindowModeService } from './pet-window-mode-service'
+import { createHistoryRuntimeService } from './history-runtime-service'
+import { createPluginCatalogRuntime, decodeCatalogBase64 } from './plugin-catalog-runtime'
+import { createAppUpdateRuntime } from './app-update-runtime'
+import { createPluginRuntime } from './plugin-runtime'
 import { EMPTY_ATTENTION } from '../attention-tracker'
 import { attachHotkeyInfo, PermissionHotkeys } from '../permission-hotkeys'
-import { PANEL_GAP, PANEL_WIDTH, PANEL_BLUR_HIDE_DELAY_MS, clampPanelSize, clampRectToWorkArea, computePanelPlacement, effectivePanelSize, panelMaxSize, panelMinSize, shouldHidePanelOnBlur } from '../../src/utils/panel-layout'
-import { isRecord } from '../value-guards.ts'
+import { clamp } from '../../src/utils/number'
+import { initialPetWindowSize } from '../../src/utils/pet-window-size'
+import { PANEL_GAP, PANEL_WIDTH, PANEL_BLUR_HIDE_DELAY_MS, shouldHidePanelOnBlur } from '../../src/utils/panel-layout'
+import { currentAgentConfigDirs } from '../agent-config-dirs.ts'
+import { asRecord } from '../value-guards.ts'
 
 let permissionHotkeys: PermissionHotkeys | null = null
 
@@ -130,16 +108,6 @@ function getPermissionHotkeys(): PermissionHotkeys {
 }
 
 export { PANEL_GAP, PANEL_WIDTH }
-// petWindow's actual bounds include a fixed, unscaled band of transparent
-// space reserved above the visible sprite for the quota tooltip to pop
-// into (see QUOTA_TOOLTIP_HEADROOM_H in agentStore.ts — keep in sync).
-// computePanelBounds must anchor off the visible pet, not the raw window
-// bounds, or the panel opens with a big gap floating above the pet — worst
-// at small pet sizes, where that fixed band is a large fraction of the
-// window's total (scaled) height. Only a fallback now: the renderer reports
-// its measured content height (see petContentHeight), which also accounts
-// for the status lines, whose size does not scale with the pet.
-export const PET_WINDOW_TOP_HEADROOM = 190
 export const MAX_PET_ZIP_BYTES = 10 * 1024 * 1024
 export const MAX_PET_ZIP_ENTRIES = 64
 export const MAX_PET_UNCOMPRESSED_BYTES = 25 * 1024 * 1024
@@ -162,15 +130,15 @@ export function sendIntegrationTestEvent(
 
   return new Promise((resolvePromise, reject) => {
     const request = httpRequest({
-      hostname: '127.0.0.1',
+      hostname: LOCAL_WIRE_HOST,
       // 與事件伺服器實際監聽的埠相同（開發或 e2e 執行可能不是 17373）。
       port: localPorts().event,
-      path: '/v1/events',
+      path: LOCAL_WIRE_PATHS.events,
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'content-length': Buffer.byteLength(body),
-        'x-agent-pets-token': mainState.eventToken,
+        [LOCAL_WIRE_HEADERS.eventToken]: mainState.eventToken,
       },
     }, (response) => {
       response.resume()
@@ -256,17 +224,13 @@ export function animateBounds(target: { x: number; y: number; width: number; hei
   }, 16)
 }
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max))
-}
-
 export function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 export function readPluginPanelRect(value: unknown): PluginPanelRect | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const rect = value as Record<string, unknown>
+  const rect = asRecord(value)
+  if (!rect) return null
   const x = finiteNumber(rect.x)
   const y = finiteNumber(rect.y)
   const width = finiteNumber(rect.width)
@@ -336,7 +300,7 @@ export async function pluginPanelSnapshot(): Promise<PluginPanelResult<PluginPan
   try {
     const preferences = mainState.pluginPreferences.get()
     const plugins: PluginPanelPlugin[] = await Promise.all(mainState.pluginRegistry.list().map(async entry => {
-      const root = resolve(app.getPath('userData'), 'plugins', entry.id, entry.currentVersion)
+      const root = appUserDataPaths().pluginVersionRoot(entry.id, entry.currentVersion)
       const source = await readRegularFileWithin(root, 'plugin.json', 256 * 1024)
       let manifest: PluginPanelPlugin['manifest'] = null
       if (source) {
@@ -374,17 +338,6 @@ export function safeJoin(base: string, ...parts: string[]): string | null {
   return resolvedPath
 }
 
-export function isSupportedRasterImage(data: Uint8Array): boolean {
-  const png = data.length >= 8
-    && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47
-    && data[4] === 0x0d && data[5] === 0x0a && data[6] === 0x1a && data[7] === 0x0a
-  const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
-  const webp = data.length >= 12
-    && Buffer.from(data.subarray(0, 4)).toString('ascii') === 'RIFF'
-    && Buffer.from(data.subarray(8, 12)).toString('ascii') === 'WEBP'
-  return png || jpeg || webp
-}
-
 export function contentTypeFor(filePath: string): string {
   switch (path.extname(filePath).toLowerCase()) {
     case '.html': return 'text/html; charset=utf-8'
@@ -398,17 +351,6 @@ export function contentTypeFor(filePath: string): string {
     case '.woff2': return 'font/woff2'
     default: return 'application/octet-stream'
   }
-}
-
-export function rasterContentType(data: Uint8Array): string | null {
-  if (data.length >= 8
-    && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47
-    && data[4] === 0x0d && data[5] === 0x0a && data[6] === 0x1a && data[7] === 0x0a) return 'image/png'
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'image/jpeg'
-  if (data.length >= 12
-    && Buffer.from(data.subarray(0, 4)).toString('ascii') === 'RIFF'
-    && Buffer.from(data.subarray(8, 12)).toString('ascii') === 'WEBP') return 'image/webp'
-  return null
 }
 
 export async function readRegularFileWithin(root: string, relativePath: string, maxBytes: number): Promise<Buffer | null> {
@@ -447,64 +389,66 @@ export function configureSecureProtocol(): void {
     try {
       const url = new URL(request.url)
       const pathname = decodeURIComponent(url.pathname)
-      if (url.hostname === 'plugin') {
-        return await handlePluginProtocolRequest(request.url, {
-          pluginRootForId: enabledPluginRoot,
-          hostAssets: pluginHostAssets,
-          pluginSkinAssetForId: async (pluginId, relativePath) => {
-            const context = mainState.pluginRuntimeContexts.get(pluginId)
-            const skin = context?.manifest.contributes.skins?.find(candidate => candidate.spritesheet === relativePath)
-            if (!skin) return undefined
-            const root = enabledPluginRoot(pluginId)
-            if (!root) return null
-            const data = await readRegularFileWithin(root, relativePath, PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES)
-            const type = data ? rasterContentType(data) : null
-            return data && type ? { data, contentType: type } : null
-          },
-        })
-      }
-      if (url.hostname === 'panel-theme') {
-        return mainState.panelThemeRuntime
-          ? await mainState.panelThemeRuntime.handleRequest(request.url, request.method)
-          : new Response('Not found', { status: 404 })
-      }
-      if (url.hostname === 'app') {
-        const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
-        const data = await readRegularFileWithin(resolve(join(__dirname, '../dist')), relativePath, 25 * 1024 * 1024)
-        if (!data) return new Response('Not found', { status: 404 })
-        return new Response(responseBody(data), {
-          status: 200,
-          headers: {
-            'content-type': contentTypeFor(relativePath),
-            'x-content-type-options': 'nosniff',
-          },
-        })
-      }
-      if (url.hostname === 'import-preview') {
-        // Staged (not yet installed) import, addressed by an unguessable
-        // per-import token; anything else 404s.
-        const match = pathname.match(/^\/([0-9a-f]{32})\/spritesheet$/)
-        const directory = match ? mainState.petImport?.previewDirectory(match[1]) : null
-        const data = directory ? await readRegularFileWithin(directory, 'spritesheet.webp', MAX_PET_IMAGE_BYTES) : null
-        const contentType = data ? rasterContentType(data) : null
-        if (!data || !contentType) return new Response('Not found', { status: 404 })
-        return new Response(responseBody(data), {
-          status: 200,
-          headers: { 'content-type': contentType, 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' },
-        })
-      }
-      if (url.hostname === 'custom') {
-        const match = pathname.match(/^\/([a-zA-Z0-9_.-]{1,64})\/spritesheet\.webp$/)
-        const safeId = match ? sanitizePetId(match[1]) : null
-        if (!safeId) return new Response('Not found', { status: 404 })
-        const customRoot = resolve(hookScriptDeployPath(), 'custom')
-        const data = await readRegularFileWithin(customRoot, join(safeId, 'spritesheet.webp'), MAX_PET_IMAGE_BYTES)
-        const contentType = data ? rasterContentType(data) : null
-        if (!data || !contentType) return new Response('Not found', { status: 404 })
-        return new Response(responseBody(data), {
-          status: 200,
-          headers: { 'content-type': contentType, 'x-content-type-options': 'nosniff' },
-        })
+      switch (url.hostname) {
+        case 'plugin': {
+          return await handlePluginProtocolRequest(request.url, {
+            pluginRootForId: enabledPluginRoot,
+            hostAssets: pluginHostAssets,
+            pluginSkinAssetForId: async (pluginId, relativePath) => {
+              const context = mainState.pluginRuntimeContexts.get(pluginId)
+              const skin = context?.manifest.contributes.skins?.find(candidate => candidate.spritesheet === relativePath)
+              if (!skin) return undefined
+              const root = enabledPluginRoot(pluginId)
+              if (!root) return null
+              const data = await readRegularFileWithin(root, relativePath, PLUGIN_ARCHIVE_SKIN_IMAGE_MAX_BYTES)
+              const type = data ? rasterContentType(data) : null
+              return data && type ? { data, contentType: type } : null
+            },
+          })
+        }
+        case 'panel-theme': {
+          return mainState.panelThemeRuntime
+            ? await mainState.panelThemeRuntime.handleRequest(request.url, request.method)
+            : new Response('Not found', { status: 404 })
+        }
+        case 'app': {
+          const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
+          const data = await readRegularFileWithin(resolve(join(__dirname, '../dist')), relativePath, 25 * 1024 * 1024)
+          if (!data) return new Response('Not found', { status: 404 })
+          return new Response(responseBody(data), {
+            status: 200,
+            headers: {
+              'content-type': contentTypeFor(relativePath),
+              'x-content-type-options': 'nosniff',
+            },
+          })
+        }
+        case 'import-preview': {
+          // Staged (not yet installed) import, addressed by an unguessable
+          // per-import token; anything else 404s.
+          const match = pathname.match(/^\/([0-9a-f]{32})\/spritesheet$/)
+          const directory = match ? mainState.petImport?.previewDirectory(match[1]) : null
+          const data = directory ? await readRegularFileWithin(directory, 'spritesheet.webp', MAX_PET_IMAGE_BYTES) : null
+          const contentType = data ? rasterContentType(data) : null
+          if (!data || !contentType) return new Response('Not found', { status: 404 })
+          return new Response(responseBody(data), {
+            status: 200,
+            headers: { 'content-type': contentType, 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' },
+          })
+        }
+        case 'custom': {
+          const match = pathname.match(/^\/([a-zA-Z0-9_.-]{1,64})\/spritesheet\.webp$/)
+          const safeId = match ? sanitizePetId(match[1]) : null
+          if (!safeId) return new Response('Not found', { status: 404 })
+          const customRoot = resolve(hookScriptDeployPath(), 'custom')
+          const data = await readRegularFileWithin(customRoot, join(safeId, 'spritesheet.webp'), MAX_PET_IMAGE_BYTES)
+          const contentType = data ? rasterContentType(data) : null
+          if (!data || !contentType) return new Response('Not found', { status: 404 })
+          return new Response(responseBody(data), {
+            status: 200,
+            headers: { 'content-type': contentType, 'x-content-type-options': 'nosniff' },
+          })
+        }
       }
     } catch {}
     return new Response('Not found', { status: 404 })
@@ -516,7 +460,7 @@ export function enabledPluginRoot(pluginId: string): string | null {
   if (!context?.pluginsEnabled || !context.enabled) return null
   const entry = mainState.pluginRegistry?.list().find(plugin => plugin.id === pluginId)
   if (!entry || (entry.status !== 'installed' && entry.status !== 'enabled')) return null
-  return resolve(app.getPath('userData'), 'plugins', entry.id, entry.currentVersion)
+  return appUserDataPaths().pluginVersionRoot(entry.id, entry.currentVersion)
 }
 
 export async function refreshPluginRuntimeContexts(): Promise<void> {
@@ -528,7 +472,7 @@ export async function refreshPluginRuntimeContexts(): Promise<void> {
     if (entry.status !== 'installed' && entry.status !== 'enabled') continue
     const preference = preferences?.plugins[entry.id]
     if (!preference) continue
-    const root = resolve(app.getPath('userData'), 'plugins', entry.id, entry.currentVersion)
+    const root = appUserDataPaths().pluginVersionRoot(entry.id, entry.currentVersion)
     const source = await readRegularFileWithin(root, 'plugin.json', 256 * 1024)
     if (!source) continue
     try {
@@ -868,876 +812,100 @@ export function requestPluginNetwork(
   })
 }
 
-export function decodeCatalogBase64(value: unknown): Uint8Array {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 36_000_000
-    || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
-    throw new Error('Invalid catalog base64')
-  }
-  const bytes = Buffer.from(value, 'base64')
-  if (bytes.toString('base64') !== value) throw new Error('Invalid catalog base64')
-  return bytes
-}
+// Plugin catalog（閘道與每日自動檢查）由獨立服務負責；保留這些匯出名稱，IPC registrar 與 main.ts 的接線不變。
+export const pluginCatalogRuntime = createPluginCatalogRuntime({
+  state: mainState,
+  appVersion: () => app.getVersion(),
+  translate: (key, params) => t(key, params),
+})
+export const createMainPluginCatalogGateway = pluginCatalogRuntime.gateway
+export const checkPluginCatalogUpdates = pluginCatalogRuntime.checkUpdates
+export const initializePluginCatalogAutoCheck = pluginCatalogRuntime.initializeAutoCheck
+export { decodeCatalogBase64 }
 
-export function createMainPluginCatalogGateway() {
-  return createPluginCatalogGateway({
-    fetchRegistry: async (url, maxBytes) => {
-      const e2eMode = Object.prototype.hasOwnProperty.call(globalThis, '__agentPetsE2E')
-      const e2e = (globalThis as typeof globalThis & { __agentPetsE2E?: unknown }).__agentPetsE2E
-      if (e2eMode) {
-        if (!isRecord(e2e)) throw new Error('Catalog fixture unavailable')
-        const fixture = e2e.catalogFixture
-        if (!isRecord(fixture) || fixture.registry === undefined) throw new Error('Catalog fixture unavailable')
-        return fixture.registry
-      }
-      if (!mainState.pluginNetworkClient) throw new Error('Plugin network unavailable')
-      const result = await mainState.pluginNetworkClient.fetch('agent-pets-catalog', url, undefined,
-        PLUGIN_CATALOG_ALLOWED_HOSTS, { maxResponseBytes: maxBytes, timeoutMs: 15_000, requestsPerMinute: 10 })
-      if (!result.ok) throw Object.assign(new Error('Catalog unavailable'), { code: result.error })
-      if (result.value.status === 404) throw Object.assign(new Error('Catalog not found'), { code: 'catalog_not_found' })
-      if (result.value.status < 200 || result.value.status >= 300) throw new Error('Catalog unavailable')
-      return result.value.isBase64Encoded
-        ? Buffer.from(decodeCatalogBase64(result.value.body)).toString('utf8')
-        : result.value.body
-    },
-    downloadArchive: async (url, maxBytes) => {
-      const e2eMode = Object.prototype.hasOwnProperty.call(globalThis, '__agentPetsE2E')
-      const e2e = (globalThis as typeof globalThis & { __agentPetsE2E?: unknown }).__agentPetsE2E
-      if (e2eMode) {
-        if (!isRecord(e2e)) throw new Error('Catalog fixture unavailable')
-        const fixture = e2e.catalogFixture
-        const downloads = isRecord(fixture) && isRecord(fixture.downloads) ? fixture.downloads : null
-        if (!downloads || !Object.prototype.hasOwnProperty.call(downloads, url)) throw new Error('Catalog fixture download unavailable')
-        return decodeCatalogBase64(downloads[url])
-      }
-      if (!mainState.pluginNetworkClient) throw new Error('Plugin network unavailable')
-      const result = await mainState.pluginNetworkClient.fetch('agent-pets-catalog', url, undefined,
-        PLUGIN_CATALOG_ALLOWED_HOSTS, { maxResponseBytes: Math.min(maxBytes, PLUGIN_CATALOG_MAX_PACKAGE_BYTES), timeoutMs: 15_000, requestsPerMinute: 10 })
-      if (!result.ok) throw Object.assign(new Error('Package unavailable'), { code: result.error })
-      if (result.value.status < 200 || result.value.status >= 300) throw new Error('Package unavailable')
-      return result.value.isBase64Encoded
-        ? decodeCatalogBase64(result.value.body)
-        : Buffer.from(result.value.body, 'utf8')
-    },
-  })
-}
+// App 新版檢查（只提示、不下載安裝）由獨立服務負責；網路沿用 plugin 的 pluginNetworkClient。
+export const appUpdateRuntime = createAppUpdateRuntime({
+  state: mainState,
+  userDataDirectory: () => appUserDataPaths().root,
+  appVersion: () => app.getVersion(),
+  translate: (key, params) => t(key, params),
+  openExternal: url => shell.openExternal(url),
+})
 
-export function checkPluginCatalogUpdates(): Promise<number> {
-  return (async () => {
-    if (!mainState.pluginRegistry || !mainState.pluginPreferences) throw new Error('Plugin catalog services unavailable')
-    const preferences = mainState.pluginPreferences.get()
-    if (!preferences.onlineCatalogEnabled || !preferences.dailyUpdateCheck
-      || !isPluginCatalogUrl(preferences.catalogUrl)) throw new Error('Plugin catalog auto-check disabled')
-    const result = await createMainPluginCatalogGateway().load(preferences.catalogUrl)
-    if (!result.ok) throw new Error('Plugin catalog check failed')
-    const items = buildPluginCatalogPanelItems(result.value, mainState.pluginRegistry.list(), app.getVersion())
-    return items.filter(item => item.updateAvailable).length
-  })()
-}
+// Plugin runtime 組裝由獨立服務負責：`start()` 建立所有 plugin 服務，`dispose()` 依固定順序釋放。
+// 保留 `createPluginServices` 這個匯出名稱，main.ts 的啟動步驟不變。
+export const pluginRuntime = createPluginRuntime({
+  state: mainState,
+  userDataPaths: appUserDataPaths,
+  pluginUiPreloadPath: join(__dirname, 'plugin-ui-preload.js'),
+  tokensCss,
+  electron: { ipcMain, session, safeStorage, nativeTheme, dialog, shell, app },
+  createWebContentsView: options => new WebContentsView(options),
+  createPluginHostWindow: options => new PluginHostWindowController(options),
+  translate: (key, params) => t(key, params),
+  locale,
+  logMain,
+  createMainPluginCatalogGateway,
+  refreshPluginRuntimeContexts: () => refreshPluginRuntimeContexts(),
+  syncPluginHost: () => syncPluginHost(),
+  syncPanelThemes: () => syncPanelThemes(),
+  enabledPluginRoot: pluginId => enabledPluginRoot(pluginId),
+  enabledPluginSkinRecords: () => enabledPluginSkinRecords(),
+  currentDesktopPreferences: () => currentDesktopPreferences(),
+  isPluginFeedVisible: () => isPluginFeedVisible(),
+  isPluginLinkHostAllowed: (pluginId, host) => isPluginLinkHostAllowed(pluginId, host),
+  broadcastPluginBadges: badges => broadcastPluginBadges(badges),
+  broadcastPluginFeedUnreadCount: count => broadcastPluginFeedUnreadCount(count),
+  queuePluginEventSourceBroadcast: statuses => queuePluginEventSourceBroadcast(statuses),
+  requestPluginNetwork: (networkSession, url, init) => requestPluginNetwork(networkSession, url, init),
+  readRegularFileWithin: (root, relativePath, maxBytes) => readRegularFileWithin(root, relativePath, maxBytes),
+  panelRendererOrigin: () => panelRendererOrigin(),
+  assertTrustedIpcSender: (event, requiredWindow) => assertTrustedIpcSender(event, requiredWindow),
+  assertPluginPanelSender: event => assertPluginPanelSender(event),
+  isTrustedIpcSender: (event, requiredWindow) => isTrustedIpcSender(event, requiredWindow),
+  pluginPanelError: error => pluginPanelError(error),
+  pluginPanelSnapshot: () => pluginPanelSnapshot(),
+  openPluginPanelViewForPlugin: (pluginId, openToken, frame, content) => openPluginPanelViewForPlugin(pluginId, openToken, frame, content),
+  showPanelWindow: (view, pluginViewPluginId) => showPanelWindow(view, pluginViewPluginId),
+  finiteNumber: value => finiteNumber(value),
+  readPluginPanelRect: value => readPluginPanelRect(value),
+})
+export const createPluginServices = pluginRuntime.start
 
-export function initializePluginCatalogAutoCheck(): void {
-  if (!mainState.pluginPreferences || !mainState.pluginRegistry || mainState.pluginCatalogAutoCheckSchedule) return
-  mainState.pluginCatalogAutoCheckSchedule = new PluginCatalogAutoCheckSchedule({
-    isEnabled: () => {
-      try {
-        const preferences = mainState.pluginPreferences?.get()
-        return preferences?.onlineCatalogEnabled === true && preferences.dailyUpdateCheck
-          && isPluginCatalogUrl(preferences.catalogUrl)
-      } catch { return false }
-    },
-    getLastCheckedDay: () => mainState.pluginPreferences?.getLastCatalogAutoCheckDay() ?? null,
-    setLastCheckedDay: day => {
-      if (!mainState.pluginPreferences) throw new Error('Plugin preferences unavailable')
-      mainState.pluginPreferences.setLastCatalogAutoCheckDay(day)
-    },
-    check: checkPluginCatalogUpdates,
-    notify: updateCount => {
-      mainState.pluginFeedController?.addSystemNotification(
-        'agent-pets-catalog',
-        { 'zh-TW': 'Agent Pets', 'en-US': 'Agent Pets' },
-        t('pluginCatalogAutoCheckTitle'),
-        updateCount > 0
-          ? t('pluginCatalogAutoCheckFound', { count: String(updateCount) })
-          : t('pluginCatalogAutoCheckNone'),
-      )
-    },
-  })
-  void mainState.pluginCatalogAutoCheckSchedule.checkIfDue()
-  if (mainState.pluginCatalogAutoCheckTimer) clearInterval(mainState.pluginCatalogAutoCheckTimer)
-  mainState.pluginCatalogAutoCheckTimer = setInterval(() => {
-    void mainState.pluginCatalogAutoCheckSchedule?.checkIfDue()
-  }, 60 * 60 * 1_000)
-  mainState.pluginCatalogAutoCheckTimer.unref?.()
-}
+// 寵物視窗模式由獨立服務負責；保留這些匯出名稱，IPC registrar、托盤與建立視窗的接線不變。
+export const petWindowModes = createPetWindowModeService({
+  state: mainState,
+  // 延後綁定：Electron 的 screen 模組要等 app ready 後才能使用。
+  screen: {
+    getDisplayMatching: rect => screen.getDisplayMatching(rect),
+    getAllDisplays: () => screen.getAllDisplays(),
+    getPrimaryDisplay: () => screen.getPrimaryDisplay(),
+    getCursorScreenPoint: () => screen.getCursorScreenPoint(),
+  },
+  writeWindowState,
+  edgeModeEnabled: () => currentDesktopPreferences().edgeModeEnabled,
+  hasActivePermissionRequests: () => mainState.permissionBroker?.hasActiveRequests() ?? false,
+  repositionPanel: () => repositionVisiblePanel(),
+  onVisibilityChanged: () => mainState.pluginFeedController?.onVisibilityChanged(),
+  onModeApplied: () => mainState.desktopTray?.rebuild(),
+})
 
-export async function createPluginServices(): Promise<void> {
-  if (mainState.pluginRegistry || mainState.pluginPreferences || mainState.pluginHostWindow) return
-  const userDataDirectory = app.getPath('userData')
-  mainState.pluginRegistry = new PluginRegistry(userDataDirectory)
-  mainState.pluginDeveloperModeWatcher = new PluginDeveloperModeWatcher(500, pluginId => {
-    // Surfaces in the plugin's diagnostics in the manager instead of vanishing.
-    mainState.pluginBroker?.recordSystemDiagnostic(pluginId, 'invalid_request', 'developer.reload')
-  })
-  mainState.pluginPreferences = new PluginPreferencesStore(userDataDirectory)
-  mainState.pluginSecretsStore = new PluginSecretsStore(userDataDirectory, safeStorage)
-  mainState.pluginSecretConsentStore = new PluginSecretConsentStore(userDataDirectory)
-  mainState.pluginSettingsStore = new PluginSettingsStore(userDataDirectory)
-  mainState.pluginHostGrantController = new PluginHostGrantController()
-  mainState.pluginBadgeController = new PluginBadgeController({
-    getContext: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      return context ? {
-        enabled: context.enabled,
-        pluginsEnabled: context.pluginsEnabled,
-        contributesBadge: context.manifest.contributes.badge === true,
-        pluginName: context.manifest.name,
-        targetPetId: context.targetPetId,
-      } : null
-    },
-    onChanged: badges => broadcastPluginBadges(badges),
-  })
-  mainState.pluginAgentStatusController = new PluginAgentStatusController({
-    emit: change => {
-      for (const [pluginId, context] of mainState.pluginRuntimeContexts) {
-        if (context.enabled && context.pluginsEnabled && context.manifest.permissions.agentStatus) {
-          mainState.pluginHostWindow?.notifyStatusChanged(pluginId, [change])
-        }
-      }
-    },
-  })
-  mainState.pluginEventSourceController = new PluginEventSourceController({
-    getContext: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      const contribution = context?.manifest.contributes.eventSource
-      return context && contribution ? {
-        enabled: context.enabled,
-        pluginsEnabled: context.pluginsEnabled,
-        pluginName: context.manifest.name,
-        family: contribution.family,
-        displayName: contribution.displayName,
-      } : null
-    },
-    onChanged: statuses => {
-      queuePluginEventSourceBroadcast(statuses)
-    },
-  })
-  await refreshPluginRuntimeContexts()
-  mainState.panelThemeRuntime = new PanelThemeRuntime({
-    userDataDirectory,
-    pluginRoot: (pluginId, version) => resolve(userDataDirectory, 'plugins', pluginId, version),
-    readRegularFileWithin,
-    send: state => {
-      const window = mainState.panelWindow
-      if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.panelThemeChanged, state)
-    },
-    rendererOrigin: panelRendererOrigin,
-    sendPetStatus: state => {
-      const window = mainState.petWindow
-      if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.panelThemePetStatusChanged, state)
-    },
-    sendPluginTheme: snapshot => {
-      mainState.pluginHostWindow?.notifyThemeChanged(snapshot)
-      mainState.pluginPanelViewController?.notifyThemeChanged(snapshot)
-    },
-    initialMode: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
-  })
-  try { mainState.panelThemeRuntime.sweep() } catch {}
-  syncPanelThemes()
-  mainState.pluginFeedController = new PluginFeedController({
-    emit: item => {
-      if (mainState.petWindow && !mainState.petWindow.isDestroyed()) {
-        const panelViewAvailable = Boolean(mainState.pluginRuntimeContexts.get(item.pluginId)?.manifest.contributes.panelView)
-        mainState.petWindow.webContents.send(IPC_CHANNELS.pluginFeedItem, { ...item, ...(panelViewAvailable ? { panelViewAvailable: true } : {}) })
-      }
-    },
-    onNotificationsChanged: count => broadcastPluginFeedUnreadCount(count),
-    isPetVisible: isPluginFeedVisible,
-    getGlobalState: () => ({
-      pluginsEnabled: mainState.pluginPreferencesSnapshot?.pluginsEnabled === true,
-      dndEnabled: currentDesktopPreferences().dndEnabled,
-      rateLimitPer10Min: mainState.pluginPreferencesSnapshot?.resources.globalFeedPer10Min,
-    }),
-    getPluginState: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      if (!context) return null
-      return {
-        enabled: context.enabled,
-        muted: context.muted,
-        targetPetId: context.targetPetId,
-        rateLimitPer10Min: context.rateLimitPer10Min,
-        name: context.manifest.name,
-      }
-    },
-    isLinkHostAllowed: isPluginLinkHostAllowed,
-    resolveIconUrl: (pluginId, relativePath) => (
-      mainState.pluginRuntimeContexts.has(pluginId) ? `agent-pets://plugin/${pluginId}/${relativePath}` : null
-    ),
-  })
-  const pluginNetworkSession = session.fromPartition('plugin-network')
-  pluginNetworkSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
-  pluginNetworkSession.setPermissionCheckHandler(() => false)
-  pluginNetworkSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    callback({ requestHeaders: filterPluginRequestHeaders(details.requestHeaders) })
-  })
-  pluginNetworkSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({ responseHeaders: stripPluginSetCookieHeaders(details.responseHeaders) })
-  })
-  mainState.pluginBroker = new PluginBroker({
-    userDataDirectory,
-    onLog: (pluginId, entry) => logMain(entry.level === 'info' ? 'info' : entry.level === 'warn' ? 'warn' : 'error', `plugin:${pluginId}`, String(entry.message).slice(0, 300)),
-    getContext: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      return context ? { ...context, dndEnabled: currentDesktopPreferences().dndEnabled } : null
-    },
-    feed: mainState.pluginFeedController,
-    network: mainState.pluginNetworkClient ??= new PluginNetworkClient({
-      request: (url, init) => requestPluginNetwork(pluginNetworkSession, url, init),
-    }),
-    onRequestHost: async (pluginId, rawHost, rawReason) => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      const reason = sanitizePluginHostRequestReason(rawReason)
-      if (!context || !context.manifest.permissions.network?.userGranted || !reason || !mainState.pluginHostGrantController || !mainState.pluginPreferences) {
-        return { ok: false, error: context?.manifest.permissions.network?.userGranted ? 'invalid_request' : 'not_permitted' }
-      }
-      const decision = mainState.pluginHostGrantController.begin(pluginId, rawHost, reason, context.grantedHosts)
-      if (!decision.ok) return decision
-      if (decision.alreadyGranted) return { granted: true, host: decision.host }
-      if (!await isPublicPluginNetworkHost(decision.host)) {
-        mainState.pluginHostGrantController.finish(pluginId, decision.host, true)
-        return { ok: false, error: 'host_not_allowed' }
-      }
-      try {
-        const name = context.manifest.name[locale.value]
-        const options = {
-          type: 'question' as const,
-          title: t('pluginNetworkRequestTitle'),
-          message: t('pluginNetworkRequestMessage', { name, host: decision.host, reason }),
-          buttons: [t('pluginNetworkAllow'), t('pluginNetworkDeny')],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
-        }
-        const parent = mainState.panelWindow && !mainState.panelWindow.isDestroyed() ? mainState.panelWindow
-          : mainState.petWindow && !mainState.petWindow.isDestroyed() ? mainState.petWindow : undefined
-        const response = parent
-          ? await dialog.showMessageBox(parent, options)
-          : await dialog.showMessageBox(options)
-        if (response.response !== 0) {
-          mainState.pluginHostGrantController.finish(pluginId, decision.host, false)
-          return { ok: false, error: 'denied' }
-        }
-        const storedHosts = mainState.pluginPreferences.getPlugin(pluginId).grantedHosts
-        const grantedHosts = [...new Set([...storedHosts, decision.host])]
-        mainState.pluginPreferences.updatePlugin(pluginId, { grantedHosts })
-        mainState.pluginHostGrantController.finish(pluginId, decision.host, true)
-        await syncPluginHost()
-        return { granted: true, host: decision.host }
-      } catch {
-        mainState.pluginHostGrantController.finish(pluginId, decision.host, true)
-        return { ok: false, error: 'disabled' }
-      }
-    },
-    onSecretGet: (pluginId, key) => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      if (!context || !mainState.pluginSecretsStore) return { ok: false, error: 'disabled' }
-      try {
-        return mainState.pluginSecretsStore.get(pluginId, key, context.manifest.permissions.secrets ?? [])
-      } catch (error) {
-        const code = error && typeof error === 'object' && 'code' in error ? error.code : null
-        return { ok: false, error: code === 'secret_unavailable' || code === 'secret_not_found' || code === 'not_permitted'
-          ? code : 'secret_unavailable' }
-      }
-    },
-    onSettingsGet: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      if (!context || !mainState.pluginSettingsStore) return { ok: false, error: 'disabled' }
-      try { return mainState.pluginSettingsStore.get(pluginId, context.manifest) } catch {
-        return { ok: false, error: 'settings_invalid' }
-      }
-    },
-    onAgentStatusGet: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      if (!context?.manifest.permissions.agentStatus) return { ok: false, error: 'not_permitted' }
-      return mainState.pluginAgentStatusController?.getStatus() ?? { ok: false, error: 'agent_status_unavailable' }
-    },
-    onAgentEmit: (pluginId, event) => mainState.pluginEventSourceController?.emit(pluginId, event) ?? { ok: false, error: 'disabled' },
-    onThemeGet: () => mainState.panelThemeRuntime?.getPluginTheme() ?? null,
-    onBadgeSet: (pluginId, badge) => {
-      const result = mainState.pluginBadgeController?.set(pluginId, badge)
-      return result?.ok ? result.value : { ok: false, error: result?.error ?? 'disabled' }
-    },
-    onReaction: (pluginId, request: PluginReactionRequest) => {
-      const result = mainState.presentationController?.submitPluginReaction(pluginId, request)
-      if (result?.accepted) return { ok: true }
-      const error = result?.error
-      return {
-        ok: false,
-        error: error === 'invalid_request' || error === 'queue_full' || error === 'rate_limited'
-          || error === 'not_found' ? error : 'disabled',
-      }
-    },
-  })
-  mainState.pluginHostWindow = new PluginHostWindowController({
-    onRpc: (pluginId, request) => {
-      const data = request && typeof request === 'object' && !Array.isArray(request)
-        ? request as Record<string, unknown>
-        : {}
-      if (data.method === 'ui.postMessage') {
-        if (!Array.isArray(data.args) || data.args.length !== 1) return { ok: false, error: 'invalid_request' }
-        if (typeof data.id !== 'string') return { ok: false, error: 'invalid_request' }
-        const response = mainState.pluginPanelViewController?.postMessage(pluginId, data.args[0])
-          ?? { ok: true as const, value: { delivered: false } }
-        return { id: data.id, ...response }
-      }
-      return mainState.pluginBroker?.handle(pluginId, request) ?? { ok: false, error: 'disabled' }
-    },
-    createPluginToken: pluginId => {
-      const root = enabledPluginRoot(pluginId)
-      if (!root) throw new Error('Plugin is unavailable')
-      const token = randomUUID()
-      mainState.pluginRootsByToken.set(token, root)
-      return token
-    },
-    revokePluginToken: (_pluginId, token) => {
-      mainState.pluginRootsByToken.delete(token)
-    },
-    pluginRootForToken: token => mainState.pluginRootsByToken.get(token) ?? null,
-    messageGuard: mainState.pluginUiMessageGuard,
-    onPluginCrash: (pluginId, consecutiveCrashes, reason) => {
-      logMain('warn', 'plugin-host', `plugin crash reason=${reason} consecutive=${consecutiveCrashes}`, { pluginId })
-      mainState.pluginBadgeController?.clearPlugin(pluginId)
-      mainState.pluginEventSourceController?.clearPlugin(pluginId)
-      if (consecutiveCrashes >= 3) {
-        const name = mainState.pluginRuntimeContexts.get(pluginId)?.manifest.name ?? { 'zh-TW': pluginId, 'en-US': pluginId }
-        if (reason === 'host') mainState.pluginBroker?.recordHostUnavailable(pluginId)
-        mainState.pluginFeedController?.addSystemNotification(
-          pluginId,
-          name,
-          reason === 'host' ? t('pluginHostUnavailableTitle') : t('pluginCrashDisabledTitle'),
-          reason === 'host'
-            ? t('pluginHostUnavailableBody', { name: name[locale.value] })
-            : t('pluginCrashDisabledBody', { name: name[locale.value] }),
-        )
-        try { mainState.pluginRegistry?.setStatus(pluginId, 'disabled_crashed') } catch {}
-        try { mainState.pluginPreferences?.updatePlugin(pluginId, { enabled: false }) } catch {}
-        mainState.pluginEnableOrder.delete(pluginId)
-        setTimeout(() => { void syncPluginHost() }, 0)
-      }
-    },
-    onPluginReset: pluginId => mainState.pluginEventSourceController?.clearPlugin(pluginId),
-    getMemoryBudgetMb: activePluginCount => {
-      const perPlugin = mainState.pluginPreferencesSnapshot?.resources.memoryMbPerPlugin ?? 0
-      return pluginHostMemoryBudgetMb(perPlugin, activePluginCount)
-    },
-  })
-  mainState.pluginCommandController = new PluginCommandController({
-    getContext: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      return context ? {
-        enabled: context.enabled,
-        pluginsEnabled: context.pluginsEnabled,
-        commandIds: (context.manifest.contributes.commands ?? []).map(command => command.id),
-      } : null
-    },
-    dispatch: (pluginId, commandId) => mainState.pluginHostWindow?.invokeCommand(pluginId, commandId) ?? false,
-  })
-  mainState.pluginPanelViewController = new PluginPanelViewController({
-    preloadPath: join(__dirname, 'plugin-ui-preload.js'),
-    tokensCss,
-    getThemeSnapshot: () => mainState.panelThemeRuntime?.getPluginTheme() ?? null,
-    getParentWindow: () => {
-      const parent = mainState.panelWindow
-      if (!parent || parent.isDestroyed()) return null
-      return {
-        isDestroyed: () => parent.isDestroyed(),
-        isVisible: () => parent.isVisible(),
-        // The controller exposes a structural test seam; this adapter only receives the WebContentsView it creates.
-        // This asserted boundary is limited to the real WebContentsView created below; the controller interface stays structural for unit tests.
-        addChildView: view => parent.contentView.addChildView(view as unknown as WebContentsView),
-        // The controller exposes a structural test seam; this adapter only receives the WebContentsView it creates.
-        // This asserted boundary is limited to the real WebContentsView created below; the controller interface stays structural for unit tests.
-        removeChildView: view => parent.contentView.removeChildView(view as unknown as WebContentsView),
-      }
-    },
-    // Electron's concrete Session satisfies the narrower controller seam; keep the seam independently mockable in tests.
-    createSession: partition => session.fromPartition(partition) as PluginPanelViewSession,
-    // The structural controller seam intentionally omits Electron's full event surface; the factory always creates the native type.
-    createView: options => {
-      const view = new WebContentsView(options)
-      // 原生 view 不受網頁 overflow 裁切；底色透明，插件才能自己畫出與外框一致的圓角。
-      view.setBackgroundColor('#00000000')
-      // The structural controller seam intentionally omits Electron's full event surface; the factory always creates the native type.
-      return view as unknown as PluginPanelNativeView
-    },
-    createToken: pluginId => {
-      const root = enabledPluginRoot(pluginId)
-      if (!root) throw new Error('Plugin is unavailable')
-      const token = randomUUID()
-      mainState.pluginRootsByToken.set(token, root)
-      return token
-    },
-    revokeToken: (_pluginId, token) => { mainState.pluginRootsByToken.delete(token) },
-    pluginRootForToken: token => mainState.pluginRootsByToken.get(token) ?? null,
-    messageGuard: mainState.pluginUiMessageGuard,
-    onApiRequest: (pluginId, request) => {
-      if (request.method === 'ui.postMessage') {
-        if (request.args.length !== 1) return { ok: false, error: 'invalid_request' }
-        const response = mainState.pluginHostWindow?.postUiMessageToWorker(pluginId, request.args[0])
-          ?? { ok: false as const, error: 'disabled' }
-        return { id: request.id, ...response }
-      }
-      if (request.method === 'links.openExternal') {
-        if (request.args.length !== 2) return { ok: false, error: 'invalid_request' }
-        return mainState.pluginExternalLinkController?.open(pluginId, request.args[0], request.args[1])
-          ?? { ok: false, error: 'disabled' }
-      }
-      return mainState.pluginBroker?.handle(pluginId, request) ?? { ok: false, error: 'disabled' }
-    },
-    onClosed: event => {
-      if (mainState.panelWindow && !mainState.panelWindow.isDestroyed()) {
-        mainState.panelWindow.webContents.send(IPC_CHANNELS.pluginPanelViewClosed, event)
-      }
-    },
-    onBlockedRequest: () => {
-      const e2e = (globalThis as typeof globalThis & {
-        __agentPetsE2E?: { panelViewBlockedRequests?: number }
-      }).__agentPetsE2E
-      if (e2e) e2e.panelViewBlockedRequests = (e2e.panelViewBlockedRequests ?? 0) + 1
-    },
-  })
-
-  mainState.pluginExternalLinkController = new PluginExternalLinkController({
-    getContext: pluginId => {
-      const context = mainState.pluginRuntimeContexts.get(pluginId)
-      return context ? {
-        enabled: context.enabled,
-        pluginsEnabled: context.pluginsEnabled,
-        hosts: context.manifest.permissions.links?.hosts ?? [],
-      } : null
-    },
-    openExternal: url => shell.openExternal(url),
-  })
-
-  registerPluginFeedIpc({
-    ipcMain,
-    assertTrustedIpcSender,
-    assertPluginPanelSender,
-    getPetWindow: () => mainState.petWindow,
-    getPanelWindow: () => mainState.panelWindow,
-    getPluginFeedController: () => mainState.pluginFeedController,
-    getPluginBadgeController: () => mainState.pluginBadgeController,
-    getPluginEventSourceController: () => mainState.pluginEventSourceController,
-    isPluginPanelPluginId,
-    isPluginSkinPetId,
-    getPendingSkinFallbacks: () => mainState.pendingPluginSkinFallbacks,
-    getEnabledPluginSkinIds: () => new Set(enabledPluginSkinRecords().keys()),
-    fallbackCopy: info => ({
-      title: t('pluginSkinFallbackTitle'),
-      body: t('pluginSkinFallbackBody', {
-        plugin: info.pluginName[locale.value],
-        skin: info.skinName[locale.value],
-      }),
-    }),
-    addSystemNotification: (pluginId, pluginName, title, body) => (
-      mainState.pluginFeedController?.addSystemNotification(pluginId, pluginName, title, body) ?? false
-    ),
-    broadcastUnreadCount: () => broadcastPluginFeedUnreadCount(),
-    hasPluginContext: pluginId => mainState.pluginRuntimeContexts.has(pluginId),
-    isPluginLinkHostAllowed,
-    openExternal: url => shell.openExternal(url),
-  })
-
-  registerPluginPanelUiIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    isTrustedIpcSender,
-    isPluginPanelPluginId,
-    getPluginPanelSnapshot: pluginPanelSnapshot,
-    invokePluginCommand: (pluginId, commandId) => mainState.pluginCommandController?.invoke(pluginId, commandId),
-    openSequence: {
-      get value() { return mainState.pluginPanelViewOpenSequence },
-      set value(value: number) { mainState.pluginPanelViewOpenSequence = value },
-    },
-    openPluginPanelView: openPluginPanelViewForPlugin,
-    getPetWindow: () => mainState.petWindow,
-    getPluginPanelContext: pluginId => mainState.pluginRuntimeContexts.get(pluginId) ?? null,
-    enabledPluginRoot,
-    showPanelWindow: (view, pluginViewPluginId) => showPanelWindow(view, pluginViewPluginId),
-    getPanelWindow: () => mainState.panelWindow,
-    getPluginPanelViewController: () => mainState.pluginPanelViewController,
-    finiteNumber,
-    readPluginPanelRect,
-    validateBounds: validatePluginPanelViewBounds,
-  })
-
-  registerPluginSettingsIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    isPluginPanelPluginId,
-    getPluginContext: pluginId => mainState.pluginRuntimeContexts.get(pluginId) ?? null,
-    getSettingsStore: () => mainState.pluginSettingsStore,
-    getSecretsStore: () => mainState.pluginSecretsStore,
-    getSecretConsentStore: () => mainState.pluginSecretConsentStore,
-    notifySettingsChanged: (pluginId, values) => mainState.pluginHostWindow?.notifySettingsChanged(pluginId, values),
-    pluginPanelError,
-  })
-
-  registerPluginPreferencesIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    isPluginPanelPluginId,
-    isPluginPanelPreferencePatch,
-    getPreferencesStore: () => mainState.pluginPreferences,
-    getRegistry: () => mainState.pluginRegistry,
-    enabledPluginContext: pluginId => mainState.pluginRuntimeContexts.get(pluginId)?.enabled === true,
-    enabledPluginCount: () => [...mainState.pluginRuntimeContexts.values()].filter(context => context.enabled).length,
-    maxEnabledPlugins: () => mainState.pluginPreferencesSnapshot?.resources.maxEnabledPlugins ?? 0,
-    pluginEnableOrder: mainState.pluginEnableOrder,
-    nextPluginEnableOrder: {
-      get value() { return mainState.nextPluginEnableOrder },
-      set value(value: number) { mainState.nextPluginEnableOrder = value },
-    },
-    onCatalogPreferencesChanged: (previous, next) => {
-      if (!next.onlineCatalogEnabled || next.catalogUrl !== previous.catalogUrl) mainState.pluginCatalogCache = null
-    },
-    checkCatalogIfDue: () => {
-      if (mainState.pluginCatalogAutoCheckSchedule) void mainState.pluginCatalogAutoCheckSchedule.checkIfDue()
-    },
-    syncPluginHost,
-    pluginPanelError,
-  })
-
-  registerPluginCatalogIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    getRegistry: () => mainState.pluginRegistry,
-    getPreferencesStore: () => mainState.pluginPreferences,
-    getCatalogCache: () => mainState.pluginCatalogCache,
-    setCatalogCache: value => { mainState.pluginCatalogCache = value },
-    createCatalogGateway: createMainPluginCatalogGateway,
-    buildCatalogItems: (document, installed) => buildPluginCatalogPanelItems(document, installed, app.getVersion()),
-    isPluginCatalogUrl,
-    selectLatestVersion: (plugin, apiVersion) => selectLatestCompatiblePluginVersion(plugin, apiVersion, app.getVersion()),
-    catalogFingerprintMatches,
-    pendingPlanIds: mainState.pendingPluginPlanIds,
-    pendingDeveloperFolders: mainState.pendingDeveloperFolders,
-    issueReportBaseUrl: () => {
-      const e2e = (globalThis as typeof globalThis & { __agentPetsE2E?: { pluginIssueReportBaseUrl?: string } }).__agentPetsE2E
-      return typeof e2e?.pluginIssueReportBaseUrl === 'string' ? e2e.pluginIssueReportBaseUrl : DEFAULT_PLUGIN_ISSUE_REPORT_URL
-    },
-    openExternal: url => shell.openExternal(url),
-  })
-
-  registerPluginInstallIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    getRegistry: () => mainState.pluginRegistry,
-    getPreferencesStore: () => mainState.pluginPreferences,
-    getPanelWindow: () => mainState.panelWindow,
-    isDialogOpen: () => mainState.dialogOpen,
-    setDialogOpen: value => { mainState.dialogOpen = value },
-    showOpenDialog: (window, options) => dialog.showOpenDialog(window, options),
-    translate: key => t(key),
-    fs: fs.promises,
-    maxArchiveBytes: PLUGIN_ARCHIVE_SKIN_MAX_BYTES,
-    pendingPlanIds: mainState.pendingPluginPlanIds,
-    pendingDeveloperFolders: mainState.pendingDeveloperFolders,
-    developerSourceFolders: mainState.developerSourceFolders,
-    getDeveloperModeWatcher: () => mainState.pluginDeveloperModeWatcher,
-    getSecretsStore: () => mainState.pluginSecretsStore,
-    getPluginBroker: () => mainState.pluginBroker,
-    getPluginHostGrantController: () => mainState.pluginHostGrantController,
-    getPluginFeedController: () => mainState.pluginFeedController,
-    isInstallConfirmation: isPluginPanelInstallConfirmation,
-    isPluginPanelPluginId,
-    pluginPanelError,
-    syncPluginHost,
-    pluginPanelSnapshot,
-    onPluginRemoved: pluginId => mainState.panelThemeRuntime?.removePlugin(pluginId),
-  })
-
-  registerPanelThemeIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    assertPetSender: event => assertTrustedIpcSender(event, mainState.petWindow),
-    setPanelAppearance: appearance => mainState.panelThemeRuntime?.setPanelAppearance(appearance),
-    getPetStatus: () => mainState.panelThemeRuntime?.getPetStatus() ?? { light: null, dark: null },
-    getStore: () => mainState.panelThemeRuntime?.store ?? null,
-    getSources: () => mainState.panelThemeRuntime?.getSources() ?? [],
-    getState: () => mainState.panelThemeRuntime?.getState() ?? emptyPanelThemeState(),
-    publish: () => mainState.panelThemeRuntime?.publish(),
-    getPanelWindow: () => mainState.panelWindow,
-    isDialogOpen: () => mainState.dialogOpen,
-    setDialogOpen: value => { mainState.dialogOpen = value },
-    showOpenDialog: (window, options) => dialog.showOpenDialog(window, options),
-    translate: key => t(key),
-    readUserImage: readUserImageSource,
-    prepareUserImage,
-    storeUserImage: (pluginId, prepared) => storeUserImage(app.getPath('userData'), pluginId, prepared),
-    deleteUserImage: (pluginId, file) => deleteUserImage(app.getPath('userData'), pluginId, file),
-    pluginPanelError,
-    now: Date.now,
-  })
-
-  registerUserPanelThemeIpc({
-    ipcMain,
-    assertPluginPanelSender,
-    getRuntime: () => mainState.panelThemeRuntime,
-    getPanelWindow: () => mainState.panelWindow,
-    isDialogOpen: () => mainState.dialogOpen,
-    setDialogOpen: value => { mainState.dialogOpen = value },
-    showOpenDialog: (window, options) => dialog.showOpenDialog(window, options),
-    showSaveDialog: (window, options) => dialog.showSaveDialog(window, options),
-    translate: key => t(key),
-    readImportFile: readUserPanelThemeImportFile,
-    writeExportFile: writeUserPanelThemeExportFile,
-  })
-
-}
-
-export function clearEdgeDwell(): void {
-  cancelEdgeRedock()
-  if (mainState.edgeDwellHandle) clearTimeout(mainState.edgeDwellHandle)
-  mainState.edgeDwellHandle = null
-  mainState.edgeDwellCandidate = null
-}
-
-export function petModeState(): PetWindowModeState {
-  return mainState.petWindowEdge
-    ? { mode: mainState.petWindowMode, edge: mainState.petWindowEdge }
-    : { mode: mainState.petWindowMode }
-}
-
-export function broadcastPetWindowMode(): void {
-  mainState.pluginFeedController?.onVisibilityChanged()
-  const state = petModeState()
-  for (const window of [mainState.petWindow, mainState.panelWindow]) {
-    if (window && !window.isDestroyed()) {
-      window.webContents.send(IPC_CHANNELS.petWindowModeUpdated, state)
-    }
-  }
-}
-
-export function displayForBounds(bounds: WindowBounds) {
-  return screen.getDisplayMatching({
-    x: Math.round(bounds.x),
-    y: Math.round(bounds.y),
-    width: Math.max(1, Math.round(bounds.width)),
-    height: Math.max(1, Math.round(bounds.height)),
-  })
-}
-
-export function displayForSavedState(saved: ReturnType<typeof readWindowState>) {
-  if (saved?.displayId !== undefined) {
-    const byId = screen.getAllDisplays().find(display => display.id === saved.displayId)
-    if (byId) return byId
-  }
-  const savedBounds = saved?.normalBounds ?? (
-    saved && saved.width !== undefined && saved.height !== undefined
-      ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height }
-      : null
-  )
-  return savedBounds ? displayForBounds(savedBounds) : screen.getPrimaryDisplay()
-}
-
-export function persistCurrentPetWindowState(): void {
-  if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
-  const bounds = mainState.petWindow.getBounds()
-  const display = displayForBounds(bounds)
-  const normal = mainState.edgeRestoreBounds ?? mainState.normalPetBounds ?? bounds
-  writeWindowState({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    mode: mainState.petWindowMode,
-    edge: mainState.petWindowEdge ?? undefined,
-    displayId: display.id,
-    displayBounds: display.bounds,
-    normalBounds: normal,
-  })
-}
-
-export function scheduleShimejiPositionPersist(): void {
-  if (mainState.shimejiPersistHandle) clearTimeout(mainState.shimejiPersistHandle)
-  mainState.shimejiPersistHandle = setTimeout(() => {
-    mainState.shimejiPersistHandle = null
-    persistCurrentPetWindowState()
-  }, 2_000)
-}
-
-export function applyNormalPetBounds(): void {
-  if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
-  clearEdgeDwell()
-  const current = mainState.petWindow.getBounds()
-  const restore = mainState.edgeRestoreBounds ?? mainState.normalPetBounds ?? current
-  const display = displayForBounds(restore)
-  const normal = clampWindowBounds(restore, display.workArea)
-  mainState.normalPetBounds = normal
-  mainState.edgeRestoreBounds = null
-  mainState.petWindowMode = 'normal'
-  mainState.petWindowEdge = null
-  mainState.petWindow.setIgnoreMouseEvents(false)
-  mainState.petWindow.setBounds(normal)
-  repositionVisiblePanel()
-  persistCurrentPetWindowState()
-  broadcastPetWindowMode()
-  mainState.desktopTray?.rebuild()
-}
-
-export function applyMiniPetBounds(): void {
-  if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
-  clearEdgeDwell()
-  const current = mainState.petWindow.getBounds()
-  const normalSource = mainState.edgeRestoreBounds ?? mainState.normalPetBounds ?? current
-  const display = displayForBounds(normalSource)
-  mainState.normalPetBounds = clampWindowBounds(normalSource, display.workArea)
-  mainState.edgeRestoreBounds = null
-  mainState.petWindowMode = 'mini'
-  mainState.petWindowEdge = null
-  mainState.petWindow.setIgnoreMouseEvents(false)
-  mainState.petWindow.setBounds(miniWindowBounds(mainState.normalPetBounds, display.workArea))
-  repositionVisiblePanel()
-  persistCurrentPetWindowState()
-  broadcastPetWindowMode()
-  mainState.desktopTray?.rebuild()
-}
-
-export function applyEdgePetBounds(edge: PetEdge): void {
-  if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
-  if (!currentDesktopPreferences().edgeModeEnabled) {
-    applyNormalPetBounds()
-    return
-  }
-  clearEdgeDwell()
-  const current = mainState.petWindow.getBounds()
-  // Edge can only be entered from a full-size normal window. Capture the
-  // actual bounds at this moment so expansion returns to the user's exact
-  // pre-edge position, even if a previous persisted snapshot is stale.
-  const normalSource = mainState.petWindowMode === 'normal'
-    ? current
-    : mainState.edgeRestoreBounds ?? mainState.normalPetBounds ?? current
-  const display = displayForBounds(normalSource)
-  mainState.normalPetBounds = clampWindowBounds(normalSource, display.workArea)
-  mainState.edgeRestoreBounds = { ...mainState.normalPetBounds }
-  mainState.petWindowMode = 'edge'
-  mainState.petWindowEdge = edge
-  // Edge is an explicit, opaque handle-sized window. Keep it interactive so
-  // a click or drag can expand it; click-through remains owned by Normal's
-  // transparent-region hit testing.
-  mainState.petWindow.setIgnoreMouseEvents(false)
-  mainState.petWindow.setBounds(edgeWindowBounds(mainState.normalPetBounds, display.workArea, edge))
-  repositionVisiblePanel()
-  persistCurrentPetWindowState()
-  broadcastPetWindowMode()
-  mainState.desktopTray?.rebuild()
-}
-
-export function setPetWindowMode(mode: PetWindowMode): void {
-  if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
-  // A permission bubble must remain fully usable. The Broker remains the
-  // authority, so a compact/partially hidden window is never allowed while a
-  // request is pending.
-  if (mode !== 'normal' && (mainState.permissionBroker?.hasActiveRequests() ?? false)) {
-    applyNormalPetBounds()
-    return
-  }
-  if (mode === 'normal') applyNormalPetBounds()
-  else if (mode === 'mini') applyMiniPetBounds()
-  else if (mainState.petWindowEdge) applyEdgePetBounds(mainState.petWindowEdge)
-}
-
-export function toggleMiniMode(): void {
-  setPetWindowMode(mainState.petWindowMode === 'mini' ? 'normal' : 'mini')
-}
-
-let edgeRedockHandle: ReturnType<typeof setInterval> | null = null
-
-export function cancelEdgeRedock(): void {
-  if (edgeRedockHandle) clearInterval(edgeRedockHandle)
-  edgeRedockHandle = null
-}
-
-// After a hover-expand from the edge, tuck the pet back once the cursor has
-// stayed away and the pet is still resting against that edge.
-export function scheduleEdgeRedock(): void {
-  cancelEdgeRedock()
-  if (!currentDesktopPreferences().edgeModeEnabled) return
-  let outsideSince: number | null = null
-  edgeRedockHandle = setInterval(() => {
-    const window = mainState.petWindow
-    if (!window || window.isDestroyed() || mainState.petWindowMode !== 'normal' || mainState.dragPollHandle) {
-      cancelEdgeRedock()
-      return
-    }
-    const bounds = window.getBounds()
-    const display = displayForBounds(bounds)
-    if (!nearestEdge(bounds, display.workArea, EDGE_TRIGGER_DISTANCE_PX)) {
-      cancelEdgeRedock()
-      return
-    }
-    const cursor = screen.getCursorScreenPoint()
-    const inside = cursor.x >= bounds.x && cursor.x <= bounds.x + bounds.width
-      && cursor.y >= bounds.y && cursor.y <= bounds.y + bounds.height
-    if (inside || mainState.permissionBroker?.hasActiveRequests()) {
-      outsideSince = null
-      return
-    }
-    outsideSince ??= Date.now()
-    if (Date.now() - outsideSince >= EDGE_REDOCK_AFTER_MS) {
-      cancelEdgeRedock()
-      scheduleEdgeDwell()
-    }
-  }, 400)
-}
-
-export function scheduleEdgeDwell(): void {
-  clearEdgeDwell()
-  if (
-    !mainState.petWindow
-    || mainState.petWindow.isDestroyed()
-    || mainState.petWindowMode !== 'normal'
-    || !currentDesktopPreferences().edgeModeEnabled
-  ) return
-  const bounds = mainState.petWindow.getBounds()
-  const display = displayForBounds(bounds)
-  const edge = nearestEdge(bounds, display.workArea, EDGE_TRIGGER_DISTANCE_PX)
-  if (!edge) return
-  mainState.edgeDwellCandidate = { displayId: display.id, edge }
-  mainState.edgeDwellHandle = setTimeout(() => {
-    mainState.edgeDwellHandle = null
-    const candidate = mainState.edgeDwellCandidate
-    mainState.edgeDwellCandidate = null
-    if (!candidate || !mainState.petWindow || mainState.petWindow.isDestroyed()) return
-    const current = mainState.petWindow.getBounds()
-    const currentDisplay = displayForBounds(current)
-    const currentEdge = nearestEdge(current, currentDisplay.workArea, EDGE_TRIGGER_DISTANCE_PX)
-    if (currentDisplay.id === candidate.displayId && currentEdge === candidate.edge) {
-      applyEdgePetBounds(candidate.edge)
-    }
-  }, EDGE_DWELL_MS)
-}
-
-export function rehomePetWindowForDisplayChange(): void {
-  if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
-  const current = mainState.petWindow.getBounds()
-  const display = displayForBounds(current)
-  const normalSource = mainState.edgeRestoreBounds ?? mainState.normalPetBounds ?? current
-  mainState.normalPetBounds = clampWindowBounds(normalSource, display.workArea)
-  if (mainState.petWindowMode === 'edge') mainState.edgeRestoreBounds = { ...mainState.normalPetBounds }
-  if (mainState.petWindowMode === 'mini') {
-    mainState.petWindow.setBounds(miniWindowBounds(mainState.normalPetBounds, display.workArea))
-  } else if (mainState.petWindowMode === 'edge' && mainState.petWindowEdge) {
-    mainState.petWindow.setBounds(edgeWindowBounds(mainState.normalPetBounds, display.workArea, mainState.petWindowEdge))
-  } else {
-    mainState.petWindowMode = 'normal'
-    mainState.petWindowEdge = null
-    mainState.petWindow.setIgnoreMouseEvents(false)
-    mainState.petWindow.setBounds(mainState.normalPetBounds)
-  }
-  repositionVisiblePanel()
-  persistCurrentPetWindowState()
-  broadcastPetWindowMode()
-}
+export const {
+  clearEdgeDwell,
+  cancelEdgeRedock,
+  displayForBounds,
+  displayForSavedState,
+  scheduleShimejiPositionPersist,
+  scheduleEdgeRedock,
+  scheduleEdgeDwell,
+} = petWindowModes
+export const petModeState = petWindowModes.modeState
+export const broadcastPetWindowMode = petWindowModes.broadcastMode
+export const persistCurrentPetWindowState = petWindowModes.persistCurrentState
+export const applyNormalPetBounds = petWindowModes.applyNormalBounds
+export const setPetWindowMode = petWindowModes.setMode
+export const toggleMiniMode = petWindowModes.toggleMini
+export const rehomePetWindowForDisplayChange = petWindowModes.rehomeForDisplayChange
 
 export function applyPetCaptureProtection(): void {
   if (!mainState.petWindow || mainState.petWindow.isDestroyed()) return
@@ -1868,52 +1036,12 @@ export function createPetWindow() {
   const scale = clamp(isNaN(rawScale) ? 1 : rawScale, 0.3, 5)
 
   // Restore wherever the user last dragged it to, rather than always
-  // snapping back to the bottom-right default on every relaunch. Re-clamped
-  // to the current work area in case it was saved on a monitor that's no
-  // longer connected.
+  // snapping back to the bottom-right default on every relaunch.
   const saved = readWindowState()
-
-  // The pet size lives in the renderer's localStorage, which the main process
-  // can't read, so the last size the renderer asked for is persisted with the
-  // position and reused here. Without it the window would always be born at
-  // the 1x (L) size and only shrink once the store hydrates — long enough for
-  // the panel to open against L-sized bounds, and, because the window is
-  // bottom-anchored, enough to walk the pet down the screen every launch.
-  // The fallback is a rough guess; keep it in sync with PET_BASE_W/H,
-  // QUOTA_TOOLTIP_MIN_W and QUOTA_TOOLTIP_HEADROOM_H in agentStore.ts.
-  const w = saved?.width !== undefined
-    ? Math.round(clamp(saved.width, 80, 1_600))
-    : Math.max(Math.round(250 * scale), 260)
-  const h = saved?.height !== undefined
-    ? Math.round(clamp(saved.height, 80, 1_600))
-    : Math.round(232 * scale) + 190
-
-  const savedDisplay = displayForSavedState(saved)
-  const savedNormal = saved?.normalBounds ?? (
-    saved
-      ? { x: saved.x, y: saved.y, width: saved.width ?? w, height: saved.height ?? h }
-      : {
-          x: primaryWorkArea.x + primaryWorkArea.width - w - 30,
-          y: primaryWorkArea.y + primaryWorkArea.height - h - 30,
-          width: w,
-          height: h,
-        }
-  )
-  mainState.normalPetBounds = clampWindowBounds(savedNormal, savedDisplay.workArea)
-  const edgeModeEnabled = currentDesktopPreferences().edgeModeEnabled
-  const attachedEdge = nearestEdge(mainState.normalPetBounds, savedDisplay.workArea, EDGE_TRIGGER_DISTANCE_PX)
-  const canRestoreEdge = saved?.mode === 'edge'
-    && edgeModeEnabled
-    && attachedEdge !== null
-    && (saved.edge === undefined || saved.edge === attachedEdge)
-  mainState.petWindowMode = saved?.mode === 'mini' ? 'mini' : canRestoreEdge ? 'edge' : 'normal'
-  mainState.petWindowEdge = canRestoreEdge ? (saved.edge ?? attachedEdge) : null
-  mainState.edgeRestoreBounds = canRestoreEdge ? { ...mainState.normalPetBounds } : null
-  const initialBounds = mainState.petWindowMode === 'mini'
-    ? miniWindowBounds(mainState.normalPetBounds, savedDisplay.workArea)
-    : mainState.petWindowMode === 'edge' && mainState.petWindowEdge
-      ? edgeWindowBounds(mainState.normalPetBounds, savedDisplay.workArea, mainState.petWindowEdge)
-      : mainState.normalPetBounds
+  const initialBounds = petWindowModes.restore(saved, {
+    fallbackSize: initialPetWindowSize(scale),
+    primaryWorkArea,
+  })
 
   mainState.petWindow = new BrowserWindow({
     width: initialBounds.width,
@@ -2099,112 +1227,31 @@ export function createPanelWindow() {
   syncWindowsFullscreenTargets()
 }
 
-export function computePanelBounds(height: number, width = PANEL_WIDTH) {
-  if (!mainState.petWindow) {
-    const { workArea } = screen.getPrimaryDisplay()
-    return { x: workArea.x, y: workArea.y, ...clampPanelSize({ width, height }, workArea) }
-  }
-  const petBounds = mainState.petWindow.getBounds()
-  // The window's horizontal center still matches the visible sprite's (the
-  // headroom band is only added above, not to the sides). Prefer the height
-  // the pet renderer measured for its own content: it depends on pet size AND
-  // status-line count, which the headroom constant cannot express.
-  return computePanelPlacement({
-    petBounds,
-    petContentHeight: mainState.petContentHeight,
-    petHeadroom: PET_WINDOW_TOP_HEADROOM,
-    workArea: screen.getDisplayMatching(petBounds).workArea,
-    width,
-    height,
-  })
-}
-
 // ── Panel size: one user-owned size for every view ───────────────────────────
-// The window is always resizable. Its size is the user's own (persisted) size, or the
-// first-run default; the route (dashboard / Settings / plugin tabs) never changes it.
-// Wizard / MCP pages may raise it temporarily, which is never saved.
-
-function panelSizeStore(): PanelSizeStore {
-  if (!mainState.panelSizeStore) {
-    const store = new PanelSizeStore(join(app.getPath('userData'), 'panel-size.json'))
-    mainState.panelUserSize = store.load()
+// 尺寸與定位邏輯在 panel-geometry.ts；這裡只綁定 Electron 的 screen、尺寸檔與結束時 flush。
+const panelGeometry = createPanelGeometry({
+  state: mainState,
+  screen: {
+    getDisplayMatching: rect => screen.getDisplayMatching(rect),
+    getPrimaryDisplay: () => screen.getPrimaryDisplay(),
+  },
+  createSizeStore: () => {
+    const store = new PanelSizeStore(appUserDataPaths().panelSize)
     app.once('before-quit', () => store.flush())
-    mainState.panelSizeStore = store
-  }
-  return mainState.panelSizeStore
-}
+    return store
+  },
+})
 
-export function currentPanelSize(): { width: number; height: number } {
-  panelSizeStore()
-  return effectivePanelSize(mainState.panelUserSize, mainState.panelMinimumSize)
-}
-
-function panelWorkArea(bounds?: Electron.Rectangle) {
-  if (bounds) return screen.getDisplayMatching(bounds).workArea
-  if (mainState.petWindow && !mainState.petWindow.isDestroyed()) return screen.getDisplayMatching(mainState.petWindow.getBounds()).workArea
-  return screen.getPrimaryDisplay().workArea
-}
-
-// Min / max follow the display the panel sits on: the user can drag up to the work
-// area minus the gap, and never below the readable minimum.
-export function applyPanelWindowLimits(workArea = panelWorkArea()): void {
-  const panel = mainState.panelWindow
-  if (!panel || panel.isDestroyed()) return
-  const min = panelMinSize(workArea)
-  const max = panelMaxSize(workArea)
-  panel.setResizable(true)
-  panel.setMinimumSize(min.width, min.height)
-  panel.setMaximumSize(max.width, max.height)
-}
-
-export function setPluginPanelWindowBounds(bounds: ReturnType<typeof computePanelBounds>): void {
-  if (!mainState.panelWindow || mainState.panelWindow.isDestroyed()) return
-  applyPanelWindowLimits(panelWorkArea(bounds))
-  mainState.programmaticPluginPanelUntil = Date.now() + PROGRAMMATIC_PANEL_RESIZE_WINDOW_MS
-  mainState.panelWindow.setBounds(bounds)
-}
-
-function applyCurrentPanelSize(): void {
-  const { width, height } = currentPanelSize()
-  setPluginPanelWindowBounds(computePanelBounds(height, width))
-}
-
-// A drag by the user: remember it (debounced on disk), drop any wizard minimum, and
-// once the drag settles slide the window back inside the work area.
-function recordUserPanelSize(size: { width: number; height: number }): void {
-  const panel = mainState.panelWindow
-  if (!panel || panel.isDestroyed()) return
-  const clamped = clampPanelSize(size, panelWorkArea(panel.getBounds()))
-  mainState.panelUserSize = clamped
-  mainState.panelMinimumSize = null
-  panelSizeStore().save(clamped)
-  if (mainState.panelSettleTimer) clearTimeout(mainState.panelSettleTimer)
-  mainState.panelSettleTimer = setTimeout(() => {
-    mainState.panelSettleTimer = null
-    const window = mainState.panelWindow
-    if (!window || window.isDestroyed() || !window.isVisible()) return
-    const bounds = window.getBounds()
-    const inside = clampRectToWorkArea(bounds, screen.getDisplayMatching(bounds).workArea)
-    if (inside.x !== bounds.x || inside.y !== bounds.y || inside.width !== bounds.width || inside.height !== bounds.height) {
-      setPluginPanelWindowBounds(inside)
-    }
-  }, 250)
-}
-
-// Wizard / MCP pages ask for a minimum size (null releases it). It never changes or
-// persists the user's own size.
-export function requestPanelMinimum(size: { width: number; height: number } | null): void {
-  panelSizeStore()
-  mainState.panelMinimumSize = size && size.height > 0 ? { width: size.width, height: size.height } : null
-  if (mainState.panelWindow?.isVisible()) applyCurrentPanelSize()
-}
-
-export function resetPanelSize(): void {
-  panelSizeStore().save(null)
-  mainState.panelUserSize = null
-  mainState.panelMinimumSize = null
-  if (mainState.panelWindow?.isVisible()) applyCurrentPanelSize()
-}
+export const {
+  computePanelBounds,
+  currentPanelSize,
+  applyPanelWindowLimits,
+  setPluginPanelWindowBounds,
+  requestPanelMinimum,
+  resetPanelSize,
+  repositionVisiblePanel,
+} = panelGeometry
+const { applyCurrentPanelSize, recordUserPanelSize } = panelGeometry
 
 export async function openPluginPanelViewForPlugin(
   pluginId: string,
@@ -2242,11 +1289,6 @@ export function persistPetBounds(x: number, y: number, width: number, height: nu
     if (mainState.petWindowMode === 'normal') mainState.normalPetBounds = current
     persistCurrentPetWindowState()
   }, 1_000)
-}
-
-export function repositionVisiblePanel() {
-  if (!mainState.panelWindow?.isVisible()) return
-  applyCurrentPanelSize()
 }
 
 export function ensureDesktopWindows(): boolean {
@@ -2609,7 +1651,7 @@ export function updateDesktopPreferences(patch: unknown): DesktopPreferences {
   broadcastDesktopPreferences(preferences)
   schedulePermissionUiSync()
   if (!achievementsWereEnabled && preferences.achievementsEnabled) {
-    reconcileAchievementsFromHistory()
+    growth.reconcileFromHistory()
   }
   return preferences
 }
@@ -2654,14 +1696,7 @@ export function broadcastPermissionRequests(): void {
   }
 }
 
-const progressionGate = createProgressionChangeGate()
-const progressionSender = createVisibleSender<BrowserWindow>()
 const historySender = createVisibleSender<BrowserWindow>()
-
-function sendProgressionTo(window: BrowserWindow): void {
-  const snapshot = mainState.progressionStore?.getSnapshot()
-  if (snapshot) window.webContents.send(IPC_CHANNELS.progressionUpdated, snapshot)
-}
 
 function sendHistoryUpdatedTo(window: BrowserWindow): void {
   window.webContents.send(IPC_CHANNELS.historyUpdated)
@@ -2671,73 +1706,31 @@ function sendHistoryUpdatedTo(window: BrowserWindow): void {
 // resync so a stale pet or panel never stays behind.
 function attachBroadcastResync(window: BrowserWindow): void {
   window.on('show', () => {
-    progressionSender.resync(window, sendProgressionTo)
+    growth.resyncProgression(window)
     historySender.resync(window, sendHistoryUpdatedTo)
   })
 }
 
-export function broadcastProgression(snapshot?: ProgressionSnapshot): void {
-  const next = snapshot ?? mainState.progressionStore?.getSnapshot()
-  if (!next) return
-  progressionGate.record(next)
-  for (const window of [mainState.petWindow, mainState.panelWindow]) {
-    progressionSender.send(window, w => w.webContents.send(IPC_CHANNELS.progressionUpdated, next))
-  }
-}
+// 成就、progression store 與其廣播由 growth 服務負責；這裡保留原本的匯出名稱，讓 main.ts 與 IPC 不需改動。
+export const growth = createGrowthService({
+  state: mainState,
+  getWindows: () => [mainState.petWindow, mainState.panelWindow],
+  openProgressionStore: () => new ProgressionStore(appUserDataPaths().progression),
+  openAchievementStore: () => new AchievementStore(appUserDataPaths().achievements),
+  achievementsEnabled: () => currentDesktopPreferences().achievementsEnabled,
+  logError: (message, error) => console.error(message, error),
+  logMain,
+})
 
-/** Event hot path: heartbeats leave the snapshot unchanged, so send nothing. */
-export function broadcastProgressionIfChanged(snapshot: ProgressionSnapshot): void {
-  if (!progressionGate.shouldBroadcast(snapshot)) return
-  broadcastProgression(snapshot)
-}
-
-// Tells the pet and panel windows that XP was actually granted (the awards are
-// already deduplicated by the ledger, so a replayed event produces none). The
-// renderer derives toasts and level-up celebrations from this, never XP itself.
-export function broadcastProgressionAwards(result: ProgressionEventResult): void {
-  if (result.awards.length === 0) return
-  const payload: ProgressionAwardEvent = {
-    petId: result.snapshot.petId,
-    awards: result.awards.map(award => ({ ruleId: award.ruleId, amount: award.amount })),
-    at: Date.now(),
-    levelBefore: result.levelBefore,
-    levelAfter: result.snapshot.level,
-    stageBefore: result.stageBefore,
-    stageAfter: result.snapshot.evolutionStage,
-  }
-  for (const window of [mainState.petWindow, mainState.panelWindow]) {
-    if (window && !window.isDestroyed()) {
-      window.webContents.send(IPC_CHANNELS.progressionAwarded, payload)
-    }
-  }
-}
-
-export function broadcastAchievements(petId?: string): void {
-  const targetPet = petId ?? mainState.progressionStore?.getActivePetId() ?? 'aang-airbender'
-  const snapshot = mainState.achievementStore?.getSnapshot(
-    targetPet,
-    mainState.progressionStore?.getSnapshot(targetPet),
-  )
-  if (!snapshot) return
-  for (const window of [mainState.petWindow, mainState.panelWindow]) {
-    if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.achievementsUpdated, snapshot)
-  }
-}
-
-export function broadcastAchievementUnlock(unlock: AchievementUnlock): void {
-  mainState.desktopNotifications?.showAchievement(unlock)
-  for (const window of [mainState.petWindow, mainState.panelWindow]) {
-    if (window && !window.isDestroyed()) window.webContents.send(IPC_CHANNELS.achievementUnlocked, unlock)
-  }
-  // The unlock payload identifies the routed pet for the visual reward, but
-  // the gallery in each renderer must remain scoped to its currently selected
-  // pet rather than jumping to a background project pet.
-  broadcastAchievements()
-}
+export const createProgressionServices = growth.startProgression
+export const createAchievementServices = growth.startAchievements
+export const broadcastProgression = growth.broadcastProgression
+export const broadcastAchievements = growth.broadcastAchievements
+export const setActiveProgressionPet = growth.setActivePet
 
 export function currentHistorySummary(projectId?: string, rangeDays = 7): HistorySummary | null {
   if (!mainState.historyStore) return null
-  const summary = mainState.historyStore.getSummary(mainState.progressionStore?.getActivePetId() ?? 'aang-airbender', projectId, rangeDays)
+  const summary = mainState.historyStore.getSummary(mainState.progressionStore?.getActivePetId() ?? DEFAULT_PET_ID, projectId, rangeDays)
   const scan = mainState.localUsageReader?.getDiagnostics()
   return scan
     ? {
@@ -2751,41 +1744,6 @@ export function currentHistorySummary(projectId?: string, rangeDays = 7): Histor
         },
       }
     : summary
-}
-
-// Opening the History tab must not rescan the whole log tree each time; the
-// 60s timer is the regular cadence, so panel-triggered refreshes are throttled.
-const LOCAL_USAGE_MIN_SCAN_INTERVAL_MS = 10_000
-let localUsageLastScanAt = 0
-let localUsageCatchUpTimer: ReturnType<typeof setTimeout> | null = null
-let localUsageStalledScans = 0
-
-export async function refreshLocalUsage(options: { catchUp?: boolean } = {}): Promise<void> {
-  if (!mainState.localUsageReader || mainState.localUsageScanPromise) return mainState.localUsageScanPromise ?? Promise.resolve()
-  if (!options.catchUp && Date.now() - localUsageLastScanAt < LOCAL_USAGE_MIN_SCAN_INTERVAL_MS) return
-  mainState.localUsageScanPromise = mainState.localUsageReader.scan()
-    .then(result => {
-      localUsageLastScanAt = Date.now()
-      if (result.recordsImported > 0) broadcastHistoryUpdated()
-      evaluateLocalTokenAchievements()
-      localUsageStalledScans = result.bytesRead > 0 ? 0 : localUsageStalledScans + 1
-      // A budget-limited scan continues shortly instead of waiting a full tick.
-      const delay = localUsageCatchUpDelayMs(result.pending, powerMonitor.isOnBatteryPower(), localUsageStalledScans)
-      if (delay !== null && !localUsageCatchUpTimer && !mainState.isQuitting) {
-        localUsageCatchUpTimer = setTimeout(() => {
-          localUsageCatchUpTimer = null
-          void refreshLocalUsage({ catchUp: true })
-        }, delay)
-        localUsageCatchUpTimer.unref?.()
-      }
-    })
-    .catch(error => {
-      console.error('Local token usage scan failed', error)
-    })
-    .finally(() => {
-      mainState.localUsageScanPromise = null
-    })
-  return mainState.localUsageScanPromise
 }
 
 function flushHistoryUpdated(): void {
@@ -2851,77 +1809,41 @@ export function createPresentationServices(presentationToken: string): void {
   mainState.presentationMcpServer = server
 }
 
-export function createProgressionServices(): void {
-  if (mainState.progressionStore) return
-  try {
-    mainState.progressionStore = new ProgressionStore(join(app.getPath('userData'), 'progression.sqlite'))
-  } catch (error) {
-    // A missing SQLite runtime must not prevent the desktop pet from starting;
-    // the renderer simply keeps its progression card unavailable until the
-    // runtime is repaired. No in-memory fallback is presented as durable XP.
-    console.error('Progression storage is unavailable', error)
-    mainState.progressionStore = null
-  }
-}
+// 歷史資料庫、本機用量掃描與它們的計時器由獨立服務負責；成就與廣播留在這裡，以回呼傳入。
+export const historyRuntime = createHistoryRuntimeService({
+  state: mainState,
+  databasePath: () => appUserDataPaths().history,
+  openStore: databasePath => new HistoryStore(databasePath),
+  createLocalUsageReader: options => new LocalUsageReader(options),
+  homeDir: () => app.getPath('home'),
+  configDirs: () => {
+    const { claude, codex } = currentAgentConfigDirs()
+    return { claude: claude.path, codex: codex.path }
+  },
+  isOnBatteryPower: () => powerMonitor.isOnBatteryPower(),
+  onRecovered: notifyHistoryRecovered,
+  onHistoryUpdated: () => broadcastHistoryUpdated(),
+  onLocalRecordsImported: (records, retentionDays) => growth.syncLocalTokenUsage(records, retentionDays),
+  onLocalScanFinished: () => growth.evaluateLocalTokens(),
+  onDeferredStartupWork: () => growth.reconcileFromHistory(),
+  logError: (message, error) => console.error(message, error),
+})
 
-// Init can fail transiently (e.g. antivirus/cloud-sync briefly holding the
-// file at startup); retry a few times with backoff instead of disabling
-// achievements silently for the rest of the session.
-export const ACHIEVEMENT_STORE_RETRY_DELAYS_MS = [3_000, 10_000, 30_000]
+// 使用者觸發的資料庫整理；啟動流程不使用。
+export const dbMaintenance = createDbMaintenanceService({
+  getHistoryStore: () => mainState.historyStore,
+  getProgressionStore: () => mainState.progressionStore,
+  getAchievementStore: () => mainState.achievementStore,
+  databasePaths: () => {
+    const paths = appUserDataPaths()
+    return [paths.history, paths.progression, paths.achievements]
+  },
+  isLocalScanActive: () => mainState.localUsageScanPromise !== null,
+  logError: (message, error) => console.error(message, error),
+})
 
-export function createAchievementServices(): void {
-  if (mainState.achievementStore) return
-  try {
-    mainState.achievementStore = new AchievementStore(join(app.getPath('userData'), 'achievements.sqlite'))
-    mainState.achievementStoreRetryAttempt = 0
-    if (mainState.achievementStoreRetryTimer) {
-      clearTimeout(mainState.achievementStoreRetryTimer)
-      mainState.achievementStoreRetryTimer = null
-    }
-    // A retry can succeed after the renderer's initial achievements-init call
-    // already came back null; push the real snapshot now so the gallery
-    // recovers without requiring a manual reload.
-    broadcastAchievements()
-    reconcileAchievementsFromHistory()
-  } catch (error) {
-    // Achievements are an additive feedback surface. A broken achievement
-    // database must never prevent XP, permissions, history, or event ingest.
-    console.error('Achievement storage is unavailable', error)
-    logAchievementDiagnostic('init', error)
-    mainState.achievementStore = null
-    scheduleAchievementStoreRetry()
-  }
-}
-
-export function logAchievementDiagnostic(label: string, error: unknown, extra?: unknown): void {
-  logMain('error', 'achievements', `[${label}] attempt=${mainState.achievementStoreRetryAttempt}`, { error, extra })
-}
-
-export function scheduleAchievementStoreRetry(): void {
-  if (mainState.achievementStoreRetryTimer) return
-  const delay = ACHIEVEMENT_STORE_RETRY_DELAYS_MS[mainState.achievementStoreRetryAttempt]
-  if (delay === undefined) return
-  mainState.achievementStoreRetryAttempt += 1
-  mainState.achievementStoreRetryTimer = setTimeout(() => {
-    mainState.achievementStoreRetryTimer = null
-    createAchievementServices()
-  }, delay)
-}
-
-const HISTORY_STORE_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const
-const STARTUP_DEFERRED_WORK_MS = 10_000
-let deferredHistoryWorkTimer: ReturnType<typeof setTimeout> | null = null
-let historyStoreRetryTimer: ReturnType<typeof setTimeout> | null = null
-let historyPruneTimer: ReturnType<typeof setInterval> | null = null
-const HISTORY_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000
-let historyStoreRetryAttempt = 0
-
-export function cancelHistoryStoreRetry(): void {
-  if (deferredHistoryWorkTimer) clearTimeout(deferredHistoryWorkTimer)
-  deferredHistoryWorkTimer = null
-  if (historyStoreRetryTimer) clearTimeout(historyStoreRetryTimer)
-  historyStoreRetryTimer = null
-}
+export const createHistoryServices = historyRuntime.start
+export const refreshLocalUsage = historyRuntime.refreshLocalUsage
 
 function notifyHistoryRecovered(): void {
   try {
@@ -2933,159 +1855,8 @@ function notifyHistoryRecovered(): void {
   } catch {}
 }
 
-export function createHistoryServices(): void {
-  if (mainState.historyStore) return
-  try {
-    const databasePath = join(app.getPath('userData'), 'history.sqlite')
-    mainState.historyStore = openWithCorruptionRecovery(
-      databasePath,
-      () => new HistoryStore(databasePath),
-      {
-        log: (message, detail) => console.error(message, detail),
-        verify: store => store.quickCheck(),
-        dispose: store => store.close(),
-        onRecovered: () => notifyHistoryRecovered(),
-      },
-    )
-    if (!mainState.historyStore) throw new Error('History database could not be opened')
-    historyStoreRetryAttempt = 0
-    const retentionDays = mainState.historyStore.getRetentionDays()
-    mainState.localUsageReader = new LocalUsageReader({
-      homeDir: app.getPath('home'),
-      history: mainState.historyStore,
-      projectRouting: mainState.projectRoutingStore,
-      onRecordsImported: records => syncLocalTokenAchievements(records, retentionDays),
-    })
-    let scanTick = 0
-    mainState.localUsageScanTimer = setInterval(() => {
-      scanTick += 1
-      if (!shouldRunLocalUsageTick(scanTick, powerMonitor.isOnBatteryPower())) return
-      void refreshLocalUsage()
-    }, LOCAL_USAGE_TICK_MS)
-    mainState.localUsageScanTimer.unref?.()
-    // Heavy first-run work waits until the pet has been on screen for a while.
-    if (deferredHistoryWorkTimer) clearTimeout(deferredHistoryWorkTimer)
-    deferredHistoryWorkTimer = setTimeout(() => {
-      deferredHistoryWorkTimer = null
-      reconcileAchievementsFromHistory()
-      void refreshLocalUsage()
-    }, STARTUP_DEFERRED_WORK_MS)
-    deferredHistoryWorkTimer.unref?.()
-    // A tray app runs for weeks: expire old events/sessions at runtime too,
-    // in bounded batches that yield between steps.
-    if (historyPruneTimer) clearInterval(historyPruneTimer)
-    historyPruneTimer = setInterval(() => {
-      void mainState.historyStore?.pruneInBatches().catch(error => console.error('History prune failed', error))
-      try { mainState.progressionStore?.pruneStaleActivity() } catch (error) { console.error('XP activity prune failed', error) }
-    }, HISTORY_PRUNE_INTERVAL_MS)
-    historyPruneTimer.unref?.()
-  } catch (error) {
-    // History is an additive HUD feature. A broken history database must not
-    // prevent the pet, event receiver, XP, or permission controls from booting.
-    console.error('History storage is unavailable', error)
-    if (historyPruneTimer) clearInterval(historyPruneTimer)
-    historyPruneTimer = null
-    try { mainState.historyStore?.close() } catch {}
-    mainState.historyStore = null
-    mainState.localUsageReader = null
-    const delay = HISTORY_STORE_RETRY_DELAYS_MS[historyStoreRetryAttempt]
-    if (delay !== undefined && !historyStoreRetryTimer && !mainState.isQuitting) {
-      historyStoreRetryAttempt += 1
-      historyStoreRetryTimer = setTimeout(() => {
-        historyStoreRetryTimer = null
-        createHistoryServices()
-      }, delay)
-      historyStoreRetryTimer.unref?.()
-    }
-  }
-}
-
-/**
- * Feeds exact local-log usage into the achievement token ledger (the single
- * token source for Codex and Claude Code). The ledger always updates so no
- * token is lost while achievements are switched off; unlock evaluation only
- * runs, for the active pet, when achievements are enabled.
- */
-let achievementProgressTimer: ReturnType<typeof setTimeout> | null = null
-let localTokenLedgerChanged = false
-
-function syncLocalTokenAchievements(records: readonly HistoryTokenUsageRecord[], retentionDays: number): void {
-  const store = mainState.achievementStore
-  if (!store) return
-  try {
-    // Ledger only: a first import arrives in hundreds of 500-record batches,
-    // so unlock evaluation runs once per scan (evaluateLocalTokenAchievements).
-    const result = store.syncLocalTokenUsage(records, {
-      // One day of slack past the scanner's own retention cutoff.
-      compactBefore: Date.now() - (retentionDays + 1) * 24 * 60 * 60 * 1000,
-      evaluatePetId: null,
-    })
-    if (result.changed) localTokenLedgerChanged = true
-  } catch (error) {
-    console.error('Achievement local token sync failed', error)
-    logAchievementDiagnostic('local-token-sync', error)
-  }
-}
-
-/** Once per completed scan: evaluate the active pet if the ledger changed, and refresh progress. */
-function evaluateLocalTokenAchievements(): void {
-  if (!localTokenLedgerChanged) return
-  localTokenLedgerChanged = false
-  const store = mainState.achievementStore
-  if (!store) return
-  try {
-    if (currentDesktopPreferences().achievementsEnabled) {
-      const petId = mainState.progressionStore?.getActivePetId() ?? 'aang-airbender'
-      const unlocks = store.evaluateTokenAchievements(petId, mainState.progressionStore?.getSnapshot(petId))
-      unlocks.forEach(broadcastAchievementUnlock)
-      if (unlocks.length > 0) return
-    }
-    if (!achievementProgressTimer) {
-      achievementProgressTimer = setTimeout(() => {
-        achievementProgressTimer = null
-        broadcastAchievements()
-      }, 1_000)
-      achievementProgressTimer.unref?.()
-    }
-  } catch (error) {
-    console.error('Achievement local token evaluation failed', error)
-    logAchievementDiagnostic('local-token-evaluate', error)
-  }
-}
-
-export function reconcileAchievementsFromHistory(): void {
-  if (
-    !mainState.achievementStore
-    || !mainState.historyStore
-    || !currentDesktopPreferences().achievementsEnabled
-  ) return
-  try {
-    // Incremental: only sessions since the last reconcile (minus one day of
-    // overlap for late-arriving events) instead of the whole history.
-    const startedAt = Date.now()
-    const previous = mainState.historyStore.getAchievementReconciledAt()
-    const unlocks = mainState.achievementStore.reconcileCompletedSessions(
-      mainState.historyStore.getAchievementCompletedSessions(previous > 0 ? previous - 24 * 60 * 60 * 1000 : 0),
-      petId => mainState.progressionStore?.getSnapshot(petId),
-    )
-    mainState.historyStore.setAchievementReconciledAt(startedAt)
-    unlocks.forEach(broadcastAchievementUnlock)
-  } catch (error) {
-    console.error('Achievement history reconciliation failed', error)
-    logAchievementDiagnostic('history-reconcile', error)
-  }
-}
-
 export function isProgressionPetId(value: unknown): value is string {
   return isValidPetId(value, 128)
-}
-
-export function setActiveProgressionPet(petId: string): ProgressionSnapshot | null {
-  if (!mainState.progressionStore) return null
-  const snapshot = mainState.progressionStore.setActivePet(petId)
-  broadcastProgression(snapshot)
-  broadcastAchievements(petId)
-  return snapshot
 }
 
 export function schedulePermissionUiSync(): void {
@@ -3103,7 +1874,7 @@ export function cancelPermissionRequests(
 }
 
 function permissionAuditPath(): string {
-  return join(app.getPath('userData'), 'permission-audit.jsonl')
+  return appUserDataPaths().permissionAudit
 }
 
 export function listPermissionAuditEntries(limit: number): PermissionAuditEntry[] {
@@ -3153,7 +1924,7 @@ function applyClaudePermissionRespond(preferences: DesktopPreferences): void {
 export function createPermissionServices(permissionToken: string): void {
   if (mainState.permissionBroker || mainState.permissionRelay || mainState.permissionAdapterServer) return
 
-  trimPermissionAuditOnStartup(permissionAuditPath(), join(app.getPath('userData'), 'permission-audit.json'))
+  trimPermissionAuditOnStartup(permissionAuditPath(), appUserDataPaths().legacyPermissionAudit)
   const relay = new PermissionAdapterRelay()
   const broker = new PermissionBroker({
     onChanged: schedulePermissionUiSync,
@@ -3208,7 +1979,7 @@ export function createDesktopServices(): void {
   if (mainState.desktopPreferences || mainState.desktopTray || mainState.desktopNotifications) return
 
   mainState.desktopPreferences = new DesktopPreferencesStore(
-    join(app.getPath('userData'), 'desktop-preferences.json'),
+    appUserDataPaths().desktopPreferences,
     createLoginItemAdapter({
       platform: process.platform,
       app,
@@ -3223,7 +1994,7 @@ export function createDesktopServices(): void {
   mainState.sessionJump = createSessionJumpService(currentDesktopPreferences)
 
   mainState.desktopNotifications = new DesktopNotificationService({
-    logFilePath: join(app.getPath('userData'), 'notification-log.json'),
+    logFilePath: appUserDataPaths().notificationLog,
     getPreferences: currentDesktopPreferences,
     isAppFocused: () => [mainState.petWindow, mainState.panelWindow].some(window => window?.isFocused()),
     onNotificationClick: target => { void openNotificationTarget(target) },
@@ -3261,7 +2032,13 @@ export function createDesktopServices(): void {
       quit: () => app.quit(),
     },
   )
-  mainState.desktopTray.create()
+  try {
+    mainState.desktopTray.create()
+  } catch (error) {
+    // Linux desktops without a StatusNotifier/AppIndicator host (or a missing icon) must not
+    // take the app down; the pet window and panel keep working without the tray.
+    console.error('Tray is unavailable', error instanceof Error ? error.message : error)
+  }
 }
 
 export function getPetsJsonPath(): string {
@@ -3306,7 +2083,7 @@ export async function availablePetIds(): Promise<Set<string>> {
     mainState.pluginPreferencesSnapshot?.pluginsEnabled === true,
   )
   for (const petId of pluginSkinIds) ids.add(petId)
-  ids.add('aang-airbender')
+  ids.add(DEFAULT_PET_ID)
   return ids
 }
 
@@ -3339,8 +2116,8 @@ export function createProjectRoutingServices(): void {
   if (mainState.projectRoutingStore) return
   try {
     mainState.projectRoutingStore = new ProjectRoutingStore(
-      join(app.getPath('userData'), 'project-routing.sqlite'),
-      { defaultPetId: 'aang-airbender' },
+      appUserDataPaths().projectRouting,
+      { defaultPetId: DEFAULT_PET_ID },
     )
   } catch (error) {
     console.error('Project routing storage is unavailable', error)
@@ -3349,8 +2126,7 @@ export function createProjectRoutingServices(): void {
 }
 
 export function rawProjectPath(input: unknown): string | undefined {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
-  const value = (input as Record<string, unknown>).project
+  const value = asRecord(input)?.project
   return typeof value === 'string' ? value : undefined
 }
 

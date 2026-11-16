@@ -4,8 +4,8 @@ import {
   electronDevArgv,
   electronDevEnvironment,
   GPU_SAFE_DEV_MODE,
-} from '../vite.config.mts'
-import { shouldDisableDevHardwareAcceleration } from '../electron/dev-runtime.ts'
+  shouldDisableDevHardwareAcceleration,
+} from '../electron/dev-runtime.ts'
 
 test('Electron development startup preserves Chromium sandboxing', () => {
   assert.deepEqual(electronDevArgv(), ['.'])

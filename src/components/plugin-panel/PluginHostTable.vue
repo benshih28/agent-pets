@@ -15,8 +15,11 @@ const { busy, revokeGrantedHost } = usePluginController()
 const rows = computed(() => {
   const declared = props.plugin.manifest?.permissions.network?.hosts ?? []
   const granted = props.plugin.preference.grantedHosts
+  // 用 Set 查成員：主機數多時避免每列都重掃兩個陣列。
+  const declaredSet = new Set(declared)
+  const grantedSet = new Set(granted)
   const hosts = [...new Set([...declared, ...granted])]
-  return hosts.map(host => ({ host, declared: declared.includes(host), granted: granted.includes(host) }))
+  return hosts.map(host => ({ host, declared: declaredSet.has(host), granted: grantedSet.has(host) }))
 })
 </script>
 

@@ -14,8 +14,10 @@ import type {
   ProjectMcpRemovalSummary,
   ProjectMcpSetupSummary,
 } from '../../src/types/project-mcp.ts'
+import type { AppLocale } from '../../src/types/locale.ts'
 import { PROJECT_MCP_CLIENTS } from '../../src/types/project-mcp.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { asRecord } from '../value-guards.ts'
 
 type DirectoryDialogResult = { canceled: boolean; filePaths: string[] }
 type DirectoryDialogOptions = { title: string; message: string; properties: Array<'openDirectory' | 'createDirectory'> }
@@ -35,14 +37,14 @@ export interface ProjectMcpIpcDependencies {
   installOptions(): ProjectMcpInstallOptions
   getRegistry(): ProjectMcpRegistryStore | null
   /** Current app language, for native dialog text. */
-  getLocale?(): 'zh-TW' | 'en-US'
+  getLocale?(): AppLocale
 }
 
 const MAX_REMEMBERED_PICKS = 16
 
 function parseApplyRequest(value: unknown): ProjectMcpApplyRequest | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const raw = value as Record<string, unknown>
+  const raw = asRecord(value)
+  if (!raw) return null
   if (typeof raw.projectPath !== 'string' || raw.projectPath.length === 0 || raw.projectPath.length > 4_096) return null
   if (typeof raw.localOnly !== 'boolean') return null
   if (!Array.isArray(raw.clients) || raw.clients.length === 0 || raw.clients.length > PROJECT_MCP_CLIENTS.length) return null

@@ -4,6 +4,7 @@ import test from 'node:test'
 import { EventEmitter } from 'node:events'
 import { LOCAL_SERVER_PERSISTENT_FAILURE_ATTEMPTS, LOCAL_SERVER_RETRY_DELAYS_MS, listenOnLocalPort } from '../electron/local-server-listen.ts'
 import { createServerHealthTracker } from '../electron/main/server-health.ts'
+import { fakeService } from './support/fake-service.mts'
 
 function occupyPort(): Promise<Server> {
   return new Promise((resolve, reject) => {
@@ -85,7 +86,7 @@ test('EADDRINUSE retries, reports status, and notifies once after the budget', (
   const server = fakeServerStub()
   const statuses: string[] = []
   let persistent = 0
-  const handle = listenOnLocalPort(server as never, 1, {
+  const handle = listenOnLocalPort(fakeService<Server>(server), 1, {
     label: 't', logError: () => {},
     onStatus: s => statuses.push(`${s.state}:${s.attempt}`),
     onPersistentFailure: () => { persistent += 1 },
@@ -103,7 +104,7 @@ test('EADDRINUSE retries, reports status, and notifies once after the budget', (
 test('EACCES does not retry but is still reported', () => {
   const server = fakeServerStub()
   let persistent: string | undefined
-  const handle = listenOnLocalPort(server as never, 1, {
+  const handle = listenOnLocalPort(fakeService<Server>(server), 1, {
     label: 't', logError: () => {}, onPersistentFailure: s => { persistent = s.code },
   })
   server.emit('error', errno('EACCES'))
@@ -120,7 +121,7 @@ test('health tracker aggregates status, probes the occupant and supports retry',
     probe: async () => 'agent-pets',
   })
   const hooks = tracker.register('event', 17373)
-  const handle = listenOnLocalPort(server as never, 17373, { label: 't', logError: () => {}, ...hooks })
+  const handle = listenOnLocalPort(fakeService<Server>(server), 17373, { label: 't', logError: () => {}, ...hooks })
   hooks.attach(handle)
   for (let i = 0; i < 3; i += 1) server.emit('error', errno('EADDRINUSE'))
   await new Promise(resolve => setImmediate(resolve))

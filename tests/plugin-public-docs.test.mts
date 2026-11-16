@@ -6,6 +6,7 @@ import test from 'node:test'
 import { zipSync } from 'fflate'
 import { parsePluginManifest } from '../electron/plugin-manifest.ts'
 import { PluginRegistry } from '../electron/plugin-registry.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const docsDirectory = path.resolve('docs/plugins')
 
@@ -83,7 +84,7 @@ test('skin-pack example is accepted and installed by PluginRegistry', () => {
     assert.equal(planned.value.pluginId, 'skin-pack')
     assert.equal(registry.install(planned.value.token).ok, true)
   } finally {
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })
 
@@ -176,10 +177,19 @@ test('plugin documentation has bilingual page pairs and all local Markdown links
   }
 })
 
+// JSON Schema 節點是遞迴結構，用單一遞迴型別避免逐層手寫而漏掉深度。
+interface SchemaNode {
+  type?: string
+  enum?: string[]
+  const?: string
+  description?: string
+  properties?: Record<string, SchemaNode>
+}
+
 test('public manifest schema required keys and enums match the runtime validator', () => {
   const schema = JSON.parse(fs.readFileSync(path.join(docsDirectory, 'plugin.schema.json'), 'utf8')) as {
     required: string[]
-    properties: Record<string, { const?: string; enum?: string[]; description?: string; properties?: Record<string, { description?: string; type?: string; properties?: Record<string, { type?: string; enum?: string[]; const?: string }> }> }>
+    properties: Record<string, SchemaNode>
     $defs: Record<string, { properties?: Record<string, { enum?: string[]; const?: string }> }>
   }
   assert.deepEqual(schema.required, ['id', 'name', 'version', 'apiVersion', 'author', 'permissions', 'contributes'])

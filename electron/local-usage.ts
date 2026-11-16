@@ -3,6 +3,8 @@ import { constants as fsConstants, type Dirent } from 'node:fs'
 import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import { extname, join, relative } from 'node:path'
 import { safeModelId, type HistoryStore } from './history.ts'
+import { MAX_TOKEN_COUNT } from './event-normalizer.ts'
+import { asRecord } from './value-guards.ts'
 import type { HistoryTokenUsageRecord } from '../src/types/history.ts'
 
 export type UsageProvider = 'codex' | 'claude-code'
@@ -31,6 +33,11 @@ export interface IncrementalLocalUsageParserState {
   nextLineNumber: number
   previousCodexTotal: TokenCounters | null
   codexCwd: string | undefined
+  /**
+   * Thread id from the file's session_meta line. token_count events carry no
+   * session id, and the hook reports this same id, so it is the join key.
+   */
+  codexSessionId?: string
   /** Latest model announced by a Codex turn_context line; later token_count events inherit it. */
   codexModel?: string
   /** Latest real timestamp seen in this file; undated lines inherit it. */
@@ -57,8 +64,18 @@ export interface ProjectPathResolver {
   trackSeen(value: unknown, seenAt?: number): { projectId: string } | null
 }
 
+export interface LocalUsageConfigDirs {
+  claude: string
+  codex: string
+}
+
 export interface LocalUsageReaderOptions {
   homeDir: string
+  /**
+   * Agent config folders, read at the start of every scan (CLAUDE_CONFIG_DIR／CODEX_HOME may only be
+   * known after the login-shell lookup). Defaults to ~/.claude and ~/.codex under homeDir.
+   */
+  configDirs?: () => LocalUsageConfigDirs
   history: HistoryStore
   now?: () => number
   maxFiles?: number
@@ -67,6 +84,8 @@ export interface LocalUsageReaderOptions {
   maxLineBytes?: number
   /** Wall-clock work budget per scan; the rest continues on the next scan. */
   maxScanMs?: number
+  /** 每批寫入 History 的筆數；批次越小，主執行緒單次被同步寫入佔住的時間越短。 */
+  importBatchRecords?: number
   /** Monotonic clock for the work budget (tests inject a fake one). */
   clock?: () => number
   projectRouting?: ProjectPathResolver | null
@@ -99,7 +118,9 @@ export interface LocalUsageScanDiagnostics extends LocalUsageScanResult {
 // thousands of session logs never blocks the main process for long.
 const YIELD_EVERY = 25
 const PARSE_SLICE_BYTES = 1024 * 1024
-const IMPORT_BATCH_RECORDS = 500
+// node:sqlite 寫入是同步的：實測單批 500 筆約佔住主執行緒 31ms、100 筆約 7ms，
+// 批次之間讓出事件迴圈，所以用小批次縮短單次阻塞（見 docs/perf/local-usage-worker.md）。
+const DEFAULT_IMPORT_BATCH_RECORDS = 100
 const yieldToEventLoop = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -109,16 +130,9 @@ const DEFAULT_MAX_TOTAL_BYTES = 64 * 1024 * 1024
 const DEFAULT_MAX_LINE_BYTES = 256 * 1024
 const DEFAULT_MAX_SCAN_MS = 4_000
 const MAX_WALK_DEPTH = 8
-const MAX_TOKEN_COUNT = 1_000_000_000_000
 
 function digest(value: string, length = 48): string {
   return createHash('sha256').update(value).digest('hex').slice(0, length)
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
 }
 
 function text(value: unknown): string | undefined {
@@ -170,7 +184,7 @@ function lineTooLong(line: string, maxLineBytes: number): boolean {
 
 function parseObject(line: string): Record<string, unknown> | null {
   try {
-    return asObject(JSON.parse(line))
+    return asRecord(JSON.parse(line))
   } catch {
     return null
   }
@@ -194,7 +208,7 @@ function claudeUsage(
   const input = token(usage.input_tokens)
   const cacheRead = token(usage.cache_read_input_tokens)
   const topLevelCacheCreation = token(usage.cache_creation_input_tokens)
-  const cacheCreation = asObject(usage.cache_creation)
+  const cacheCreation = asRecord(usage.cache_creation)
   const cacheCreationNested = cacheCreation
     ? tokenSum(cacheCreation, ['ephemeral_5m_input_tokens', 'ephemeral_1h_input_tokens'])
     : 0
@@ -248,8 +262,9 @@ function codexUsage(
   previousTotal: TokenCounters | null,
   fileCwd: string | undefined,
   fileModel: string | undefined,
+  fileSessionId: string | undefined,
 ): CodexUsageResult | null {
-  const totalUsage = asObject(info.total_token_usage)
+  const totalUsage = asRecord(info.total_token_usage)
   // Codex's total_token_usage is cumulative for the rollout. last_token_usage
   // is a context snapshot and may be repeated on rate-limit-only events, so it
   // is never treated as a fresh spend when the cumulative counter is present.
@@ -281,6 +296,7 @@ function codexUsage(
     ?? text(record.sessionId)
     ?? text(payload.session_id)
     ?? text(payload.sessionId)
+    ?? fileSessionId
     ?? fileKey
   const stableKey = `line:${fileKey}:${lineNumber}`
   const occurredAt = timestamp(record.timestamp ?? payload.timestamp, inheritedAt)
@@ -321,8 +337,8 @@ export function parseLocalUsageLine(
   if (!record) return null
 
   if (record.type === 'assistant') {
-    const message = asObject(record.message)
-    const usage = asObject(message?.usage)
+    const message = asRecord(record.message)
+    const usage = asRecord(message?.usage)
     if (!message || !usage) return null
     return claudeUsage(record, message, usage, fileKey, lineNumber, inheritedAt)
   }
@@ -501,19 +517,23 @@ export function parseUsageFile(
     // session_meta line; every later token_count event inherits it.
     let codexCwd: string | undefined
     let codexModel: string | undefined
+    let codexSessionId: string | undefined
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index]
       if (!line || lineTooLong(line, maxLineBytes)) continue
-      const wantsCwd = codexCwd === undefined && line.includes('"session_meta"')
+      const wantsCwd = (codexCwd === undefined || codexSessionId === undefined) && line.includes('"session_meta"')
       const wantsModel = line.includes('"turn_context"') || (codexModel === undefined && line.includes('"session_meta"'))
       if (!wantsCwd && !wantsModel && !line.includes('"token_count"')) continue
       // 每行只 JSON.parse 一次，同時供 session_meta、turn_context 與 token_count 判斷使用。
       const record = parseObject(line)
       if (!record) continue
-      if (wantsCwd) codexCwd = codexSessionCwd(record) ?? codexCwd
+      if (wantsCwd) {
+        codexCwd = codexSessionCwd(record) ?? codexCwd
+        codexSessionId = codexMetaSessionId(record) ?? codexSessionId
+      }
       if (wantsModel) codexModel = codexContextModel(record) ?? codexModel
       lastAt = timestamp(record.timestamp, lastAt)
-      const result = parseCodexUsageRecord(record, fileKey, index + 1, lastAt, previousCodexTotal, codexCwd, codexModel)
+      const result = parseCodexUsageRecord(record, fileKey, index + 1, lastAt, previousCodexTotal, codexCwd, codexModel, codexSessionId)
       if (!result) continue
       // Rebase the running baseline even when this event produced no
       // importable record (first sighting, repeat, or a reset) - otherwise a
@@ -563,12 +583,15 @@ function parseUsageLine(
     if (parsed) state.lastTimestamp = parsed.occurredAt
     return parsed
   }
-  const wantsCwd = state.codexCwd === undefined && line.includes('"session_meta"')
+  const wantsCwd = (state.codexCwd === undefined || state.codexSessionId === undefined) && line.includes('"session_meta"')
   const wantsModel = line.includes('"turn_context"') || (state.codexModel === undefined && line.includes('"session_meta"'))
   if (!wantsCwd && !wantsModel && !line.includes('"token_count"')) return null
   const record = parseObject(line)
   if (!record) return null
-  if (wantsCwd) state.codexCwd = codexSessionCwd(record) ?? state.codexCwd
+  if (wantsCwd) {
+    state.codexCwd = codexSessionCwd(record) ?? state.codexCwd
+    state.codexSessionId = codexMetaSessionId(record) ?? state.codexSessionId
+  }
   if (wantsModel) state.codexModel = codexContextModel(record) ?? state.codexModel
   state.lastTimestamp = timestamp(record.timestamp, state.lastTimestamp)
   const result = parseCodexUsageRecord(
@@ -579,6 +602,7 @@ function parseUsageLine(
     state.previousCodexTotal,
     state.codexCwd,
     state.codexModel,
+    state.codexSessionId,
   )
   if (!result) return null
   state.previousCodexTotal = result.cumulative
@@ -684,15 +708,23 @@ async function openVerifiedUsageFile(
 // builds also on `session_meta`); token_count events that follow inherit it.
 function codexContextModel(record: Record<string, unknown>): string | undefined {
   if (record.type !== 'turn_context' && record.type !== 'session_meta') return undefined
-  const payload = asObject(record.payload)
+  const payload = asRecord(record.payload)
   const model = payload ? safeModelId(payload.model) : ''
   return model || undefined
 }
 
 function codexSessionCwd(record: Record<string, unknown>): string | undefined {
   if (record.type !== 'session_meta') return undefined
-  const payload = asObject(record.payload)
+  const payload = asRecord(record.payload)
   return payload ? text(payload.cwd) : undefined
+}
+
+// The rollout's thread id: what Codex hooks report as session_id. Newer builds
+// write `session_id` next to `id`; both hold the same UUID.
+function codexMetaSessionId(record: Record<string, unknown>): string | undefined {
+  if (record.type !== 'session_meta') return undefined
+  const payload = asRecord(record.payload)
+  return payload ? text(payload.session_id) ?? text(payload.id) : undefined
 }
 
 function parseCodexUsageRecord(
@@ -703,18 +735,19 @@ function parseCodexUsageRecord(
   previousTotal: TokenCounters | null,
   fileCwd: string | undefined,
   fileModel: string | undefined,
+  fileSessionId: string | undefined,
 ): CodexUsageResult | null {
   if (record.type !== 'event_msg') return null
-  const payload = asObject(record.payload)
+  const payload = asRecord(record.payload)
   if (!payload || payload.type !== 'token_count') return null
-  const info = asObject(payload.info)
-  const usage = info ? asObject(info.last_token_usage) : null
+  const info = asRecord(payload.info)
+  const usage = info ? asRecord(info.last_token_usage) : null
   if (!info || !usage) return null
-  return codexUsage(record, payload, info, usage, fileKey, lineNumber, inheritedAt, previousTotal, fileCwd, fileModel)
+  return codexUsage(record, payload, info, usage, fileKey, lineNumber, inheritedAt, previousTotal, fileCwd, fileModel, fileSessionId)
 }
 
 export class LocalUsageReader {
-  private readonly homeDir: string
+  private readonly configDirs: () => LocalUsageConfigDirs
   private readonly history: HistoryStore
   private readonly now: () => number
   private readonly maxFiles: number
@@ -724,6 +757,7 @@ export class LocalUsageReader {
   private readonly projectRouting: ProjectPathResolver | null
   private readonly maxScanMs: number
   private readonly clock: () => number
+  private readonly importBatchRecords: number
   private readonly onRecordsImported: ((records: readonly HistoryTokenUsageRecord[]) => void) | null
   private readonly fileCache = new Map<string, LocalUsageFileCacheEntry>()
   private readonly scanCaches = new Map<string, UsageScanCache>()
@@ -731,7 +765,8 @@ export class LocalUsageReader {
   private diagnostics: LocalUsageScanDiagnostics | null = null
 
   constructor(options: LocalUsageReaderOptions) {
-    this.homeDir = options.homeDir
+    const { homeDir } = options
+    this.configDirs = options.configDirs ?? (() => ({ claude: join(homeDir, '.claude'), codex: join(homeDir, '.codex') }))
     this.history = options.history
     this.now = options.now ?? Date.now
     this.maxFiles = Math.max(1, Math.min(DEFAULT_MAX_FILES, Math.floor(options.maxFiles ?? DEFAULT_MAX_FILES)))
@@ -741,6 +776,7 @@ export class LocalUsageReader {
     this.projectRouting = options.projectRouting ?? null
     this.maxScanMs = Math.max(50, Math.min(60_000, Math.floor(options.maxScanMs ?? DEFAULT_MAX_SCAN_MS)))
     this.clock = options.clock ?? (() => performance.now())
+    this.importBatchRecords = Math.max(1, Math.min(5_000, Math.floor(options.importBatchRecords ?? DEFAULT_IMPORT_BATCH_RECORDS)))
     this.onRecordsImported = options.onRecordsImported ?? null
   }
 
@@ -759,10 +795,11 @@ export class LocalUsageReader {
 
   private async scanNow(): Promise<LocalUsageScanResult> {
     const startedAt = Date.now()
+    const dirs = this.configDirs()
     const roots: UsageRoot[] = [
-      { provider: 'codex', adapterId: 'codex', agentId: 'codex', directory: join(this.homeDir, '.codex', 'sessions') },
-      { provider: 'claude-code', adapterId: 'claude-code', agentId: 'claude', directory: join(this.homeDir, '.claude', 'projects') },
-      { provider: 'claude-code', adapterId: 'claude-code', agentId: 'claude', directory: join(this.homeDir, '.claude', 'transcripts') },
+      { provider: 'codex', adapterId: 'codex', agentId: 'codex', directory: join(dirs.codex, 'sessions') },
+      { provider: 'claude-code', adapterId: 'claude-code', agentId: 'claude', directory: join(dirs.claude, 'projects') },
+      { provider: 'claude-code', adapterId: 'claude-code', agentId: 'claude', directory: join(dirs.claude, 'transcripts') },
     ]
     const result: LocalUsageScanResult = {
       filesScanned: 0, filesSkipped: 0, recordsParsed: 0, recordsImported: 0, filesDeferred: 0, pending: false, bytesRead: 0,
@@ -812,6 +849,7 @@ export class LocalUsageReader {
             previousCodexTotal: previous.previousCodexTotal,
             codexCwd: previous.codexCwd,
             codexModel: previous.codexModel,
+            codexSessionId: previous.codexSessionId,
             lastTimestamp: previous.lastTimestamp,
             discardingLongLine: previous.discardingLongLine,
           }
@@ -899,8 +937,8 @@ export class LocalUsageReader {
       projectByCwd.set(cwd, this.projectRouting?.trackSeen(cwd, seenAt)?.projectId)
     }
     let imported = 0
-    for (let offset = 0; offset < fresh.length; offset += IMPORT_BATCH_RECORDS) {
-      const batch = fresh.slice(offset, offset + IMPORT_BATCH_RECORDS).map(record => ({
+    for (let offset = 0; offset < fresh.length; offset += this.importBatchRecords) {
+      const batch = fresh.slice(offset, offset + this.importBatchRecords).map(record => ({
         ...record,
         projectId: record.cwd ? projectByCwd.get(record.cwd) : undefined,
       }))
@@ -909,7 +947,7 @@ export class LocalUsageReader {
         // A downstream ledger failure must never stop History from importing.
         try { this.onRecordsImported(batch) } catch (error) { console.error('Local usage consumer failed', error) }
       }
-      if (offset + IMPORT_BATCH_RECORDS < fresh.length) await yieldToEventLoop()
+      if (offset + this.importBatchRecords < fresh.length) await yieldToEventLoop()
     }
     return imported
   }

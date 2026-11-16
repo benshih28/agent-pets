@@ -1,5 +1,5 @@
 import { inject, type InjectionKey } from 'vue'
-import type { usePluginPanelController } from '../usePluginPanelController'
+import type { usePluginPanelController } from '@/composables/usePluginPanelController'
 
 export type PluginPanelController = ReturnType<typeof usePluginPanelController>
 

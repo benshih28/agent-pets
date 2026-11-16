@@ -1,35 +1,81 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { DesktopPreferences } from '../src/types/desktop.ts'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
-import { registerWindowControlsIpc } from '../electron/ipc/window-controls.ts'
+import { registerWindowControlsIpc, type WindowControlsIpcDependencies } from '../electron/ipc/window-controls.ts'
+import { fakeBrowserWindow, fakeIpcMainEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+
+type FakeIpcMainPort = WindowControlsIpcDependencies['ipcMain']
+
+/** 完整的 no-op 相依；各測試只覆寫自己關心的成員，避免用 partial 物件硬轉型。 */
+function createDeps(ipcMain: FakeIpcMainPort, overrides: Partial<WindowControlsIpcDependencies>): WindowControlsIpcDependencies {
+  return {
+    ipcMain,
+    isTrustedIpcSender: () => true,
+    assertTrustedIpcSender: () => undefined,
+    getPetWindow: () => null,
+    getPanelWindow: () => null,
+    // DesktopPreferences 欄位很多，受測程式只讀右鍵隱藏開關。
+    getDesktopPreferences: () => ({ rightClickHideEnabled: true }) as unknown as DesktopPreferences,
+    getPetWindowMode: () => 'normal',
+    getNormalPetBounds: () => null,
+    setNormalPetBounds: () => undefined,
+    getEdgeRestoreBounds: () => null,
+    setEdgeRestoreBounds: () => undefined,
+    getAnchorBottomCenter: () => null,
+    setAnchorBottomCenter: () => undefined,
+    getPetContentHeight: () => null,
+    setPetContentHeight: () => undefined,
+    setPanelFullscreenAutoHidden: () => undefined,
+    setPanelBlurLock: () => undefined,
+    finiteNumber: value => typeof value === 'number' && Number.isFinite(value) ? value : null,
+    requestPanelMinimum: () => undefined,
+    resetPanelSize: () => undefined,
+    getDisplayWorkArea: bounds => bounds,
+    animateBounds: () => undefined,
+    persistPetBounds: () => undefined,
+    persistCurrentPetWindowState: () => undefined,
+    repositionVisiblePanel: () => undefined,
+    hidePetWindow: () => undefined,
+    showPanelWindow: () => undefined,
+    quit: () => undefined,
+    relaunch: () => undefined,
+    exit: () => undefined,
+    setPresentationStatus: () => undefined,
+    updatePluginAgentStatus: () => undefined,
+    ...overrides,
+  }
+}
 
 test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet preferences', () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, listeners: handlers } = createFakeIpcMain()
   const calls: string[] = []
-  const petWindow = {
+  const petWindow = fakeBrowserWindow({
     isVisible: () => true,
     hide: () => calls.push('pet-hide'),
     setIgnoreMouseEvents: (ignore: boolean) => calls.push(`passthrough:${ignore}`),
     getBounds: () => ({ x: 0, y: 0, width: 200, height: 200 }),
     getPosition: () => [0, 0] as [number, number],
     getSize: () => [200, 200] as [number, number],
-  }
-  const panelWindow = {
+  })
+  const panelWindow = fakeBrowserWindow({
     isVisible: () => true,
     hide: () => calls.push('panel-hide'),
     getBounds: () => ({ x: 0, y: 0, width: 400, height: 500 }),
     setBounds: () => assert.fail('renderer resize must use the programmatic size path'),
-  }
+  })
   let status: unknown = null
   registerWindowControlsIpc({
     // Click-through is disabled on Linux (PET-06); pin a supporting platform so CI on ubuntu matches.
     platform: 'darwin',
-    ipcMain: { on: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     isTrustedIpcSender: (_event, window) => window === petWindow || window === panelWindow,
     assertTrustedIpcSender: () => undefined,
-    getPetWindow: () => petWindow as never,
-    getPanelWindow: () => panelWindow as never,
-    getDesktopPreferences: () => ({ rightClickHideEnabled: true }) as never,
+    getPetWindow: () => petWindow,
+    getPanelWindow: () => panelWindow,
+    // DesktopPreferences 欄位很多，受測程式只讀右鍵隱藏開關。
+    getDesktopPreferences: () => ({ rightClickHideEnabled: true }) as unknown as DesktopPreferences,
     getPetWindowMode: () => 'normal',
     getNormalPetBounds: () => null,
     setNormalPetBounds: () => undefined,
@@ -42,7 +88,6 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
     setPanelFullscreenAutoHidden: value => calls.push(`panel-auto-hidden:${value}`),
     setPanelBlurLock: lock => calls.push(`blur-lock:${JSON.stringify(lock)}`),
     finiteNumber: value => typeof value === 'number' && Number.isFinite(value) ? value : null,
-    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     requestPanelMinimum: size => calls.push(`panel-minimum:${JSON.stringify(size)}`),
     resetPanelSize: () => calls.push('panel-reset-size'),
     getDisplayWorkArea: () => ({ x: 0, y: 0, width: 1_000, height: 800 }),
@@ -58,8 +103,20 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
     setPresentationStatus: value => { status = value },
     updatePluginAgentStatus: () => calls.push('plugin-status'),
   })
-  const send = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
+  const send = (channel: string, ...args: unknown[]) => handlers.get(channel)?.(fakeIpcMainEvent(), ...args)
   assert.equal(handlers.size, 12)
+  // 不是一般物件的 payload（含帶了同名欄位的陣列）一律當成沒給欄位，什麼都不做。
+  const arrayWithFields = Object.assign([], { ignore: true, release: true, pinned: true, modal: true, width: 300, height: 300 })
+  for (const malformed of [null, undefined, 'x', 7, true, [], arrayWithFields]) {
+    for (const channel of [
+      IPC_CHANNELS.petMousePassthrough,
+      IPC_CHANNELS.panelResize,
+      IPC_CHANNELS.panelBlurLock,
+      IPC_CHANNELS.petResize,
+      IPC_CHANNELS.petContentHeight,
+    ]) send(channel, malformed)
+  }
+  assert.deepEqual(calls, [])
   send(IPC_CHANNELS.petMousePassthrough, { ignore: true })
   send(IPC_CHANNELS.petHideRequest)
   send(IPC_CHANNELS.panelResize, { width: 960, height: 800 })
@@ -115,38 +172,30 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
   ])
 })
 
+
 test('click-through is never enabled on Linux where mouse-move cannot be forwarded', () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, listeners } = createFakeIpcMain()
   const calls: string[] = []
-  const petWindow = {
-    setIgnoreMouseEvents: (ignore: boolean) => calls.push(`passthrough:${ignore}`),
-  }
-  registerWindowControlsIpc({
-    ipcMain: { on: (channel, handler) => { handlers.set(channel, handler) } },
-    isTrustedIpcSender: () => true,
-    assertTrustedIpcSender: () => undefined,
+  const petWindow = fakeBrowserWindow({
+    setIgnoreMouseEvents: (ignore: boolean) => { calls.push(`passthrough:${ignore}`) },
+  })
+  registerWindowControlsIpc(createDeps(ipcMain, {
     platform: 'linux',
-    getPetWindow: () => petWindow as never,
-    getPanelWindow: () => null,
-  } as never)
-  const handler = handlers.get(IPC_CHANNELS.petMousePassthrough)
-  handler?.({}, { ignore: true })
-  handler?.({}, { ignore: false })
+    getPetWindow: () => petWindow,
+  }))
+  const handler = listeners.get(IPC_CHANNELS.petMousePassthrough)
+  handler?.(fakeIpcMainEvent(), { ignore: true })
+  handler?.(fakeIpcMainEvent(), { ignore: false })
   assert.deepEqual(calls, ['passthrough:false'])
 })
 
 test('toggling the panel recreates it when no panel window exists yet or it was lost', () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, listeners } = createFakeIpcMain()
   const calls: string[] = []
-  registerWindowControlsIpc({
-    ipcMain: { on: (channel, handler) => { handlers.set(channel, handler) } },
-    isTrustedIpcSender: () => true,
-    assertTrustedIpcSender: () => undefined,
-    getPetWindow: () => ({}) as never,
-    getPanelWindow: () => null,
-    showPanelWindow: (view: string) => calls.push(`show:${view}`),
-    setPanelFullscreenAutoHidden: () => undefined,
-  } as never)
-  handlers.get(IPC_CHANNELS.panelToggle)?.({})
+  registerWindowControlsIpc(createDeps(ipcMain, {
+    getPetWindow: () => fakeBrowserWindow(),
+    showPanelWindow: view => { calls.push(`show:${view}`) },
+  }))
+  listeners.get(IPC_CHANNELS.panelToggle)?.(fakeIpcMainEvent())
   assert.deepEqual(calls, ['show:restore'])
 })

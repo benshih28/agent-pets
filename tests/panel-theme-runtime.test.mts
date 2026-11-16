@@ -8,6 +8,7 @@ import { parsePluginManifest } from '../electron/plugin-manifest.ts'
 import { prepareUserImage, storeUserImage } from '../electron/panel-theme-images.ts'
 import { PET_THEME_COLOR_PROPERTIES, type PanelThemeState, type PetThemeState } from '../src/types/panel-theme.ts'
 import { DARK_COLORS, LIGHT_COLORS, manifest, png, theme, woff2 } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 // readRegularFileWithin 的替身，具有相同的路徑限制契約。
 async function readWithin(root: string, relativePath: string, maxBytes: number): Promise<Uint8Array | null> {
@@ -59,7 +60,7 @@ function setup() {
     contexts: new Map(installed ? [['theme-pack', context(enabled, pluginsEnabled)]] : []),
     pluginsEnabled,
   })
-  return { userData, pluginRoot, runtime, sent, petSent, sync, cleanup: () => fs.rmSync(userData, { recursive: true, force: true }) }
+  return { userData, pluginRoot, runtime, sent, petSent, sync, cleanup: () => removeTempTree(userData) }
 }
 
 test('the panel-theme route serves mapped tokens only, with nosniff, immutable caching and font CORS for the panel origin', async () => {
@@ -201,6 +202,7 @@ test('plugin partitions never get the panel-theme host', () => {
   const protocol = fs.readFileSync('electron/plugin-protocol.ts', 'utf8')
   assert.doesNotMatch(protocol, /panel-theme/)
   const runtime = fs.readFileSync('electron/main/runtime.ts', 'utf8')
-  assert.match(runtime, /url\.hostname === 'panel-theme'/)
+  // 主視窗的 protocol handler 依 url.hostname 分派；panel-theme 必須是其中一個 case。
+  assert.match(runtime, /switch \(url\.hostname\) \{[\s\S]*?case 'panel-theme':/)
   assert.match(fs.readFileSync('index.html', 'utf8'), /font-src 'self' data: agent-pets:\/\/panel-theme;/)
 })

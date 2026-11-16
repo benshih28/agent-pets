@@ -52,13 +52,15 @@ test('main-process validation, preview and renderer read the same grid', () => {
 })
 
 test('sprite code no longer repeats the cell size or the motion table', () => {
-  const files = ['src', 'electron'].flatMap(function walk(dir: string): string[] {
+  // flatMap 的 callback 會帶 this: undefined 型別，具名遞迴函式必須獨立宣告，不能直接內聯當 callback。
+  function walk(dir: string): string[] {
     return readdirSync(new URL(`../${dir}/`, import.meta.url)).flatMap(name => {
       const path = `${dir}/${name}`
       if (statSync(new URL(`../${path}`, import.meta.url)).isDirectory()) return walk(path)
       return /\.(ts|vue|css)$/.test(name) ? [path] : []
     })
-  })
+  }
+  const files = ['src', 'electron'].flatMap(dir => walk(dir))
   const spriteFiles = files.filter(path => path !== 'src/types/pet-atlas.ts'
     && /PetAnimation|DesktopPet|pet-|status-line-fit|agentStore/.test(path))
   assert.ok(spriteFiles.length > 5)

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PermissionBroker } from '../electron/permission-broker.ts'
+import { invalid } from './support/invalid.mts'
 
 function request(overrides: Record<string, unknown> = {}) {
   return {
@@ -49,14 +50,14 @@ test('observe-only adapters cannot create broker requests', () => {
 
 test('adapter registration rejects unsupported or contradictory capability modes', () => {
   const broker = new PermissionBroker()
-  assert.throws(() => broker.registerAdapter({
+  assert.throws(() => broker.registerAdapter(invalid({
     id: 'unsafe-adapter',
     capabilities: {
       permissions: 'respond',
       permissionModes: ['always'],
     },
     async respond() { return 'delivered' as const },
-  } as never), /capability modes/)
+  })), /capability modes/)
   assert.throws(() => broker.registerAdapter({
     id: 'observe-with-response',
     capabilities: {

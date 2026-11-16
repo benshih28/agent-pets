@@ -3,13 +3,24 @@ import test from 'node:test'
 import {
   applyPreferencePatch, createSerialQueue, mergePreferencesResult, rollbackPreferencePatch,
 } from '../src/composables/plugin/plugin-state-sync.ts'
+import { DEFAULT_PLUGIN_PREFERENCES } from '../electron/plugin-preferences.ts'
+import type { PluginInstancePreferences, PluginPanelPlugin, PluginPreferences } from '../src/types/plugin.ts'
 
-function snapshot() {
-  const preference = { enabled: false, muted: false, rateLimitPer10Min: 5, targetPetId: null, grantedHosts: ['a.example'] }
+type Snapshot = Parameters<typeof mergePreferencesResult>[0]
+
+function pluginOf(id: string, preference: PluginInstancePreferences): PluginPanelPlugin {
   return {
-    plugins: [{ id: 'one', preference: { ...preference } }, { id: 'two', preference: { ...preference } }],
-    preferences: { plugins: { one: { ...preference }, two: { ...preference } } },
-  } as never as Parameters<typeof applyPreferencePatch>[0]
+    id, currentVersion: '1.0.0', status: 'installed', installedAt: 1, grantedPermissions: {}, manifest: null, development: false,
+    preference: { ...preference },
+  }
+}
+
+function snapshot(): Snapshot {
+  const preference: PluginInstancePreferences = { enabled: false, muted: false, rateLimitPer10Min: 5, targetPetId: null, grantedHosts: ['a.example'] }
+  return {
+    plugins: [pluginOf('one', preference), pluginOf('two', preference)],
+    preferences: { ...DEFAULT_PLUGIN_PREFERENCES, plugins: { one: { ...preference }, two: { ...preference } } },
+  }
 }
 
 test('optimistic patch updates both stores and returns only the overwritten fields', () => {
@@ -31,9 +42,9 @@ test('rollback restores just the patched fields and leaves later edits alone', (
 })
 
 test('main-process result replaces the preference map and per-plugin copies', () => {
-  const state = snapshot() as unknown as Parameters<typeof mergePreferencesResult>[0]
-  const next = { pluginsEnabled: true, plugins: { one: { enabled: true, muted: false, rateLimitPer10Min: 9, targetPetId: 'p', grantedHosts: [] } } }
-  mergePreferencesResult(state, next as never)
+  const state = snapshot()
+  const next: PluginPreferences = { ...DEFAULT_PLUGIN_PREFERENCES, pluginsEnabled: true, plugins: { one: { enabled: true, muted: false, rateLimitPer10Min: 9, targetPetId: 'p', grantedHosts: [] } } }
+  mergePreferencesResult(state, next)
   assert.equal(state.plugins[0].preference.rateLimitPer10Min, 9)
   assert.equal(state.plugins[1].preference.rateLimitPer10Min, 5)
   assert.equal(state.preferences, next)

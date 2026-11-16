@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { renameSyncWithRetry } from './fs-rename.ts'
+import { pidTimestampTemporaryPath, writeFileAtomicSync } from './atomic-file-write.ts'
 import { dndHasExpired, normalizeDndUntil } from './dnd-schedule.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch, LaunchAtStartupStatus } from '../src/types/desktop'
 import { DEFAULT_LOCALE, isAppLocale } from '../src/types/locale.ts'
@@ -27,27 +27,12 @@ export function readBoundedJson(filePath: string, maxBytes = 64 * 1024): unknown
 }
 
 export function writeJsonAtomic(filePath: string, value: unknown): void {
-  const directory = path.dirname(filePath)
-  fs.mkdirSync(directory, { recursive: true })
-  const temporaryPath = path.join(
-    directory,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  )
-
-  try {
-    fs.writeFileSync(temporaryPath, JSON.stringify(value, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-      flag: 'wx',
-    })
-    renameSyncWithRetry(temporaryPath, filePath)
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(filePath, 0o600) } catch {}
-    }
-  } catch (error) {
-    try { fs.rmSync(temporaryPath, { force: true }) } catch {}
-    throw error
-  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  writeFileAtomicSync(filePath, JSON.stringify(value, null, 2), {
+    temporaryPath: pidTimestampTemporaryPath(filePath),
+    mode: 0o600,
+    enforceMode: true,
+  })
 }
 
 type StoredDesktopPreferences = Omit<DesktopPreferences, 'launchAtStartupSupported' | 'launchAtStartupStatus' | 'visibilityCapabilities'>
@@ -77,7 +62,10 @@ export function resolveLoginItemExecutable(
   portableExecutableFile?: string,
 ): string | null {
   if (!isPackaged) return null
-  const candidate = platform === 'win32' ? portableExecutableFile : execPath
+  // Windows portable runs from a temporary extraction directory, so it must use the
+  // original launcher (PORTABLE_EXECUTABLE_FILE). The NSIS installer build has no such
+  // variable and its process.execPath is the real installed exe, so fall back to it.
+  const candidate = platform === 'win32' ? (portableExecutableFile ?? execPath) : execPath
   if (!candidate || !path.isAbsolute(candidate)) return null
   if (platform === 'win32' && path.extname(candidate).toLowerCase() !== '.exe') return null
 
@@ -173,28 +161,27 @@ export function parseDesktopPreferencesPatch(value: unknown): DesktopPreferences
   const allowed = new Set<string>([...BOOLEAN_KEYS, 'locale', 'dndUntil', 'soundVolume', 'claudePermissionWaitSeconds'])
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new TypeError(`Unsupported desktop preference: ${key}`)
-    if (key === 'locale') {
-      if (!isAppLocale(value[key])) throw new TypeError('Desktop preference locale is unsupported')
-      continue
-    }
-    if (key === 'soundVolume') {
-      if (!isVolume(value[key])) throw new TypeError(`Desktop preference soundVolume must be a number from ${SOUND_VOLUME.min} to ${SOUND_VOLUME.max}`)
-      continue
-    }
-    if (key === 'claudePermissionWaitSeconds') {
-      if (!isWaitSeconds(value[key])) {
-        throw new TypeError(`Desktop preference claudePermissionWaitSeconds must be an integer from ${CLAUDE_PERMISSION_WAIT_MIN_SECONDS} to ${CLAUDE_PERMISSION_WAIT_MAX_SECONDS}`)
-      }
-      continue
-    }
-    if (key === 'dndUntil') {
-      if (value[key] !== null && !(typeof value[key] === 'number' && Number.isFinite(value[key]) && (value[key] as number) > 0)) {
-        throw new TypeError('Desktop preference dndUntil must be a positive number or null')
-      }
-      continue
-    }
-    if (typeof value[key] !== 'boolean') {
-      throw new TypeError(`Desktop preference ${key} must be boolean`)
+    switch (key) {
+      case 'locale':
+        if (!isAppLocale(value[key])) throw new TypeError('Desktop preference locale is unsupported')
+        break
+      case 'soundVolume':
+        if (!isVolume(value[key])) throw new TypeError(`Desktop preference soundVolume must be a number from ${SOUND_VOLUME.min} to ${SOUND_VOLUME.max}`)
+        break
+      case 'claudePermissionWaitSeconds':
+        if (!isWaitSeconds(value[key])) {
+          throw new TypeError(`Desktop preference claudePermissionWaitSeconds must be an integer from ${CLAUDE_PERMISSION_WAIT_MIN_SECONDS} to ${CLAUDE_PERMISSION_WAIT_MAX_SECONDS}`)
+        }
+        break
+      case 'dndUntil':
+        if (value[key] !== null && !(typeof value[key] === 'number' && Number.isFinite(value[key]) && (value[key] as number) > 0)) {
+          throw new TypeError('Desktop preference dndUntil must be a positive number or null')
+        }
+        break
+      default:
+        if (typeof value[key] !== 'boolean') {
+          throw new TypeError(`Desktop preference ${key} must be boolean`)
+        }
     }
   }
 

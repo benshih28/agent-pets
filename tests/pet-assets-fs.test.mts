@@ -4,10 +4,11 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ensureDirectoryWithin, writeFileWithin } from '../electron/ipc/pet-assets-fs.ts'
+import { removeTempTreeAsync } from './support/temp-dir.mts'
 
 test('pet asset directory and file writes reject symlinks and escape paths', async t => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'agent-pets-pet-assets-'))
-  t.after(async () => rm(temporaryRoot, { recursive: true, force: true }))
+  t.after(async () => removeTempTreeAsync(temporaryRoot))
   const root = join(temporaryRoot, 'custom-pets')
   const outside = join(temporaryRoot, 'outside')
   await mkdir(outside)

@@ -4,6 +4,12 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import test from 'node:test'
 import { PluginDeveloperModeWatcher } from '../electron/plugin-developer-mode.ts'
+import { linkDirectory } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
+
+// 兩次連續寫入的 fs.watch 事件，送達間隔在高負載下會拉長（F2 實測：三個全量同時跑時 200 ms 的 debounce 被拆成兩次 reload）。
+// debounce 取 1 秒，遠大於負載下的送達間隔；合併的判斷不受影響。
+const COALESCE_DEBOUNCE_MS = 1_000
 
 test('developer folder watcher coalesces edits and closes its subscriptions', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-watch-'))
@@ -11,7 +17,7 @@ test('developer folder watcher coalesces edits and closes its subscriptions', as
   fs.mkdirSync(path.join(source, 'dist'), { recursive: true })
   const entry = path.join(source, 'dist', 'main.js')
   fs.writeFileSync(entry, 'first')
-  const watcher = new PluginDeveloperModeWatcher(200)
+  const watcher = new PluginDeveloperModeWatcher(COALESCE_DEBOUNCE_MS)
   try {
     let reloads = 0
     assert.equal(watcher.watch('sample-plugin', source, () => { reloads += 1 }), true)
@@ -21,16 +27,16 @@ test('developer folder watcher coalesces edits and closes its subscriptions', as
     await new Promise(resolve => setTimeout(resolve, 50))
     fs.writeFileSync(entry, 'second')
     fs.writeFileSync(entry, 'third')
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 15_000
     while (reloads === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
-    await new Promise(resolve => setTimeout(resolve, 600))
+    await new Promise(resolve => setTimeout(resolve, COALESCE_DEBOUNCE_MS * 1.5))
     assert.equal(reloads, 1)
     assert.equal(watcher.isWatching('sample-plugin', source), true)
     watcher.unwatch('sample-plugin')
     assert.equal(watcher.isWatching('sample-plugin'), false)
   } finally {
     watcher.destroy()
-    fs.rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })
 
@@ -39,15 +45,14 @@ test('developer folder watcher rejects a symlink root and invalid plugin id', ()
   const source = path.join(directory, 'plugin')
   const linked = path.join(directory, 'linked')
   fs.mkdirSync(source)
-  // junction 不需要 Windows 開發者模式，在其他平台會被忽略而建立一般目錄 symlink。
-  fs.symlinkSync(source, linked, 'junction')
+  linkDirectory(source, linked)
   const watcher = new PluginDeveloperModeWatcher(10)
   try {
     assert.equal(watcher.watch('sample-plugin', linked, () => {}), false)
     assert.equal(watcher.watch('../outside', source, () => {}), false)
   } finally {
     watcher.destroy()
-    fs.rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })
 
@@ -73,6 +78,6 @@ test('developer reload failures are reported and no timer outlives destroy()', a
     assert.equal(errors.length, seen)
   } finally {
     watcher.destroy()
-    fs.rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })

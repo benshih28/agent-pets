@@ -2,14 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerPetAssetIpc, type PetAssetIpcDependencies } from '../electron/ipc/pet-assets.ts'
+import { fakeBrowserWindow, fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 test('pet asset IPC uses injected paths, archive helpers, and renderer sender checks', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   const trusted: Array<unknown> = []
   const createdDirectories: string[] = []
   const writtenFiles: Array<{ path: string; contents: string }> = []
   const removedDirectories: string[] = []
-  const panelWindow = { isDestroyed: () => false }
+  const panelWindow = fakeBrowserWindow({ isDestroyed: () => false })
   const commits: unknown[] = []
   const cancels: unknown[] = []
   const fakeFs = {
@@ -24,7 +26,7 @@ test('pet asset IPC uses injected paths, archive helpers, and renderer sender ch
     rm: async (path: string) => { removedDirectories.push(path) },
   }
   const deps: PetAssetIpcDependencies = {
-    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     assertTrustedIpcSender: (event, window) => trusted.push({ event, window }),
     getPanelWindow: () => panelWindow,
     getPetWindow: () => null,
@@ -35,8 +37,8 @@ test('pet asset IPC uses injected paths, archive helpers, and renderer sender ch
       ? null
       : [base, ...parts].join('/'),
     sanitizePetId: value => /^[a-z0-9-]{1,64}$/.test(value) ? value : null,
-    ensureDir: path => createdDirectories.push(path),
-    writeFileEnsured: (path, contents) => writtenFiles.push({ path, contents }),
+    ensureDir: path => { createdDirectories.push(path) },
+    writeFileEnsured: (path, contents) => { writtenFiles.push({ path, contents: typeof contents === 'string' ? contents : Buffer.from(contents).toString() }) },
     parsePetBehaviorManifest: () => undefined,
     isSupportedRasterImage: () => false,
     petImport: {
@@ -47,7 +49,8 @@ test('pet asset IPC uses injected paths, archive helpers, and renderer sender ch
       },
       cancel: async token => { cancels.push(token); return true },
     },
-    fs: fakeFs as never,
+    // Stats 與 fs/promises 的多載簽章太大，這裡只實作 IPC 層實際呼叫的成員與欄位。
+    fs: fakeFs as unknown as PetAssetIpcDependencies['fs'],
     path: {
       basename: value => value.split('/').at(-1) ?? '',
       join: (...parts) => parts.join('/'),
@@ -61,7 +64,7 @@ test('pet asset IPC uses injected paths, archive helpers, and renderer sender ch
   }
 
   registerPetAssetIpc(deps)
-  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
+  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.(fakeIpcMainInvokeEvent(), ...args)
   assert.deepEqual([...handlers.keys()], [
     IPC_CHANNELS.addCustomPet,
     IPC_CHANNELS.renameCustomPet,

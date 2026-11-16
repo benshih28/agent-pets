@@ -2,10 +2,12 @@ import type { AgentSource, AgentState, AgentStatusEvent, AgentTokenUsage } from 
 import { AGENT_STATES, ALL_SOURCES } from '../src/types/agent.ts'
 import { EXTERNAL_ONLY_PERMISSION_NOTICE } from '../src/types/capabilities.ts'
 import { parseHostHints } from './host-app.ts'
+import { asRecord, isRecord } from './value-guards.ts'
 
-const MAX_SESSION_ID_LENGTH = 256
+// 上限是事件入口的契約：history、成就、本機用量與 session-jump 都 import 這裡的值，才不會接受入口已拒收的資料。
+export const MAX_SESSION_ID_LENGTH = 256
 const MAX_TEXT_FIELD_LENGTH = 512
-const MAX_TOKEN_COUNT = 1_000_000_000_000
+export const MAX_TOKEN_COUNT = 1_000_000_000_000
 
 // 'opencode' 是舊版 OpenCode 插件送的來源，正規化成 opencode-cli；其餘來源以來源 registry 為準。
 const LEGACY_OPENCODE_SOURCE = 'opencode'
@@ -39,8 +41,8 @@ function optionalText(value: unknown): string | undefined {
 }
 
 function optionalTokenUsage(value: unknown): AgentTokenUsage | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const raw = value as Record<string, unknown>
+  const raw = asRecord(value)
+  if (!raw) return undefined
   if (raw.quality !== 'estimated' && raw.quality !== 'exact') return undefined
   const input = typeof raw.input === 'number' && Number.isSafeInteger(raw.input) && raw.input >= 0 && raw.input <= MAX_TOKEN_COUNT
     ? raw.input
@@ -56,7 +58,7 @@ export function normalizeAgentStatusEvent(
   value: unknown,
   receivedAt = Date.now(),
 ): EventNormalizationResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return { ok: false, error: 'event must be an object' }
   }
 

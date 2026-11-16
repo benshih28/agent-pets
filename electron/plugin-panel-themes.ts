@@ -21,6 +21,7 @@ import {
   type PanelThemeRgba,
 } from './panel-theme-color.ts'
 import { readImageAnimated, readImageOrientation, readImageSize } from './pet-sprite-validation.ts'
+import { rasterImageTypeIn, type RasterImageType } from './raster-image.ts'
 import type {
   PluginLocalizedText,
   PluginPanelThemeBackground,
@@ -30,9 +31,9 @@ import type {
   PluginPanelThemeFit,
   PluginPanelThemeFontFace,
   PluginPanelThemeModeDefinition,
-  PluginPanelThemeOverlay,
   PluginPanelThemePosition,
 } from '../src/types/plugin.ts'
+import type { AppLocale } from '../src/types/locale.ts'
 import type {
   PanelThemeBackgroundState,
   PanelThemeCatalogEntry,
@@ -226,9 +227,13 @@ export function normalizePanelThemePlainText(value: unknown, maxLength: number):
   return text.length > 0 && text.length <= maxLength ? text : null
 }
 
+// 這個模組要能被目錄驗證器 vendor，只能 import 同層模組的值，所以不取 SUPPORTED_LOCALES；
+// `satisfies Record<AppLocale, true>` 讓新增語系時這裡一定跟著改。
+const LOCALIZED_KEYS: readonly string[] = Object.keys({ 'zh-TW': true, 'en-US': true } satisfies Record<AppLocale, true>)
+
 function parseLocalized(value: unknown, maxLength: number, path: string): PluginLocalizedText {
   if (!isRecord(value)) fail(path, 'must be { "zh-TW", "en-US" }')
-  assertKeys(value, ['zh-TW', 'en-US'], path)
+  assertKeys(value, LOCALIZED_KEYS, path)
   const zhTW = normalizePanelThemePlainText(value['zh-TW'], maxLength)
   const enUS = normalizePanelThemePlainText(value['en-US'], maxLength)
   if (!zhTW || !enUS) fail(path, `each locale needs 1-${maxLength} characters`)
@@ -797,48 +802,41 @@ function parseStops(value: unknown, path: string): Array<{ color: PanelThemeRgba
 function parseBackground(value: unknown, path: string): ResolvedPanelThemeBackground {
   if (value === undefined) return { type: 'solid' }
   if (!isRecord(value)) fail(path, 'must be an object')
-  if (value.type === 'solid') {
-    assertKeys(value, ['type'], path)
-    return { type: 'solid' }
-  }
-  if (value.type === 'gradient') {
-    if (value.kind === 'linear') {
-      assertKeys(value, ['type', 'kind', 'angle', 'stops'], path)
-      const angle = value.angle === undefined ? 180 : integerIn(value.angle, 0, 359, `${path}.angle`)
-      return { type: 'gradient', kind: 'linear', angle, stops: parseStops(value.stops, `${path}.stops`) }
+  switch (value.type) {
+    case 'solid': {
+      assertKeys(value, ['type'], path)
+      return { type: 'solid' }
     }
-    if (value.kind === 'radial') {
-      assertKeys(value, ['type', 'kind', 'position', 'stops'], path)
-      const position = enumOf<PluginPanelThemePosition>(value.position, POSITIONS, 'center', `${path}.position`)
-      return { type: 'gradient', kind: 'radial', position, stops: parseStops(value.stops, `${path}.stops`) }
+    case 'gradient': {
+      if (value.kind === 'linear') {
+        assertKeys(value, ['type', 'kind', 'angle', 'stops'], path)
+        const angle = value.angle === undefined ? 180 : integerIn(value.angle, 0, 359, `${path}.angle`)
+        return { type: 'gradient', kind: 'linear', angle, stops: parseStops(value.stops, `${path}.stops`) }
+      }
+      if (value.kind === 'radial') {
+        assertKeys(value, ['type', 'kind', 'position', 'stops'], path)
+        const position = enumOf<PluginPanelThemePosition>(value.position, POSITIONS, 'center', `${path}.position`)
+        return { type: 'gradient', kind: 'radial', position, stops: parseStops(value.stops, `${path}.stops`) }
+      }
+      return fail(`${path}.kind`, 'must be linear or radial')
     }
-    fail(`${path}.kind`, 'must be linear or radial')
-  }
-  if (value.type === 'image') {
-    assertKeys(value, ['type', 'src', 'fit', 'position', 'opacity', 'blur', 'overlay'], path)
-    const src = normalizePanelThemeAssetPath(value.src, ['.png', '.webp'])
-    if (!src) fail(`${path}.src`, 'must be a safe relative .png or .webp path')
-    return {
-      type: 'image',
-      src,
-      fit: enumOf<PluginPanelThemeFit>(value.fit, FITS, 'cover', `${path}.fit`),
-      position: enumOf<PluginPanelThemePosition>(value.position, POSITIONS, 'center', `${path}.position`),
-      opacity: value.opacity === undefined ? 1 : numberIn(value.opacity, 0.2, 1, `${path}.opacity`),
-      blur: value.blur === undefined ? 0 : integerIn(value.blur, 0, 24, `${path}.blur`),
-      overlay: parseOverlay(value.overlay, `${path}.overlay`),
+    case 'image': {
+      assertKeys(value, ['type', 'src', 'fit', 'position', 'opacity', 'blur', 'overlay'], path)
+      const src = normalizePanelThemeAssetPath(value.src, ['.png', '.webp'])
+      if (!src) fail(`${path}.src`, 'must be a safe relative .png or .webp path')
+      return {
+        type: 'image',
+        src,
+        fit: enumOf<PluginPanelThemeFit>(value.fit, FITS, 'cover', `${path}.fit`),
+        position: enumOf<PluginPanelThemePosition>(value.position, POSITIONS, 'center', `${path}.position`),
+        opacity: value.opacity === undefined ? 1 : numberIn(value.opacity, 0.2, 1, `${path}.opacity`),
+        blur: value.blur === undefined ? 0 : integerIn(value.blur, 0, 24, `${path}.blur`),
+        overlay: parseOverlay(value.overlay, `${path}.overlay`),
+      }
     }
+    default:
+      fail(`${path}.type`, 'must be solid, gradient or image')
   }
-  fail(`${path}.type`, 'must be solid, gradient or image')
-}
-
-function gradientBackdrops(stops: ReadonlyArray<{ color: PanelThemeRgba }>): Backdrop[] {
-  const backdrops: Backdrop[] = stops.map((stop, index) => ({ name: `gradient stop ${index}`, color: stop.color }))
-  for (let index = 0; index + 1 < stops.length; index += 1) {
-    for (const t of [0.25, 0.5, 0.75]) {
-      backdrops.push({ name: `gradient between stops ${index} and ${index + 1}`, color: mixColor(stops[index]!.color, stops[index + 1]!.color, t) })
-    }
-  }
-  return backdrops
 }
 
 function contrastIssue(failure: ContrastFailure): PanelThemeIssue {
@@ -1376,16 +1374,7 @@ export function isWoff2(bytes: Uint8Array): boolean {
   return bytes.length >= 4 && bytes[0] === 0x77 && bytes[1] === 0x4f && bytes[2] === 0x46 && bytes[3] === 0x32
 }
 
-export type PanelThemeImageKind = 'image/png' | 'image/webp' | 'image/jpeg'
-
-export function panelThemeImageType(bytes: Uint8Array): PanelThemeImageKind | null {
-  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
-    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return 'image/png'
-  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp'
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
-  return null
-}
+export type PanelThemeImageKind = RasterImageType
 
 export type PanelThemeImageCheck =
   | { ok: true; type: PanelThemeImageKind; width: number; height: number }
@@ -1395,7 +1384,7 @@ interface ImageRules {
   maxBytes: number
   maxSide: number
   maxPixels: number
-  types: readonly PanelThemeImageKind[]
+  types: ReadonlySet<PanelThemeImageKind>
   requireUpright: boolean
 }
 
@@ -1403,7 +1392,7 @@ const PACKAGED_IMAGE_RULES: ImageRules = {
   maxBytes: PANEL_THEME_IMAGE_MAX_BYTES,
   maxSide: PANEL_THEME_IMAGE_MAX_SIDE,
   maxPixels: PANEL_THEME_IMAGE_MAX_PIXELS,
-  types: ['image/png', 'image/webp'],
+  types: new Set(['image/png', 'image/webp']),
   requireUpright: true,
 }
 
@@ -1411,15 +1400,15 @@ const USER_IMAGE_RULES: ImageRules = {
   maxBytes: PANEL_THEME_USER_IMAGE_MAX_BYTES,
   maxSide: PANEL_THEME_USER_IMAGE_MAX_SIDE,
   maxPixels: PANEL_THEME_USER_IMAGE_MAX_PIXELS,
-  types: ['image/png', 'image/jpeg', 'image/webp'],
+  types: new Set(['image/png', 'image/jpeg', 'image/webp']),
   requireUpright: false,
 }
 
 /** 只檢查檔頭；不做任何解碼。 */
 function checkImage(bytes: Uint8Array, rules: ImageRules): PanelThemeImageCheck {
   if (bytes.byteLength > rules.maxBytes) return { ok: false, error: 'image_too_large' }
-  const type = panelThemeImageType(bytes)
-  if (!type || !rules.types.includes(type)) return { ok: false, error: 'image_invalid' }
+  const type = rasterImageTypeIn(bytes, rules.types)
+  if (!type) return { ok: false, error: 'image_invalid' }
   const size = readImageSize(bytes)
   if (!size || !Number.isSafeInteger(size.width) || !Number.isSafeInteger(size.height)) return { ok: false, error: 'image_invalid' }
   if (size.width < PANEL_THEME_IMAGE_MIN_SIDE || size.height < PANEL_THEME_IMAGE_MIN_SIDE) return { ok: false, error: 'image_invalid' }

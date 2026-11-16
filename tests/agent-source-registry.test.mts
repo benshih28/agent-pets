@@ -171,13 +171,14 @@ test('the registries and every derived table are frozen', () => {
 })
 
 // hook 是獨立部署的腳本，不能 import registry，所以只能從原始碼讀出它手寫的來源清單比對。
-test('the hook script only sends sources the registry knows', () => {
+test('the hook script accepts exactly the registry sources of the families it serves', () => {
   const hook = readFileSync(new URL('../integrations/agent-hook.mjs', import.meta.url), 'utf8')
   const match = hook.match(/^const validSources = \[([^\]]*)\]/m)
   assert.ok(match, 'validSources literal not found in agent-hook.mjs')
   const sources = [...match[1].matchAll(/'([^']+)'/g)].map(m => m[1])
-  assert.ok(sources.length > 0)
   for (const source of sources) assert.ok(isAgentSource(source), source)
+  // OpenCode 走 in-process plugin（setup.ts 的模板），只有 Codex 與 Claude 家族經過這支 hook。
+  assert.deepEqual(sources, [...FAMILY_SOURCES.codex, ...FAMILY_SOURCES.claude])
 })
 
 test('the event normalizer accepts every registry state plus the legacy waiting state', () => {

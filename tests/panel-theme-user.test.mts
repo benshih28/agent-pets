@@ -14,6 +14,13 @@ import { PANEL_THEME_COLOR_KEY_PROPERTIES } from '../src/types/panel-theme.ts'
 import { USER_PANEL_THEME_COLOR_KEYS, USER_PANEL_THEME_FONT_STACK_IDS } from '../src/types/panel-theme-user.ts'
 import { builtinDefinition } from './support/panel-theme-fixtures.mts'
 
+type JsonObject = Record<string, unknown>
+
+// 這些案例故意寫入定義型別不允許的值，所以改走沒有型別約束的 JSON 物件。
+function node(value: JsonObject, ...keys: string[]): JsonObject {
+  return keys.reduce<JsonObject>((current, key) => current[key] as JsonObject, value)
+}
+
 test('the editor key list and the renderer key→property map match the validator token table', () => {
   assert.deepEqual([...USER_PANEL_THEME_COLOR_KEYS].sort(), PANEL_THEME_COLOR_TOKENS.map(token => token.key).sort())
   for (const token of PANEL_THEME_COLOR_TOKENS) assert.equal(PANEL_THEME_COLOR_KEY_PROPERTIES[token.key], token.property)
@@ -36,28 +43,28 @@ test('every safe font stack is accepted by the manifest family grammar', () => {
 })
 
 test('the definition grammar is strict: unknown, missing and malformed values reject with a path', () => {
-  const cases: Array<[(definition: Record<string, any>) => void, RegExp]> = [
+  const cases: Array<[(definition: JsonObject) => void, RegExp]> = [
     [definition => { definition.extra = 1 }, /^definition\.extra$/],
     [definition => { delete definition.shape }, /^definition\.shape$/],
-    [definition => { definition.modes.light.colors.bogus = '#fff' }, /^light\.colors\.bogus$/],
-    [definition => { delete definition.modes.dark.colors.text }, /^dark\.colors\.text$/],
-    [definition => { definition.modes.light.colors.text = 'red' }, /^light\.colors\.text$/],
-    [definition => { definition.modes.light.colors.text = 'var(--x)' }, /^light\.colors\.text$/],
-    [definition => { definition.modes.light.colors.text = 'rgb(0 0 0 / 1); background: url(x)' }, /^light\.colors\.text$/],
-    [definition => { definition.typography.body = 'Comic Sans' }, /^typography\.body$/],
-    [definition => { definition.typography.scale = 1.234 }, /^typography\.scale$/],
-    [definition => { definition.shape.radiusSm = 20 }, /^shape\.radiusSm$/],
+    [definition => { node(definition, 'modes', 'light', 'colors').bogus = '#fff' }, /^light\.colors\.bogus$/],
+    [definition => { delete node(definition, 'modes', 'dark', 'colors').text }, /^dark\.colors\.text$/],
+    [definition => { node(definition, 'modes', 'light', 'colors').text = 'red' }, /^light\.colors\.text$/],
+    [definition => { node(definition, 'modes', 'light', 'colors').text = 'var(--x)' }, /^light\.colors\.text$/],
+    [definition => { node(definition, 'modes', 'light', 'colors').text = 'rgb(0 0 0 / 1); background: url(x)' }, /^light\.colors\.text$/],
+    [definition => { node(definition, 'typography').body = 'Comic Sans' }, /^typography\.body$/],
+    [definition => { node(definition, 'typography').scale = 1.234 }, /^typography\.scale$/],
+    [definition => { node(definition, 'shape').radiusSm = 20 }, /^shape\.radiusSm$/],
     [definition => { definition.shape = { radiusSm: 10, radiusMd: 8, radiusLg: 28 } }, /^shape$/],
-    [definition => { definition.modes.light.background = { type: 'image', src: 'x.png' } }, /^light\.background\.type$/],
-    [definition => { definition.modes.light.background = { type: 'gradient', kind: 'linear', angle: 10, stops: [{ color: '#fff', at: 50 }, { color: '#eee', at: 10 }] } }, /stops\[1\]\.at$/],
-    [definition => { definition.modes.light.background = { type: 'gradient', kind: 'linear', angle: 10, stops: [{ color: 'rgb(0 0 0 / 0.5)', at: 0 }, { color: '#eee', at: 10 }] } }, /stops\[0\]\.color$/],
-    [definition => { definition.modes.light.image = { fit: 'cover', overlayColor: '#fff', dim: 0.4 } }, /^light\.image\.dim$/],
-    [definition => { definition.modes.light.image = { fit: 'cover', overlayColor: '#fff', dim: 0.9, path: '/etc/passwd' } }, /^light\.image\.path$/],
-    [definition => { definition.modes.light.petStatus = { background: '#fff', text: '#000' } }, /^light\.petStatus\./],
-    [definition => { definition.modes = { light: definition.modes.light } }, /^modes\.dark$/],
+    [definition => { node(definition, 'modes', 'light').background = { type: 'image', src: 'x.png' } }, /^light\.background\.type$/],
+    [definition => { node(definition, 'modes', 'light').background = { type: 'gradient', kind: 'linear', angle: 10, stops: [{ color: '#fff', at: 50 }, { color: '#eee', at: 10 }] } }, /stops\[1\]\.at$/],
+    [definition => { node(definition, 'modes', 'light').background = { type: 'gradient', kind: 'linear', angle: 10, stops: [{ color: 'rgb(0 0 0 / 0.5)', at: 0 }, { color: '#eee', at: 10 }] } }, /stops\[0\]\.color$/],
+    [definition => { node(definition, 'modes', 'light').image = { fit: 'cover', overlayColor: '#fff', dim: 0.4 } }, /^light\.image\.dim$/],
+    [definition => { node(definition, 'modes', 'light').image = { fit: 'cover', overlayColor: '#fff', dim: 0.9, path: '/etc/passwd' } }, /^light\.image\.path$/],
+    [definition => { node(definition, 'modes', 'light').petStatus = { background: '#fff', text: '#000' } }, /^light\.petStatus\./],
+    [definition => { definition.modes = { light: node(definition, 'modes').light } }, /^modes\.dark$/],
   ]
   for (const [mutate, path] of cases) {
-    const definition = builtinDefinition() as unknown as Record<string, any>
+    const definition: JsonObject = { ...builtinDefinition() }
     mutate(definition)
     const parsed = parseUserPanelThemeDefinition(definition)
     assert.equal(parsed.ok, false)
@@ -69,7 +76,7 @@ test('the definition grammar is strict: unknown, missing and malformed values re
 })
 
 test('colours in any manifest grammar are re-emitted in the host canonical format', () => {
-  const definition = builtinDefinition() as unknown as Record<string, any>
+  const definition = builtinDefinition()
   definition.modes.light.colors.text = '#201e1d'
   const parsed = parseUserPanelThemeDefinition(definition)
   assert.equal(parsed.ok && parsed.value.modes.light.colors.text, 'rgb(32 30 29 / 1)')

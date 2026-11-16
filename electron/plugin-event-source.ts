@@ -4,6 +4,7 @@ import type {
   PluginLocalizedText,
 } from '../src/types/plugin.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
+import { SUPPORTED_LOCALES } from '../src/types/locale.ts'
 import { isPluginId } from '../src/types/id-patterns.ts'
 import { isRecord } from './value-guards.ts'
 import { AGENT_FAMILY_KEYS, ALL_SOURCES } from '../src/types/agent.ts'
@@ -69,9 +70,8 @@ interface PluginEventSourceControllerOptions {
 }
 
 function normalizeSafeLocalizedText(value: PluginLocalizedText): PluginLocalizedText | null {
-  const locales = ['zh-TW', 'en-US'] as const
   const normalized: PluginLocalizedText = { 'zh-TW': '', 'en-US': '' }
-  for (const language of locales) {
+  for (const language of SUPPORTED_LOCALES) {
     const raw = value?.[language]
     if (typeof raw !== 'string') return null
     const text = raw.normalize('NFKC').replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim()

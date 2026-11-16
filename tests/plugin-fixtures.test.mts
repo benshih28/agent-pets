@@ -12,6 +12,7 @@ import { PLUGIN_CONTENT_SECURITY_POLICY } from '../electron/plugin-protocol.ts'
 import { parsePluginManifest } from '../electron/plugin-manifest.ts'
 import { pluginHostAssets } from '../electron/plugin-host-assets.ts'
 import type { PluginManifest } from '../src/types/plugin.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const fixtureRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'plugins')
 const FIXTURE_IDS = ['ok-notify', 'ok-panel', 'ok-skin', 'ok-commands', 'ok-event-source', 'evil-event-source', 'ok-signed', 'ok-signed-rotated', 'evil-signed-tampered', 'evil-fetch', 'evil-loop', 'evil-spam', 'evil-xss', 'evil-spoof', 'evil-zip', 'evil-escape', 'evil-network', 'evil-panel', 'evil-badge', 'evil-skin'] as const
@@ -20,7 +21,6 @@ function readFixture(pluginId: string): { manifest: PluginManifest; files: Recor
   const sourceDirectory = path.join(fixtureRoot, pluginId)
   const manifestBytes = fs.readFileSync(path.join(sourceDirectory, 'plugin.json'))
   const parsed = parsePluginManifest(JSON.parse(manifestBytes.toString('utf8')) as unknown)
-  assert.equal(parsed.ok, true, `fixture ${pluginId} has a valid manifest`)
   if (!parsed.ok) throw new Error(parsed.error)
 
   const files: Record<string, Uint8Array> = {}
@@ -168,7 +168,7 @@ test('evil-skin uses a forged WebP and an oversized sheet is rejected during pla
       error: 'invalid_archive',
     })
   } finally {
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })
 
@@ -240,7 +240,7 @@ test('all source fixtures can be packed and installed by PluginRegistry', () => 
     }
     assert.equal(registry.list().length, new Set(FIXTURE_IDS.map(pluginId => readFixture(pluginId).manifest.id)).size - 1)
   } finally {
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })
 
@@ -262,7 +262,7 @@ test('evil-zip path traversal and excess entries are rejected during planning', 
       error: 'invalid_archive',
     })
   } finally {
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })
 
@@ -339,7 +339,7 @@ test('evil-spoof cannot claim another plugin id or call an undeclared capability
       args: [{ title: 'spoof', body: 'spoof' }],
     }), { id: 'spoof-3', ok: false, error: 'disabled' })
   } finally {
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })
 

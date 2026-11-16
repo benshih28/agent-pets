@@ -1,6 +1,7 @@
 import type { PluginInstallPlan } from '../types/plugin'
+import { permissionUnitsInDisplayOrder } from './plugin-permission-units.ts'
 
-// 授權畫面用的權限分級。單位字串格式與主行程 plugin-registry.ts 的 permissionUnits() 一致，
+// 授權畫面用的權限分級。單位字串由 plugin-permission-units.ts 產生，與主行程授權用的是同一份，
 // 例如 `network:api.example.com`、`secrets:token`、`contributes:panelView`。
 export type PermissionGroupId = 'network' | 'data' | 'display'
 export type PermissionRisk = 'high' | 'medium' | 'low'
@@ -46,27 +47,9 @@ export function parsePermissionUnit(unit: string): PermissionEntry {
   return entry('data', 'high', false)
 }
 
+// 畫面用顯示順序；授權與重新同意仍由主行程的 grantedPermissionUnits() 判定。
 export function permissionUnitsOfPlan(plan: Pick<PluginInstallPlan, 'permissions' | 'contributes'>): string[] {
-  const units: string[] = []
-  for (const host of plan.permissions?.network?.hosts ?? []) units.push(`network:${host}`)
-  if (plan.permissions?.network?.userGranted) units.push('network:userGranted')
-  for (const host of plan.permissions?.links?.hosts ?? []) units.push(`links:${host}`)
-  if (plan.permissions?.storage) units.push('storage')
-  if (plan.permissions?.agentStatus) units.push('agentStatus')
-  if (plan.permissions?.schedule) units.push('schedule')
-  for (const secret of plan.permissions?.secrets ?? []) units.push(`secrets:${secret}`)
-  if (plan.contributes?.feed) units.push('contributes:feed')
-  if (plan.contributes?.reaction) units.push('contributes:reaction')
-  if (plan.contributes?.panelView) units.push('contributes:panelView')
-  if (plan.contributes?.commands?.length) units.push('contributes:commands')
-  if (plan.contributes?.tray?.commands.length) units.push('contributes:tray')
-  if (plan.contributes?.badge) units.push('contributes:badge')
-  if (plan.contributes?.skins?.length) units.push(`contributes:skins:${plan.contributes.skins.length}`)
-  if (plan.contributes?.eventSource) units.push('contributes:eventSource')
-  const panelThemes = plan.contributes?.panelThemes ?? []
-  if (panelThemes.length) units.push(`contributes:panelThemes:${panelThemes.length}`)
-  if (panelThemes.some(theme => theme.fonts.length > 0)) units.push('contributes:panelThemeFonts')
-  return units
+  return permissionUnitsInDisplayOrder(plan)
 }
 
 export function groupPermissionUnits(units: readonly string[]): PermissionGroup[] {

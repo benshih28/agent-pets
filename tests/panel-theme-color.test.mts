@@ -13,7 +13,6 @@ import { PANEL_THEME_RGB_PATTERN } from '../src/types/panel-theme.ts'
 
 function canonical(value: string): string {
   const parsed = parsePanelThemeColor(value)
-  assert.equal(parsed.ok, true, `${value} parses`)
   if (!parsed.ok) throw new Error(parsed.error)
   return formatPanelThemeColor(parsed.color)
 }

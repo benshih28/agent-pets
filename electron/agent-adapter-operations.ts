@@ -2,13 +2,16 @@ import { isAbsolute, join } from 'node:path'
 import type { AgentAdapterId, AdapterInstallTarget, InstallReport } from '../src/types/agent-adapter'
 import { reportFromWrites } from './install-outcome.ts'
 import { projectAdapterCapabilities, type AgentAdapterOperations, type AdapterInspection } from './agent-adapter.ts'
-import { configuredHookExecutable, isCodexHooksFeatureEnabled } from './hook-config.ts'
+import { configuredHookExecutableFromRoot, isCodexHooksFeatureEnabled } from './hook-config.ts'
+import { agentConfigEnvReady } from './agent-config-dirs.ts'
+import { LOCAL_WIRE_PATHS } from '../src/types/local-wire.ts'
 import {
+  agentConfigDirStatus,
   agentPresence,
   claudeCodeSettingsPath,
   codexConfigPath,
   codexHooksPath,
-  fileExists,
+  fileExistsAsync,
   hookScriptDeployPath,
   hookScriptIsCurrent,
   hookScriptPath,
@@ -17,7 +20,7 @@ import {
   openCodeDesktopPluginPath,
   openCodePluginIsCurrent,
   prepareNodeForInstall,
-  readFile,
+  readFileAsync,
   uninstallIntegration,
 } from './setup.ts'
 
@@ -27,42 +30,46 @@ function check(id: string, status: 'pass' | 'warn' | 'fail', message: string) {
   return { id, status, code: `${id}.${status}`, message }
 }
 
-function isAgentPetsHookConfigured(settingsPath: string, expectedArg: string): boolean {
-  const raw = readFile(settingsPath)
-  if (!raw) return false
-
+// 讀一次、parse 一次：hook 是否已設定與它指向的 Node 都從同一份內容判斷。
+async function readHookConfig(settingsPath: string, expectedArg: string): Promise<{ configured: boolean, root: Record<string, unknown> | null }> {
+  const raw = await readFileAsync(settingsPath)
+  if (!raw) return { configured: false, root: null }
   try {
-    const config = JSON.parse(raw) as { hooks?: unknown }
-    const events = config.hooks
-    if (!events || typeof events !== 'object') return false
-    const hookPaths = [hookScriptPath(), join(hookScriptDeployPath(), 'agent-hook.cmd')]
-    return Object.values(events as Record<string, unknown>).some(groups => {
-      if (!Array.isArray(groups)) return false
-      return groups.some(group => {
-        if (!group || typeof group !== 'object' || !Array.isArray((group as { hooks?: unknown }).hooks)) return false
-        return (group as { hooks: unknown[] }).hooks.some(hook => {
-          if (!hook || typeof hook !== 'object' || (hook as { type?: unknown }).type !== 'command') return false
-          const command = typeof (hook as { command?: unknown }).command === 'string'
-            ? (hook as { command: string }).command
-            : ''
-          const args = Array.isArray((hook as { args?: unknown }).args)
-            ? (hook as { args: unknown[] }).args.join(' ')
-            : ''
-          const combined = `${command} ${args}`
-          return hookPaths.some(hookPath => combined.includes(hookPath)) && combined.includes(expectedArg)
-        })
-      })
-    })
+    const root = JSON.parse(raw) as Record<string, unknown>
+    return { configured: root !== null && typeof root === 'object' && hasConfiguredHook(root, expectedArg), root }
   } catch {
-    return false
+    return { configured: false, root: null }
   }
 }
 
-function nodeCheck(settingsPath: string) {
-  const executable = configuredHookExecutable(settingsPath)
+function hasConfiguredHook(config: { hooks?: unknown }, expectedArg: string): boolean {
+  const events = config.hooks
+  if (!events || typeof events !== 'object') return false
+  const hookPaths = [hookScriptPath(), join(hookScriptDeployPath(), 'agent-hook.cmd')]
+  return Object.values(events as Record<string, unknown>).some(groups => {
+    if (!Array.isArray(groups)) return false
+    return groups.some(group => {
+      if (!group || typeof group !== 'object' || !Array.isArray((group as { hooks?: unknown }).hooks)) return false
+      return (group as { hooks: unknown[] }).hooks.some(hook => {
+        if (!hook || typeof hook !== 'object' || (hook as { type?: unknown }).type !== 'command') return false
+        const command = typeof (hook as { command?: unknown }).command === 'string'
+          ? (hook as { command: string }).command
+          : ''
+        const args = Array.isArray((hook as { args?: unknown }).args)
+          ? (hook as { args: unknown[] }).args.join(' ')
+          : ''
+        const combined = `${command} ${args}`
+        return hookPaths.some(hookPath => combined.includes(hookPath)) && combined.includes(expectedArg)
+      })
+    })
+  })
+}
+
+async function nodeCheck(root: Record<string, unknown> | null) {
+  const executable = root ? configuredHookExecutableFromRoot(root) : null
   if (executable === null) return check('node', 'fail', 'No Node.js executable is configured for the hook.')
   // A bare "node" depends on PATH, which GUI-launched agents often lack.
-  const usable = isAbsolute(executable) && fileExists(executable)
+  const usable = isAbsolute(executable) && await fileExistsAsync(executable)
   return check('node', usable ? 'pass' : 'fail', usable
     ? 'The Node.js executable used by the hook exists.'
     : 'The Node.js executable used by the hook was not found.')
@@ -74,11 +81,15 @@ function agentPresenceCheck(found: boolean) {
     : 'No configuration folder for this tool was found; it may not be installed.')
 }
 
-function inspectOpenCode(): AdapterInspection {
-  const cli = fileExists(openCodeCliPluginPath())
-  const desktop = fileExists(openCodeDesktopPluginPath())
+async function inspectOpenCode(): Promise<AdapterInspection> {
+  const [cli, desktop] = await Promise.all([fileExistsAsync(openCodeCliPluginPath()), fileExistsAsync(openCodeDesktopPluginPath())])
   const installed = cli || desktop
-  const outdated = (cli && !openCodePluginIsCurrent('cli')) || (desktop && !openCodePluginIsCurrent('desktop'))
+  const [cliOutdated, desktopOutdated] = await Promise.all([
+    cli ? openCodePluginIsCurrent('cli').then(current => !current) : false,
+    desktop ? openCodePluginIsCurrent('desktop').then(current => !current) : false,
+  ])
+  const outdated = cliOutdated || desktopOutdated
+  const [presence, configDir] = await Promise.all([agentPresence(), agentConfigDirStatus('opencode')])
   // Either side is enough: most people use only the CLI or only the Desktop app.
   const health = !installed ? 'needs_install' : outdated ? 'degraded' : 'ready'
   return {
@@ -90,18 +101,25 @@ function inspectOpenCode(): AdapterInspection {
       check('opencode-desktop', desktop ? 'pass' : 'warn', desktop ? 'OpenCode Desktop plugin found.' : 'OpenCode Desktop plugin not found.'),
       ...(installed ? [check('plugin-current', outdated ? 'warn' : 'pass', outdated ? 'An installed plugin is out of date.' : 'Installed plugins are current.')] : []),
       check('permission-channel', 'pass', 'Permission replies use a dedicated local broker channel.'),
-      agentPresenceCheck(agentPresence().opencode),
+      agentPresenceCheck(presence.opencode),
     ],
+    configDir,
   }
 }
 
-function inspectCodex(): AdapterInspection {
-  const hooks = fileExists(codexHooksPath())
-  const script = fileExists(hookScriptPath())
-  const enabled = isCodexHooksFeatureEnabled(readFile(codexConfigPath()))
-  const configured = isAgentPetsHookConfigured(codexHooksPath(), ' codex')
-  const node = configured ? nodeCheck(codexHooksPath()) : null
-  const outdated = script && !hookScriptIsCurrent()
+async function inspectCodex(): Promise<AdapterInspection> {
+  const [hooks, script, codexConfig, hookConfig, presence, configDir] = await Promise.all([
+    fileExistsAsync(codexHooksPath()),
+    fileExistsAsync(hookScriptPath()),
+    readFileAsync(codexConfigPath()),
+    readHookConfig(codexHooksPath(), ' codex'),
+    agentPresence(),
+    agentConfigDirStatus('codex'),
+  ])
+  const enabled = isCodexHooksFeatureEnabled(codexConfig)
+  const { configured, root } = hookConfig
+  const [node, current] = await Promise.all([configured ? nodeCheck(root) : null, script ? hookScriptIsCurrent() : true])
+  const outdated = !current
   const healthy = hooks && script && configured && enabled && node?.status !== 'fail' && !outdated
   const partiallyInstalled = hooks || script || configured
   return {
@@ -115,17 +133,23 @@ function inspectCodex(): AdapterInspection {
       ...(script ? [check('hook-script-current', outdated ? 'warn' : 'pass', outdated ? 'The hook script is out of date.' : 'The hook script is current.')] : []),
       check('hook-command', configured ? 'pass' : 'fail', configured ? 'The Agent Pets hook command is configured.' : 'The Agent Pets hook command is not configured.'),
       ...(node ? [node] : []),
-      agentPresenceCheck(agentPresence().codex),
+      agentPresenceCheck(presence.codex),
     ],
+    configDir,
   }
 }
 
-function inspectClaudeCode(): AdapterInspection {
-  const settings = fileExists(claudeCodeSettingsPath())
-  const script = fileExists(hookScriptPath())
-  const configured = isAgentPetsHookConfigured(claudeCodeSettingsPath(), 'claude')
-  const node = configured ? nodeCheck(claudeCodeSettingsPath()) : null
-  const outdated = script && !hookScriptIsCurrent()
+async function inspectClaudeCode(): Promise<AdapterInspection> {
+  const [settings, script, hookConfig, presence, configDir] = await Promise.all([
+    fileExistsAsync(claudeCodeSettingsPath()),
+    fileExistsAsync(hookScriptPath()),
+    readHookConfig(claudeCodeSettingsPath(), 'claude'),
+    agentPresence(),
+    agentConfigDirStatus('claude'),
+  ])
+  const { configured, root } = hookConfig
+  const [node, current] = await Promise.all([configured ? nodeCheck(root) : null, script ? hookScriptIsCurrent() : true])
+  const outdated = !current
   const healthy = settings && script && configured && node?.status !== 'fail' && !outdated
   const partiallyInstalled = settings || script || configured
   return {
@@ -138,8 +162,9 @@ function inspectClaudeCode(): AdapterInspection {
       ...(script ? [check('hook-script-current', outdated ? 'warn' : 'pass', outdated ? 'The hook script is out of date.' : 'The hook script is current.')] : []),
       check('hook-command', configured ? 'pass' : 'fail', configured ? 'The Agent Pets hook command is configured.' : 'The Agent Pets hook command is not configured.'),
       ...(node ? [node] : []),
-      agentPresenceCheck(agentPresence().claude),
+      agentPresenceCheck(presence.claude),
     ],
+    configDir,
   }
 }
 
@@ -151,7 +176,7 @@ export interface AgentAdapterOperationsOptions {
 export function createAgentAdapterOperations(options: AgentAdapterOperationsOptions = {}): AgentAdapterOperations {
   return {
     capabilities: (id, base) => projectAdapterCapabilities(id, base, options.claudePermissionRespondEnabled?.() === true),
-    inspect(id: AgentAdapterId): AdapterInspection {
+    async inspect(id: AgentAdapterId): Promise<AdapterInspection> {
       switch (id) {
         case 'opencode': return inspectOpenCode()
         case 'codex': return inspectCodex()
@@ -160,7 +185,7 @@ export function createAgentAdapterOperations(options: AgentAdapterOperationsOpti
           return {
             installed: true,
             health: 'ready',
-            message: 'The local /v1/events ingress is available through the authenticated receiver.',
+            message: `The local ${LOCAL_WIRE_PATHS.events} ingress is available through the authenticated receiver.`,
             checks: [
               check('loopback', 'pass', 'The receiver binds to loopback only.'),
               check('token', 'pass', 'Requests need the token created at install time.'),
@@ -169,15 +194,16 @@ export function createAgentAdapterOperations(options: AgentAdapterOperationsOpti
           }
       }
     },
+    ready: agentConfigEnvReady,
     async prepare(target: AdapterInstallTarget): Promise<void> {
       // Codex and Claude Code write a Node command into their hooks; OpenCode's plugin does not.
       if (target !== 'opencode') await prepareNodeForInstall()
     },
-    install(target: AdapterInstallTarget): InstallReport {
-      return reportFromWrites(installIntegration(target))
+    async install(target: AdapterInstallTarget): Promise<InstallReport> {
+      return reportFromWrites(await installIntegration(target))
     },
-    uninstall(target: AdapterInstallTarget): void {
-      uninstallIntegration(target)
+    uninstall(target: AdapterInstallTarget): Promise<void> {
+      return uninstallIntegration(target)
     },
   }
 }

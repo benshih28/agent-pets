@@ -1,0 +1,21 @@
+{
+  "conditions": {
+    "script": "scripts/bench/event-loop-lag.mjs",
+    "events": 500,
+    "durationMs": 10000,
+    "histogramResolutionMs": 5,
+    "node": "v26.13.0",
+    "machine": "macOS x64, Intel Core i7-9750H (12 logical cores)",
+    "note": "量測當下機器同時有多個 Electron／測試行程在跑（load average 遠高於核心數），數字偏保守；histogram 解析度 5ms，所以 mean 的下限約 5ms。"
+  },
+  "runs": [
+    { "mean": 5.40, "p99": 6.77, "max": 9.77 },
+    { "mean": 5.42, "p99": 7.29, "max": 16.11 },
+    { "mean": 5.43, "p99": 7.03, "max": 11.07 },
+    { "mean": 5.53, "p99": 8.62, "max": 110.89 },
+    { "mean": 5.51, "p99": 8.50, "max": 14.18 }
+  ],
+  "medians": { "mean": 5.43, "p99": 7.29, "max": 14.18 },
+  "thresholds": { "mean": 12, "p99": 25, "max": 300 },
+  "thresholdRationale": "mean 受 5ms 解析度限制，12ms 約為中位數的 2 倍多；p99 取中位數約 3.5 倍（25ms）；max 是單次尖峰，受 CI 機器抖動影響最大（5 次中出現過 110ms），所以取固定上限 300ms，只攔截真正的長時間阻塞（例如同步寫入大批資料）。"
+}

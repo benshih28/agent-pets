@@ -13,7 +13,9 @@ test('domain locale files have identical key sets, a domain prefix, and no clash
   for (const domain of domains) {
     const zh = read(join(root, domain, 'zh-TW.json'))
     const en = read(join(root, domain, 'en-US.json'))
-    assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort(), `${domain}: zh-TW/en-US key mismatch`)
+    // zh-TW 只有 `.other`（Intl.PluralRules('zh') 永遠回 other），所以 `.one` 只比對英文一側。
+    const withoutOne = (obj: Record<string, string>) => Object.keys(obj).filter((key) => !key.endsWith('.one')).sort()
+    assert.deepEqual(withoutOne(en), withoutOne(zh), `${domain}: zh-TW/en-US key mismatch`)
     for (const key of Object.keys(zh)) {
       assert.ok(key.startsWith(`${domain}.`), `${domain}: key ${key} must start with "${domain}."`)
       assert.ok(!main.has(key), `${domain}: key ${key} duplicates the main catalog`)
@@ -38,7 +40,8 @@ test('every panel-domain key is referenced by the renderer source', () => {
   }
   walk(sourceRoot)
   const text = files.map((file) => readFileSync(file, 'utf8')).join('\n')
-  const unused = Object.keys(read(join(root, 'panel', 'zh-TW.json'))).filter((key) => !text.includes(`'${key}'`) && !text.includes(`"${key}"`))
+  const unused = Object.keys(read(join(root, 'panel', 'zh-TW.json'))).map((key) => key.replace(/\.(one|other)$/, '')) // 複數 key 由 tPlural 以基底名稱取用
+    .filter((key) => !text.includes(`'${key}'`) && !text.includes(`"${key}"`))
   assert.deepEqual(unused, [])
 })
 

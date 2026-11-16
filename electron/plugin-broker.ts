@@ -70,6 +70,25 @@ interface PluginStorageState {
   loaded: boolean
   available: boolean
   maxBytes: number
+  /**
+   * `JSON.stringify(values)` 的 UTF-8 位元組數與筆數。第一次寫入時才完整算一次，之後每次寫入只增減
+   * 變動的那一筆：storage 可以到 50 MiB，每次寫入都重新序列化整份會卡住主程序。
+   */
+  size: { bytes: number; entries: number } | null
+}
+
+function utf8Bytes(text: string): number {
+  return Buffer.byteLength(text, 'utf8')
+}
+
+/** 一筆 `"key":value` 在序列化結果中的位元組數（不含分隔的逗號）。 */
+function storageEntryBytes(key: string, serializedValue: string): number {
+  return utf8Bytes(JSON.stringify(key)) + 1 + utf8Bytes(serializedValue)
+}
+
+function storageSize(state: PluginStorageState): { bytes: number; entries: number } {
+  state.size ??= { bytes: utf8Bytes(JSON.stringify(state.values)), entries: Object.keys(state.values).length }
+  return state.size
 }
 
 const STORAGE_KEY_FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor'])
@@ -373,19 +392,25 @@ export class PluginBroker {
     const state = this.loadStorage(pluginId, context.storageBytesPerPlugin)
     if (!state.available) return { ok: false, error: 'disabled' }
     if (method === 'storage.get') return { found: Object.hasOwn(state.values, key), value: state.values[key] ?? null }
-    const next = { ...state.values }
+    // 序列化結果是 `{` + 各筆以逗號分隔 + `}`，所以增減一筆時，總長只差該筆本身與一個逗號。
+    const existed = Object.hasOwn(state.values, key)
+    const size = storageSize(state)
+    const previousBytes = existed ? storageEntryBytes(key, JSON.stringify(state.values[key])) : 0
     if (method === 'storage.remove') {
-      const removed = Object.hasOwn(next, key)
-      delete next[key]
-      state.values = next
-      if (removed) this.scheduleStorageFlush(pluginId)
-      return { removed }
+      if (!existed) return { removed: false }
+      delete state.values[key]
+      state.size = { bytes: size.bytes - previousBytes - (size.entries > 1 ? 1 : 0), entries: size.entries - 1 }
+      this.scheduleStorageFlush(pluginId)
+      return { removed: true }
     }
     const value = args[1]
     if (!isJsonValue(value)) return { ok: false, error: 'invalid_request' }
-    next[key] = JSON.parse(JSON.stringify(value)) as unknown
-    if (Buffer.byteLength(JSON.stringify(next), 'utf8') > context.storageBytesPerPlugin) return { ok: false, error: 'too_large' }
-    state.values = next
+    const serialized = JSON.stringify(value)
+    const separatorBytes = existed || size.entries === 0 ? 0 : 1
+    const nextBytes = size.bytes - previousBytes + storageEntryBytes(key, serialized) + separatorBytes
+    if (nextBytes > context.storageBytesPerPlugin) return { ok: false, error: 'too_large' }
+    state.values[key] = JSON.parse(serialized) as unknown
+    state.size = { bytes: nextBytes, entries: existed ? size.entries : size.entries + 1 }
     this.scheduleStorageFlush(pluginId)
     return { stored: true }
   }
@@ -428,7 +453,7 @@ export class PluginBroker {
     } catch (error) {
       if (!isFsError(error, 'ENOENT')) available = false
     }
-    const state: PluginStorageState = { values, loaded: true, available, maxBytes }
+    const state: PluginStorageState = { values, loaded: true, available, maxBytes, size: null }
     this.storage.set(pluginId, state)
     if (!available) this.recordDiagnostic(pluginId, 'disabled', 'storage.read')
     return state

@@ -5,6 +5,7 @@ import { validateUserPanelTheme } from '../electron/panel-theme-diagnostics.ts'
 import { PANEL_THEME_STATE_HUES } from '../electron/plugin-panel-themes.ts'
 import {
   IMAGE_CLUSTER_COUNT,
+  IMAGE_MAX_SAMPLES,
   IMAGE_SAMPLE_MAX_SIDE,
   extractDominantColors,
   paletteFromSeed,
@@ -109,14 +110,21 @@ test('image extraction is deterministic and bounded for large inputs', () => {
   const width = 1024
   const height = 768
   const pixels = image(width, height, (x, y) => [(x * 7 + y * 3) % 256, (x * 13) % 256, (y * 5) % 256, 255])
-  const started = performance.now()
   const first = extractDominantColors(pixels, width, height)
-  const elapsed = performance.now() - started
   assert.ok(first.length <= IMAGE_CLUSTER_COUNT)
   assert.ok(Math.abs(first.reduce((sum, cluster) => sum + cluster.weight, 0) - 1) < 1e-9)
-  assert.deepEqual(extractDominantColors(pixels, width, height), first)
-  // 取樣上限讓 786k 像素的輸入也維持在 16k 像素的工作量（寬鬆上限，避免機器差異造成誤判）。
-  assert.ok(elapsed < 2000, `took ${elapsed} ms`)
+  // 取樣上限讓 786k 像素的輸入也只處理 16k 像素。直接數讀了幾個像素值，不量時間：
+  // 計時（絕對毫秒或與小圖的比值）在多個全量測試同時跑時都會被 CPU 與記憶體頻寬爭用打破（F2 實測比值曾到 20）。
+  let reads = 0
+  const counted = new Proxy(pixels, {
+    get(target, key) {
+      if (typeof key === 'string' && key !== 'length') reads += 1
+      return Reflect.get(target, key)
+    },
+  })
+  assert.deepEqual(extractDominantColors(counted, width, height), first)
+  // 每個取樣像素讀 alpha 與 RGB 四個值；取樣失效時會讀 786k × 4 次。
+  assert.ok(reads > 0 && reads <= IMAGE_MAX_SAMPLES * 4, `read ${reads} pixel values`)
 })
 
 test('degenerate images return nothing or one cluster instead of throwing', () => {

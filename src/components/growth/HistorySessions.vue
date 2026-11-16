@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
-import { t, type TranslationKey } from '@/i18n'
+import { t, tPlural, type TranslationKey } from '@/i18n'
 import { useHistoryFormat } from '@/composables/useHistoryFormat'
 import { useAgentStore } from '@/stores/agentStore'
 import { AGENT_ADAPTER_REGISTRY } from '@/types/agent-adapter'
@@ -172,8 +172,8 @@ function outcomeLabel(outcome: HistorySessionOutcome): string {
 function metaLine(item: HistorySessionListItem): string {
   const parts = [duration(item.durationMs)]
   if (item.tracked) {
-    parts.push(t('growth.sessionsTools', { count: item.toolRuns }))
-    if (item.permissionWaits > 0) parts.push(t('growth.sessionsPermissionWaits', { count: item.permissionWaits }))
+    parts.push(tPlural('growth.sessionsTools', item.toolRuns))
+    if (item.permissionWaits > 0) parts.push(tPlural('growth.sessionsPermissionWaits', item.permissionWaits))
   } else {
     parts.push(t('growth.sessionsCountsUnknown'))
   }
@@ -184,6 +184,15 @@ function metaLine(item: HistorySessionListItem): string {
 
 // --- detail ------------------------------------------------------------------
 const selected = shallowRef<HistorySessionListItem | null>(null)
+// 彈窗開著時清單不刷新；期間若有更新，關閉後補刷一次。
+let missedRefresh = false
+
+function closeDetail(): void {
+  selected.value = null
+  if (!missedRefresh) return
+  missedRefresh = false
+  if (props.active && items.value.length <= HISTORY_SESSION_PAGE_DEFAULT) void reload()
+}
 
 // --- lifecycle ---------------------------------------------------------------
 let cleanupHistoryUpdated: (() => void) | null = null
@@ -191,7 +200,8 @@ onMounted(() => {
   cleanupHistoryUpdated = window.electronAPI?.onHistoryUpdated(() => {
     // Only the first page refreshes on its own; a reader who loaded more
     // pages keeps their place instead of the list jumping under them.
-    if (!props.active || items.value.length > HISTORY_SESSION_PAGE_DEFAULT || selected.value) return
+    if (!props.active || items.value.length > HISTORY_SESSION_PAGE_DEFAULT) return
+    if (selected.value) { missedRefresh = true; return }
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = setTimeout(() => { refreshTimer = null; void reload() }, REFRESH_DEBOUNCE_MS)
   }) ?? null
@@ -277,7 +287,7 @@ onUnmounted(() => {
     <HistorySessionDetail
       :session="selected"
       :project-name="selected ? projectName(selected) : ''"
-      @close="selected = null"
+      @close="closeDetail"
     />
   </section>
 </template>

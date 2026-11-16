@@ -147,7 +147,7 @@ export function attachRendererRecovery(
       for (const [event, listener] of [
         ['render-process-gone', onGone], ['unresponsive', onUnresponsive], ['responsive', onResponsive],
         ['did-fail-load', onFailLoad], ['did-finish-load', onFinishLoad],
-      ] as const) contents.off(event, listener as never)
+      ] as const) contents.off(event, listener)
     },
     state: () => ({ reloads: attempts.length, gaveUp }),
   }

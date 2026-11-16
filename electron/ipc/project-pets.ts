@@ -5,6 +5,7 @@ import { isValidPetId } from '../../src/utils/pet-id.ts'
 import { IPC_CHANNELS } from './channels.ts'
 import { handleTrusted } from './trusted.ts'
 import { isProjectId } from '../../src/types/id-patterns.ts'
+import { isRecord } from '../value-guards.ts'
 
 type DirectoryDialogResult = { canceled: boolean; filePaths: string[] }
 type DirectoryDialogOptions = { title: string; message: string; properties: Array<'openDirectory' | 'createDirectory'> }
@@ -82,12 +83,11 @@ export function registerProjectPetsIpc(deps: ProjectPetsIpcDependencies): void {
 
   handleTrusted(deps.ipcMain, IPC_CHANNELS.projectPetsBind, deps.getPanelWindow, deps.assertTrustedIpcSender, async (_event, payload: unknown): Promise<ProjectPetCommandResult> => {
     const store = deps.getStore()
-    if (!store || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    if (!store || !isRecord(payload)) {
       return { ok: false, error: 'unavailable' }
     }
-    const input = payload as Record<string, unknown>
-    const projectId = typeof input.projectId === 'string' ? input.projectId : ''
-    const petId = input.petId === null ? null : typeof input.petId === 'string' ? input.petId : undefined
+    const projectId = typeof payload.projectId === 'string' ? payload.projectId : ''
+    const petId = payload.petId === null ? null : typeof payload.petId === 'string' ? payload.petId : undefined
     if (!isProjectId(projectId)) return { ok: false, error: 'invalid_project' }
     if (petId === undefined) return { ok: false, error: 'invalid_pet' }
     const available = await deps.availablePetIds()

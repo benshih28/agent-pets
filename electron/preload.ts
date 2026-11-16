@@ -1,13 +1,16 @@
 import { IPC_CHANNELS } from './ipc/channels'
+import { asRecord } from './value-guards'
 import type { ElectronAPI } from '../src/types/electron-api'
-import type { AgentSource } from '../src/types/agent'
-import type { AdapterDiagnoseIpcResult, AdapterInstallIpcResult, AdapterUninstallIpcResult } from '../src/types/ipc'
+import type { AgentSource, AgentStatusEvent } from '../src/types/agent'
+import type { AdapterDiagnoseIpcResult, AdapterInstallIpcResult } from '../src/types/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopPreferences, DesktopPreferencesPatch } from '../src/types/desktop'
+import type { AppUpdateCheckResponse, AppUpdateState } from '../src/types/app-update'
 import type { SessionJumpRequest, SessionJumpResult } from '../src/types/session-jump'
 import type { PermissionDecisionValue, PermissionRequestView, PermissionAuditEntry } from '../src/types/permission'
 import type { ProgressionAwardEvent, ProgressionInsights, ProgressionSnapshot } from '../src/types/progression'
 import type { AchievementSnapshot, AchievementUnlock } from '../src/types/achievement'
+import type { DbMaintenanceResult, GrowthResetArmResult, GrowthResetResult } from '../src/types/growth-maintenance'
 import type { HistoryClearResult, HistoryCommandResult, HistoryExportRequest, HistorySessionDetail, HistorySessionPage, HistorySessionQuery, HistorySummary, HistoryUsageBlock } from '../src/types/history'
 import type { PetWindowMode, PetWindowModeState } from '../src/types/pet-window'
 import type { PetBehaviorManifest, PluginSkinPetSource } from '../src/types/pet'
@@ -47,8 +50,10 @@ import type { SessionSnapshotEntry } from './main/session-snapshot'
 import type { LocalServerHealthSnapshot, LocalServerId } from '../src/types/reliability'
 
 const electronAPI: ElectronAPI = {
-  onAgentStatusEvent: (callback: (event: unknown) => void) => {
-    const handler = (_event: unknown, data: unknown) => {
+  onAgentStatusEvent: (callback: (event: AgentStatusEvent) => void) => {
+    // main 端（event-server）只送 event-normalizer 正規化過的事件，且以批次陣列送出；
+    // 執行期驗證在 main 做，這裡只負責把批次攤平。
+    const handler = (_event: unknown, data: AgentStatusEvent | AgentStatusEvent[]) => {
       if (Array.isArray(data)) {
         for (const item of data) callback(item)
       } else {
@@ -274,7 +279,7 @@ const electronAPI: ElectronAPI = {
 
   onServerHealthChanged: (callback: (snapshot: LocalServerHealthSnapshot) => void) => {
     const handler = (_event: unknown, payload: unknown) => {
-      if (payload && typeof payload === 'object' && Array.isArray((payload as { servers?: unknown }).servers)) {
+      if (Array.isArray(asRecord(payload)?.servers)) {
         callback(payload as LocalServerHealthSnapshot)
       }
     }
@@ -286,7 +291,7 @@ const electronAPI: ElectronAPI = {
 
   onPanelOpened: (callback: (options: { restore: boolean }) => void) => {
     const handler = (_event: unknown, payload: unknown) => callback({
-      restore: Boolean(payload && typeof payload === 'object' && (payload as { restore?: unknown }).restore === true),
+      restore: asRecord(payload)?.restore === true,
     })
     ipcRenderer.on(IPC_CHANNELS.panelOpened, handler)
     return () => {
@@ -314,6 +319,22 @@ const electronAPI: ElectronAPI = {
 
   openLoginItemsSettings: (): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.desktopOpenLoginItemsSettings)
+  },
+
+  getAppUpdateState: (): Promise<AppUpdateState> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateGet)
+  },
+
+  setAppUpdateEnabled: (enabled: boolean): Promise<AppUpdateState> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateSetEnabled, enabled)
+  },
+
+  checkAppUpdate: (): Promise<AppUpdateCheckResponse> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateCheck)
+  },
+
+  openAppUpdateRelease: (): Promise<boolean> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateOpenRelease)
   },
 
   setDesktopPreferences: (patch: DesktopPreferencesPatch): Promise<DesktopPreferences> => {
@@ -486,6 +507,18 @@ const electronAPI: ElectronAPI = {
 
   setProjectPetsEnabled: (enabled: boolean): Promise<boolean> => {
     return ipcRenderer.invoke(IPC_CHANNELS.projectPetsSetEnabled, enabled)
+  },
+
+  armGrowthReset: (): Promise<GrowthResetArmResult> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.growthResetArm)
+  },
+
+  resetGrowth: (token: string): Promise<GrowthResetResult> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.growthReset, token)
+  },
+
+  runDbMaintenance: (): Promise<DbMaintenanceResult> => {
+    return ipcRenderer.invoke(IPC_CHANNELS.dbMaintenanceRun)
   },
 
   clearHistory: (): Promise<HistoryClearResult> => {

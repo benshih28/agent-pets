@@ -13,10 +13,11 @@ import { parsePermissionUnit, permissionUnitsOfPlan } from '../src/utils/plugin-
 import { pluginCapabilities } from '../src/utils/plugin-capabilities.ts'
 import { SETTINGS_ENTRIES, searchSettings } from '../src/utils/settingsRegistry.ts'
 import { DARK_COLORS, LIGHT_COLORS, manifest, png, theme, webp, woff2 } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function withUserData(run: (directory: string, registry: PluginRegistry) => void | Promise<void>): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-panel-theme-registry-'))
-  return Promise.resolve(run(directory, new PluginRegistry(directory))).finally(() => fs.rmSync(directory, { recursive: true, force: true }))
+  return Promise.resolve(run(directory, new PluginRegistry(directory))).finally(() => removeTempTree(directory))
 }
 
 function archive(rawManifest: unknown, files: Record<string, Uint8Array> = {}): Uint8Array {
@@ -164,7 +165,7 @@ test('settings search finds the panel theme entry in both languages', () => {
   assert.equal(entry.section, 'appearance')
   const identity = (key: string) => key
   for (const query of ['wallpaper', '桌布', '字型', 'font', 'background', '背景']) {
-    assert.ok(searchSettings(query, identity as never).some(hit => hit.entry.id === 'panelThemeStyle'), query)
+    assert.ok(searchSettings(query, identity).some(hit => hit.entry.id === 'panelThemeStyle'), query)
   }
 })
 
@@ -172,11 +173,11 @@ test('every new locale key exists in both languages', () => {
   for (const domain of ['design', 'plugins']) {
     const zh = JSON.parse(fs.readFileSync(`src/locales/${domain}/zh-TW.json`, 'utf8')) as Record<string, string>
     const en = JSON.parse(fs.readFileSync(`src/locales/${domain}/en-US.json`, 'utf8')) as Record<string, string>
-    const keys = (catalog: Record<string, string>) => Object.keys(catalog).filter(key => key.includes('anelTheme')).sort()
+    const keys = (catalog: Record<string, string>) => Object.keys(catalog).filter(key => key.includes('anelTheme') && !key.endsWith('.one')).sort() // zh-TW 沒有 `.one`
     assert.deepEqual(keys(zh), keys(en), domain)
     assert.ok(keys(zh).length > 0)
   }
-  for (const key of ['pluginPermissionPanelThemes', 'pluginPermissionPanelThemeFonts']) {
+  for (const key of ['pluginPermissionPanelThemes.other', 'pluginPermissionPanelThemeFonts']) {
     for (const file of ['src/locales/zh-TW.json', 'src/locales/en-US.json']) {
       assert.ok((JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>)[key], `${key} in ${file}`)
     }
@@ -196,6 +197,6 @@ test('the workerless fixture validates and packs without dist/main.js', () => {
       assert.equal(registry.planInstall(fs.readFileSync(output)).ok, true)
     })
   } finally {
-    fs.rmSync(path.dirname(output), { recursive: true, force: true })
+    removeTempTree(path.dirname(output))
   }
 })

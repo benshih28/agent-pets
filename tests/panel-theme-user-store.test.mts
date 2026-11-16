@@ -7,10 +7,11 @@ import { USER_PANEL_THEMES_DIRECTORY, UserPanelThemeStore, UserPanelThemeStoreEr
 import { USER_PANEL_THEME_MAX_COUNT } from '../src/types/panel-theme-user.ts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 import { builtinDefinition } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function withDirectory(run: (directory: string) => void): void {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-user-themes-'))
-  try { run(directory) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { run(directory) } finally { removeTempTree(directory) }
 }
 
 function counter() {
@@ -122,7 +123,7 @@ test('a symlinked store directory or theme file is refused', { skip: SKIP_WITHOU
       assert.equal(codeOf(() => store.create('Mine', builtinDefinition())), 'unsafe_directory')
       assert.deepEqual(fs.readdirSync(outside), [])
     } finally {
-      fs.rmSync(outside, { recursive: true, force: true })
+      removeTempTree(outside)
     }
   })
   withDirectory(directory => {

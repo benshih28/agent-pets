@@ -15,10 +15,11 @@ import {
 } from '../electron/plugin-preferences.ts'
 import { DEFAULT_PLUGIN_CATALOG_URL } from '../src/types/plugin-catalog.ts'
 import { POSIX_FILE_MODES, SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function withUserData(run: (userData: string) => void): void {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-preferences-'))
-  try { run(userData) } finally { fs.rmSync(userData, { recursive: true, force: true }) }
+  try { run(userData) } finally { removeTempTree(userData) }
 }
 
 test('plugin preferences use secure defaults and persist under userData atomically', () => {

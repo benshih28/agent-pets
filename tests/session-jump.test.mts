@@ -4,6 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import type { AgentStatusEvent } from '../src/types/agent.ts'
+import type { HostAppId } from '../src/types/host-app.ts'
+import type { WindowsActivationResult } from '../electron/windows-window-activator.ts'
 import {
   activateMacBundle,
   isShellSafePath,
@@ -15,6 +17,7 @@ import {
   withSessionJumpContext,
   type SessionJumpDependencies,
 } from '../electron/session-jump.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 // Every side effect (open -b, Finder, clipboard) is injected: these tests never launch an app,
 // open a window or touch the real clipboard, and all paths live in a throw-away temp directory.
@@ -27,7 +30,7 @@ const realFs = {
 
 function tempRoot(t: { after(fn: () => void): void }): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-jump-'))
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  t.after(() => removeTempTree(root))
   return root
 }
 
@@ -79,10 +82,10 @@ test('generic HTTP events can never choose an app to bring forward', async () =>
   assert.deepEqual(calls, [])
 })
 
-test('switch to app is unsupported off macOS and follows both toggles', async () => {
-  const windows = harness({ platform: 'win32' })
-  windows.service.record(event())
-  assert.deepEqual(await windows.service.run('switch-app', KEY), { ok: false, error: 'unsupported' })
+test('switch to app is unsupported off macOS and Windows and follows both toggles', async () => {
+  const linux = harness({ platform: 'linux' })
+  linux.service.record(event())
+  assert.deepEqual(await linux.service.run('switch-app', KEY), { ok: false, error: 'unsupported' })
 
   const { service, calls, preferences } = harness()
   service.record(event())
@@ -251,6 +254,7 @@ test('ingress context keeps the path and bundle id off the dispatched event', ()
 
   assert.equal(withSessionJumpContext(input, event({ adapterId: 'generic-http' }), 'darwin').host?.switchable, false)
   assert.equal(withSessionJumpContext(input, event(), 'win32').host?.switchable, false)
+  assert.equal(withSessionJumpContext(input, event(), 'linux').host?.switchable, false)
   assert.equal(withSessionJumpContext(input, event({ host: { kind: 'ide', app: 'jetbrains' } }), 'darwin').host?.switchable, false)
 })
 
@@ -265,4 +269,85 @@ test('a notification click switches only when the session app can be activated a
   preferences.sessionJumpSwitchAppEnabled = true
   assert.equal(await service.switchFromNotification({ source: 'claude', sessionId: 'session-1' }), true)
   assert.deepEqual(calls, [['activate', 'com.googlecode.iterm2']])
+})
+
+// ---- Windows：切換到 App（原生層全部注入，不呼叫 Win32）----
+
+function windowsHarness(result: WindowsActivationResult | Error, app: HostAppId = 'windows-terminal') {
+  const calls: string[][] = []
+  const h = harness({
+    platform: 'win32',
+    activateBundle: async () => { throw new Error('macOS path must not run on Windows') },
+    activateWindowsApp: async executables => {
+      calls.push([...executables])
+      if (result instanceof Error) throw result
+      return result
+    },
+  })
+  h.service.record(event({ host: { kind: 'terminal', app } }), { bundleId: 'com.googlecode.iterm2' })
+  return { ...h, windowsCalls: calls }
+}
+
+test('Windows switch-app passes only the allowlisted executable names of the reported app', async () => {
+  const { service, windowsCalls, calls } = windowsHarness('activated', 'vscode')
+  assert.deepEqual(await service.run('switch-app', KEY), { ok: true })
+  assert.deepEqual(windowsCalls, [['code.exe']])
+  assert.deepEqual(calls, [])
+})
+
+test('Windows switchable is true for allowlisted apps and false for apps with no Windows executable', () => {
+  const input = { source: 'claude', sessionId: 'session-1', host: { windowsTerminal: true } }
+  const wt = withSessionJumpContext(input, event({ host: { kind: 'terminal', app: 'windows-terminal' } }), 'win32')
+  assert.equal(wt.host?.switchable, true)
+  assert.equal(withSessionJumpContext(input, event({ host: { kind: 'ide', app: 'jetbrains' } }), 'win32').host?.switchable, false)
+  assert.equal(withSessionJumpContext(input, event({ host: { kind: 'terminal', app: 'iterm2' } }), 'win32').host?.switchable, false)
+  assert.equal(withSessionJumpContext(input, event({ adapterId: 'generic-http', host: { kind: 'terminal', app: 'windows-terminal' } }), 'win32').host?.switchable, false)
+  assert.equal(withSessionJumpContext(input, event({ adapterId: undefined, host: { kind: 'terminal', app: 'windows-terminal' } }), 'win32').host?.switchable, false)
+})
+
+test('Windows switch-app reports a missing window as unavailable and native failures as failed', async () => {
+  assert.deepEqual(await windowsHarness('not_found').service.run('switch-app', KEY), { ok: false, error: 'unavailable' })
+  assert.deepEqual(await windowsHarness('failed').service.run('switch-app', KEY), { ok: false, error: 'failed' })
+  assert.deepEqual(await windowsHarness(new Error('koffi exploded')).service.run('switch-app', KEY), { ok: false, error: 'failed' })
+})
+
+test('Windows switch-app refuses generic-http sessions, unsupported apps and a missing native hook', async () => {
+  const generic = windowsHarness('activated')
+  generic.service.record(event({ adapterId: 'generic-http' }))
+  assert.deepEqual(await generic.service.run('switch-app', KEY), { ok: false, error: 'unavailable' })
+  assert.deepEqual(generic.windowsCalls, [])
+
+  const unsupported = windowsHarness('activated', 'jetbrains')
+  assert.deepEqual(await unsupported.service.run('switch-app', KEY), { ok: false, error: 'unavailable' })
+  assert.deepEqual(unsupported.windowsCalls, [])
+
+  const bare = harness({ platform: 'win32' })
+  bare.service.record(event({ host: { kind: 'terminal', app: 'windows-terminal' } }))
+  assert.deepEqual(await bare.service.run('switch-app', KEY), { ok: false, error: 'unsupported' })
+})
+
+test('Windows switch-app keeps both toggles, the per-action rate limit and a notification fallback', async () => {
+  const { service, preferences, windowsCalls } = windowsHarness('activated')
+  preferences.sessionJumpSwitchAppEnabled = false
+  assert.deepEqual(await service.run('switch-app', KEY), { ok: false, error: 'disabled' })
+  assert.equal(await service.switchFromNotification({ source: 'claude', sessionId: 'session-1' }), false)
+  preferences.sessionJumpSwitchAppEnabled = true
+  for (let index = 0; index < 5; index += 1) assert.deepEqual(await service.run('switch-app', KEY), { ok: true })
+  assert.deepEqual(await service.run('switch-app', KEY), { ok: false, error: 'rate_limited' })
+  assert.equal(windowsCalls.length, 5)
+
+  const fresh = windowsHarness('not_found')
+  assert.equal(await fresh.service.switchFromNotification({ source: 'claude', sessionId: 'session-1' }), false)
+})
+
+test('Windows project paths: drive-absolute only, no stream, device or CLSID components, no PowerShell smart quotes', async () => {
+  for (const bad of ['\\Windows\\System32', '\\??\\C:\\work', '\\\\?\\C:\\work', 'C:work', 'C:\\work\\a:stream', 'C:\\a.{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\sub']) {
+    const result = isUsableProjectPath(bad, 'win32') ? await verifyProjectDirectory(bad, { platform: 'win32', realpath: async x => x, stat: async () => ({ isDirectory: () => true }), exists: async () => false }) : null
+    assert.equal(result, null, bad)
+  }
+  assert.equal(isShellSafePath('C:\\work\\\u201Cx\u201D', 'win32'), false)
+  assert.equal(isShellSafePath('C:\\work\\a[1]', 'win32'), false)
+  assert.equal(isShellSafePath('C:\\work\\a #b', 'win32'), false)
+  assert.equal(isShellSafePath('/tmp/a #b', 'darwin'), false)
+  assert.equal(isShellSafePath('C:\\work\\my app-v2.0', 'win32'), true)
 })

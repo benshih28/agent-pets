@@ -7,6 +7,7 @@ import { isPanelThemeRef, isPanelThemeUserImageOptions } from '../panel-theme-st
 import type { UserImagePrepared, UserImageReadError } from '../panel-theme-images.ts'
 import { handleWithSenderGuard, onWithSenderGuard } from './trusted.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { asRecord } from '../value-guards.ts'
 
 type DialogOptions = {
   title: string
@@ -51,8 +52,8 @@ function availableMode(sources: readonly PanelThemeSourcePlugin[], ref: PanelThe
 
 /** 只接受 `{ mode, forcedColors }` 兩個鍵，型別完全正確才採用。 */
 function readPanelAppearance(value: unknown): { mode: PanelThemeMode; forcedColors: boolean } | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const record = value as Record<string, unknown>
+  const record = asRecord(value)
+  if (!record) return null
   if (Object.keys(record).length !== 2 || !isPanelThemeMode(record.mode) || typeof record.forcedColors !== 'boolean') return null
   return { mode: record.mode, forcedColors: record.forcedColors }
 }

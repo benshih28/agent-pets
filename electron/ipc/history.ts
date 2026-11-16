@@ -13,6 +13,7 @@ import { t } from '../../src/i18n.ts'
 import { historyDaysToCsv, historyExportFileName } from '../history-export.ts'
 import { isHistorySessionId, normalizeSessionQuery } from '../history-sessions.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { DEFAULT_PET_ID } from '../../src/utils/pet-id.ts'
 import { isProjectId } from '../../src/types/id-patterns.ts'
 
 type HistoryExportDialogOptions = {
@@ -80,7 +81,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
     const historyStore = deps.getHistoryStore()
     if (!historyStore) return { items: [], nextCursor: null }
     try {
-      return historyStore.listSessions(deps.activePetId() ?? 'aang-airbender', normalizeSessionQuery(query, Date.now()))
+      return historyStore.listSessions(deps.activePetId() ?? DEFAULT_PET_ID, normalizeSessionQuery(query, Date.now()))
     } catch {
       return { items: [], nextCursor: null }
     }
@@ -91,7 +92,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
     const historyStore = deps.getHistoryStore()
     if (!historyStore || !isHistorySessionId(sessionId)) return null
     try {
-      return historyStore.getSessionDetail(deps.activePetId() ?? 'aang-airbender', sessionId)
+      return historyStore.getSessionDetail(deps.activePetId() ?? DEFAULT_PET_ID, sessionId)
     } catch {
       return null
     }
@@ -126,7 +127,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
       deps.refreshLocalUsage().catch(() => undefined),
       new Promise(resolve => setTimeout(resolve, EXPORT_SCAN_WAIT_MS)),
     ])
-    const petId = deps.activePetId() ?? 'aang-airbender'
+    const petId = deps.activePetId() ?? DEFAULT_PET_ID
     const exported = historyStore.getExport(petId, projectId, rangeDays, deps.growthExport?.(petId))
     const defaultName = historyExportFileName(format, rangeDays, exported.summary.localDate, projectId)
     const saveOptions = {

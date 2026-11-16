@@ -6,7 +6,7 @@ import type {
   ProjectPetBindingStatus,
   ProjectPetView,
 } from '../src/types/project-pet.ts'
-import { isValidPetId } from '../src/utils/pet-id.ts'
+import { DEFAULT_PET_ID, isValidPetId } from '../src/utils/pet-id.ts'
 import { StatementCache } from './sqlite-statements.ts'
 import { isProjectId } from '../src/types/id-patterns.ts'
 
@@ -45,7 +45,6 @@ const MAX_PROJECT_PATH_LENGTH = 4_096
 const MAX_TRACKED_PROJECTS = 1000
 const MAX_PROJECTS = 256
 const MAX_DISPLAY_NAME_LENGTH = 96
-const DEFAULT_PET_ID = 'aang-airbender'
 // Every tool-call/state event on a session re-resolves the same raw path.
 // Without this cache, each one would pay a synchronous lstat/realpath round
 // trip on Electron's main thread just to recompute an already-known identity.

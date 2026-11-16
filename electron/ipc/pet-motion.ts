@@ -4,6 +4,7 @@ import type { PetWindowMode } from '../../src/types/pet-window'
 import type { WindowBounds } from '../pet-window-mode'
 import { clampDraggedBounds, spriteRect } from '../pet-drag.ts'
 import { IPC_CHANNELS } from './channels.ts'
+import { asRecord, recordOrEmpty } from '../value-guards.ts'
 
 type CursorPoint = { x: number; y: number }
 type WorkArea = { x: number; y: number; width: number; height: number }
@@ -120,9 +121,7 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
     deps.setEdgeRestoreBounds(null)
     deps.repositionVisiblePanel?.()
     deps.persistCurrentPetWindowState()
-    const moved = payload && typeof payload === 'object'
-      && (payload as Record<string, unknown>).moved === true
-    if (moved) deps.scheduleEdgeDwell()
+    if (asRecord(payload)?.moved === true) deps.scheduleEdgeDwell()
   })
 
   deps.ipcMain.on(IPC_CHANNELS.petWindowHover, event => {
@@ -137,7 +136,7 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
   deps.ipcMain.on(IPC_CHANNELS.shimejiWalkStep, (event, payload: unknown) => {
     const petWindow = deps.getPetWindow()
     if (!petWindow || !deps.isTrustedIpcSender(event, petWindow)) return
-    const data = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+    const data = recordOrEmpty(payload)
     const rawDelta = data.deltaX
     if (typeof rawDelta !== 'number' || !Number.isFinite(rawDelta)) return
     const preferences = deps.getDesktopPreferences()

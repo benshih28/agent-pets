@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, provide, ref, watch } from 'vue'
-import { t } from '@/i18n'
+import { t, tPlural } from '@/i18n'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -92,7 +92,7 @@ function showTab(tab: PluginTab): void {
             {{ t('plugins.summaryEnabled', { enabled: enabledCount, total: plugins.length }) }}
           </Button>
           <Button v-if="updateCount" variant="ghost" size="sm" @click="showTab('explore')">
-            {{ t('plugins.summaryUpdates', { count: updateCount }) }}
+            {{ tPlural('plugins.summaryUpdates', updateCount) }}
           </Button>
           <Button v-if="unreadCount" variant="ghost" size="sm" @click="showTab('notifications')">
             {{ t('plugins.summaryUnread', { count: unreadCount }) }}
@@ -204,4 +204,4 @@ function showTab(tab: PluginTab): void {
   <PluginToastStack :toasts="toasts" @dismiss="dismissToast" @action="runToastAction" />
 </template>
 
-<style scoped src="./PluginPanel.css"></style>
+<style scoped src="@/components/PluginPanel.css"></style>

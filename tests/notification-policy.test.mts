@@ -5,43 +5,33 @@ import {
   classifyNotification,
   NotificationCooldown,
 } from '../electron/notification-policy.ts'
-
-function event(state: string, overrides: Record<string, unknown> = {}) {
-  return {
-    source: 'codex',
-    sessionId: 'session-1',
-    project: 'agent-pets',
-    state,
-    timestamp: Date.now(),
-    ...overrides,
-  }
-}
+import { makeAgentStatusEvent as event } from './support/agent-status-event.mts'
 
 test('classifies waiting and terminal events without exposing tool data', () => {
   const waiting = classifyNotification(event('waiting-permission', {
     toolName: 'secret command',
-  }) as any)
+  }))
   assert.equal(waiting?.kind, 'waiting-permission')
   assert.equal(waiting?.title, 'Codex 需要你的權限確認')
   assert.equal(waiting?.body, 'agent-pets')
   assert.doesNotMatch(`${waiting?.title} ${waiting?.body}`, /secret command/)
 
-  const success = classifyNotification(event('success') as any)
+  const success = classifyNotification(event('success'))
   assert.equal(success?.terminal, true)
-  assert.equal(classifyNotification(event('thinking') as any), null)
+  assert.equal(classifyNotification(event('thinking')), null)
 })
 
 test('external-only permission waits say they must be answered in the original tool', () => {
   const external = classifyNotification(event('waiting-permission', {
     permissionNotice: { responseMode: 'external_only' },
-  }) as any)
+  }))
   assert.equal(external?.title, 'Codex 等你核准（請回原工具處理）')
 })
 
 test('suppresses integration-test notifications', () => {
   assert.equal(classifyNotification(event('success', {
     originalEvent: 'AgentPetsIntegrationTest',
-  }) as any), null)
+  })), null)
 })
 
 test('cooldown rejects duplicate session and event class within the window', () => {
@@ -54,8 +44,8 @@ test('cooldown rejects duplicate session and event class within the window', () 
 
 test('aggregates terminal notifications without project or session details', () => {
   const candidates = [
-    classifyNotification(event('success') as any),
-    classifyNotification(event('error', { sessionId: 'session-2' }) as any),
+    classifyNotification(event('success')),
+    classifyNotification(event('error', { sessionId: 'session-2' })),
   ].filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
 
   assert.deepEqual(aggregateTerminalNotifications(candidates), {
@@ -65,18 +55,18 @@ test('aggregates terminal notifications without project or session details', () 
 })
 
 test('mixed aggregate title does not claim everything completed', () => {
-  const ok = classifyNotification(event('success', { sessionId: 'a' }) as any)!
-  const bad = classifyNotification(event('error', { sessionId: 'b' }) as any)!
+  const ok = classifyNotification(event('success', { sessionId: 'a' }))!
+  const bad = classifyNotification(event('error', { sessionId: 'b' }))!
   const mixed = aggregateTerminalNotifications([ok, bad])
   assert.match(mixed.title, /1 個失敗/)
   assert.doesNotMatch(mixed.title, /已完成/)
-  const allOk = aggregateTerminalNotifications([ok, classifyNotification(event('success', { sessionId: 'c' }) as any)!])
+  const allOk = aggregateTerminalNotifications([ok, classifyNotification(event('success', { sessionId: 'c' }))!])
   assert.match(allOk.title, /已完成/)
 })
 
 test('only waiting notifications name a session a click may switch to', () => {
-  assert.deepEqual(classifyNotification(event('waiting-input') as any)?.session, { source: 'codex', sessionId: 'session-1' })
-  assert.deepEqual(classifyNotification(event('waiting-permission', { source: 'claude', sessionId: 's-9' }) as any)?.session, { source: 'claude', sessionId: 's-9' })
-  assert.equal(classifyNotification(event('success') as any)?.session, undefined)
-  assert.equal(classifyNotification(event('error') as any)?.session, undefined)
+  assert.deepEqual(classifyNotification(event('waiting-input'))?.session, { source: 'codex', sessionId: 'session-1' })
+  assert.deepEqual(classifyNotification(event('waiting-permission', { source: 'claude', sessionId: 's-9' }))?.session, { source: 'claude', sessionId: 's-9' })
+  assert.equal(classifyNotification(event('success'))?.session, undefined)
+  assert.equal(classifyNotification(event('error'))?.session, undefined)
 })

@@ -170,7 +170,7 @@
 - [ ] notice 泡泡改為：`Claude · my-project 正在等你在終端機核准`，加副標「此 Agent 的權限請求只能在原本的工具中回應」。
 - [ ] 增加 `?` 說明按鈕，連到設定頁「各 Agent 能力」說明（`capabilities.ts` 已有 `external_only` 概念可直接引用）。
 - [ ] 區分 CLI / Desktop：Desktop 版文案用「請回到 Claude Desktop」，CLI 用「請回到終端機」。
-- [x] 若可取得，加「聚焦該終端機視窗」動作的**提案**（需評估可行性與安全邊界，預設不做，僅文案）；至少提供「複製專案路徑」。→ Phase E（`docs/phase-reports/phase-session-jump.md`）：macOS「切換到 App」以 `open -b` 啟用已知清單中的 App（不指定視窗、不需系統權限），另提供「顯示專案資料夾」（只在 Finder 中選取）與「複製專案路徑」。
+- [x] 若可取得，加「聚焦該終端機視窗」動作的**提案**（需評估可行性與安全邊界，預設不做，僅文案）；至少提供「複製專案路徑」。→ Phase E（`docs/phase-reports/phase-session-jump.md`）：macOS「切換到 App」以 `open -b` 啟用已知清單中的 App（不指定視窗、不需系統權限），Windows 以 koffi 把白名單執行檔的視窗帶到前景（見 `windows-todo.md`），另提供「顯示專案資料夾」（只在 Finder 中選取）與「複製專案路徑」。
 - [ ] 通知標題對 external-only 改為「Claude 等你核准（請回終端機）」，並避免讓點擊通知被誤解為可在此核准。
 - [ ] 多個 external-only 待處理時，notice 顯示總數與來源列表，而非只顯示最高優先 session。
 - [ ] notice 增加「知道了」暫時隱藏（僅 UI，直到該 session 狀態改變），避免永遠佔住泡泡。

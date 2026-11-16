@@ -1,5 +1,6 @@
 import { app, BrowserWindow, MessageChannelMain, session } from 'electron'
 import type { MessagePortMain } from 'electron'
+import { IPC_CHANNELS } from './ipc/channels.ts'
 import { createPluginHostProtocolHandler } from './plugin-protocol.ts'
 import { pluginHostAssets } from './plugin-host-assets.ts'
 import { PluginHostFailureTracker, pluginHostRetryDelay, shouldRetryPluginHost } from './plugin-host-recovery.ts'
@@ -227,7 +228,7 @@ export class PluginHostWindowController {
     this.hostPort = channel.port1
     this.hostPort.on('message', event => this.handleHostMessage(event.data))
     this.hostPort.start()
-    window.webContents.postMessage('plugin-host-port', null, [channel.port2])
+    window.webContents.postMessage(IPC_CHANNELS.pluginHostPort, null, [channel.port2])
     this.portReady = true
     this.memoryMonitor.setBaseline(this.readHostMemoryMb(window))
     this.syncWorkers()
@@ -270,52 +271,54 @@ export class PluginHostWindowController {
     if (!isRecord(value) || typeof value.type !== 'string' || typeof value.pluginId !== 'string'
       || !this.desired.has(value.pluginId)) return
     const pluginId = value.pluginId
-    if (value.type === 'worker-started') return
-    if (value.type === 'worker-ready') {
-      const runtime = this.runtime.get(pluginId)
-      if (runtime) runtime.ready = true
-      return
-    }
-    if (value.type === 'pong') {
-      const runtime = this.runtime.get(pluginId)
-      const now = this.readNow()
-      if (runtime && now !== null) {
-        runtime.lastPongAt = now
-        runtime.receivedPong = true
+    switch (value.type) {
+      case 'worker-started': return
+      case 'worker-ready': {
+        const runtime = this.runtime.get(pluginId)
+        if (runtime) runtime.ready = true
+        return
       }
-      return
-    }
-    if (value.type === 'worker-crash') {
-      this.recordCrash(pluginId, 'worker')
-      return
-    }
-    if (value.type === 'rpc') {
-      const runtime = this.runtime.get(pluginId)
-      if (!runtime || !isCurrentPluginRuntimeToken(runtime.token, value.token)) return
-      const runtimeToken = runtime.token
-      const requestId = isRecord(value.request) && typeof value.request.id === 'string' ? value.request.id : ''
-      void Promise.resolve()
-        .then(() => runPluginRpcForCurrentToken(
-          () => this.desired.has(pluginId) ? this.runtime.get(pluginId)?.token : null,
-          runtimeToken,
-          () => this.onRpc(pluginId, value.request, runtimeToken),
-        ))
-        .then(dispatch => {
-          if (!dispatch.current) return
-          const result = dispatch.value
-          const normalizedResult = requestId && isRecord(result) && result.id === requestId
-            ? result
-            : { ...(requestId ? { id: requestId } : {}), ok: false, error: 'invalid_request' }
-          this.post({ type: 'rpc-result', pluginId, result: normalizedResult })
-        })
-        .catch(() => {
-          if (!isCurrentPluginRuntimeToken(this.runtime.get(pluginId)?.token, runtimeToken)) return
-          this.post({
-            type: 'rpc-result',
-            pluginId,
-            result: { ...(requestId ? { id: requestId } : {}), ok: false, error: 'invalid_request' },
+      case 'pong': {
+        const runtime = this.runtime.get(pluginId)
+        const now = this.readNow()
+        if (runtime && now !== null) {
+          runtime.lastPongAt = now
+          runtime.receivedPong = true
+        }
+        return
+      }
+      case 'worker-crash':
+        this.recordCrash(pluginId, 'worker')
+        return
+      case 'rpc': {
+        const runtime = this.runtime.get(pluginId)
+        if (!runtime || !isCurrentPluginRuntimeToken(runtime.token, value.token)) return
+        const runtimeToken = runtime.token
+        const requestId = isRecord(value.request) && typeof value.request.id === 'string' ? value.request.id : ''
+        void Promise.resolve()
+          .then(() => runPluginRpcForCurrentToken(
+            () => this.desired.has(pluginId) ? this.runtime.get(pluginId)?.token : null,
+            runtimeToken,
+            () => this.onRpc(pluginId, value.request, runtimeToken),
+          ))
+          .then(dispatch => {
+            if (!dispatch.current) return
+            const result = dispatch.value
+            const normalizedResult = requestId && isRecord(result) && result.id === requestId
+              ? result
+              : { ...(requestId ? { id: requestId } : {}), ok: false, error: 'invalid_request' }
+            this.post({ type: 'rpc-result', pluginId, result: normalizedResult })
           })
-        })
+          .catch(() => {
+            if (!isCurrentPluginRuntimeToken(this.runtime.get(pluginId)?.token, runtimeToken)) return
+            this.post({
+              type: 'rpc-result',
+              pluginId,
+              result: { ...(requestId ? { id: requestId } : {}), ok: false, error: 'invalid_request' },
+            })
+          })
+        return
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ProgressionStore } from '../electron/progression.ts'
@@ -10,6 +10,7 @@ import {
   totalXpForLevel,
   xpToNext,
 } from '../src/types/progression.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function event(state: 'thinking' | 'tool-running' | 'success' | 'error', timestamp: number, sessionId = 'session-1') {
   return {
@@ -28,7 +29,7 @@ function withStore<T>(work: (store: ProgressionStore, path: string) => T): T {
     return work(store, path)
   } finally {
     store.close()
-    rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 }
 
@@ -56,7 +57,7 @@ test('completed sessions award XP once and survive restart', () => {
   assert.equal(duplicate.awards.length, 0)
   assert.equal(duplicate.snapshot.totalXp, 30)
   second.close()
-  rmSync(directory, { recursive: true, force: true })
+  removeTempTree(directory)
 })
 
 test('failed sessions do not award permanent XP', () => {
@@ -155,7 +156,7 @@ test('insights expose today XP, the claimed daily bonus, recent ledger and a pac
     assert.equal(store.getRecentLedger('aang-airbender', 1).length, 1)
   } finally {
     store.close()
-    rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })
 
@@ -175,7 +176,7 @@ test('a late event for an earlier day pays XP but never resets the streak', () =
     assert.equal(late.snapshot.lastActiveLocalDate, head.lastActiveLocalDate)
   } finally {
     store.close()
-    rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })
 
@@ -192,7 +193,7 @@ test('streak continues across a DST change when days are identified by local dat
     assert.equal(last.currentStreak, 3)
   } finally {
     store.close()
-    rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })
 
@@ -202,7 +203,7 @@ test('integration test events from the Setup Wizard never award XP', () => {
     const result = store.handleEvent({
       ...event('success', 1_700_000_000_000, 'agent-pets-test-codex-1'),
       originalEvent: 'AgentPetsIntegrationTest',
-    } as never)
+    })
     assert.deepEqual(result.awards, [])
     assert.equal(store.getSnapshot('default').totalXp, before.totalXp)
   })
@@ -270,6 +271,6 @@ test('stale session activity is pruned without changing XP or allowing double pa
     assert.equal(work('old', clock), beforeTotal)
   } finally {
     store.close()
-    rmSync(directory, { recursive: true, force: true })
+    removeTempTree(directory)
   }
 })

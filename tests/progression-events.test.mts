@@ -27,6 +27,13 @@ test('award events are validated before reaching the store', () => {
   assert.equal(normalizeProgressionAwardEvent({ ...base, levelAfter: 0 }), null)
 })
 
+test('the pet id keeps its 1-128 character opaque-id limit', () => {
+  for (const petId of ['a', 'plugin:skin-pack:fox', 'a.b_c-d:e', 'a'.repeat(128)]) {
+    assert.equal(normalizeProgressionAwardEvent({ ...base, petId })?.petId, petId, petId)
+  }
+  for (const petId of ['', 'a'.repeat(129), 'a b', 'a/b', 'ü']) assert.equal(normalizeProgressionAwardEvent({ ...base, petId }), null, petId)
+})
+
 test('a level-up and its evolution fire exactly once per crossing, never when the level did not rise', () => {
   const up = levelUpFromAward(normalizeProgressionAwardEvent(base)!, 'a')
   assert.deepEqual([up?.fromLevel, up?.toLevel, up?.evolved, up?.toStage], [4, 5, true, 'baby'])

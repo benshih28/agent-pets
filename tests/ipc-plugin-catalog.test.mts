@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { IpcMainInvokeEvent } from 'electron'
 import type { PluginCatalogDocument, PluginCatalogPanelItem, PluginCatalogVersion } from '../src/types/plugin-catalog.ts'
+import type { PluginPreferencesStore } from '../electron/plugin-preferences.ts'
+import type { PluginRegistry } from '../electron/plugin-registry.ts'
 import type { PluginCatalogIpcDependencies } from '../electron/ipc/plugin-catalog.ts'
 import { registerPluginCatalogIpc } from '../electron/ipc/plugin-catalog.ts'
 import { catalogFingerprintMatches, isPluginCatalogUrl, selectLatestCompatiblePluginVersion } from '../electron/plugin-catalog.ts'
+import { fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { fakeService } from './support/fake-service.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 function fixture() {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
+  // 以物件身分辨識 panel 來源，取代原本的字串哨兵。
+  const panelEvent = fakeIpcMainInvokeEvent()
   const calls: string[] = []
   const pluginVersion: PluginCatalogVersion = {
     version: '1.2.0', apiVersion: '1', url: 'https://cdn.example.test/sample.zip', sha256: 'a'.repeat(64),
@@ -26,6 +32,7 @@ function fixture() {
     catalogUrl: 'https://raw.githubusercontent.com/Ponpon55837/agent-pets-plugins/main/index.json',
     dailyUpdateCheck: false,
   }
+  // PluginRegistry 會碰檔案系統與簽章驗證，catalog IPC 只呼叫 list/planInstall，且只讀回斷言用到的欄位。
   const registry = {
     list: () => [{ id: 'sample-plugin', currentVersion: '1.0.0' }],
     planInstall: () => ({ ok: true, value: {
@@ -35,20 +42,17 @@ function fixture() {
   }
   let cache: { url: string; document: PluginCatalogDocument } | null = null
   const opened: string[] = []
-  const ipcMain = {
-    handle: (channel: string, handler: (...args: unknown[]) => unknown) => { handlers.set(channel, handler) },
-  } as unknown as PluginCatalogIpcDependencies['ipcMain']
   const deps: PluginCatalogIpcDependencies = {
     ipcMain,
-    assertPluginPanelSender: event => { if (event !== 'panel') throw new Error('untrusted panel') },
-    getRegistry: () => registry as never,
-    getPreferencesStore: () => ({ get: () => preferences }) as never,
+    assertPluginPanelSender: event => { if (event !== panelEvent) throw new Error('untrusted panel') },
+    getRegistry: () => fakeService<PluginRegistry>(registry),
+    getPreferencesStore: () => fakeService<PluginPreferencesStore>({ get: () => preferences }),
     getCatalogCache: () => cache,
     setCatalogCache: value => { cache = value; calls.push('catalog:cache') },
     createCatalogGateway: () => ({
       load: async () => ({ ok: true as const, value: document }),
       download: async () => ({ ok: true as const, value: new Uint8Array([1, 2, 3]) }),
-    }) as never,
+    }),
     buildCatalogItems: (_document, installed): PluginCatalogPanelItem[] => {
       calls.push(`items:${installed.length}`)
       return []
@@ -62,13 +66,13 @@ function fixture() {
     openExternal: async url => { opened.push(url) },
   }
   registerPluginCatalogIpc(deps)
-  return { handlers, calls, opened, document, pluginVersion }
+  return { handlers, panelEvent, calls, opened, document, pluginVersion }
 }
 
 test('catalog IPC loads through the injected gateway and remembers a validated install plan', async () => {
   const state = fixture()
   const list = state.handlers.get('plugin-catalog-list')!
-  const listing = await list('panel' as unknown as IpcMainInvokeEvent) as {
+  const listing = await list(state.panelEvent) as {
     ok: boolean
     value?: PluginCatalogPanelItem[]
   }
@@ -77,7 +81,7 @@ test('catalog IPC loads through the injected gateway and remembers a validated i
   assert.deepEqual(state.calls, ['catalog:cache', 'items:1'])
 
   const install = state.handlers.get('plugin-catalog-install')!
-  const result = await install('panel' as unknown as IpcMainInvokeEvent, 'sample-plugin', '1.2.0') as {
+  const result = await install(state.panelEvent, 'sample-plugin', '1.2.0') as {
     ok: boolean
     value?: { source: string; token: string }
   }
@@ -88,12 +92,12 @@ test('catalog IPC loads through the injected gateway and remembers a validated i
 test('issue report IPC only passes a validated report URL to the injected external opener', async () => {
   const state = fixture()
   const report = state.handlers.get('plugin-report-issue')!
-  assert.deepEqual(await report('panel' as unknown as IpcMainInvokeEvent, 'sample-plugin'), {
+  assert.deepEqual(await report(state.panelEvent, 'sample-plugin'), {
     ok: true,
     value: { opened: true },
   })
   assert.equal(state.opened.length, 1)
   assert.match(state.opened[0]!, /^https:\/\/github\.com\/example\/plugins\/issues\/new\?/)
-  assert.deepEqual(await report('panel' as unknown as IpcMainInvokeEvent, 'bad id'), { ok: false, error: 'invalid_request' })
+  assert.deepEqual(await report(state.panelEvent, 'bad id'), { ok: false, error: 'invalid_request' })
   assert.equal(state.opened.length, 1)
 })

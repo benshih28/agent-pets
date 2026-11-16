@@ -477,3 +477,112 @@ test('markAllRead marks every unread record in one pass and notifies once', () =
   assert.equal(harness.controller.unreadCount(), 0)
   assert.equal(harness.controller.markAllRead(), 0)
 })
+
+// 以下 characterization 測試鎖住 addToCenter 的淘汰順序，優化實作時不得改變。
+const NOTICE_NAME = { 'zh-TW': '測試插件', 'en-US': 'Test Plugin' }
+
+function addNotice(controller: PluginFeedController, pluginId: string, title: string): void {
+  assert.equal(controller.addSystemNotification(pluginId, NOTICE_NAME, title, 'body'), true)
+}
+
+/** 由舊到新列出 center，格式為 `pluginId:title:r|u`。 */
+function centerSnapshot(controller: PluginFeedController): string[] {
+  return controller.listNotifications()
+    .map(({ item, read }) => `${item.pluginId}:${item.title}:${read ? 'r' : 'u'}`)
+    .reverse()
+}
+
+test('retention: a single plugin over its cap drops its oldest records and keeps read state', () => {
+  const harness = createHarness()
+  for (let index = 0; index < PLUGIN_FEED_MAX_PER_PLUGIN; index += 1) addNotice(harness.controller, 'alpha', `a${index}`)
+  const toRead = harness.controller.listNotifications('alpha').filter(({ item }) => ['a2', 'a5'].includes(item.title))
+  for (const { item } of toRead) assert.equal(harness.controller.markRead(item.id), true)
+  const updatesBefore = harness.unreadUpdates.length
+
+  for (let index = PLUGIN_FEED_MAX_PER_PLUGIN; index < PLUGIN_FEED_MAX_PER_PLUGIN + 3; index += 1) {
+    addNotice(harness.controller, 'alpha', `a${index}`)
+  }
+
+  const expected = Array.from({ length: PLUGIN_FEED_MAX_PER_PLUGIN }, (_, offset) => {
+    const index = offset + 3
+    return `alpha:a${index}:${index === 5 ? 'r' : 'u'}`
+  })
+  assert.deepEqual(centerSnapshot(harness.controller), expected)
+  assert.equal(harness.unreadUpdates.length - updatesBefore, 3)
+  assert.equal(harness.unreadUpdates.at(-1), PLUGIN_FEED_MAX_PER_PLUGIN - 1)
+})
+
+test('retention: interleaved plugins only trim the plugin that went over its cap', () => {
+  const harness = createHarness()
+  const expected: string[] = []
+  for (let index = 0; index < PLUGIN_FEED_MAX_PER_PLUGIN + 2; index += 1) {
+    addNotice(harness.controller, 'alpha', `a${index}`)
+    expected.push(`alpha:a${index}:u`)
+    if (index % 2 === 0) {
+      addNotice(harness.controller, 'beta', `b${index}`)
+      expected.push(`beta:b${index}:u`)
+    }
+  }
+  const trimmed = expected.filter(entry => entry !== 'alpha:a0:u' && entry !== 'alpha:a1:u')
+  assert.deepEqual(centerSnapshot(harness.controller), trimmed)
+  assert.equal(harness.controller.listNotifications('alpha').length, PLUGIN_FEED_MAX_PER_PLUGIN)
+  assert.equal(harness.controller.listNotifications('beta').length, 51)
+})
+
+test('retention: the global cap drops the oldest records across plugins', () => {
+  const harness = createHarness()
+  const expected: string[] = []
+  for (let index = 0; index < 90; index += 1) {
+    for (let plugin = 0; plugin < 6; plugin += 1) {
+      addNotice(harness.controller, `group-${plugin}`, `g${plugin}-${index}`)
+      expected.push(`group-${plugin}:g${plugin}-${index}:u`)
+    }
+  }
+  assert.equal(expected.length, 540)
+  assert.deepEqual(centerSnapshot(harness.controller), expected.slice(-PLUGIN_FEED_MAX_CENTER_ITEMS))
+  assert.equal(harness.unreadUpdates.length, 540)
+  assert.equal(harness.unreadUpdates.at(-1), PLUGIN_FEED_MAX_CENTER_ITEMS)
+})
+
+test('retention: per-plugin trim runs before the global trim when both limits are reached', () => {
+  const harness = createHarness()
+  const expected: string[] = []
+  // 最舊的一筆屬於 beta；若先做總量修剪，beta 的 b-first 會被誤刪。
+  addNotice(harness.controller, 'beta', 'b-first')
+  expected.push('beta:b-first:u')
+  for (let index = 0; index < PLUGIN_FEED_MAX_PER_PLUGIN; index += 1) {
+    addNotice(harness.controller, 'alpha', `a${index}`)
+    expected.push(`alpha:a${index}:u`)
+  }
+  for (let index = 0; expected.length < PLUGIN_FEED_MAX_CENTER_ITEMS; index += 1) {
+    const pluginId = `filler-${index % 4}`
+    addNotice(harness.controller, pluginId, `f${index}`)
+    expected.push(`${pluginId}:f${index}:u`)
+  }
+  assert.equal(centerSnapshot(harness.controller).length, PLUGIN_FEED_MAX_CENTER_ITEMS)
+
+  addNotice(harness.controller, 'alpha', 'a-new')
+  const afterBoth = expected.filter(entry => entry !== 'alpha:a0:u').concat('alpha:a-new:u')
+  assert.deepEqual(centerSnapshot(harness.controller), afterBoth)
+
+  // alpha 未達上限時，總量修剪才會淘汰全域最舊的一筆（beta 的 b-first）。
+  assert.equal(harness.controller.clear('filler-0') > 0, true)
+  const refilled = centerSnapshot(harness.controller)
+  const missing = PLUGIN_FEED_MAX_CENTER_ITEMS - refilled.length
+  for (let index = 0; index < missing; index += 1) addNotice(harness.controller, 'gamma', `c${index}`)
+  addNotice(harness.controller, 'delta', 'd-new')
+  const final = centerSnapshot(harness.controller)
+  assert.equal(final.length, PLUGIN_FEED_MAX_CENTER_ITEMS)
+  assert.equal(final[0], 'alpha:a1:u')
+  assert.equal(final.includes('beta:b-first:u'), false)
+  assert.equal(final.at(-1), 'delta:d-new:u')
+})
+
+test('retention: center records are cloned on insert and on list', () => {
+  const harness = createHarness()
+  addNotice(harness.controller, 'alpha', 'original')
+  const [listed] = harness.controller.listNotifications()
+  assert.ok(listed)
+  listed.item.title = 'mutated'
+  assert.equal(harness.controller.listNotifications()[0]?.item.title, 'original')
+})

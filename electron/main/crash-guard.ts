@@ -12,7 +12,8 @@ export interface CrashRecord {
 export interface CrashGuardProcess {
   on(event: 'uncaughtException', listener: (error: Error) => void): unknown
   on(event: 'unhandledRejection', listener: (reason: unknown) => void): unknown
-  off?(event: string, listener: (...args: never[]) => void): unknown
+  off?(event: 'uncaughtException', listener: (error: Error) => void): unknown
+  off?(event: 'unhandledRejection', listener: (reason: unknown) => void): unknown
 }
 
 export interface CrashEscalationPolicy {
@@ -97,7 +98,7 @@ function describe(value: unknown): { message: string; stack?: string } {
  * its native crash dialog; failures go to the log sink and a throttled notice.
  */
 export function installCrashGuard(options: CrashGuardOptions): CrashGuard {
-  const proc = options.proc ?? (process as unknown as CrashGuardProcess)
+  const proc: CrashGuardProcess = options.proc ?? process
   const now = options.now ?? Date.now
   const toastIntervalMs = options.toastIntervalMs ?? DEFAULT_TOAST_INTERVAL_MS
   const maxLogs = options.maxLogsPerWindow ?? DEFAULT_MAX_LOGS
@@ -170,8 +171,8 @@ export function installCrashGuard(options: CrashGuardOptions): CrashGuard {
 
   return {
     dispose() {
-      proc.off?.('uncaughtException', onException as never)
-      proc.off?.('unhandledRejection', onRejection as never)
+      proc.off?.('uncaughtException', onException)
+      proc.off?.('unhandledRejection', onRejection)
     },
     stats: () => ({ total, suppressed, distinct: signatures.size }),
   }

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createProgressionChangeGate, createVisibleSender } from '../electron/ipc/progression-broadcast-gate.ts'
+import { createProgressionChangeGate, createVisibleSender, type DeferrableWindow } from '../electron/ipc/progression-broadcast-gate.ts'
 import { createLatestValueCoalescer } from '../electron/ipc/broadcast-coalescer.ts'
+import type { ProgressionSnapshot } from '../src/types/progression.ts'
 
-const snap = (over = {}) => ({ petId: 'a', totalXp: 10, level: 1, xpIntoLevel: 10, xpToNext: 90, evolutionStage: 'baby', currentStreak: 1, longestStreak: 1, updatedAt: 5, ...over }) as any
+const snap = (over: Partial<ProgressionSnapshot> = {}): ProgressionSnapshot => ({ petId: 'a', totalXp: 10, level: 1, xpIntoLevel: 10, xpToNext: 90, evolutionStage: 'baby', currentStreak: 1, longestStreak: 1, updatedAt: 5, ...over })
 
 test('progression gate suppresses identical snapshots and passes changes', () => {
   const gate = createProgressionChangeGate()
@@ -15,12 +16,13 @@ test('progression gate suppresses identical snapshots and passes changes', () =>
 })
 
 test('visible sender skips hidden windows and resyncs once on show', () => {
-  const sender = createVisibleSender<any>()
+  const sender = createVisibleSender<DeferrableWindow>()
   const win = { visible: false, isDestroyed: () => false, isVisible() { return this.visible } }
   const got: number[] = []
   sender.send(win, () => got.push(1))
   sender.send(win, () => got.push(2))
-  assert.deepEqual(got, [])
+  // strict 版 deepEqual 是型別斷言，空陣列字面值會把 got 收窄成 never[]。
+  assert.deepEqual(got, [] as number[])
   win.visible = true
   sender.resync(win, () => got.push(3))
   sender.resync(win, () => got.push(4))

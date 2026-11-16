@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const desktopPetSource = readFileSync(new URL('../src/components/DesktopPet.vue', import.meta.url), 'utf8')
+const desktopPetSource = readFileSync(new URL('../src/components/desktop-pet/PetBubbleStack.vue', import.meta.url), 'utf8')
 
 test('agent toast and activity share one out-in transition after presentation say', () => {
   const branch = desktopPetSource.match(/<Transition v-else-if="bubbleSelection === 'agent-toast' \|\| bubbleSelection === 'activity'" name="toast" mode="out-in">([\s\S]*?)<\/Transition>/)

@@ -5,7 +5,7 @@ import Button from '@/components/ui/Button.vue'
 import Chip from '@/components/ui/Chip.vue'
 import Icon from '@/components/ui/Icon.vue'
 import Spinner from '@/components/ui/Spinner.vue'
-import ActionMenu from '@/components/ui/ActionMenu.vue'
+import ActionMenu, { type ActionMenuItem } from '@/components/ui/ActionMenu.vue'
 import ToggleRow from '@/components/ui/ToggleRow.vue'
 import { pluginCapabilities } from '@/utils/plugin-capabilities'
 import { usePluginController } from '@/composables/plugin/context'
@@ -33,12 +33,17 @@ const menuItems = computed(() => [
   { id: 'detail', label: t('plugins.menuDetails') },
   { id: 'report', label: t('pluginReportIssue') },
   { id: 'remove', label: t('remove'), danger: true },
-])
+] as const satisfies readonly ActionMenuItem[])
+type MenuId = (typeof menuItems.value)[number]['id']
 
-function onMenu(id: string): void {
-  if (id === 'detail') openPluginDetail(props.plugin.id)
-  else if (id === 'report') requestReport(props.plugin.id)
-  else if (id === 'remove') requestRemove(props.plugin)
+const MENU_ACTIONS = {
+  detail: () => openPluginDetail(props.plugin.id),
+  report: () => requestReport(props.plugin.id),
+  remove: () => requestRemove(props.plugin),
+} satisfies Record<MenuId, () => void>
+
+function onMenu(id: MenuId): void {
+  MENU_ACTIONS[id]()
 }
 </script>
 

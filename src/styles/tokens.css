@@ -44,6 +44,10 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
+  /* 刻度外但多處共用的版面值：集中在這裡，避免同一個魔術數字散在各檔。 */
+  --dialog-shell-gap: 15px; /* 設定精靈與專案 MCP 對話框的區塊間距 */
+  --dialog-shell-padding: 22px; /* 同上兩個對話框的外框內距 */
+  --list-card-padding-y: 15px; /* 精靈工具卡、MCP 專案卡與面板內權限卡的上下內距 */
   /* 半格：密集的標籤／數值堆疊與膠囊內距。只是常見值的名字，不是新的視覺節奏；
      margin／padding／gap 若寫死成任何 --space-* 的值會被 check:design 擋下。 */
   --space-0-5: 2px;
@@ -86,6 +90,8 @@
   --transition-slow: 0.35s ease;
   --duration-spin: 0.8s; /* 載入轉圈一圈（Button loading、Spinner） */
   --duration-attention: 1.8s; /* 寵物視窗提醒使用者注意的循環脈動（迷你徽章、額度警示） */
+  --duration-breathe: 3.8s; /* 寵物待機／離線的呼吸循環（兩種狀態要同步節奏） */
+  --duration-glance: 0.42s; /* 寵物向左／向右看游標的一次性位移（左右要對稱） */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-overshoot: cubic-bezier(0.2, 1.4, 0.4, 1); /* 彈出時略衝過頭再回位（驚訝反應、成就徽章） */
 
@@ -456,7 +462,7 @@
   --pet-bubble-info-accent: var(--color-info);
   --pet-bubble-plugin-border: color-mix(in srgb, var(--organic-sage) 56%, transparent);
   --pet-bubble-plugin-text: var(--color-text);
-  /* 寵物視窗頂端預留給提示與權限泡泡的高度（與 QUOTA_TOOLTIP_HEADROOM_H、PET_WINDOW_TOP_HEADROOM 相同）。 */
+  /* 寵物視窗頂端預留給提示與權限泡泡的高度（與 src/utils/pet-window-size.ts 的 QUOTA_TOOLTIP_HEADROOM_H 相同）。 */
   --pet-bubble-headroom: 190px;
   --pet-drag-shadow: drop-shadow(0 10px 14px color-mix(in srgb, var(--color-shadow) var(--pet-drag-shadow-strength), transparent));
   --organic-status-surface: color-mix(in srgb, var(--color-surface) 92%, transparent);
@@ -586,6 +592,8 @@
     --transition-slow: 0s;
     --duration-spin: 0s;
     --duration-attention: 0s;
+    --duration-breathe: 0s;
+    --duration-glance: 0s;
   }
 
   *,

@@ -2,12 +2,32 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerHistoryIpc } from '../electron/ipc/history.ts'
+import type { HistoryStore } from '../electron/history.ts'
+import type { HistoryDailyStat, HistoryExport, HistorySummary } from '../src/types/history.ts'
+import { fakeBrowserWindow, fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { fakeService } from './support/fake-service.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+
+const exportedDay: HistoryDailyStat = {
+  localDate: '2026-08-13', sessionsCompleted: 1, sessionsFailed: 0, activeMs: 120000,
+  tokenInput: 5, tokenOutput: 6, tokenCacheRead: 7, tokenCacheWrite: 8, tokenQuality: 'exact',
+}
+const emptyDay: HistoryDailyStat = { ...exportedDay, sessionsCompleted: 0, activeMs: 0, tokenInput: 0, tokenOutput: 0, tokenCacheRead: 0, tokenCacheWrite: 0, tokenQuality: 'none' }
+
+function summaryFixture(projectId: string | undefined, rangeDays: number, days: HistoryDailyStat[] = []): HistorySummary {
+  return {
+    schemaVersion: 1, generatedAt: 0, petId: 'sample-pet', ...(projectId === undefined ? {} : { projectId }),
+    retentionDays: 90, rangeDays, localDate: '2026-08-13', days, totals: emptyDay, previousTotals: emptyDay,
+    agents: [], models: [], usageBlocks: [], tokenQuality: 'none', tokenTrackingSince: 0, quota: null,
+  }
+}
 
 function createHistoryIpcHarness() {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
-  const panelWindow = { id: 'panel' }
+  const { ipcMain, handlers } = createFakeIpcMain()
+  const panelWindow = fakeBrowserWindow()
   const records = { trusted: [] as Array<unknown>, broadcasts: 0, refreshes: 0, writes: [] as Array<{ path: string; value: unknown }>, reveals: [] as string[], sessionQueries: [] as Array<{ petId: string; query: unknown }>, detailIds: [] as string[] }
   let dialogResult: { canceled: boolean; filePath?: string } = { canceled: true }
+  // HistoryStore 是 SQLite 實作，IPC 層只呼叫下面這些讀寫方法，完整建構一個資料庫沒有意義。
   const historyStore = {
     clear() {},
     listSessions: (petId: string, query: unknown) => {
@@ -19,16 +39,18 @@ function createHistoryIpcHarness() {
       return null
     },
     getUsageBlocks: () => [{ adapterId: 'codex', startAt: 1, endAt: 2, firstActivityAt: 1, lastActivityAt: 1, tokenInput: 1, tokenOutput: 0, tokenCacheRead: 0, tokenCacheWrite: 0, records: 1 }],
-    getExport: (petId: string, _projectId?: string, rangeDays?: number) => ({ petId, rows: [], rangeDays, summary: { localDate: '2026-08-13', days: [{ localDate: '2026-08-13', sessionsCompleted: 1, sessionsFailed: 0, activeMs: 120000, tokenInput: 5, tokenOutput: 6, tokenCacheRead: 7, tokenCacheWrite: 8 }] } }),
-  }
+    getExport: (_petId: string, projectId?: string, rangeDays = 7): HistoryExport => ({
+      schemaVersion: 1, exportedAt: 0, summary: summaryFixture(projectId, rangeDays, [exportedDay]),
+    }),
+  } satisfies Pick<HistoryStore, 'clear' | 'listSessions' | 'getSessionDetail' | 'getUsageBlocks' | 'getExport'>
 
   registerHistoryIpc({
-    ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) },
+    ipcMain,
     assertTrustedIpcSender: (event: unknown, requiredWindow: unknown) => records.trusted.push({ event, requiredWindow }),
     getPanelWindow: () => panelWindow,
-    getHistoryStore: () => historyStore,
+    getHistoryStore: () => fakeService<HistoryStore>(historyStore),
     refreshLocalUsage: async () => { records.refreshes += 1 },
-    currentHistorySummary: (projectId, rangeDays) => ({ projectId: projectId ?? null, rangeDays }),
+    currentHistorySummary: (projectId, rangeDays = 7) => summaryFixture(projectId, rangeDays),
     broadcastHistoryUpdated: () => { records.broadcasts += 1 },
     documentsPath: () => 'test-documents',
     joinPath: (...parts: string[]) => parts.join('/'),
@@ -52,7 +74,7 @@ function createHistoryIpcHarness() {
 
 test('history IPC registration uses injected services and preserves handler behavior', async () => {
   const harness = createHistoryIpcHarness()
-  const invoke = (channel: string, ...args: unknown[]) => harness.handlers.get(channel)?.({}, ...args)
+  const invoke = (channel: string, ...args: unknown[]) => harness.handlers.get(channel)?.(fakeIpcMainInvokeEvent(), ...args)
 
   assert.deepEqual([...harness.handlers.keys()], [
     IPC_CHANNELS.historySummary,
@@ -63,15 +85,15 @@ test('history IPC registration uses injected services and preserves handler beha
     IPC_CHANNELS.historyExport,
     IPC_CHANNELS.historyRevealExport,
   ])
-  assert.deepEqual(await invoke(IPC_CHANNELS.historySummary, 'project-a'), { projectId: 'project-a', rangeDays: 7 })
-  assert.deepEqual(await invoke(IPC_CHANNELS.historySummary, 7), { projectId: null, rangeDays: 7 })
+  assert.deepEqual(await invoke(IPC_CHANNELS.historySummary, 'project-a'), summaryFixture('project-a', 7))
+  assert.deepEqual(await invoke(IPC_CHANNELS.historySummary, 7), summaryFixture(undefined, 7))
   assert.equal(harness.records.refreshes, 2)
 
   assert.deepEqual(await invoke(IPC_CHANNELS.historyClear), { ok: true })
   assert.equal(harness.records.broadcasts, 1)
 
   assert.deepEqual(await invoke(IPC_CHANNELS.historyExport), { ok: false, error: 'cancelled' })
-  assert.deepEqual(harness.records.writes, [])
+  assert.equal(harness.records.writes.length, 0)
   harness.setDialogResult({ canceled: false, filePath: 'test-documents/history.json' })
   assert.deepEqual(await invoke(IPC_CHANNELS.historyExport), { ok: true, path: 'test-documents/history.json' })
   assert.equal(harness.records.writes.length, 1)
@@ -82,7 +104,7 @@ test('history IPC registration uses injected services and preserves handler beha
 
 test('history summary range is limited to the supported 7/30/90 windows', async () => {
   const harness = createHistoryIpcHarness()
-  const invoke = (...args: unknown[]) => harness.handlers.get(IPC_CHANNELS.historySummary)?.({}, ...args) as Promise<{ rangeDays: number }>
+  const invoke = (...args: unknown[]) => harness.handlers.get(IPC_CHANNELS.historySummary)?.(fakeIpcMainInvokeEvent(), ...args) as Promise<{ rangeDays: number }>
   assert.equal((await invoke(undefined, 30)).rangeDays, 30)
   assert.equal((await invoke(undefined, 90)).rangeDays, 90)
   assert.equal((await invoke(undefined, 365)).rangeDays, 7)
@@ -91,7 +113,7 @@ test('history summary range is limited to the supported 7/30/90 windows', async 
 
 test('export honours format/range, names files by local date and only reveals what it exported', async () => {
   const harness = createHistoryIpcHarness()
-  const invoke = (channel: string, ...args: unknown[]) => harness.handlers.get(channel)?.({}, ...args) as Promise<unknown>
+  const invoke = (channel: string, ...args: unknown[]) => harness.handlers.get(channel)?.(fakeIpcMainInvokeEvent(), ...args) as Promise<unknown>
   assert.equal(await invoke(IPC_CHANNELS.historyRevealExport), false)
   harness.setDialogResult({ canceled: false, filePath: 'out/history.csv' })
   assert.deepEqual(await invoke(IPC_CHANNELS.historyExport, { format: 'csv', rangeDays: 30, projectId: 'a'.repeat(32) }), { ok: true, path: 'out/history.csv' })
@@ -110,16 +132,17 @@ test('export honours format/range, names files by local date and only reveals wh
 test('usage blocks IPC is sender-checked, takes no input and never starts a log scan', async () => {
   const harness = createHistoryIpcHarness()
   const handler = harness.handlers.get(IPC_CHANNELS.historyUsageBlocks)!
-  const blocks = await handler({}, '../../etc', 999) as Array<{ adapterId: string }>
+  const event = fakeIpcMainInvokeEvent()
+  const blocks = await handler(event, '../../etc', 999) as Array<{ adapterId: string }>
   assert.deepEqual(blocks.map(block => block.adapterId), ['codex'])
   assert.equal(harness.records.refreshes, 0)
-  assert.deepEqual(harness.records.trusted, [{ event: {}, requiredWindow: harness.panelWindow }])
+  assert.deepEqual(harness.records.trusted, [{ event, requiredWindow: harness.panelWindow }])
 })
 
 test('session list IPC is sender-checked, normalises every field and never scans logs', async () => {
   const harness = createHistoryIpcHarness()
   const list = harness.handlers.get(IPC_CHANNELS.historySessions)!
-  assert.deepEqual(await list({}, {
+  assert.deepEqual(await list(fakeIpcMainInvokeEvent(), {
     projectId: '../../etc',
     adapterId: 'codex; DROP TABLE sessions',
     outcome: 'pwned',
@@ -135,7 +158,7 @@ test('session list IPC is sender-checked, normalises every field and never scans
   assert.deepEqual(Object.keys(query as object).sort(), ['limit', 'search'])
   assert.equal((query as { limit: number }).limit, 50)
   assert.equal((query as { search: string }).search.length, 64)
-  await list({}, 'not an object')
+  await list(fakeIpcMainInvokeEvent(), 'not an object')
   assert.deepEqual(harness.records.sessionQueries[1]!.query, { limit: 30 })
   assert.equal(harness.records.refreshes, 0)
   assert.equal(harness.records.trusted.length, 2)
@@ -144,10 +167,10 @@ test('session list IPC is sender-checked, normalises every field and never scans
 test('session detail IPC only forwards well-formed session ids', async () => {
   const harness = createHistoryIpcHarness()
   const detail = harness.handlers.get(IPC_CHANNELS.historySessionDetail)!
-  assert.equal(await detail({}, 42), null)
-  assert.equal(await detail({}, 'codex:codex:not-a-hash'), null)
-  assert.equal(await detail({}, `codex:codex:${'a'.repeat(24)}\n`), null)
-  assert.equal(await detail({}, `codex:codex:${'a'.repeat(24)}`), null)
+  assert.equal(await detail(fakeIpcMainInvokeEvent(), 42), null)
+  assert.equal(await detail(fakeIpcMainInvokeEvent(), 'codex:codex:not-a-hash'), null)
+  assert.equal(await detail(fakeIpcMainInvokeEvent(), `codex:codex:${'a'.repeat(24)}\n`), null)
+  assert.equal(await detail(fakeIpcMainInvokeEvent(), `codex:codex:${'a'.repeat(24)}`), null)
   // Scoped to the active pet, like the list.
   assert.deepEqual(harness.records.detailIds, [`sample-pet/codex:codex:${'a'.repeat(24)}`])
   assert.equal(harness.records.trusted.length, 4)

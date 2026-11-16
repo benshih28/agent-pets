@@ -7,7 +7,8 @@
   "panel.searchPlaceholder": "Search settings...",
   "panel.searchClear": "Clear search",
   "panel.searchResults": "Settings search results",
-  "panel.searchCount": "{count} results",
+  "panel.searchCount.one": "{count} result",
+  "panel.searchCount.other": "{count} results",
   "panel.searchNoResults": "No settings match \"{query}\".",
   "panel.notificationsCard": "Notifications & Do Not Disturb",
   "panel.stateOn": "On",
@@ -73,5 +74,5 @@
   "panel.jumpSetting": "Show jump-back actions",
   "panel.jumpSettingHelp": "Adds Show project folder (selects it in Finder or File Explorer, never opens it) and Copy project path to session rows. The full path stays in the app's main process.",
   "panel.jumpSwitchSetting": "Switch to app",
-  "panel.jumpSwitchSettingHelp": "macOS: brings the session's terminal or IDE to the front (not a specific window or tab); clicking a waiting-permission or waiting-input notification about one session does the same. Only apps on a known list can be activated; needs no system permission."
+  "panel.jumpSwitchSettingHelp": "macOS and Windows: brings the session's terminal or IDE to the front (not a specific window or tab); clicking a waiting-permission or waiting-input notification about one session does the same. Only apps on a known list can be activated; needs no system permission."
 }

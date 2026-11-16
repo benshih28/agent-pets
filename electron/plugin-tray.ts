@@ -1,4 +1,5 @@
 import type { MenuItemConstructorOptions } from 'electron'
+import type { AppLocale } from '../src/types/locale.ts'
 import type { PluginLocalizedText } from '../src/types/plugin.ts'
 
 export interface PluginTrayCommandItem {
@@ -27,7 +28,7 @@ function truncateLabel(value: string): string {
 /** Builds a bounded text-only submenu; callbacks remain owned by the host. */
 export function buildPluginTrayMenu(
   items: readonly PluginTrayCommandItem[],
-  locale: 'zh-TW' | 'en-US',
+  locale: AppLocale,
   label: string,
   onInvoke: (pluginId: string, commandId: string) => void,
 ): PluginTrayMenuBuildResult {

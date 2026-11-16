@@ -1,8 +1,10 @@
+import { DailyCheckSchedule, type DailyCheckResult } from './daily-check-schedule.ts'
 import {
   comparePluginSemver,
   selectLatestCompatiblePluginVersion,
 } from './plugin-catalog.ts'
 import type { PluginCatalogDocument, PluginCatalogPanelItem } from '../src/types/plugin-catalog.ts'
+import { asRecord } from './value-guards.ts'
 
 export interface InstalledPluginUpdateState {
   id: string
@@ -81,8 +83,7 @@ export function comparePluginPermissionUnits(grantedPermissions: unknown, reques
 }
 
 function readGrantedPermissionUnits(value: unknown): Set<string> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const units = (value as Record<string, unknown>).units
+  const units = asRecord(value)?.units
   if (!Array.isArray(units) || units.some(unit => typeof unit !== 'string')) return null
   return new Set(units as string[])
 }
@@ -96,49 +97,14 @@ export interface PluginCatalogAutoCheckDependencies {
   now?: () => number
 }
 
-export type PluginCatalogAutoCheckResult =
-  | 'disabled'
-  | 'already-checked'
-  | 'already-running'
-  | 'checked'
-  | 'failed'
+export type PluginCatalogAutoCheckResult = DailyCheckResult
 
-export class PluginCatalogAutoCheckSchedule {
-  private readonly isEnabled: PluginCatalogAutoCheckDependencies['isEnabled']
-  private readonly getLastCheckedDay: PluginCatalogAutoCheckDependencies['getLastCheckedDay']
-  private readonly setLastCheckedDay: PluginCatalogAutoCheckDependencies['setLastCheckedDay']
-  private readonly check: PluginCatalogAutoCheckDependencies['check']
-  private readonly notify: PluginCatalogAutoCheckDependencies['notify']
-  private readonly now: () => number
-  private running = false
-
+/** Plugin 目錄的每日自動檢查：排程規則由 DailyCheckSchedule 共用，這裡只加上更新數量的合理範圍。 */
+export class PluginCatalogAutoCheckSchedule extends DailyCheckSchedule<number> {
   constructor(dependencies: PluginCatalogAutoCheckDependencies) {
-    this.isEnabled = dependencies.isEnabled
-    this.getLastCheckedDay = dependencies.getLastCheckedDay
-    this.setLastCheckedDay = dependencies.setLastCheckedDay
-    this.check = dependencies.check
-    this.notify = dependencies.notify
-    this.now = dependencies.now ?? Date.now
-  }
-
-  async checkIfDue(): Promise<PluginCatalogAutoCheckResult> {
-    if (this.running) return 'already-running'
-    try {
-      if (!this.isEnabled()) return 'disabled'
-      const timestamp = this.now()
-      if (!Number.isFinite(timestamp)) return 'failed'
-      const day = new Date(timestamp).toISOString().slice(0, 10)
-      if (this.getLastCheckedDay() === day) return 'already-checked'
-      this.setLastCheckedDay(day)
-      this.running = true
-      const count = await this.check()
-      if (!Number.isSafeInteger(count) || count < 0 || count > 500) return 'failed'
-      this.notify(count)
-      return 'checked'
-    } catch {
-      return 'failed'
-    } finally {
-      this.running = false
-    }
+    super({
+      ...dependencies,
+      isValidResult: count => Number.isSafeInteger(count) && count >= 0 && count <= 500,
+    })
   }
 }

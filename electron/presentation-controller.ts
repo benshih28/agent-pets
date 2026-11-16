@@ -13,7 +13,7 @@ import { FAMILY_ADAPTER_IDS, type AgentFamilyAdapterId } from '../src/types/agen
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { SlidingWindowLimiter } from './sliding-window-limiter.ts'
 import { isPluginId, isSafeItemId } from '../src/types/id-patterns.ts'
-import { isRecord } from './value-guards.ts'
+import { isRecord, recordOrEmpty } from './value-guards.ts'
 
 export const PRESENTATION_MIN_TTL_MS = 1_000
 export const PRESENTATION_MAX_TTL_MS = 15_000
@@ -273,7 +273,7 @@ export class PresentationController {
     const status = normalizePresentationStatus(this.getStatusSnapshot())
     if (status.dnd) return { accepted: false, error: 'dnd_enabled' }
     const normalized = normalizePresentationInput({
-      ...(input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}),
+      ...recordOrEmpty(input),
       kind: 'react',
     })
     if (!normalized.ok) return { accepted: false, error: normalized.error }

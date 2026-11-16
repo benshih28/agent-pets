@@ -6,6 +6,12 @@ on:
   schedule:
     - cron: '0 3 * * 1'
   workflow_dispatch:
+  # 只在改到這個 workflow 或冒煙腳本本身時才跑，方便驗證它們的修改；一般 PR 仍不觸發矩陣
+  pull_request:
+    paths:
+      - '.github/workflows/ci-platforms.yml'
+      - 'scripts/ci-smoke-electron.mjs'
+      - 'scripts/e2e-isolated-electron.mjs'
 
 permissions:
   contents: read
@@ -15,17 +21,31 @@ jobs:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    env:
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vue-tsc --noEmit
       - run: pnpm test:unit
+      # 隔離 HOME 與假的 safeStorage 的 Electron 冒煙測試（視窗層級、koffi 載入、事件埠、正常退出）
+      - run: pnpm exec vite build
+      # macOS 上 app.quit() 偶爾在清理完成（事件埠已關閉）後仍不結束，連空白 Electron app 也會；
+      # 只在 macOS 容忍這種情況，事件埠沒關閉的真正卡住仍然失敗。
+      - run: pnpm run test:smoke ${{ runner.os == 'macOS' && '--tolerate-quit-hang' || '' }}

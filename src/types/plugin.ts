@@ -1,9 +1,7 @@
+import type { AppLocale } from './locale.ts'
 import type { PetMotionManifest } from './pet-atlas.ts'
 
-export type PluginLocalizedText = {
-  'zh-TW': string
-  'en-US': string
-}
+export type PluginLocalizedText = Record<AppLocale, string>
 
 export type PluginSettingScalar = string | number | boolean
 
@@ -169,7 +167,7 @@ export interface PluginContributionValueMap {
 }
 
 type AssertPluginContributionKeysMatch<T extends true> = T
-type PluginContributionRegistryCoverage = AssertPluginContributionKeysMatch<
+type _PluginContributionRegistryCoverage = AssertPluginContributionKeysMatch<
   [Exclude<PluginContributionId, keyof PluginContributionValueMap>, Exclude<keyof PluginContributionValueMap, PluginContributionId>] extends [never, never]
     ? true
     : false

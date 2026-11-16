@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   classifyDecideResponse,
-  formatDuration,
   inferVanishedOutcome,
 } from '../src/utils/permission-view.ts'
+import type { PermissionRequestView } from '../src/types/permission.ts'
+import { makePermissionRequestView } from './support/permission-request-view.mts'
+import { formatClockDuration } from '../src/utils/intl-format.ts'
 
 test('only a delivered decision is reported as success', () => {
   assert.deepEqual(classifyDecideResponse({ ok: true, status: 'allowed' }), { ok: true, status: 'allowed' })
@@ -32,10 +34,10 @@ test('vanished requests are told apart by their deadline', () => {
 })
 
 test('durations are m:ss and never negative', () => {
-  assert.equal(formatDuration(83_400), '1:24')
-  assert.equal(formatDuration(42_000), '0:42')
-  assert.equal(formatDuration(-5), '0:00')
-  assert.equal(formatDuration(Number.NaN), '0:00')
+  assert.equal(formatClockDuration(83_400), '1:24')
+  assert.equal(formatClockDuration(42_000), '0:42')
+  assert.equal(formatClockDuration(-5), '0:00')
+  assert.equal(formatClockDuration(Number.NaN), '0:00')
 })
 
 test('click guard keeps buttons inert for 300ms', async () => {
@@ -46,9 +48,7 @@ test('click guard keeps buttons inert for 300ms', async () => {
 
 test('consecutive identical requests of one session fold, others do not', async () => {
   const { groupPermissionRequests } = await import('../src/utils/permission-view.ts')
-  const make = (requestId: string, over: Record<string, unknown> = {}) => ({
-    requestId, agentId: 'opencode-cli', sessionId: 's1', action: 'read', description: 'a.ts', details: [], ...over,
-  }) as never
+  const make = (requestId: string, over: Partial<PermissionRequestView> = {}): PermissionRequestView => makePermissionRequestView({ requestId, ...over })
   const groups = groupPermissionRequests([
     make('1'), make('2'), make('3', { sessionId: 's2' }), make('4', { description: 'b.ts' }), make('5', { description: 'b.ts' }),
   ])

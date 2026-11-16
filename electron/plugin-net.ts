@@ -292,7 +292,7 @@ export class PluginNetworkClient {
     if (!limiter.consume(now, limits.requestsPerMinute).allowed) return { ok: false, error: 'rate_limited' }
 
     let currentUrl = firstUrl
-    let headers = new Headers(request.headers)
+    const headers = new Headers(request.headers)
     const controller = new AbortController()
     let rejectTimeout!: (reason: Error) => void
     const timeoutPromise = new Promise<never>((_resolve, reject) => { rejectTimeout = reject })
@@ -319,7 +319,7 @@ export class PluginNetworkClient {
             redirect: 'manual',
             signal: controller.signal,
           }), timeoutPromise])
-        } catch (error) {
+        } catch {
           return { ok: false, error: controller.signal.aborted ? 'timeout' : 'invalid_request' }
         }
         if ([301, 302, 303, 307, 308].includes(response.status)) {

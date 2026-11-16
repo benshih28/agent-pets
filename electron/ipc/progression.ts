@@ -4,6 +4,7 @@ import type { ProgressionStore } from '../progression'
 import type { AchievementSnapshot } from '../../src/types/achievement'
 import type { ProgressionInsights, ProgressionSnapshot } from '../../src/types/progression'
 import { IPC_CHANNELS } from './channels.ts'
+import { DEFAULT_PET_ID } from '../../src/utils/pet-id.ts'
 
 export interface ProgressionIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -18,7 +19,7 @@ export function registerProgressionIpc(deps: ProgressionIpcDependencies): void {
   deps.ipcMain.handle(IPC_CHANNELS.progressionInit, (event, petId?: unknown) => {
     deps.assertTrustedIpcSender(event)
     if (petId !== undefined && !deps.isProgressionPetId(petId)) return null
-    return deps.setActiveProgressionPet(typeof petId === 'string' ? petId : 'aang-airbender')
+    return deps.setActiveProgressionPet(typeof petId === 'string' ? petId : DEFAULT_PET_ID)
   })
 
   deps.ipcMain.handle(IPC_CHANNELS.progressionSetPet, (event, petId: unknown) => {
@@ -42,7 +43,7 @@ export function registerProgressionIpc(deps: ProgressionIpcDependencies): void {
     const achievementStore = deps.getAchievementStore()
     if (!achievementStore) return null
     const selectedPet = petId === undefined
-      ? deps.getProgressionStore()?.getActivePetId() ?? 'aang-airbender'
+      ? deps.getProgressionStore()?.getActivePetId() ?? DEFAULT_PET_ID
       : deps.isProgressionPetId(petId) ? petId : null
     return selectedPet ? achievementStore.getSnapshot(selectedPet, deps.getProgressionStore()?.getSnapshot(selectedPet)) : null
   })

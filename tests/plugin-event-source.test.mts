@@ -79,7 +79,7 @@ test('eventSource accepts only the observe-only schema and exposes no family, pl
     { sessionId: 'x'.repeat(65), state: 'idle' },
     { sessionId: 'run-5', state: 'idle', detail: 'x'.repeat(PLUGIN_EVENT_SOURCE_MAX_EVENT_BYTES) },
   ]) assert.deepEqual(harness.controller.emit('status-fixture', event), { ok: false, error: 'invalid_request' })
-  assert.equal(harness.controller.emit('unknown-plugin', { sessionId: 'x', state: 'idle' }).error, 'disabled')
+  assert.deepEqual(harness.controller.emit('unknown-plugin', { sessionId: 'x', state: 'idle' }), { ok: false, error: 'disabled' })
   assert.equal(harness.controller.list().length, 1)
   harness.controller.destroy()
 })

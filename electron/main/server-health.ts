@@ -1,8 +1,9 @@
 import { request } from 'node:http'
 import type { LocalServerHealth, LocalServerHealthSnapshot, LocalServerId } from '../../src/types/reliability.ts'
 import type { LocalServerListenHandle, LocalServerListenStatus } from '../local-server-listen.ts'
+import { LOCAL_WIRE_HEADERS, LOCAL_WIRE_HOST, LOCAL_WIRE_PATHS } from '../../src/types/local-wire.ts'
 
-export const AGENT_PETS_SERVER_HEADER = 'x-agent-pets-server'
+export const AGENT_PETS_SERVER_HEADER = LOCAL_WIRE_HEADERS.server
 
 export interface ServerHealthTrackerOptions {
   onChange?: (snapshot: LocalServerHealthSnapshot) => void
@@ -24,7 +25,7 @@ export interface ServerHealthTracker {
 /** Identifies another Agent Pets instance holding the port, without sending any token. */
 export function probePortOccupant(port: number, timeoutMs = 800): Promise<LocalServerHealth['occupant']> {
   return new Promise(resolve => {
-    const req = request({ host: '127.0.0.1', port, method: 'GET', path: '/v1/events', timeout: timeoutMs }, res => {
+    const req = request({ host: LOCAL_WIRE_HOST, port, method: 'GET', path: LOCAL_WIRE_PATHS.events, timeout: timeoutMs }, res => {
       res.resume()
       resolve(res.headers[AGENT_PETS_SERVER_HEADER] ? 'agent-pets' : 'other')
     })

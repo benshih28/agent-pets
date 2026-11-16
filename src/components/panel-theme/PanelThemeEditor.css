@@ -33,7 +33,8 @@
   position: sticky;
   /* 貼齊捲動區的上緣（抵銷 .editor 的上內距），捲過去的內容不會從預覽上方露出來。 */
   top: calc(-1 * var(--space-1));
-  z-index: 1;
+  /* 區域堆疊：只需壓過同一捲動區內的內容。 */
+  z-index: calc(var(--z-base) + 1);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;

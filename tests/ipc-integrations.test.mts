@@ -2,13 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerIntegrationIpc } from '../electron/ipc/integrations.ts'
+import { fakeBrowserWindow, fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 test('integration IPC keeps sender scope, source allowlist, and target validation', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   const calls: string[] = []
-  const panelWindow = { id: 'panel' }
+  const panelWindow = fakeBrowserWindow()
   registerIntegrationIpc({
-    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     assertTrustedIpcSender: (_event, window) => { assert.equal(window, panelWindow) },
     getPanelWindow: () => panelWindow,
     sendIntegrationTestEvent: async (source, sessionId, state) => { calls.push(`send:${source}:${sessionId}:${state}`) },
@@ -17,7 +19,7 @@ test('integration IPC keeps sender scope, source allowlist, and target validatio
     uninstallIntegration: target => { calls.push(`uninstall:${target}`) },
     isIntegrationTarget: value => value === 'codex' || value === 'claude',
   })
-  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
+  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.(fakeIpcMainInvokeEvent(), ...args)
   assert.deepEqual([...handlers.keys()], [
     IPC_CHANNELS.testIntegration,
     IPC_CHANNELS.installIntegrations,

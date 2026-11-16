@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { renameSyncWithRetry } from './fs-rename.ts'
+import { writeFileAtomicSync } from './atomic-file-write.ts'
 import { checkPanelThemeUserImage, PANEL_THEME_USER_IMAGE_MAX_BYTES, type PanelThemeImageKind } from './plugin-panel-themes.ts'
 import { PANEL_THEME_USER_IMAGE_FILE } from './panel-theme-store.ts'
 import { isPanelThemeOwnerId } from '../src/types/panel-theme-user.ts'
@@ -117,14 +117,8 @@ export function storeUserImage(userDataDirectory: string, pluginId: string, prep
   } catch (error) {
     if (!isErrorCode(error, 'ENOENT')) throw error
   }
-  const temporary = path.join(directory, `.${prepared.sha256}.${randomUUID()}.tmp`)
-  try {
-    fs.writeFileSync(temporary, prepared.bytes, { mode: 0o600, flag: 'wx' })
-    renameSyncWithRetry(temporary, target)
-  } catch (error) {
-    try { fs.rmSync(temporary, { force: true }) } catch {}
-    throw error
-  }
+  const temporaryPath = path.join(directory, `.${prepared.sha256}.${randomUUID()}.tmp`)
+  writeFileAtomicSync(target, prepared.bytes, { temporaryPath, mode: 0o600 })
 }
 
 /** 刪除一個已儲存的圖片檔（絕不跟隨 symlink）。 */

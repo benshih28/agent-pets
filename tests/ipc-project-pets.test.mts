@@ -2,13 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerProjectPetsIpc } from '../electron/ipc/project-pets.ts'
+import type { ProjectRoutingStore } from '../electron/project-routing.ts'
+import { fakeBrowserWindow, fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+import { fakeService } from './support/fake-service.mts'
+
 
 test('project pets IPC delegates through injected store and dialog dependencies', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   const trusted: Array<{ event: unknown; window: unknown }> = []
   const records: string[] = []
-  const panelWindow = { isDestroyed: () => false }
-  const petWindow = { isDestroyed: () => false }
+  const panelWindow = fakeBrowserWindow({ isDestroyed: () => false })
+  const petWindow = fakeBrowserWindow({ isDestroyed: () => false })
   const project = { id: 'a'.repeat(32), name: 'sample' }
   let enabled = false
   let dialogOpen = false
@@ -28,11 +33,11 @@ test('project pets IPC delegates through injected store and dialog dependencies'
   }
 
   registerProjectPetsIpc({
-    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     assertTrustedIpcSender: (event, window) => { trusted.push({ event, window }) },
     getPanelWindow: () => panelWindow,
     getPetWindow: () => petWindow,
-    getStore: () => store as never,
+    getStore: () => fakeService<ProjectRoutingStore>(store),
     availablePetIds: () => new Set(['sample-pet']),
     isDialogOpen: () => dialogOpen,
     setDialogOpen: value => { dialogOpen = value },
@@ -42,7 +47,7 @@ test('project pets IPC delegates through injected store and dialog dependencies'
     logError: () => undefined,
   })
 
-  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args)
+  const invoke = (channel: string, ...args: unknown[]) => handlers.get(channel)?.(fakeIpcMainInvokeEvent(), ...args)
   assert.deepEqual([...handlers.keys()], [
     IPC_CHANNELS.projectPetsList,
     IPC_CHANNELS.projectPetsGetEnabled,
@@ -69,15 +74,15 @@ test('project pets IPC delegates through injected store and dialog dependencies'
 })
 
 test('project pets picker fails closed when a dialog is already open', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  const { ipcMain, handlers } = createFakeIpcMain()
   let pickerCalls = 0
-  const panelWindow = { isDestroyed: () => false }
+  const panelWindow = fakeBrowserWindow({ isDestroyed: () => false })
   registerProjectPetsIpc({
-    ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
+    ipcMain,
     assertTrustedIpcSender: () => undefined,
     getPanelWindow: () => panelWindow,
     getPetWindow: () => null,
-    getStore: () => ({}) as never,
+    getStore: () => fakeService<ProjectRoutingStore>({}),
     availablePetIds: () => new Set(),
     isDialogOpen: () => true,
     setDialogOpen: () => undefined,
@@ -86,7 +91,7 @@ test('project pets picker fails closed when a dialog is already open', async () 
     chooseProjectPetHelp: () => 'Choose a project folder',
     logError: () => undefined,
   })
-  const result = await handlers.get(IPC_CHANNELS.projectPetsPick)?.({})
+  const result = await handlers.get(IPC_CHANNELS.projectPetsPick)?.(fakeIpcMainInvokeEvent())
   assert.deepEqual(result, { ok: false, error: 'unavailable' })
   assert.equal(pickerCalls, 0)
 })

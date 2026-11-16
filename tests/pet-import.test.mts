@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -14,6 +14,8 @@ import {
   type ParsedPetKit,
   type ParsePetZipOptions,
 } from '../electron/pet-import.ts'
+import { linkDirectory } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const text = (value: string) => new TextEncoder().encode(value)
 
@@ -138,7 +140,7 @@ test('prefers the declared spritesheet next to pet.json', () => {
 
 function tempRoot(t: { after(fn: () => void): void }): string {
   const root = mkdtempSync(join(tmpdir(), 'agent-pets-import-'))
-  t.after(() => rmSync(root, { recursive: true, force: true }))
+  t.after(() => removeTempTree(root))
   return root
 }
 
@@ -307,7 +309,7 @@ test('a staged directory that vanished fails cleanly', async t => {
   const root = tempRoot(t)
   const importer = staging(root)
   const preview = await importer.stage(parsed({ id: 'gnat' }))
-  rmSync(importer.previewDirectory(preview.token)!, { recursive: true, force: true })
+  removeTempTree(importer.previewDirectory(preview.token)!)
   assert.equal((await importer.commit(preview.token, 'install', preview.expectedState)).ok, false)
   assert.equal(existsSync(join(root, 'custom', 'gnat')), false)
 })
@@ -338,7 +340,7 @@ test('startup recovery restores interrupted replaces and removes only our own st
   const outside = join(root, 'outside')
   mkdirSync(outside)
   writeFileSync(join(outside, 'keep.txt'), 'keep')
-  symlinkSync(outside, join(stagingRoot, `stage-${'d'.repeat(32)}`))
+  linkDirectory(outside, join(stagingRoot, `stage-${'d'.repeat(32)}`))
 
   mkdirSync(join(stagingRoot, `backup-${'e'.repeat(32)}-done`), { recursive: true })
   writeFileSync(join(stagingRoot, `backup-${'e'.repeat(32)}-done`, '.replaced'), '')
@@ -356,7 +358,7 @@ test('a symlinked staging root is refused', async t => {
   const root = tempRoot(t)
   const elsewhere = join(root, 'elsewhere')
   mkdirSync(elsewhere)
-  symlinkSync(elsewhere, join(root, PET_IMPORT_STAGING_DIRNAME))
+  linkDirectory(elsewhere, join(root, PET_IMPORT_STAGING_DIRNAME))
   await assert.rejects(staging(root).stage(parsed({ id: 'x' })))
   assert.deepEqual(readdirSync(elsewhere), [])
   assert.deepEqual(await staging(root).recoverStale(), { removed: 0, restored: 0, kept: 0 })

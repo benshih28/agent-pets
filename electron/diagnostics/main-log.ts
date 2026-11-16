@@ -1,12 +1,11 @@
-import { app } from 'electron'
-import { join } from 'node:path'
+import { appUserDataPaths } from '../main/app-user-data.ts'
 import { createLogger, type Logger, type LogLevel } from './logger.ts'
 
 let logger: Logger | null = null
 let teed = false
 
 export function mainLogger(): Logger {
-  if (!logger) logger = createLogger({ directory: join(app.getPath('userData'), 'logs') })
+  if (!logger) logger = createLogger({ directory: appUserDataPaths().logs })
   return logger
 }
 

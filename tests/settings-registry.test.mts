@@ -3,9 +3,11 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { nextRovingId } from '../src/composables/useRovingTabs.ts'
+import type { TranslationKey } from '../src/i18n.ts'
 import {
   SETTINGS_ENTRIES,
   SETTINGS_GROUPS,
+  SETTINGS_GROUP_BY_ID,
   groupOfSection,
   isSettingsGroupId,
   searchSettings,
@@ -47,8 +49,8 @@ test('each section belongs to exactly one group and every entry points at a grou
 
 test('search matches labels, help and synonyms in both languages', () => {
   const messages = catalog('zh-TW')
-  const translate = (key: string) => messages[key] ?? key
-  const ids = (query: string) => searchSettings(query, translate as never).map(hit => hit.entry.id)
+  const translate = (key: TranslationKey) => messages[key] ?? key
+  const ids = (query: string) => searchSettings(query, translate).map(hit => hit.entry.id)
   assert.ok(ids('勿擾').includes('dnd'))
   assert.ok(ids('免打擾').includes('dnd'))
   assert.ok(ids('focus').includes('dnd'))
@@ -63,7 +65,7 @@ test('search matches labels, help and synonyms in both languages', () => {
 
 test('plugin search results land in the dedicated plugins group', () => {
   const messages = catalog('zh-TW')
-  const hit = searchSettings('插件', ((key: string) => messages[key] ?? key) as never).find(item => item.entry.id === 'plugins')
+  const hit = searchSettings('插件', (key: TranslationKey) => messages[key] ?? key).find(item => item.entry.id === 'plugins')
   assert.ok(hit)
   assert.equal(groupOfSection(hit.entry.section), 'plugins')
 })
@@ -83,9 +85,16 @@ test('roving tab navigation wraps and supports Home and End', () => {
 test('completion markers are searchable in both languages', () => {
   for (const locale of ['zh-TW', 'en-US'] as const) {
     const messages = catalog(locale)
-    const translate = ((key: string) => messages[key] ?? key) as never
+    const translate = (key: TranslationKey) => messages[key] ?? key
     for (const query of ['完成標記', 'completion', 'badge']) {
       assert.ok(searchSettings(query, translate).some(hit => hit.entry.id === 'completionMarkers'), `${locale}: ${query}`)
     }
+  }
+})
+
+test('groupOfSection resolves every section through the shared index', () => {
+  for (const group of SETTINGS_GROUPS) {
+    for (const section of group.sections) assert.equal(groupOfSection(section), group.id)
+    assert.equal(SETTINGS_GROUP_BY_ID.get(group.id), group)
   }
 })

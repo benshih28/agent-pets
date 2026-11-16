@@ -13,6 +13,7 @@ import {
   PLUGIN_HOST_DENIAL_COOLDOWN_MS,
   PLUGIN_HOST_REQUEST_WINDOW_MS,
 } from '../electron/plugin-host-grants.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 test('requestHost accepts only normalized public DNS names and bounded plain-text reasons', () => {
   for (const host of ['*.example.com', '127.0.0.1', 'localhost', 'pet.local', 'example.internal', 'example.com:443', 'example.com/']) {
@@ -68,6 +69,7 @@ test('requestHost rejects concurrent prompts for the same host and can clear plu
 
 test('PluginBroker requestHost requires userGranted and returns the direct successful value', async () => {
   const userDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-host-grant-broker-'))
+  const network = { hosts: ['api.example.com'], userGranted: true }
   const manifest: PluginManifest = {
     id: 'sample',
     name: { 'zh-TW': '測試插件', 'en-US': 'Test Plugin' },
@@ -75,7 +77,7 @@ test('PluginBroker requestHost requires userGranted and returns the direct succe
     apiVersion: '1',
     author: 'Test',
     entry: 'dist/main.js',
-    permissions: { network: { hosts: ['api.example.com'], userGranted: true } },
+    permissions: { network },
     contributes: {},
   }
   const feed = new PluginFeedController({
@@ -105,12 +107,12 @@ test('PluginBroker requestHost requires userGranted and returns the direct succe
     }), {
       id: 'host-request-1', ok: true, value: { host: 'api.example.com', granted: true },
     })
-    manifest.permissions.network.userGranted = false
+    network.userGranted = false
     assert.deepEqual(broker.handle('sample', {
       id: 'host-request-2', method: 'net.requestHost', args: ['api.example.com', 'Read updates'],
     }), { id: 'host-request-2', ok: false, error: 'not_permitted' })
   } finally {
     broker.destroy()
-    fs.rmSync(userDataDirectory, { recursive: true, force: true })
+    removeTempTree(userDataDirectory)
   }
 })

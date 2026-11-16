@@ -15,10 +15,20 @@
 | `--space-4` | 16px | |
 | `--space-5` | 24px | |
 
-- `margin`、`padding`、`gap` 寫死的 px 只要等於上表任一值，就要改用 token（`literal-spacing`，`--strict` 會失敗）。
+- `margin`、`padding`、`gap` 寫死的 px 只要等於上面第一張表任一 `--space-*` 值，就要改用 token（`literal-spacing`，`--strict` 會失敗）。
 - 不在刻度上的光學微調（1px、3px、5px、7px…）與負 margin 可以留著，`--verbose` 會列成 `raw-spacing`。
 - `calc()`／`max()` 裡的值不檢查：寵物視窗的 `max(8px, calc(8px * var(--pet-scale, 1)))` 是縮放公式，不是刻度。
 - 半格 token 不在插件 token 表裡（`docs/plugins/ux-guidelines.md`），插件頁面看得到但不應依賴。
+
+刻度外但在多處重複的版面值也收成 token，讓同一個數字只有一個來源（不是新的節奏，像素不變）：
+
+| token | 值 | 用途 |
+|---|---|---|
+| `--dialog-shell-gap` | 15px | 設定精靈與專案 MCP 對話框的區塊間距 |
+| `--dialog-shell-padding` | 22px | 同上兩個對話框的外框內距 |
+| `--list-card-padding-y` | 15px | 精靈工具卡、MCP 專案卡、面板內權限卡的上下內距 |
+
+只在單一元件內重複的值用元件自己的 custom property（例如 `.setup-wizard` 的 `--wizard-detail-indent`、`.mcp-wizard` 的 `--mcp-detail-indent`）。
 
 ## 動態
 
@@ -27,12 +37,14 @@
 | `--transition-fast` / `-base` / `-slow` | 0.15s / 0.2s / 0.35s ease | 所有 `transition` |
 | `--duration-spin` | 0.8s | 載入轉圈一圈（`Button` loading、`Spinner`） |
 | `--duration-attention` | 1.8s | 寵物視窗的提醒脈動（迷你徽章、額度警示） |
+| `--duration-breathe` | 3.8s | 寵物待機／離線的呼吸循環 |
+| `--duration-glance` | 0.42s | 寵物看向游標的一次性位移（左右共用） |
 | `--ease-standard` | `cubic-bezier(0.2, 0, 0, 1)` | 一般進出場 |
 | `--ease-overshoot` | `cubic-bezier(0.2, 1.4, 0.4, 1)` | 略衝過頭再回位（驚訝反應、成就徽章） |
 
 - `transition` 寫死時長會失敗（`literal-transition`）；寫死 `cubic-bezier()` 會失敗（`literal-easing`）。`ease-in-out`、`linear` 這類關鍵字可以直接寫。
 - keyframe 動畫：同一種語意在兩處以上重複的時長才收成 `--duration-*`；寵物 sprite 反應等只出現一次的裝飾動畫保留字面值，列為 `raw-motion`。
-- 要和程式計時器同步的時長由程式提供：權限倒數條的 width transition 用 `PERMISSION_CLOCK_INTERVAL_MS`（`src/components/permission/usePermissionClock.ts`）。寵物反應標記（`PetAnimation.vue` 的 `REACTION_MARK_MS`）與設定區塊閃爍（`SettingsPage.vue` 的 `SECTION_FLASH_MS`）由元件以行內樣式設定 `--pet-mark-duration`、`--settings-flash-duration`，CSS 只讀這兩個變數，不另寫時長。
+- 要和程式計時器同步的時長由程式提供：權限倒數條的 width transition 用 `PERMISSION_CLOCK_INTERVAL_MS`（`src/components/permission/usePermissionClock.ts`）。寵物反應標記（`src/composables/usePetReactions.ts` 的 `REACTION_MARK_MS`，`PetAnimation.vue` 設定變數）與設定區塊閃爍（`SettingsPage.vue` 的 `SECTION_FLASH_MS`）由元件以行內樣式設定 `--pet-mark-duration`、`--settings-flash-duration`，CSS 只讀這兩個變數，不另寫時長。
 
 ### 減少動態
 

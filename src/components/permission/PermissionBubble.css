@@ -1,0 +1,258 @@
+/* Sits ABOVE the sprite in the reserved headroom so the pet stays visible and
+   showing/hiding never resizes the pet window. 高度不能超過預留空間：超出的部分會被視窗
+   裁掉，最先消失的就是來源列與風險徽章。所以上限是預留高度，指令細節區在裡面捲動，
+   標題、風險徽章、倒數與按鈕永遠看得到。 */
+.permission-request {
+  position: absolute;
+  display: flex;
+  max-height: calc(var(--pet-bubble-headroom) - 4px);
+  flex-direction: column;
+  bottom: calc(100% - 2px);
+  left: 50%;
+  transform-origin: 50% 100%;
+  z-index: calc(var(--z-base) + 8);
+  width: min(248px, calc(var(--pet-w, 260px) - 8px));
+  padding: var(--space-3);
+  overflow: hidden;
+  border: 1px solid var(--state-warn);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-bright);
+  font-family: var(--font-ui);
+  text-align: left;
+  transform: translateX(-50%);
+}
+
+.permission-request > * {
+  flex: none;
+}
+
+/* 只有指令區會讓出高度：先縮短程式碼框（至少一行），再不夠就在區內捲動。 */
+.permission-request > .permission-details {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.permission-request.risk-high {
+  border: 2px solid var(--state-error);
+}
+
+.permission-request.risk-medium {
+  border-style: dashed;
+}
+
+.permission-request.risk-low {
+  border-color: var(--border-strong);
+}
+
+.permission-request.risk-unknown {
+  border-style: dotted;
+  border-color: var(--text-secondary);
+}
+
+.permission-request-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.permission-request-source {
+  flex: 0 0 auto;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+.permission-request-project {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-request-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 1px;
+}
+
+.permission-request-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--font-md);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-request-queue {
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+.permission-request-queue {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.permission-request-error {
+  margin: 0 1px var(--space-2);
+  color: var(--state-warn-bright);
+  font-size: var(--font-xs);
+  line-height: 1.3;
+}
+
+.permission-request .permission-queue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.permission-request .permission-queue-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.permission-request-hint {
+  margin: var(--space-2) 1px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  line-height: 1.3;
+}
+
+.permission-keyboard-hint {
+  display: none;
+}
+
+.permission-request:focus-within .permission-keyboard-hint {
+  display: block;
+}
+
+.permission-keyboard-hint.holding {
+  color: var(--state-warn-bright);
+  font-weight: var(--weight-bold);
+}
+
+.permission-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.permission-request-error {
+  color: var(--text-danger);
+}
+
+.permission-outcome-text {
+  margin: 0 1px var(--space-2);
+  font-size: var(--font-sm);
+  line-height: var(--leading-normal);
+}
+
+.permission-request-actions {
+  display: grid;
+  grid-template-columns: 0.82fr 1.18fr;
+  gap: var(--space-2);
+}
+
+.permission-request :deep(.permission-button) {
+  display: flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-bright);
+  cursor: pointer;
+  font: var(--weight-bold) var(--font-sm) / 1 var(--font-ui);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.permission-request :deep(.permission-button.allow) {
+  border-color: var(--state-success);
+  color: var(--state-success);
+}
+
+.permission-request :deep(.permission-button.deny) {
+  color: var(--text-primary);
+}
+
+.permission-request :deep(.permission-button:hover:not(:disabled)) {
+  border-color: var(--text-secondary);
+  background: var(--surface-raised-hover);
+}
+
+.permission-request :deep(.permission-button:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.permission-request :deep(.permission-button:disabled) {
+  cursor: wait;
+  opacity: 0.56;
+}
+
+.permission-keycaps {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.permission-request :deep(.permission-button kbd) {
+  color: var(--text-secondary);
+  font: var(--weight-medium) var(--font-xs) / 1 var(--font-ui);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .permission-request :deep(.permission-button) {
+    transition: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .permission-request {
+    border-width: 2px;
+    border-color: var(--state-warn-bright);
+    background: var(--surface-overlay);
+  }
+
+  .permission-request :deep(.permission-button) {
+    border-color: currentColor;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .permission-request {
+    background: var(--surface-overlay);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

@@ -31,8 +31,16 @@ export function isSettingsGroupId(value: unknown): value is SettingsGroupId {
   return SETTINGS_GROUPS.some(group => group.id === value)
 }
 
+// 模組載入時建一次索引，搜尋結果逐列查分組時不必再掃描 SETTINGS_GROUPS。
+export const SETTINGS_GROUP_BY_ID: ReadonlyMap<SettingsGroupId, SettingsGroupDefinition> = new Map(
+  SETTINGS_GROUPS.map(group => [group.id, group]),
+)
+const GROUP_BY_SECTION: ReadonlyMap<SettingsSectionId, SettingsGroupId> = new Map(
+  SETTINGS_GROUPS.flatMap(group => group.sections.map(section => [section, group.id] as const)),
+)
+
 export function groupOfSection(section: SettingsSectionId): SettingsGroupId {
-  return SETTINGS_GROUPS.find(group => group.sections.includes(section))?.id ?? DEFAULT_SETTINGS_GROUP
+  return GROUP_BY_SECTION.get(section) ?? DEFAULT_SETTINGS_GROUP
 }
 
 export interface SettingsEntry {
@@ -73,6 +81,7 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   { id: 'claudePermissionRespond', section: 'desktop', labelKey: 'permission.claudeRespond', helpKey: 'permission.claudeRespondHelp', keywords: ['claude', 'permission', 'approve', 'terminal', '權限', '核准', '終端機', '回覆'] },
   { id: 'presentationMcp', section: 'desktop', labelKey: 'presentationMcp', helpKey: 'presentationMcpHelp', keywords: ['mcp', '簡報', 'presentation'] },
   { id: 'launchAtStartup', section: 'desktop', labelKey: 'launchAtStartup', keywords: ['startup', 'login', 'autostart', '開機', '登入', '自動啟動'] },
+  { id: 'appUpdate', section: 'advanced', labelKey: 'update.autoCheck', helpKey: 'update.autoCheckHelp', keywords: ['update', 'version', 'upgrade', 'release', '更新', '新版', '版本'] },
   { id: 'projectMcp', section: 'advanced', labelKey: 'projectMcpPanelTitle', helpKey: 'presentationMcpSetupHelp', keywords: ['mcp', '專案', 'project'] },
   { id: 'setupWizard', section: 'advanced', labelKey: 'setupWizard', keywords: ['wizard', 'onboarding', 'hook', '精靈', '安裝', '引導'] },
   { id: 'restart', section: 'advanced', labelKey: 'restartPet', keywords: ['relaunch', 'reboot', '重啟', '重新啟動'] },

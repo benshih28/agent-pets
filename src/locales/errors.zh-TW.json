@@ -70,5 +70,8 @@
   "Could not install the imported pet": "無法安裝匯入的寵物",
   "No pet.json found in this zip": "Zip 中找不到 pet.json",
   "Spritesheet has EXIF rotation; save it again without rotation": "spritesheet 帶有 EXIF 旋轉資訊，請重新存成不含旋轉的圖片",
-  "Zip entry is corrupted (CRC mismatch)": "Zip 內的項目已損毀（CRC 不符）"
+  "Zip entry is corrupted (CRC mismatch)": "Zip 內的項目已損毀（CRC 不符）",
+  "CLAUDE_CONFIG_DIR does not point to a usable folder, so nothing was written.": "CLAUDE_CONFIG_DIR 指定的設定目錄無法使用，所以沒有寫入任何設定。",
+  "CODEX_HOME does not point to a usable folder, so nothing was written.": "CODEX_HOME 指定的設定目錄無法使用，所以沒有寫入任何設定。",
+  "XDG_CONFIG_HOME does not point to a usable folder, so nothing was written.": "XDG_CONFIG_HOME 指定的設定目錄無法使用，所以沒有寫入任何設定。"
 }

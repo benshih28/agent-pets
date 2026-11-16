@@ -55,9 +55,9 @@ test('runNow covers app.exit paths and is idempotent', () => {
 })
 
 test('disposeMainTimers clears every timer handle', () => {
-  const state: Record<string, unknown> = {}
-  for (const key of MAIN_STATE_TIMER_KEYS) state[key] = setTimeout(() => {}, 60_000)
-  disposeMainTimers(state as never)
+  // Object.fromEntries 的回傳型別會丟掉鍵名；鍵確實逐一來自 MAIN_STATE_TIMER_KEYS，所以收斂回完整的 Record。
+  const state = Object.fromEntries(MAIN_STATE_TIMER_KEYS.map(key => [key, setTimeout(() => {}, 60_000)])) as Record<(typeof MAIN_STATE_TIMER_KEYS)[number], ReturnType<typeof setTimeout> | null>
+  disposeMainTimers(state)
   for (const key of MAIN_STATE_TIMER_KEYS) assert.equal(state[key], null, key)
 })
 

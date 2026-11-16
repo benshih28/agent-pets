@@ -14,6 +14,7 @@ import {
   sanitizeToolName,
 } from '../electron/history-sessions.ts'
 import type { AgentStatusEvent } from '../src/types/agent.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 type RawDb = {
   exec(sql: string): void
@@ -28,7 +29,7 @@ function open(t: { after(fn: () => void): void }, now: () => number = () => NOW)
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-sessions-'))
   const filePath = path.join(directory, 'history.sqlite')
   const store = new HistoryStore(filePath, { now })
-  t.after(() => { store.close(); fs.rmSync(directory, { recursive: true, force: true }) })
+  t.after(() => { store.close(); removeTempTree(directory) })
   return { store, filePath, directory, db: (store as unknown as { database: RawDb }).database }
 }
 
@@ -180,6 +181,15 @@ test('filters: project, agent, outcome, date range and escaped search', (t) => {
   assert.deepEqual(labels({ outcome: 'active' }), [])
 })
 
+test('the adapter filter keeps its 1-64 character opaque-id limit', () => {
+  for (const adapterId of ['a', 'generic-http', 'x.y_z:w', 'a'.repeat(64)]) {
+    assert.equal(normalizeSessionQuery({ adapterId }, NOW).adapterId, adapterId, adapterId)
+  }
+  for (const adapterId of ['', 'a'.repeat(65), 'a b', 'a/b']) {
+    assert.equal(normalizeSessionQuery({ adapterId }, NOW).adapterId, undefined, adapterId)
+  }
+})
+
 test('query normalisation drops anything invalid and bounds the rest', () => {
   assert.deepEqual(normalizeSessionQuery(null, NOW), { limit: 30 })
   assert.deepEqual(normalizeSessionQuery([1, 2], NOW), { limit: 30 })
@@ -203,6 +213,9 @@ test('query normalisation drops anything invalid and bounds the rest', () => {
   assert.equal(swapped.to, NOW)
   assert.equal(normalizeSessionQuery({ limit: 2.5 }, NOW).limit, 30)
   assert.equal(normalizeSessionQuery({ cursor: { lastSeenAt: 'x', id: 'y' } }, NOW).cursor, undefined)
+  const arrayCursor = Object.assign([], { lastSeenAt: NOW, id: `codex:codex:${'c'.repeat(24)}` })
+  assert.equal(normalizeSessionQuery({ cursor: arrayCursor }, NOW).cursor, undefined)
+  assert.deepEqual(normalizeSessionQuery(Object.assign([], { limit: 7 }), NOW), { limit: 30 })
   assert.equal(isHistorySessionId(`a:b:${'0'.repeat(24)}`), true)
   assert.equal(isHistorySessionId(`a:b:${'0'.repeat(23)}`), false)
   assert.equal(isHistorySessionId(`${'a'.repeat(500)}:${'0'.repeat(24)}`), false)
@@ -267,9 +280,29 @@ test('local-log tokens join the hook session incrementally, with the top model',
   assert.equal(hookOnly.topModel, '')
 })
 
+test('a rescan that learns the real session id moves the usage onto that session', (t) => {
+  const { store } = open(t)
+  store.recordEvent(event({ adapterId: 'codex', source: 'codex', sessionId: 'thread-1' }))
+  const usage = (sessionId: string) => ({
+    adapterId: 'codex', agentId: 'codex', sessionId, sourceEventId: 'line-1',
+    occurredAt: NOW - 50_000, input: 40, output: 9, quality: 'exact' as const, model: 'gpt-5-codex',
+  })
+  // Rows imported before the fix were keyed by the log file, not the thread.
+  assert.equal(store.recordTokenUsage(usage('file-key')), true)
+  assert.equal(store.listSessions('aang-airbender', {}).items[0]!.tokenSource, 'none')
+  assert.equal(store.recordTokenUsage(usage('thread-1')), true)
+  const item = store.listSessions('aang-airbender', {}).items[0]!
+  assert.equal(item.tokenSource, 'local')
+  assert.equal(item.tokenInput, 40)
+  assert.equal(item.tokenOutput, 9)
+  // The move is not a new spend, and a repeat is a no-op.
+  assert.equal(store.getSummary().totals.tokenInput, 40)
+  assert.equal(store.recordTokenUsage(usage('thread-1')), false)
+})
+
 test('v9 migration backfills existing sessions additively and is idempotent', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-sessions-migrate-'))
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  t.after(() => removeTempTree(directory))
   const filePath = path.join(directory, 'history.sqlite')
   const first = new HistoryStore(filePath, { now: () => NOW })
   first.recordEvent(event({ state: 'thinking', eventId: 'start', timestamp: NOW - 50_000 }))

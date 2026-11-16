@@ -4,6 +4,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import test from 'node:test'
 import { RENAME_RETRY_DELAYS_MS, renameSyncWithRetry } from '../electron/fs-rename.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const fsError = (code: string) => Object.assign(new Error(code), { code })
 
@@ -60,6 +61,6 @@ test('rename moves a real directory with the default dependencies', () => {
     assert.equal(fs.readFileSync(path.join(root, '1.0.0', 'plugin.json'), 'utf8'), '{}')
     assert.equal(fs.existsSync(path.join(root, 'staging')), false)
   } finally {
-    fs.rmSync(root, { recursive: true, force: true })
+    removeTempTree(root)
   }
 })

@@ -90,10 +90,7 @@ const describedBy = computed(() => (props.help ? helpId : undefined))
   color: var(--accent-bright);
 }
 
-.box-wrap input:focus-visible {
-  outline: none;
-}
-
+/* 原生 input 是 opacity: 0 的隱形輸入：全域 :focus-visible 畫在它身上也看不到，所以由可見的兄弟元素畫焦點環。 */
 .box-wrap input:focus-visible + .box {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);

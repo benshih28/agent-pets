@@ -1,0 +1,610 @@
+/* 單條狀態列（含多寵物變體）：額度分級、徽章、提示框與額度條。 */
+.multi-pet-status-line {
+  /* Keep the same status-pill treatment as single-pet mode, but constrain
+     each pill to its own sprite column instead of the full pet window. */
+  /* 小尺寸時保留 112px 的下限（仍在 0.6 倍、約 115px 的寵物欄內），讓「點 + 最長的狀態詞」放得下。 */
+  width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - 12px), 112px);
+  max-width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - 12px), 112px);
+  margin-top: -8px;
+}
+
+.status-line {
+  /* Always rendered at the "L" pet-scale (1x) regardless of the chosen pet
+     size — the status bar's dimensions and text size stay constant so it
+     doesn't shrink/grow with the pet sprite. */
+  position: relative;
+  z-index: calc(var(--z-base) + 1);
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(var(--pet-w, 250px) - 14px);
+  /* A solid dark layer under the sheen keeps text legible over any
+     wallpaper/video behind the transparent pet window — the glass read
+     comes from the blur + highlight line, not from true see-through. */
+  /* --pet-status-*：選用的插件主題顏色（僅限膠囊；spec §3.7）。 */
+  background:
+    linear-gradient(160deg, var(--pet-gloss) 0%, transparent 55%),
+    var(--pet-status-background, var(--organic-status-surface));
+  border: 1px solid var(--pet-status-border, var(--organic-status-border));
+  backdrop-filter: var(--blur-bubble);
+  -webkit-backdrop-filter: var(--blur-bubble);
+  box-shadow:
+    var(--organic-status-shadow),
+    var(--organic-status-highlight);
+  color: var(--pet-status-text, var(--organic-status-text));
+  font-family: var(--organic-font-body);
+  text-shadow: var(--text-shadow-panel);
+  font-size: var(--font-sm);
+  line-height: 1.3;
+  padding: 3px 9px;
+  border-radius: var(--organic-status-radius);
+}
+
+/* Quota 顏色依剩餘比例分級（DesktopPet.vue 的 quotaTier）；沒有 Quota 時維持透明。
+   徽章文字用 --color-bg：狀態色在 bg 上 >= 4.5:1（對比對稱），所以反過來也成立。 */
+.status-line {
+  --quota-color: transparent;
+}
+
+.status-line[data-quota-tier='low'] {
+  --quota-color: var(--organic-quota-error);
+}
+
+.status-line[data-quota-tier='warning'] {
+  --quota-color: var(--pet-status-quota-warn, var(--organic-quota-warning));
+}
+
+.status-line[data-quota-tier='claude'] {
+  --quota-color: var(--pet-status-quota-fill, var(--organic-quota-accent));
+}
+
+.status-line[data-quota-tier='normal'] {
+  --quota-color: var(--pet-status-quota-fill, var(--organic-quota-sage));
+}
+
+.status-line:hover {
+  z-index: calc(var(--z-sticky) + 20);
+}
+
+.status-line:focus-visible {
+  z-index: calc(var(--z-sticky) + 20);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* 套用主題的膠囊在檢查對比時不含深色文字陰影，且次要文字
+   為完全不透明。插件徽章維持內建外觀。 */
+:root[data-pet-status-theme] .desktop-pet .status-line {
+  text-shadow: none;
+}
+
+:root[data-pet-status-theme] .desktop-pet .status-line .line-sep,
+:root[data-pet-status-theme] .desktop-pet .status-line .line-project {
+  color: var(--pet-status-text-muted);
+  opacity: 1;
+}
+
+.status-line.has-quota {
+  border-color: color-mix(in srgb, var(--quota-color) 25%, var(--pet-status-border, var(--border-subtle)));
+  box-shadow:
+    var(--organic-status-shadow),
+    var(--organic-status-highlight),
+    inset 0 -3px 7px color-mix(in srgb, var(--quota-color) 9%, transparent);
+}
+
+.plugin-status-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  /* 若量測有誤差，徽章比名稱先縮。 */
+  flex: 0 1000 auto;
+  min-width: 0;
+  max-width: 132px;
+}
+
+/* 沒有插件徽章時不佔位，省下一個 gap 給名稱與狀態。 */
+.plugin-status-badges:not(:has(*)) {
+  display: none;
+}
+
+/* 寬度隨文字、最寬 42px（status-line-fit.ts 的 badgeMax 以同樣方式計算）。 */
+.plugin-badge-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42px;
+  overflow: visible;
+  border-radius: 999px;
+}
+
+.plugin-badge-anchor:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.plugin-badge-pill {
+  display: inline-block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  /* 不加上下 padding：徽章（11px × 1.2 + 邊框 = 15.2px）不高於狀態文字的行高，狀態列維持同一高度。 */
+  padding: 0 5px;
+  border: 1px solid var(--organic-status-border);
+  border-radius: 999px;
+  background: var(--organic-status-surface-fallback);
+  color: var(--organic-status-text);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 用寵物外觀（深／淺）各自調過對比的強調色：原本的 --state-info／--organic-quota-warning
+   在淺色寵物底上只有約 1.4–1.8:1。 */
+.plugin-badge-pill.tone-info {
+  color: var(--pet-bubble-info-accent);
+}
+
+.plugin-badge-pill.tone-warning {
+  border-color: var(--pet-bubble-warn-border);
+  color: var(--pet-bubble-warn-accent);
+}
+
+.plugin-badge-overflow {
+  flex: 0 0 auto;
+  max-width: 36px;
+  color: var(--organic-status-tooltip-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.plugin-badge-tooltip {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  z-index: calc(var(--z-sticky) + 40);
+  width: max-content;
+  max-width: 200px;
+  padding: 5px 7px;
+  border: 1px solid var(--organic-status-tooltip-border);
+  border-radius: var(--organic-status-tooltip-radius);
+  background: var(--organic-status-surface-fallback);
+  box-shadow: var(--organic-status-tooltip-shadow);
+  color: var(--organic-status-tooltip-text);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
+}
+
+.plugin-badge-anchor:hover .plugin-badge-tooltip,
+.plugin-badge-anchor:focus-visible .plugin-badge-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.quota-readout {
+  flex-shrink: 0;
+  min-width: 25px;
+  color: color-mix(in srgb, var(--quota-color) 82%, var(--organic-status-text));
+  font-family: var(--organic-font-heading);
+  font-size: var(--organic-font-body-lg);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--quota-color) 55%, transparent);
+  /* Scaling from the right keeps the number visually anchored to the pill's
+     edge while the critical-state heartbeat runs. */
+  transform-origin: 100% 50%;
+}
+
+.quota-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: calc(var(--z-sticky) + 30);
+  /* Shrink-to-fit: max-content sizes the box to the widest single-line row
+     (both rows are nowrap), so there is no dead space to the right of the
+     text. The max-width is only a runaway guard for unusually long window
+     labels — hitting it is what would let the label wrap, so it must stay
+     comfortably above the normal "5-hour limit / NN% remaining" width.
+     See QUOTA_TOOLTIP_MIN_W in agentStore.ts, which keeps the pet window
+     itself wide enough that this never gets clipped at the window edge. */
+  width: max-content;
+  max-width: 244px;
+  padding: 7px 9px;
+  border: 1px solid var(--organic-status-tooltip-border);
+  border-radius: var(--organic-status-tooltip-radius);
+  /* Solid dark base under the sheen, same rationale as .status-line — the
+     tooltip floats over an unpredictable backdrop, so legibility takes
+     priority over true see-through transparency. */
+  background:
+    linear-gradient(160deg, var(--pet-gloss) 0%, transparent 50%),
+    var(--organic-status-tooltip-surface);
+  /* No backdrop-filter here: the tooltip sits inside the glass status line, and
+     a nested backdrop cannot sample through its parent (glass-on-glass). The
+     solid tint above carries legibility on its own. */
+  box-shadow:
+    var(--organic-status-tooltip-shadow),
+    0 0 9px color-mix(in srgb, var(--quota-color) 13%, transparent),
+    var(--organic-status-highlight);
+  color: var(--organic-status-tooltip-text);
+  text-shadow: var(--text-shadow-panel);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: var(--leading-normal);
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 3px) scale(0.97);
+  transform-origin: 50% 100%;
+  transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
+}
+
+.quota-tooltip-row {
+  display: block;
+}
+
+.quota-tooltip-row + .quota-tooltip-row {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 完整的名稱、專案與狀態（狀態列本身只剩一行）：允許換行，最多三行，
+   讓長專案名與狀態都看得到，又不會長出 tooltip 預留的高度。 */
+.quota-tooltip-line {
+  display: -webkit-box;
+  margin-bottom: var(--space-1);
+  overflow: hidden;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.quota-tooltip-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2-5);
+  /* nowrap is what lets max-content size the tooltip to one tidy line per
+     row; the label truncates rather than wraps if an unknown window label
+     ever runs past the max-width guard. */
+  white-space: nowrap;
+}
+
+.quota-tooltip-summary > strong:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quota-tooltip-percent {
+  color: color-mix(in srgb, var(--quota-color) 82%, var(--organic-status-text));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.quota-tooltip-reset {
+  display: block;
+  margin-top: var(--space-0-5);
+  color: var(--organic-status-tooltip-muted);
+  font-size: 0.91em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.quota-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--organic-status-tooltip-border);
+  border-bottom: 1px solid var(--organic-status-tooltip-border);
+  background: inherit;
+  transform: translate(-50%, -3px) rotate(45deg);
+}
+
+.status-line.has-quota:hover .quota-tooltip,
+.status-line.has-quota:focus-visible .quota-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.quota-meter {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  left: 1px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 0 0 var(--organic-status-radius) var(--organic-status-radius);
+  background: var(--pet-status-quota-track, var(--organic-status-track));
+  pointer-events: none;
+}
+
+/* Full-width white flash layered over the bar, played once per quota drop
+   (see the .quota-drain class). Lives on the track rather than the fill so
+   it never has to share the fill's `animation` slot with quota-pulse. */
+.quota-meter::before {
+  content: '';
+  position: absolute;
+  z-index: calc(var(--z-base) + 3);
+  inset: 0;
+  background: var(--organic-status-flash);
+  opacity: 0;
+}
+
+.quota-drain .quota-meter::before {
+  animation: quota-drain-flash 0.7s ease-out;
+}
+
+.quota-meter::after {
+  content: '';
+  position: absolute;
+  z-index: calc(var(--z-base) + 2);
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(10% - 1px),
+    var(--organic-status-grid) calc(10% - 1px),
+    var(--organic-status-grid) 10%
+  );
+}
+
+.quota-meter-fill {
+  position: relative;
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--quota-color) 72%, var(--organic-sage-dark)),
+      var(--quota-color) 72%,
+      color-mix(in srgb, var(--quota-color) 72%, var(--organic-status-text)) 100%
+    );
+  box-shadow:
+    0 0 6px var(--quota-color),
+    0 -1px 6px color-mix(in srgb, var(--quota-color) 45%, transparent);
+  transition: width var(--transition-slow), background-color var(--transition-base);
+}
+
+/* Sheen that travels along the filled portion. Positioned via
+   background-position (not transform) so the highlight stays inside the
+   fill's own box — the fill can't clip its children, since the glowing head
+   below deliberately overhangs its right edge. */
+.quota-meter-fill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    var(--organic-status-sheen) 50%,
+    transparent 62%
+  );
+  background-repeat: no-repeat;
+  background-size: 260% 100%;
+  background-position: 150% 0;
+}
+
+.quota-motion .quota-meter-fill::before {
+  animation: quota-sheen 3.4s ease-in-out infinite;
+}
+
+.quota-meter-fill::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--organic-status-text);
+  box-shadow: 0 0 7px 2px var(--quota-color);
+  opacity: 0.9;
+  transform: translate(35%, -50%);
+}
+
+.quota-motion:not(.quota-critical) .quota-meter-fill::after {
+  animation: quota-spark 2.4s ease-in-out infinite;
+}
+
+.quota-critical .quota-meter-fill {
+  animation: quota-pulse var(--duration-attention) ease-in-out infinite;
+}
+
+/* Below 10% the whole readout joins in: the bar throws an alarm glow and
+   the percentage beats, so a nearly-empty quota is noticeable from across
+   the desk rather than only on a close look. */
+.quota-critical .quota-meter {
+  animation: quota-alarm var(--duration-attention) ease-in-out infinite;
+}
+
+.quota-critical .quota-readout {
+  animation: quota-heartbeat var(--duration-attention) ease-in-out infinite;
+}
+
+@keyframes quota-pulse {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; filter: brightness(1.28); }
+}
+
+@keyframes quota-spark {
+  0%, 68%, 100% { opacity: 0.55; transform: translate(35%, -50%) scale(0.75); }
+  78% { opacity: 1; transform: translate(35%, -50%) scale(1.18); }
+}
+
+@keyframes quota-sheen {
+  0% { background-position: 150% 0; }
+  60%, 100% { background-position: -60% 0; }
+}
+
+@keyframes quota-drain-flash {
+  0% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
+@keyframes quota-alarm {
+  0%, 100% { box-shadow: 0 0 0 color-mix(in srgb, var(--quota-color) 0%, transparent); }
+  50% { box-shadow: 0 0 9px color-mix(in srgb, var(--quota-color) 65%, transparent); }
+}
+
+@keyframes quota-heartbeat {
+  0%, 100% { transform: scale(1); opacity: 0.82; }
+  50% { transform: scale(1.14); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quota-meter-fill {
+    transition: none;
+    animation: none !important;
+  }
+
+  .quota-meter,
+  .quota-meter::before,
+  .quota-readout,
+  .quota-meter-fill::before,
+  .quota-meter-fill::after {
+    animation: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .status-line,
+  .status-line.has-quota,
+  .quota-tooltip {
+    border-width: 2px;
+    border-color: var(--organic-status-text);
+    background: var(--organic-status-surface-fallback);
+  }
+
+  .status-line,
+  .status-line.has-quota {
+    border-color: var(--pet-status-text, var(--organic-status-text));
+    background: var(--pet-status-background-opaque, var(--organic-status-surface-fallback));
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .status-line,
+  .quota-tooltip {
+    background: var(--organic-status-surface-fallback);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .status-line {
+    background: var(--pet-status-background-opaque, var(--organic-status-surface-fallback));
+  }
+}
+
+.line-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px currentColor;
+}
+
+/* 高對比（forced colors）會把背景換成 Canvas，點與它的形狀就看不見了；改用系統文字色，
+   狀態仍由形狀與文字表達（inline 的狀態色需要 !important 才蓋得過）。 */
+@media (forced-colors: active) {
+  .line-dot {
+    background: CanvasText !important;
+    box-shadow: none;
+    forced-color-adjust: none;
+  }
+}
+
+/* State is also carried by shape, not colour alone. */
+.line-dot.dot-error {
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.9);
+}
+
+.line-dot.dot-waiting-permission,
+.line-dot.dot-waiting-input {
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.line-dot.dot-success {
+  border-radius: 2px;
+}
+
+.line-dot.dot-offline,
+.line-dot.dot-idle {
+  box-shadow: none;
+}
+
+/* 名稱與分隔點。寬度預算（src/utils/status-line-fit.ts）先拿掉插件徽章，
+   再讓名稱縮短或整個拿掉，所以這裡只有名稱會縮。 */
+.line-text {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 單行細條：CLI/Desktop 變體與專案名稱只在 tooltip 與 aria-label。 */
+.line-label {
+  flex: 0 100 auto;
+  min-width: 2ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.line-sep {
+  flex: none;
+  opacity: 0.45;
+  margin-left: 3px;
+}
+
+/* 分隔點兩側都是 3px：狀態與名稱之間隔著 .status-line 的 5px gap，拉回 2px。 */
+.line-text + .line-state {
+  margin-left: -2px;
+}
+
+/* 狀態永遠完整、不縮（即使只縮 0.01px，text-overflow 也會換成省略號）。
+   它吃掉剩餘空間，把徽章與百分比推到右側。 */
+.line-state {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+.status-line-enter-active,
+.status-line-leave-active {
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.status-line-enter-from,
+.status-line-leave-to {
+  opacity: 0;
+  transform: scale(0.92) translateY(3px);
+}

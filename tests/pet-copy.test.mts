@@ -3,7 +3,13 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
-const surfaces = ['../src/components/DesktopPet.vue', '../src/components/PetAnimation.vue']
+const surfaces = [
+  '../src/components/DesktopPet.vue',
+  '../src/components/PetAnimation.vue',
+  '../src/components/desktop-pet/PetBubbleStack.vue',
+  '../src/components/desktop-pet/PetEdgePeekHandle.vue',
+  '../src/components/desktop-pet/PetStatusLine.vue',
+]
 
 test('pet surfaces carry no emoji or glyph icons', () => {
   for (const path of surfaces) {
@@ -13,7 +19,7 @@ test('pet surfaces carry no emoji or glyph icons', () => {
 })
 
 test('the status line localizes states instead of printing the English labels', () => {
-  const source = read('../src/components/DesktopPet.vue')
+  const source = read('../src/composables/usePetStatusLines.ts')
   assert.doesNotMatch(source, /STATE_LABELS_SHORT/)
   assert.match(source, /stateAriaLabel\(line\.state\)/)
 })

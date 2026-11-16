@@ -2,6 +2,7 @@ import type { PluginBadgeTone, PluginBadgeView, PluginErrorCode } from '../src/t
 import { normalizePresentationMessage } from './presentation-controller.ts'
 import { PLUGIN_BADGE_MAX_CODE_POINTS } from '../src/utils/plugin-badges.ts'
 import { isPluginId } from '../src/types/id-patterns.ts'
+import { asRecord } from './value-guards.ts'
 
 export const PLUGIN_BADGE_RATE_LIMIT_MS = 1_000
 export const PLUGIN_BADGE_MAX_PER_PET = 2
@@ -29,8 +30,8 @@ export type PluginBadgeSetResult =
 const VALID_TONES = new Set<PluginBadgeTone>(['neutral', 'info', 'warning'])
 
 function normalizeBadge(value: unknown): { text: string; tone: PluginBadgeTone } | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const record = value as Record<string, unknown>
+  const record = asRecord(value)
+  if (!record) return null
   if (Object.keys(record).some(key => key !== 'text' && key !== 'tone')) return null
   const text = normalizePresentationMessage(record.text)
   if (!text || Array.from(text).length > PLUGIN_BADGE_MAX_CODE_POINTS) return null

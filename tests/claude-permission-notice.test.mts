@@ -2,18 +2,19 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { withAnswerableClaudeNotice } from '../electron/claude-permission-notice.ts'
 import type { AdapterNormalizeResult } from '../src/types/agent-adapter.ts'
+import type { AgentSource } from '../src/types/agent.ts'
 
-function waiting(source: string, sessionId = 's1'): AdapterNormalizeResult {
+function waiting(source: AgentSource, sessionId = 's1'): AdapterNormalizeResult {
   return {
     ok: true,
-    event: { source: source as never, sessionId, state: 'waiting-permission', timestamp: 1, permissionNotice: { responseMode: 'external_only' } },
+    event: { source, sessionId, state: 'waiting-permission', timestamp: 1, permissionNotice: { responseMode: 'external_only' } },
   }
 }
 
 test('an answerable Claude prompt loses the external-only notice', () => {
   const calls: string[] = []
   const context = { enabled: true, hasRecentRequest: (source: string, sessionId: string) => { calls.push(`${source}:${sessionId}`); return true } }
-  for (const source of ['claude', 'claude-desktop']) {
+  for (const source of ['claude', 'claude-desktop'] as const) {
     const result = withAnswerableClaudeNotice(waiting(source), context)
     assert.equal(result.ok, true)
     if (result.ok) {

@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { renameSyncWithRetry } from './fs-rename.ts'
+import { pidTimestampTemporaryPath, writeFileAtomicSync } from './atomic-file-write.ts'
 import type {
   ProjectMcpProjectRecord,
   ProjectMcpRegistrySnapshot,
@@ -85,32 +85,18 @@ function readStoredEntries(filePath: string): StoredProjectMcpEntry[] {
 }
 
 function writeStoredEntries(filePath: string, entries: StoredProjectMcpEntry[]): void {
-  const directory = path.dirname(filePath)
-  fs.mkdirSync(directory, { recursive: true })
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
   if (fs.existsSync(filePath)) {
     const stat = fs.lstatSync(filePath)
     if (!stat.isFile() || stat.isSymbolicLink()) {
       throw new Error('Refusing to replace an unsafe project MCP registry file')
     }
   }
-  const temporaryPath = path.join(
-    directory,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  )
-  try {
-    fs.writeFileSync(temporaryPath, `${JSON.stringify(entries, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: 0o600,
-    })
-    renameSyncWithRetry(temporaryPath, filePath)
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(filePath, 0o600) } catch {}
-    }
-  } catch (error) {
-    try { fs.rmSync(temporaryPath, { force: true }) } catch {}
-    throw error
-  }
+  writeFileAtomicSync(filePath, `${JSON.stringify(entries, null, 2)}\n`, {
+    temporaryPath: pidTimestampTemporaryPath(filePath),
+    mode: 0o600,
+    enforceMode: true,
+  })
 }
 
 export interface ProjectMcpRegistryStoreOptions {

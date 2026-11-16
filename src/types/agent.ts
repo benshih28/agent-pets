@@ -72,9 +72,25 @@ export interface AgentSession {
 /** sessions.final_state 的目標值；keep 代表沿用上一輪的結果（idle 不改變結局）。 */
 export type AgentStateHistoryOutcome = 'success' | 'error' | 'cancelled' | 'open' | 'keep'
 
+/**
+ * 一個狀態收不到新事件時最多維持多久。agent 不保證會送結束事件（中斷、被關閉、內部執行緒），
+ * 所以每個狀態都要有期限；到期只改顯示，下一個真實事件會直接蓋過。
+ * 套用規則的程式在 src/utils/session-lifecycle.ts，門檻的量測依據見
+ * docs/phase-reports/fix-agent-state-stuck.md。
+ */
+export interface AgentStateQuietRule {
+  /** 從最後一個真實事件算起（不是從進入這個狀態算起），所以連續降級不會重新計時。 */
+  readonly afterMs: number
+  /** 到期後變成的狀態；'remove' 表示從清單移除。 */
+  readonly to: AgentState | 'remove'
+  /** 權限中介還有未回覆的請求時不到期：是人在處理，不是 agent 不見了。 */
+  readonly heldByPendingPermission?: true
+}
+
 export interface AgentStatePolicy {
   /** 多個 session 同時存在時，誰代表寵物的整體狀態；數字越大越優先。 */
   readonly priority: number
+  readonly quiet: AgentStateQuietRule
   /**
    * 桌面通知；null 表示不通知。terminal 是結束類通知：會彙整成一則，點了也不切換 App；
    * 非 terminal 是在等使用者，通知會帶上 session 讓點擊能跳回去。
@@ -83,15 +99,25 @@ export interface AgentStatePolicy {
   readonly historyOutcome: AgentStateHistoryOutcome
 }
 
+const MINUTE_MS = 60_000
+/** 這麼久沒有任何事件，agent 程序多半已經不在了。 */
+const GONE_AFTER_MS = 15 * MINUTE_MS
+
 export const AGENT_STATE_POLICY = deepFreeze({
-  offline: { priority: 0, notification: null, historyOutcome: 'cancelled' },
-  idle: { priority: 20, notification: null, historyOutcome: 'keep' },
-  thinking: { priority: 70, notification: null, historyOutcome: 'open' },
-  'tool-running': { priority: 80, notification: null, historyOutcome: 'open' },
-  'waiting-permission': { priority: 100, notification: { terminal: false }, historyOutcome: 'open' },
-  'waiting-input': { priority: 85, notification: { terminal: false }, historyOutcome: 'open' },
-  success: { priority: 60, notification: { terminal: true }, historyOutcome: 'success' },
-  error: { priority: 90, notification: { terminal: true }, historyOutcome: 'error' },
+  offline: { priority: 0, notification: null, historyOutcome: 'cancelled', quiet: { afterMs: 45 * MINUTE_MS, to: 'remove' } },
+  idle: { priority: 20, notification: null, historyOutcome: 'keep', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  // 兩次事件之間的思考時間 99.9% 短於 2.3 分鐘；超過 5 分鐘多半是回合結束了卻沒有收到結束事件。
+  thinking: { priority: 70, notification: null, historyOutcome: 'open', quiet: { afterMs: 5 * MINUTE_MS, to: 'idle' } },
+  // 工具（build、測試）合法地跑很久，不能靠時間提早判斷；中斷由主程序讀對話紀錄檔處理。
+  'tool-running': { priority: 80, notification: null, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  'waiting-permission': {
+    priority: 100, notification: { terminal: false }, historyOutcome: 'open',
+    quiet: { afterMs: GONE_AFTER_MS, to: 'offline', heldByPendingPermission: true },
+  },
+  'waiting-input': { priority: 85, notification: { terminal: false }, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  // 成功只顯示一下就回到閒置；慶祝動作的長度跟著這個值算（src/utils/pet-motion-plan.ts）。
+  success: { priority: 60, notification: { terminal: true }, historyOutcome: 'success', quiet: { afterMs: 4_000, to: 'idle' } },
+  error: { priority: 90, notification: { terminal: true }, historyOutcome: 'error', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
 } as const satisfies Record<AgentState, AgentStatePolicy>)
 
 export const AGENT_STATES: readonly AgentState[] = Object.freeze(Object.keys(AGENT_STATE_POLICY) as AgentState[])

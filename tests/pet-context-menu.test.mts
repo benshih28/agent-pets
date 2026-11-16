@@ -3,6 +3,8 @@ import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { registerPetContextMenuIpc } from '../electron/ipc/pet-context-menu.ts'
 import { buildPetContextMenuTemplate } from '../electron/pet-context-menu.ts'
+import { fakeBrowserWindow, fakeIpcMainEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 const labels = { dnd: 'DND', miniMode: 'Mini', openPanel: 'Panel', openSettings: 'Settings', hidePet: 'Hide', quit: 'Quit' }
 
@@ -34,19 +36,20 @@ test('menu reflects DND and mini state and routes every action', () => {
 
 test('only the trusted pet window can open the menu', () => {
   const { actions } = fixture()
-  const handlers = new Map<string, (event: unknown) => void>()
+  const { ipcMain, listeners } = createFakeIpcMain()
   const popups: unknown[] = []
-  const petWindow = {}
+  const petWindow = fakeBrowserWindow()
+  const petEvent = fakeIpcMainEvent()
   registerPetContextMenuIpc({
-    ipcMain: { on: (channel, handler) => { handlers.set(channel, handler as never) } },
-    getPetWindow: () => petWindow as never,
-    isTrustedIpcSender: event => event === 'pet',
+    ipcMain,
+    getPetWindow: () => petWindow,
+    isTrustedIpcSender: event => event === petEvent,
     actions,
     labels: () => labels,
     popup: (template, window) => popups.push({ size: template.length, window }),
   })
-  handlers.get(IPC_CHANNELS.petContextMenu)?.('foreign')
+  listeners.get(IPC_CHANNELS.petContextMenu)?.(fakeIpcMainEvent())
   assert.equal(popups.length, 0)
-  handlers.get(IPC_CHANNELS.petContextMenu)?.('pet')
+  listeners.get(IPC_CHANNELS.petContextMenu)?.(petEvent)
   assert.equal(popups.length, 1)
 })

@@ -4,6 +4,9 @@ import {
   groupPermissionUnits, installAcknowledgementReasons, parsePermissionUnit, permissionUnitsOfPlan, shouldFocusCancelOnInstall,
 } from '../src/utils/plugin-permissions.ts'
 import { nextTrapIndex } from '../src/utils/focus-trap.ts'
+import type { PluginLocalizedText, PluginSkinContribution } from '../src/types/plugin.ts'
+
+const text: PluginLocalizedText = { 'zh-TW': 'x', 'en-US': 'x' }
 
 test('permission units are classified into network, data and display groups', () => {
   assert.deepEqual(parsePermissionUnit('network:api.example.com'), {
@@ -35,8 +38,8 @@ test('groups are ordered network, data, display with the highest risk per group 
 test('plan permissions are flattened into the same unit strings the registry stores', () => {
   const units = permissionUnitsOfPlan({
     permissions: { network: { hosts: ['a.example'], userGranted: true }, links: { hosts: ['b.example'] }, storage: true, secrets: ['token'] },
-    contributes: { feed: true, commands: [{ id: 'x', title: { 'zh-TW': 'x', 'en-US': 'x' } }] },
-  } as never)
+    contributes: { feed: true, commands: [{ id: 'x', title: text }] },
+  })
   assert.deepEqual(units, ['network:a.example', 'network:userGranted', 'links:b.example', 'storage', 'secrets:token', 'contributes:feed', 'contributes:commands'])
 })
 
@@ -66,13 +69,17 @@ test('focus trap wraps in both directions and lets the browser handle the middle
 
 test('every unit a manifest can produce is a known permission with copy in both locales', async () => {
   const { readFileSync } = await import('node:fs')
+  const skins: PluginSkinContribution[] = [
+    { id: 'a', displayName: text, spritesheet: 'a.png', kind: 'animal' },
+    { id: 'b', displayName: text, spritesheet: 'b.png', kind: 'person' },
+  ]
   const units = permissionUnitsOfPlan({
     permissions: { network: { hosts: ['a.example'], userGranted: true }, links: { hosts: ['b.example'] }, storage: true, agentStatus: true, schedule: { minIntervalSec: 60 }, secrets: ['token'] },
     contributes: {
-      feed: true, reaction: true, panelView: { entry: 'a.html', title: {} }, commands: [{ id: 'x' }], tray: { commands: ['x'] },
-      badge: true, skins: [{}, {}], eventSource: {},
+      feed: true, reaction: true, panelView: { entry: 'a.html', title: text }, commands: [{ id: 'x', title: text }], tray: { commands: ['x'] },
+      badge: true, skins, eventSource: { family: 'build', displayName: text },
     },
-  } as never)
+  })
   assert.equal(units.length, 15)
   for (const unit of units) assert.equal(parsePermissionUnit(unit).known, true, `${unit} should be known`)
   for (const locale of ['zh-TW', 'en-US']) {
@@ -80,7 +87,7 @@ test('every unit a manifest can produce is a known permission with copy in both 
     for (const key of [
       'pluginPermissionNetwork', 'pluginPermissionLinks', 'pluginPermissionStorage', 'pluginPermissionAgentStatus', 'pluginPermissionSchedule',
       'pluginPermissionSecret', 'pluginPermissionFeed', 'pluginPermissionReaction', 'pluginPermissionPanel', 'pluginPermissionCommands',
-      'pluginPermissionTray', 'pluginPermissionBadge', 'pluginPermissionSkins', 'pluginPermissionEventSource',
+      'pluginPermissionTray', 'pluginPermissionBadge', 'pluginPermissionSkins.other', 'pluginPermissionEventSource',
     ]) assert.equal(typeof catalog[key], 'string', `${locale} is missing ${key}`)
   }
 })

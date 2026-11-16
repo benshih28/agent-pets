@@ -4,10 +4,11 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import test from 'node:test'
 import { acquireSingleInstanceLock, RELAUNCH_FLAG, resolveRelaunchOptions } from '../electron/relaunch.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 test('relaunch uses the portable launcher on windows, default exec path elsewhere', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'relaunch-'))
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  t.after(() => removeTempTree(directory))
   const portable = path.join(directory, 'AgentPets.exe')
   fs.writeFileSync(portable, '')
 
@@ -20,6 +21,13 @@ test('relaunch uses the portable launcher on windows, default exec path elsewher
   assert.equal(missing.execPath, undefined)
   assert.deepEqual(resolveRelaunchOptions('win32', false, ['x.exe'], portable, 'x.exe').execPath, undefined)
   assert.deepEqual(resolveRelaunchOptions('darwin', true, ['app', '--a', RELAUNCH_FLAG], '/ignored', '/app'), { args: ['--a', RELAUNCH_FLAG] })
+})
+
+test('relaunch of an NSIS install uses process.execPath (no portable launcher variable)', () => {
+  assert.deepEqual(
+    resolveRelaunchOptions('win32', true, ['C:\\Apps\\Agent Pets.exe', '--a'], undefined, 'C:\\Apps\\Agent Pets.exe'),
+    { args: ['--a', RELAUNCH_FLAG] },
+  )
 })
 
 test('single-instance lock retries only for relaunched instances', async () => {

@@ -102,7 +102,7 @@ test('spacing, transition and easing literals: token-equal values fail, one-off 
     'literal-spacing|src/a.css:1',
     'literal-transition|src/a.css:3',
   ])
-  assert.match(findings.find((f: { rule: string; file: string }) => f.rule === 'literal-spacing' && f.file === 'src/B.vue').text, /4px → var\(--space-1\)/)
+  assert.match(findings.find((f: { rule: string; file: string }) => f.rule === 'literal-spacing' && f.file === 'src/B.vue')?.text ?? '', /4px → var\(--space-1\)/)
   assert.deepEqual(info.rawSpacing.map((e: { value: string }) => e.value), ['3px', '-4px'])
   assert.deepEqual(info.rawMotion.map((e: { value: string }) => e.value), ['0.42s', '1s'])
   assert.equal(shouldFail({ findings, info }, { strict: true }), true)

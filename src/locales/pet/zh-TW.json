@@ -21,7 +21,7 @@
   "pet.tool.mcp": "MCP：{server}",
   "pet.tool.generic": "使用 {name}",
   "pet.toastWaiting": "在等你回覆",
-  "pet.unreadResultsAria": "有 {count} 個你不在時的結果，點擊清除",
+  "pet.unreadResultsAria.other": "有 {count} 個你不在時的結果，點擊清除",
   "pet.miniError": "失敗",
   "pet.miniPermission": "等待權限",
   "pet.miniWaiting": "等你回覆",

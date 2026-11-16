@@ -18,6 +18,7 @@ import {
   serializePanelUserSize,
 } from '../src/utils/panel-layout.ts'
 import { INITIAL_PANEL_ROUTE, panelResizeRequest, reducePanelRoute, type PanelRouteAction, type PanelRouteState } from '../src/utils/panel-route.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 test('a huge request is capped by the work area minus the gap, not by a fixed size', () => {
   const workArea = { width: 2560, height: 1440 }
@@ -100,7 +101,7 @@ test('user size persists and round-trips through the store, and bad data is igno
     fs.writeFileSync(file, 'not json')
     assert.equal(new PanelSizeStore(file).load(), null)
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
+    removeTempTree(dir)
   }
   assert.equal(parsePanelUserSize({ version: 2, width: 500, height: 500 }), null)
   assert.equal(parsePanelUserSize({ version: 1, width: 5, height: 500 }), null)

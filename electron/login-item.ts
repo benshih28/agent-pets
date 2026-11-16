@@ -69,6 +69,13 @@ export function createLoginItemAdapter(options: {
     }
   }
 
+  // Electron's login-item API only works on macOS and Windows; on Linux it is a
+  // no-op (an AppImage execPath is also an ephemeral mount), so report it as
+  // unsupported instead of showing a toggle that silently does nothing.
+  if (platform !== 'win32') {
+    return { supported: false, getStatus: () => 'unsupported', setLaunchAtStartup: () => 'unsupported' }
+  }
+
   // electron-builder's Windows portable target runs from a temporary
   // extraction directory. Register the original launcher path, never that
   // ephemeral process.execPath. Unsupported/invalid paths fail closed.

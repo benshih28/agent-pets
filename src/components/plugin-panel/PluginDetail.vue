@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { locale, t } from '@/i18n'
+import { locale, t, tPlural } from '@/i18n'
 import Button from '@/components/ui/Button.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Card from '@/components/ui/Card.vue'
@@ -182,11 +182,11 @@ watch(plugin, async (value, previous) => {
         </Card>
         <Card v-if="hasPresence" :title="t('plugins.presenceHeading')">
           <ul class="presence">
-            <li v-if="trayCount">{{ t('plugins.presenceTray', { count: trayCount }) }}<template v-if="trayOverflow"> · {{ t('plugins.presenceTrayOverflow') }}</template></li>
+            <li v-if="trayCount">{{ tPlural('plugins.presenceTray', trayCount) }}<template v-if="trayOverflow"> · {{ t('plugins.presenceTrayOverflow') }}</template></li>
             <li v-if="plugin.manifest?.contributes.badge">{{ badge ? t('plugins.presenceBadge', { text: badge.text }) : t('plugins.presenceBadgeNone') }}</li>
-            <li v-if="skinCount">{{ t('plugins.presenceSkins', { count: skinCount }) }}</li>
+            <li v-if="skinCount">{{ tPlural('plugins.presenceSkins', skinCount) }}</li>
             <li v-if="panelThemeCount">
-              {{ t('plugins.presencePanelThemes', { count: panelThemeCount }) }}
+              {{ tPlural('plugins.presencePanelThemes', panelThemeCount) }}
               <Button variant="ghost" size="sm" @click="section = 'themes'">{{ t('plugins.presencePanelThemesOpen') }}</Button>
             </li>
             <li v-if="plugin.manifest?.contributes.eventSource">{{ eventSource ? t('plugins.presenceEventSource', { name: eventSource.displayName[locale] }) : t('plugins.presenceEventSourceNone') }}</li>

@@ -66,6 +66,7 @@
   "onboarding.errorConfigUnparseable": "{path} is not valid JSON (comments and trailing commas are not supported), so Agent Pets did not change it. Fix it and try again.",
   "onboarding.errorConfigUnsafe": "{path} is not a regular file, so it was not changed.",
   "onboarding.errorConfigTooLarge": "{path} is too large, so it was not changed.",
+  "onboarding.errorConfigChanged": "{path} was changed by another program while it was being written, so Agent Pets did not modify it. Please try again.",
   "onboarding.errorPermissionDenied": "No permission to write{path}. Check the file or folder permissions.",
   "onboarding.errorFileBusy": "The file is in use by another program{path}. Close that tool and retry.",
   "onboarding.errorReadOnly": "The disk or folder is read-only{path}, so settings cannot be written.",
@@ -141,5 +142,11 @@
   "onboarding.mcpChooseFolder": "Choose project folder",
   "onboarding.mcpConcepts": "Hooks tell the pet what your tools are doing (global, no project needed). Project pets give each project its own pet. The MCP setup here lets an AI tool in a project make the pet speak and react.",
   "onboarding.mcpWarnGitOutside": "This project's .git points outside the project folder, so the local-only exclude list was not written for safety. The config files may be tracked by Git.",
-  "onboarding.mcpWarnExcludeFailed": "Couldn't write .git/info/exclude, so the config files may be tracked by Git. Check the folder permissions and try again."
+  "onboarding.mcpWarnExcludeFailed": "Couldn't write .git/info/exclude, so the config files may be tracked by Git. Check the folder permissions and try again.",
+  "onboarding.configDir.env": "Config folder: {path} (from {variable})",
+  "onboarding.configDir.ignored.invalid": "{variable} contains unusable characters or is too long, so the default folder {path} is read instead and installing is refused. Fix the variable and restart Agent Pets.",
+  "onboarding.configDir.ignored.not_absolute": "{variable} is not an absolute path, so the default folder {path} is read instead and installing is refused. Use a full path and restart Agent Pets.",
+  "onboarding.configDir.ignored.missing": "{variable} points to a folder that does not exist, so the default folder {path} is read instead and installing is refused. Create that folder first.",
+  "onboarding.configDir.stale": "The old location {path} still holds Agent Pets settings that the tool no longer reads; Remove clears it as well.",
+  "onboarding.errorConfigDirUnusable": "The config folder set by {path} cannot be used (it must be an existing absolute path), so nothing was written. Fix it, restart Agent Pets and try again."
 }

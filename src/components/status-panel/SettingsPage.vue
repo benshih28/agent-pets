@@ -4,7 +4,7 @@ import { panelThemeSettingsTarget } from '@/utils/panel-theme-css'
 import { panelThemeState } from '@/composables/usePanelTheme'
 import { useReducedMotion } from '@/composables/useReducedMotion'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { t } from '@/i18n'
+import { t, tPlural } from '@/i18n'
 import { useAgentStore } from '@/stores/agentStore'
 import Button from '@/components/ui/Button.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -13,6 +13,7 @@ import SegmentedControl, { type SegmentedOption } from '@/components/ui/Segmente
 import TextField from '@/components/ui/TextField.vue'
 import {
   SETTINGS_GROUPS,
+  SETTINGS_GROUP_BY_ID,
   groupOfSection,
   searchSettings,
   type SettingsEntry,
@@ -39,7 +40,10 @@ const sectionComponents: Record<SettingsSectionId, ReturnType<typeof defineAsync
 const query = ref('')
 const searchField = ref<InstanceType<typeof TextField> | null>(null)
 const searching = computed(() => query.value.trim().length > 0)
-const results = computed(() => searchSettings(query.value, key => t(key)))
+const results = computed(() => searchSettings(query.value, key => t(key)).map(hit => ({
+  ...hit,
+  groupLabel: t(SETTINGS_GROUP_BY_ID.get(groupOfSection(hit.entry.section))!.labelKey),
+})))
 const scroller = ref<HTMLElement | null>(null)
 // 區塊閃爍的 CSS 動畫長度由這個常數經 --settings-flash-duration 帶進去，計時器與動畫只有一個來源。
 const SECTION_FLASH_MS = 1400
@@ -183,7 +187,7 @@ defineExpose({ scrollToSection })
 
     <div class="settings-scroll-frame" :class="{ 'more-above': moreAbove, 'more-below': moreBelow }">
       <div v-if="searching" ref="scroller" class="settings-content settings-results" role="region" :aria-label="t('panel.searchResults')" @scroll.passive="updateScrollHints">
-        <p class="sr-only" role="status" aria-live="polite">{{ t('panel.searchCount', { count: results.length }) }}</p>
+        <p class="sr-only" role="status" aria-live="polite">{{ tPlural('panel.searchCount', results.length) }}</p>
         <ul v-if="results.length > 0" class="settings-result-list">
           <li v-for="hit in results" :key="hit.entry.id">
             <!-- raw-control: 搜尋結果整列，內含標題、說明與所在分組，不是動作按鈕 -->
@@ -192,7 +196,7 @@ defineExpose({ scrollToSection })
                 <span class="settings-result-label">{{ hit.label }}</span>
                 <span v-if="hit.help" class="settings-result-help">{{ hit.help }}</span>
               </span>
-              <span class="settings-result-path">{{ t(SETTINGS_GROUPS.find(item => item.id === groupOfSection(hit.entry.section))!.labelKey) }}<Icon name="chevron-right" :size="12" /></span>
+              <span class="settings-result-path">{{ hit.groupLabel }}<Icon name="chevron-right" :size="12" /></span>
             </button>
           </li>
         </ul>

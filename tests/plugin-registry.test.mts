@@ -6,15 +6,16 @@ import test from 'node:test'
 import { strToU8, zipSync } from 'fflate'
 import { PluginRegistry } from '../electron/plugin-registry.ts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function withUserData(run: (directory: string) => void): void {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-registry-'))
-  try { run(directory) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { run(directory) } finally { removeTempTree(directory) }
 }
 
 async function withUserDataAsync(run: (directory: string) => Promise<void> | void): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-registry-'))
-  try { await run(directory) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { await run(directory) } finally { removeTempTree(directory) }
 }
 
 function makeArchive(options: {
@@ -59,7 +60,6 @@ function makeArchive(options: {
 
 function plan(registry: PluginRegistry, archive: Uint8Array) {
   const result = registry.planInstall(archive)
-  assert.equal(result.ok, true)
   if (!result.ok) throw new Error(result.error)
   return result.value
 }
@@ -95,7 +95,7 @@ test('plugin registry loads a developer folder through the archive validation pa
       assert.equal(installed.ok, true)
       assert.equal(fs.readFileSync(path.join(userData, 'plugins', 'sample-plugin', '1.0.0', 'dist', 'main.js'), 'utf8'), 'export default { activate() {} }')
     } finally {
-      fs.rmSync(source, { recursive: true, force: true })
+      removeTempTree(source)
     }
   })
 })
@@ -115,7 +115,7 @@ test('plugin registry refuses symlinks and unsupported files in developer folder
       fs.writeFileSync(path.join(source, 'notes.txt'), 'not packaged')
       assert.deepEqual(await new PluginRegistry(userData).planInstallDirectory(source), { ok: false, error: 'invalid_archive' })
     } finally {
-      fs.rmSync(source, { recursive: true, force: true })
+      removeTempTree(source)
       fs.rmSync(outside, { force: true })
     }
   })
@@ -144,7 +144,7 @@ test('invalid developer folder changes do not replace the installed package', as
       assert.equal(registry.list().find(entry => entry.id === 'sample-plugin')?.currentVersion, '1.0.0')
       assert.equal(fs.readFileSync(path.join(userData, 'plugins', 'sample-plugin', '1.0.0', 'dist', 'main.js'), 'utf8'), 'export default { activate() {} }')
     } finally {
-      fs.rmSync(source, { recursive: true, force: true })
+      removeTempTree(source)
     }
   })
 })

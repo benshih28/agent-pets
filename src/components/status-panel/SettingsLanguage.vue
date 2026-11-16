@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { locale, t } from '@/i18n'
+import type { AppLocale } from '@/types/locale'
 import { useAgentStore } from '@/stores/agentStore'
 import Card from '@/components/ui/Card.vue'
 import Select from '@/components/ui/Select.vue'
@@ -19,7 +20,7 @@ const store = useAgentStore()
         :model-value="locale"
         :aria-label="t('language')"
         class="field-control"
-        @update:model-value="store.setLocalePreference($event as 'zh-TW' | 'en-US')"
+        @update:model-value="store.setLocalePreference($event as AppLocale)"
       >
         <option value="zh-TW">{{ t('localeTraditionalChinese') }}</option>
         <option value="en-US">{{ t('localeEnglish') }}</option>

@@ -7,7 +7,7 @@
   "panel.searchPlaceholder": "搜尋設定…",
   "panel.searchClear": "清除搜尋",
   "panel.searchResults": "設定搜尋結果",
-  "panel.searchCount": "共 {count} 個結果",
+  "panel.searchCount.other": "共 {count} 個結果",
   "panel.searchNoResults": "找不到與「{query}」相符的設定。",
   "panel.notificationsCard": "通知與勿擾",
   "panel.stateOn": "開啟",
@@ -73,5 +73,5 @@
   "panel.jumpSetting": "顯示回到工作階段的動作",
   "panel.jumpSettingHelp": "在工作階段列提供「顯示專案資料夾」（在 Finder／檔案總管中選取，不會開啟）與「複製專案路徑」。完整路徑只保留在 App 主程序。",
   "panel.jumpSwitchSetting": "切換到 App",
-  "panel.jumpSwitchSettingHelp": "macOS：把工作階段所在的終端機或 IDE 帶到最前面（不會指定視窗或分頁）；點擊只關於一個工作階段的等待權限／等待輸入通知也會這樣做。只能啟用已知清單中的 App，不需要任何系統權限。"
+  "panel.jumpSwitchSettingHelp": "macOS 與 Windows：把工作階段所在的終端機或 IDE 帶到最前面（不會指定視窗或分頁）；點擊只關於一個工作階段的等待權限／等待輸入通知也會這樣做。只能啟用已知清單中的 App，不需要任何系統權限。"
 }

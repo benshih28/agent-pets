@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { AgentStatusEvent, AgentState } from '../src/types/agent'
-import { isValidPetId } from '../src/utils/pet-id.ts'
+import { DEFAULT_PET_ID, isValidPetId } from '../src/utils/pet-id.ts'
 import {
   ACTIVE_CODING_INTERVAL_MS,
   ACTIVE_CODING_MAX_POINTS_PER_SESSION,
@@ -17,6 +17,7 @@ import {
 } from '../src/types/progression.ts'
 import { localDateKey, previousLocalDate } from '../src/utils/local-date.ts'
 import { applyWalPragmas, type SqlitePragmaState } from './sqlite-pragmas.ts'
+import { optimizeAndVacuum } from './sqlite-maintenance.ts'
 import { StatementCache } from './sqlite-statements.ts'
 
 type SqliteRow = Record<string, unknown>
@@ -31,6 +32,7 @@ interface SqliteDatabase {
   exec(sql: string): void
   prepare(sql: string): SqliteStatement
   close(): void
+  isTransaction?: boolean
 }
 
 type DatabaseSyncConstructor = new (filePath: string) => SqliteDatabase
@@ -57,10 +59,10 @@ interface ActivityRow {
   lastSeenAt: number
 }
 
-const DEFAULT_PET_ID = 'aang-airbender'
 const MAX_PET_ID_LENGTH = 128
 const MAX_SESSION_KEY_LENGTH = 600
-const MAX_ACTIVE_GAP_MS = 5 * 60 * 1000
+// history 的 session 活躍時長也用這個值截斷間隔，兩邊算出的時間才對得上。
+export const MAX_ACTIVE_GAP_MS = 5 * 60 * 1000
 const ACTIVITY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 const ACTIVE_STATES = new Set<AgentState>(['thinking', 'tool-running'])
 
@@ -263,6 +265,28 @@ export class ProgressionStore {
       averageDailyXp: activeDays >= 3 ? Math.round((asInteger(week?.total) / 7) * 10) / 10 : null,
       generatedAt,
     }
+  }
+
+  /**
+   * 清掉 XP 帳本、活動計時與每隻寵物的 XP／連續天數，單一交易、可重複執行。
+   * 保留 pets 表與目前選擇的寵物（非成長設定）。進度與成就分屬兩個資料庫檔，
+   * 跨檔原子性由 growth-service 協調。
+   */
+  resetGrowth(): number {
+    return this.transaction(() => {
+      const removed = changedCount(this.statement('DELETE FROM xp_ledger').run())
+      this.statement('DELETE FROM xp_session_activity').run()
+      this.statement(`
+        UPDATE pet_progress
+        SET total_xp = 0, current_streak = 0, longest_streak = 0, last_active_local_date = NULL, updated_at = ?
+      `).run(this.now())
+      return removed
+    })
+  }
+
+  /** 使用者觸發的資料庫整理（optimize + VACUUM）；交易進行中會丟 SqliteBusyError。 */
+  compact(): void {
+    optimizeAndVacuum(this.database)
   }
 
   close(): void {

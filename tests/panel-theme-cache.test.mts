@@ -8,6 +8,7 @@ import { PanelThemeRuntime } from '../electron/main/panel-theme-runtime.ts'
 import { parsePluginManifest } from '../electron/plugin-manifest.ts'
 import { resolvePanelThemes } from '../electron/plugin-panel-themes.ts'
 import { DARK_COLORS, LIGHT_COLORS, manifest, theme } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 function countingCache(maxEntries?: number) {
   let calls = 0
@@ -101,6 +102,6 @@ test('the runtime revalidates a same-version update, drops removed plugins and k
     assert.equal(cache.size, 0, 'a removed plugin leaves nothing behind')
     assert.equal(runtime.getState().themes.length, 0)
   } finally {
-    fs.rmSync(userData, { recursive: true, force: true })
+    removeTempTree(userData)
   }
 })

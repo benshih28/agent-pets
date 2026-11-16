@@ -1,4 +1,7 @@
 import { ref } from 'vue'
+import { isPetThemePreference, isThemePreference, THEME_PREFERENCES, type PetThemePreference, type ResolvedTheme, type ThemePreference } from '../types/theme.ts'
+import { STORAGE_KEYS } from '../utils/storage-keys.ts'
+import { listenStorageSync, readStored, syncOn, writeStored } from '../utils/local-storage.ts'
 
 // Theme = which palette the panel layer (--organic-* / --color-*) uses.
 // The desktop-pet layer (bubbles, status lines, handle) has its own
@@ -6,28 +9,13 @@ import { ref } from 'vue'
 //   preference: 'system' follows the OS, 'light' / 'dark' force it.
 // Applied as <html data-theme="light|dark"> — the panel window uses the panel
 // preference, the pet window its pet preference; tokens.css supplies the values.
-export type ThemePreference = 'system' | 'light' | 'dark'
-export type ResolvedTheme = 'light' | 'dark'
-
-export const THEME_STORAGE_KEY = 'agent-pet-theme'
-export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark']
-
-export function isThemePreference(value: unknown): value is ThemePreference {
-  return value === 'system' || value === 'light' || value === 'dark'
-}
+// 值域與型別在 `@/types/theme`（storage registry 也要用），這裡轉出以維持既有 import。
+export { isPetThemePreference, isThemePreference, PET_THEME_PREFERENCES, THEME_PREFERENCES } from '../types/theme.ts'
+export type { PetThemePreference, ResolvedTheme, ThemePreference } from '../types/theme.ts'
 
 export function resolveTheme(preference: ThemePreference, systemDark: boolean): ResolvedTheme {
   if (preference === 'system') return systemDark ? 'dark' : 'light'
   return preference
-}
-
-export type PetThemePreference = 'dark' | 'light' | 'follow'
-
-export const PET_THEME_STORAGE_KEY = 'agent-pet-pet-theme'
-export const PET_THEME_PREFERENCES: readonly PetThemePreference[] = ['dark', 'light', 'follow']
-
-export function isPetThemePreference(value: unknown): value is PetThemePreference {
-  return value === 'dark' || value === 'light' || value === 'follow'
 }
 
 export function resolvePetTheme(preference: PetThemePreference, panelTheme: ResolvedTheme): ResolvedTheme {
@@ -49,24 +37,6 @@ function systemPrefersDark(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches
 }
 
-function readStored(): ThemePreference {
-  try {
-    const value = typeof localStorage !== 'undefined' ? localStorage.getItem(THEME_STORAGE_KEY) : null
-    return isThemePreference(value) ? value : 'system'
-  } catch {
-    return 'system'
-  }
-}
-
-function readStoredPet(): PetThemePreference {
-  try {
-    const value = typeof localStorage !== 'undefined' ? localStorage.getItem(PET_THEME_STORAGE_KEY) : null
-    return isPetThemePreference(value) ? value : 'dark'
-  } catch {
-    return 'dark'
-  }
-}
-
 /** 視窗種類：決定 <html data-window> 與色盤模式（tokens.css 依此選擇區塊）。 */
 export type ThemeWindowKind = 'panel' | 'pet'
 let windowKind: ThemeWindowKind = 'panel'
@@ -82,44 +52,38 @@ function apply(): void {
 
 export function setPetThemePreference(value: unknown): PetThemePreference {
   petThemePreference.value = isPetThemePreference(value) ? value : 'dark'
-  try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(PET_THEME_STORAGE_KEY, petThemePreference.value)
-  } catch {}
+  writeStored(STORAGE_KEYS.petTheme, petThemePreference.value)
   apply()
   return petThemePreference.value
 }
 
 export function setThemePreference(value: unknown): ThemePreference {
   themePreference.value = isThemePreference(value) ? value : 'system'
-  try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(THEME_STORAGE_KEY, themePreference.value)
-  } catch {}
+  writeStored(STORAGE_KEYS.theme, themePreference.value)
   apply()
   return themePreference.value
 }
 
 let initialized = false
 
+function readPreferences(): void {
+  themePreference.value = readStored(STORAGE_KEYS.theme)
+  petThemePreference.value = readStored(STORAGE_KEYS.petTheme)
+  apply()
+}
+
 /** Call once before mounting. Idempotent. */
 export function initTheme(kind: ThemeWindowKind = 'panel'): void {
   if (initialized || typeof window === 'undefined') return
   initialized = true
   windowKind = kind
-  themePreference.value = readStored()
-  petThemePreference.value = readStoredPet()
-  apply()
+  readPreferences()
   if (typeof matchMedia === 'function') {
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', apply)
   }
   // The pet and panel windows share one origin, so a storage event keeps
-  // both in step without IPC.
-  window.addEventListener('storage', (event) => {
-    if (event.key === THEME_STORAGE_KEY || event.key === PET_THEME_STORAGE_KEY) {
-      themePreference.value = readStored()
-      petThemePreference.value = readStoredPet()
-      apply()
-    }
-  })
+  // both in step without IPC. 任一個 key 變了都重讀兩個偏好（與改前相同）。
+  listenStorageSync([syncOn(STORAGE_KEYS.theme, readPreferences), syncOn(STORAGE_KEYS.petTheme, readPreferences)])
   // Inactive-window hook for CSS (liquid-glass.md: de-emphasise when blurred).
   const mark = () => {
     document.documentElement.toggleAttribute('data-window-blurred', !document.hasFocus())

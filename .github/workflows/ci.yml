@@ -20,27 +20,54 @@ jobs:
     name: check
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # 冒煙測試會啟動真正的 Electron；二進位檔快取起來，不必每次重新下載
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm exec vue-tsc --noEmit
 
-      # 主行程守門：loadURL 未處理的 Promise、缺少全域錯誤兜底
+      # ESLint、主行程守門（loadURL 未處理的 Promise、缺少全域錯誤兜底），以及 tests/ 的型別檢查（tsconfig.tests.json）
       - run: pnpm lint
 
       # 單元測試同時產生主行程模組的覆蓋率並設下限
       - run: pnpm test:coverage
 
+      # 事件迴圈延遲基準門檻（bench:lag:check 與基準檔由線 2 提供）。它直接載入原始碼、不需要 vite build，
+      # 放在建置與冒煙測試之前，量測時機器負載較低、數字較穩。
+      # --if-present：package.json 還沒有這個 script 時（例如線 2 尚未合併）步驟成功略過，有了就自動執行並擋合併。
+      - name: Event loop lag benchmark gate
+        run: pnpm run --if-present bench:lag:check
+
       - run: pnpm exec vite build
+
+      # 啟動建置出的 Electron（隔離 HOME、假的 safeStorage，不碰鑰匙圈）：送一筆事件、確認狀態、正常退出。
+      # Ubuntu 24.04 的 AppArmor 預設禁止 unprivileged user namespace，Chromium sandbox 會因此啟動失敗。
+      # 不在 app 加 --no-sandbox（那會讓測試與正式行為不同），改在 runner 上放寬這個限制；
+      # 它只影響這台一次性的 runner。無頭顯示由 xvfb-run 提供。
+      - name: Relax AppArmor userns restriction for the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Electron smoke test
+        run: xvfb-run -a pnpm run test:smoke
 
       # 原本只在 release 才檢查；提早在 PR 失敗，避免 release 建置到一半才發現
       - name: Check renderer bundle size budget
@@ -56,7 +83,19 @@ jobs:
       - name: Check design token violations
         run: pnpm check:design:strict
 
-      # 依賴漏洞：網路或公告來源異常時不擋合併，只留下警示
+      # 依賴漏洞：有 high 以上的已知漏洞就擋合併（先前是 continue-on-error，這是刻意的行為改變）；
+      # pnpm audit 對「有漏洞」與「連不上公告來源」都回 1，
+      # 所以改看輸出——只有明確列出漏洞才失敗，網路或公告來源異常（ERR_PNPM_AUDIT_BAD_RESPONSE 等）只留下警示。
+      # 上游新公告讓 CI 變紅時的處理方式見 docs/phase-reports/phase-packaging-ci.md 的「依賴稽核」。
       - name: Audit production dependencies
-        run: pnpm audit --prod --audit-level=high
-        continue-on-error: true
+        shell: bash
+        run: |
+          status=0
+          output=$(pnpm audit --prod --audit-level=high 2>&1) || status=$?
+          echo "$output"
+          if [ "$status" -ne 0 ]; then
+            if echo "$output" | grep -Eq 'vulnerabilit(y|ies) found'; then
+              exit "$status"
+            fi
+            echo "::warning::pnpm audit could not reach the advisory endpoint; skipping"
+          fi

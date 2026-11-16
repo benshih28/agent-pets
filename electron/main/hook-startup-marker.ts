@@ -14,16 +14,52 @@ export function hookStartupMarkerName(eventPort: number): string {
 /** 埠開始監聽之後再留這麼久才移除，蓋過「hook 剛被拒、還沒來得及看標記」的空檔。 */
 export const HOOK_STARTUP_MARKER_LINGER_MS = 2_000
 
+/**
+ * 與 integrations/agent-hook.mjs 的 STARTUP_MARKER_MAX_AGE_MS 相同（契約，兩邊要一起改）：
+ * hook 會忽略比這更舊的標記，所以更舊的標記就算 pid 還活著（例如 pid 被別的程序重用）也不值得保留。
+ */
+export const HOOK_STARTUP_MARKER_MAX_AGE_MS = 20_000
+
 export interface HookStartupMarker {
   /** 埠已開始監聽：稍後移除標記。 */
   listening(): void
-  /** 啟動失敗、埠綁不上或 app 結束：立刻移除。 */
+  /** 啟動失敗、埠綁不上或 app 結束：立刻移除（只會移除本程序擁有的標記）。 */
   clear(): void
+  /**
+   * 取得單一實例鎖之後呼叫：此時只剩本程序，所以可以接手別人留下的標記。
+   * 需要它是因為 `--relaunch` 的新實例啟動時舊實例可能還活著而沒寫標記，舊實例結束時只會清掉自己的。
+   */
+  claim(): void
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // EPERM：程序存在但不屬於我們；只有 ESRCH 才表示已結束。
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** 讀現有標記的 pid；不是一般小檔、內容不是正整數時回傳 null（symlink 一律不讀）。 */
+function readMarker(file: string): { pid: number; ageMs: number } | null {
+  try {
+    const stat = fs.lstatSync(file)
+    if (!stat.isFile() || stat.size > 32) return null
+    const pid = Number(fs.readFileSync(file, 'utf8').trim())
+    return Number.isInteger(pid) && pid > 0 ? { pid, ageMs: Date.now() - stat.mtimeMs } : null
+  } catch {
+    return null
+  }
 }
 
 /**
  * 寫入啟動標記。內容是本程序的 pid，移除時先核對，所以第二個實例（拿不到單一實例鎖）
- * 或已被新實例接手的舊實例，不會刪掉別人的標記。所有檔案錯誤都吞掉：標記只是加速，不能擋住啟動。
+ * 或已被新實例接手的舊實例，不會刪掉別人的標記。
+ * 寫入發生在單一實例鎖之前，所以若已有「夠新而且擁有者還活著」的標記就不動它：
+ * 否則第二個啟動的程序會蓋掉第一個實例（仍在啟動中）的標記，再因拿不到鎖而把它清掉。
+ * 所有檔案錯誤都吞掉：標記只是加速，不能擋住啟動。
  */
 export function writeHookStartupMarker(
   directory: string,
@@ -31,22 +67,37 @@ export function writeHookStartupMarker(
   options: { pid?: number; setTimer?: (callback: () => void, ms: number) => unknown } = {},
 ): HookStartupMarker {
   const file = path.join(directory, hookStartupMarkerName(eventPort))
-  const owner = `${options.pid ?? process.pid}\n`
+  const pid = options.pid ?? process.pid
+  const owner = `${pid}\n`
   const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms).unref())
   let lingering = false
-  try {
-    fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
-    // 先刪再以 wx 建立：舊檔或被換成的 symlink 都不會被跟著寫入。
-    fs.rmSync(file, { force: true })
-    fs.writeFileSync(file, owner, { mode: 0o600, flag: 'wx' })
-  } catch {}
 
-  const clear = () => {
+  const create = () => {
     try {
-      const stat = fs.lstatSync(file)
-      if (stat.isFile() && stat.size <= 32 && fs.readFileSync(file, 'utf8') === owner) fs.rmSync(file, { force: true })
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+      // 先刪再以 wx 建立：舊檔或被換成的 symlink 都不會被跟著寫入。
+      fs.rmSync(file, { force: true })
+      fs.writeFileSync(file, owner, { mode: 0o600, flag: 'wx' })
     } catch {}
   }
+  const ownsMarker = () => {
+    try {
+      const stat = fs.lstatSync(file)
+      return stat.isFile() && stat.size <= 32 && fs.readFileSync(file, 'utf8') === owner
+    } catch {
+      return false
+    }
+  }
+  const clear = () => {
+    try {
+      if (ownsMarker()) fs.rmSync(file, { force: true })
+    } catch {}
+  }
+
+  const existing = readMarker(file)
+  const heldByLiveOwner = existing !== null && existing.pid !== pid && existing.ageMs < HOOK_STARTUP_MARKER_MAX_AGE_MS && existing.ageMs > -1_000 && pidIsAlive(existing.pid)
+  if (!heldByLiveOwner) create()
+
   return {
     listening() {
       if (lingering) return
@@ -54,5 +105,10 @@ export function writeHookStartupMarker(
       setTimer(clear, HOOK_STARTUP_MARKER_LINGER_MS)
     },
     clear,
+    claim() {
+      // 埠已在監聽就不必再寫：標記只負責涵蓋「還沒開始收事件」的空檔。
+      if (lingering || ownsMarker()) return
+      create()
+    },
   }
 }

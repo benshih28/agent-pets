@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRovingTabs } from '@/composables/useRovingTabs'
+
 // A segmented tablist with roving focus. The panel body is rendered by the
 // caller; each tab id maps to `${idPrefix}-tab-${id}` and the caller marks its
 // panel with `${idPrefix}-panel-${id}` so aria-controls resolves.
@@ -12,16 +14,12 @@ const props = withDefaults(defineProps<{
 
 const model = defineModel<string>({ required: true })
 
-function onKeydown(event: KeyboardEvent): void {
-  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-  const edge = event.key === 'Home' ? 0 : event.key === 'End' ? props.tabs.length - 1 : -1
-  if (!step && edge < 0) return
-  event.preventDefault()
-  const ids = props.tabs.map(tab => tab.id)
-  const index = edge >= 0 ? edge : (ids.indexOf(model.value) + step + ids.length) % ids.length
-  model.value = ids[index]
-  document.getElementById(`${props.idPrefix}-tab-${ids[index]}`)?.focus()
-}
+const { onKeydown } = useRovingTabs({
+  ids: () => props.tabs.map(tab => tab.id),
+  current: () => model.value,
+  select: id => { model.value = id },
+  elementId: id => `${props.idPrefix}-tab-${id}`,
+})
 </script>
 
 <template>
@@ -103,7 +101,7 @@ function onKeydown(event: KeyboardEvent): void {
   background: var(--accent-soft);
   color: var(--accent-text, var(--accent-bright));
   font-size: var(--font-xs);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 /* 主動分頁上的數字徽章：accentHover 字在 onAccent 底上 >= 4.5:1（accent 只保證 3:1）。 */

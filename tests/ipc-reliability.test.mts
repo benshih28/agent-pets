@@ -1,19 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
-import { registerReliabilityIpc } from '../electron/ipc/reliability.ts'
+import { registerReliabilityIpc, type ReliabilityIpcDependencies } from '../electron/ipc/reliability.ts'
+import { fakeBrowserWindow, fakeWebContents } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+
+type RendererErrorReport = Parameters<ReliabilityIpcDependencies['reportRendererError']>[0]
 
 function setup(trusted = true) {
-  const handlers = new Map<string, (...args: any[]) => any>()
-  const listeners = new Map<string, (...args: any[]) => any>()
-  const reports: any[] = []
+  const { ipcMain, handlers, listeners } = createFakeIpcMain()
+  const reports: RendererErrorReport[] = []
   let reloads = 0
-  const panel = { webContents: { id: 'panel' } }
+  const panel = fakeBrowserWindow({ webContents: fakeWebContents({ id: 1 }) })
   registerReliabilityIpc({
-    ipcMain: { handle: (c: string, h: any) => handlers.set(c, h), on: (c: string, h: any) => listeners.set(c, h) } as never,
+    ipcMain,
     isTrustedIpcSender: () => trusted,
     assertTrustedIpcSender: () => { if (!trusted) throw new Error('Unauthorized IPC sender') },
-    getPanelWindow: () => panel as never,
+    getPanelWindow: () => panel,
     getServerHealth: () => ({ servers: [] }),
     retryServer: () => {},
     getSessionSnapshot: () => [],
@@ -33,7 +36,7 @@ test('renderer error reports are validated, truncated and attributed', () => {
   send({ sender: {} }, null)
   assert.equal(ctx.reports.length, 2)
   assert.equal(ctx.reports[0].message.length, 500)
-  assert.equal(ctx.reports[0].stack.length, 2000)
+  assert.equal(ctx.reports[0].stack?.length, 2000)
   assert.equal(ctx.reports[0].window, 'panel')
   assert.equal(ctx.reports[1].kind, 'error')
   assert.equal(ctx.reports[1].window, 'pet')

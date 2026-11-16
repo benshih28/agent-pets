@@ -10,6 +10,7 @@ import { PanelThemeStore } from '../electron/panel-theme-store.ts'
 import { prepareUserImage } from '../electron/panel-theme-images.ts'
 import { emptyPanelThemeState, resolvePanelThemes, type PanelThemeSourcePlugin } from '../electron/plugin-panel-themes.ts'
 import { DARK_COLORS, LIGHT_COLORS, jpeg, png, theme } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const REF = { pluginId: 'theme-pack', themeId: 'aurora' }
 
@@ -63,7 +64,7 @@ function fixture(options: { available?: boolean; dialog?: string[] | null } = {}
   return {
     handlers, calls, files, store, invoke,
     setSources: (next: PanelThemeSourcePlugin[]) => { sources = next },
-    cleanup: () => fs.rmSync(directory, { recursive: true, force: true }),
+    cleanup: () => removeTempTree(directory),
   }
 }
 

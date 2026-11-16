@@ -20,6 +20,7 @@ import {
   type PluginThemeSnapshot,
 } from '../src/types/plugin-theme.ts'
 import { DARK_COLORS, LIGHT_COLORS, manifest, theme, woff2 } from './support/panel-theme-fixtures.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 const THEMED = theme({
   fonts: [{ id: 'body', src: 'fonts/body.woff2' }],
@@ -113,7 +114,7 @@ function runtimeFixture() {
     contexts: new Map([['theme-pack', { manifest: parsed.manifest, enabled, pluginsEnabled: true }]]),
     pluginsEnabled: true,
   })
-  return { runtime, sent, queue, flush, sync, cleanup: () => fs.rmSync(userData, { recursive: true, force: true }) }
+  return { runtime, sent, queue, flush, sync, cleanup: () => removeTempTree(userData) }
 }
 
 test('the runtime follows the active slot and the panel mode, coalescing and de-duplicating change events', () => {
@@ -177,7 +178,7 @@ function brokerFixture(pluginManifest: PluginManifest, snapshot: PluginThemeSnap
     onReaction: () => ({ ok: true }),
     onThemeGet: () => snapshot,
   })
-  return { broker, cleanup: () => fs.rmSync(userDataDirectory, { recursive: true, force: true }) }
+  return { broker, cleanup: () => removeTempTree(userDataDirectory) }
 }
 
 const NO_PERMISSIONS: PluginManifest = {

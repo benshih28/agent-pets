@@ -1,0 +1,250 @@
+.tool-item {
+  gap: var(--organic-space-3);
+  padding: var(--list-card-padding-y) var(--organic-space-4);
+  border: 0;
+  border-radius: var(--organic-radius-md);
+  box-shadow: none;
+}
+
+.tool-item.health-ready {
+  background: var(--organic-surface-sage);
+  color: var(--organic-sage-dark);
+}
+
+.tool-item.health-needs_install,
+.tool-item.health-needs_approval {
+  background: var(--organic-surface-warm);
+  color: var(--organic-accent-text);
+}
+
+.tool-item.health-error,
+.tool-item.health-degraded {
+  background: var(--organic-surface-2);
+  color: var(--organic-text-secondary);
+}
+
+.tool-status {
+  display: flex;
+  align-items: center;
+  gap: var(--organic-space-2);
+  flex-wrap: wrap;
+}
+
+.tool-actions {
+  display: flex;
+  margin-left: auto;
+  gap: var(--space-1-5);
+}
+
+.tool-action {
+  padding: var(--space-1-5) var(--organic-space-3);
+  border-color: currentColor;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-ui);
+  font-size: var(--font-body-sm);
+}
+
+.tool-action:hover:not(:disabled) {
+  border-color: currentColor;
+  background: var(--color-hover);
+  color: inherit;
+}
+
+/* 文字放在實心強調色上時用 accentHover：onAccent 在其上保證 >= 4.5:1（在 accent 上只保證 3:1）。 */
+.tool-item.health-needs_install .install-action {
+  border-color: var(--organic-accent-hover);
+  background: var(--organic-accent-hover);
+  color: var(--organic-accent-contrast);
+  font-family: var(--font-heading);
+  font-size: var(--font-body-md);
+}
+
+.tool-item.health-needs_install .install-action:hover:not(:disabled) {
+  border-color: var(--organic-accent-hover);
+  background: var(--organic-accent-hover);
+}
+
+.tool-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--organic-text-faint);
+}
+
+.status-dot.green {
+  background: var(--organic-sage);
+}
+
+.status-dot.yellow {
+  background: var(--organic-accent);
+}
+
+.status-dot.red {
+  background: var(--organic-accent-text);
+}
+
+.tool-name {
+  color: inherit;
+  font-family: var(--font-heading);
+  font-size: var(--font-heading-md);
+}
+
+.tool-health {
+  padding: var(--space-0-5) var(--space-2-5);
+  border-radius: var(--radius-pill);
+  background: var(--organic-surface-sage-soft);
+  color: var(--organic-sage-dark);
+  font-size: var(--font-label);
+  font-weight: var(--weight-medium);
+}
+
+.health-needs_install .tool-health,
+.health-needs_approval .tool-health {
+  /* accentText 在 surface 上 >= 4.5:1；在 onAccent 上沒有保證。 */
+  background: var(--organic-surface);
+  color: var(--organic-accent-text);
+}
+
+.health-error .tool-health,
+.health-degraded .tool-health {
+  background: var(--organic-surface);
+  color: var(--organic-text-secondary);
+}
+
+.tool-desc {
+  margin-left: var(--wizard-detail-indent);
+  color: inherit;
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-relaxed);
+  opacity: 0.9;
+}
+
+.source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  margin-left: var(--wizard-detail-indent);
+}
+
+.source-chip {
+  padding: var(--space-0-5) var(--space-2-5);
+  border-radius: var(--radius-pill);
+  background: var(--color-hover);
+  color: inherit;
+  font-size: var(--font-label);
+  line-height: var(--leading-tight);
+}
+
+.config-dir-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  min-width: 0;
+  margin: 0 0 0 var(--wizard-detail-indent);
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-normal);
+  /* 路徑沒有空白可斷行，長路徑要能在任意位置換行，不能撐破卡片。 */
+  overflow-wrap: anywhere;
+}
+
+.config-dir-note .icon {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.config-dir-note.warn {
+  color: var(--organic-accent-text);
+}
+
+.capability-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-0-5) var(--organic-space-3);
+  margin: 0 0 0 var(--wizard-detail-indent);
+  padding: 0;
+  list-style: none;
+}
+
+.capability-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-normal);
+}
+
+.capability-list .icon {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.capability-list .cap-no {
+  opacity: 0.6;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.test-result {
+  margin-left: var(--wizard-detail-indent);
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-normal);
+}
+
+.test-result.passed {
+  color: var(--organic-sage-deep);
+}
+
+.test-result.failed {
+  color: var(--organic-accent-text);
+}
+
+.diagnosis-list {
+  display: grid;
+  gap: 3px;
+  margin-left: var(--wizard-detail-indent);
+  padding-top: var(--organic-space-2);
+  border-top: 1px solid var(--organic-border-soft);
+}
+
+.diagnosis-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  font-size: var(--font-body-sm);
+  line-height: var(--leading-normal);
+}
+
+.diagnosis-pass {
+  color: var(--organic-sage-deep);
+}
+
+.diagnosis-warn,
+.diagnosis-fail {
+  color: var(--organic-accent-text);
+}
+
+/* 卡片內的按鈕根元素帶的是這個元件的 scope id，父層的 .setup-overlay :focus-visible 碰不到。 */
+.tool-item :focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+@media (prefers-contrast: more) {
+  .tool-item {
+    border: 2px solid var(--organic-text);
+  }
+}

@@ -800,7 +800,7 @@ App (`electron/plugin-registry.ts`):
 Catalog (`agent-pets-plugins/scripts/validate-catalog.mjs`), merged **before** the theme package PR:
 1. `ARCHIVE_EXTENSIONS` adds `.woff2`. No `.jpg/.jpeg/.ttf`.
 2. Keep 64 files and 25 MB total. Add per-type caps mirroring the app: woff2 ≤ 1 MiB with `wOF2` magic and referenced by `panelThemes[].fonts[].src`; theme images png/webp ≤ 8 MiB, header dimensions 64–4096, ≤ 8,388,608 px, not animated, orientation 1; packages without skins/panelThemes ≤ 5 MB.
-3. Validate `contributes.panelThemes` with the same grammar, derivation and contrast. Vendor the app's pure module (`electron/plugin-panel-themes.ts` + `electron/panel-theme-color.ts`, which have no Electron imports) as `scripts/vendor/panel-theme-rules.mjs`, with a header comment naming the source commit.
+3. Validate `contributes.panelThemes` with the same grammar, derivation and contrast. Vendor the app's pure module (`electron/plugin-panel-themes.ts` + `electron/panel-theme-color.ts`, plus the image header readers they import: `electron/pet-sprite-validation.ts`, `electron/raster-image.ts` and `src/types/pet-atlas.ts`; none has Electron or Node imports) as `scripts/vendor/panel-theme-rules.mjs`, with a header comment naming the source commit.
 4. Version entries gain optional `minAppVersion`. **Required** (≥ `1.12.0`) when the package manifest has `panelThemes`.
 
 ### 10.3 Minimum app version (`minAppVersion`)
@@ -849,7 +849,7 @@ App 1.12.0 changes:
 - `src/types/plugin.ts`: registry, value map
 - `src/types/ipc.ts`: error codes `invalid_panel_theme`, `theme_unavailable`, `image_invalid`, `image_too_large`, `image_not_allowed`
 - `src/types/electron-api.ts`, `electron/preload.ts`, `electron/ipc/channels.ts`
-- `electron/main/runtime.ts`: protocol host, sync hook, broadcast, registrar wiring, startup sweep
+- `electron/main/runtime.ts`: protocol host, sync hook, broadcast, startup sweep; registrar wiring now lives in `electron/main/plugin-runtime.ts`
 - `electron/plugin-manifest.ts`: parse, workerless rule, error code
 - `electron/plugin-registry.ts`: extensions, asset limits, units, checks, diagnostic
 - `electron/ipc/plugin-install.ts`: remove cleanup

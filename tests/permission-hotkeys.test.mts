@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { attachHotkeyInfo, PermissionHotkeys, permissionHotkeyLabels } from '../electron/permission-hotkeys.ts'
+import type { PermissionRequestView } from '../src/types/permission.ts'
+import { makePermissionRequestView } from './support/permission-request-view.mts'
 
-function view(overrides: Record<string, unknown> = {}) {
-  return {
-    requestId: 'r1', status: 'pending', hotkeyEligible: true,
-    allowedDecisions: ['allow_once', 'deny'], ...overrides,
-  } as never
+function view(overrides: Partial<PermissionRequestView> = {}): PermissionRequestView {
+  return makePermissionRequestView({ hotkeyEligible: true, ...overrides })
 }
 
 function fakeShortcuts(blocked: string[] = []) {

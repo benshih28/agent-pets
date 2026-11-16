@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { PRESENTATION_REACTIONS } from '../src/types/presentation.ts'
 
-const animation = readFileSync(new URL('../src/components/PetAnimation.vue', import.meta.url), 'utf8')
+// 反應圖示表在 usePetReactions.ts，播放與排程在 PetAnimation.vue。
+const animation = ['../src/components/PetAnimation.vue', '../src/composables/usePetReactions.ts']
+  .map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n')
 const styles = readFileSync(new URL('../src/components/PetAnimation.css', import.meta.url), 'utf8')
 const desktopPet = readFileSync(new URL('../src/components/DesktopPet.vue', import.meta.url), 'utf8')
 const icons = readFileSync(new URL('../src/components/ui/icons.ts', import.meta.url), 'utf8')

@@ -15,10 +15,11 @@ import {
 import { readImageAnimated } from '../electron/pet-sprite-validation.ts'
 import { jpeg, png, webp } from './support/panel-theme-fixtures.mts'
 import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 async function withDirectory(run: (directory: string) => Promise<void> | void): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-panel-theme-images-'))
-  try { await run(fs.realpathSync(directory)) } finally { fs.rmSync(directory, { recursive: true, force: true }) }
+  try { await run(fs.realpathSync(directory)) } finally { removeTempTree(directory) }
 }
 
 test('readImageAnimated detects APNG and animated WebP from headers only', () => {

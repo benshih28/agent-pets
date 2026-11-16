@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { loadPets, registerPetsIpc, type PetLoadItem, type PetsIpcDependencies } from '../electron/ipc/pets.ts'
+import { fakeIpcMainInvokeEvent } from './support/fake-electron.mts'
+import { createFakeIpcMain } from './support/fake-ipc.mts'
+
+const trustedEvent = fakeIpcMainInvokeEvent()
 
 function makeDeps(): { deps: PetsIpcDependencies; files: Map<string, string> } {
   const files = new Map<string, string>([
@@ -24,22 +29,23 @@ function makeDeps(): { deps: PetsIpcDependencies; files: Map<string, string> } {
     }],
   ])
   const deps: PetsIpcDependencies = {
-    ipcMain: { handle: () => undefined } as PetsIpcDependencies['ipcMain'],
-    assertTrustedIpcSender: event => { assert.equal(event, 'trusted') },
+    ipcMain: createFakeIpcMain().ipcMain,
+    assertTrustedIpcSender: event => { assert.equal(event, trustedEvent) },
+    // fs/promises 的 readFile/lstat/readdir 有大量多載與完整 Stats/Dirent，這裡只實作載入寵物會用到的最小欄位。
     fs: {
       readFile: async (filePath: string) => {
         const value = files.get(filePath)
         if (value === undefined) throw new Error('missing file')
         return value
       },
-      lstat: async filePath => {
+      lstat: async (filePath: string) => {
         if (filePath === '/deploy/custom') return { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false }
         if (files.has(filePath)) return { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false }
         throw new Error('missing file')
       },
       readdir: async () => [{ name: 'custom-one', isDirectory: () => true }, { name: '../escape', isDirectory: () => true }],
     } as unknown as PetsIpcDependencies['fs'],
-    path: { resolve: (...parts: string[]) => parts.join('/') } as PetsIpcDependencies['path'],
+    path: { resolve: (...parts: string[]) => parts.join('/') },
     builtinPetsPath: () => '/pets.json',
     customPetsPath: () => '/deploy',
     parseBehaviorManifest: () => undefined,
@@ -87,12 +93,9 @@ test('loadPets skips plugin skins without a readable supported image or enabled 
 test('pets IPC checks the trusted sender before reading pet data', async () => {
   const { deps } = makeDeps()
   let senderChecked = false
-  let invoke = async (_event: unknown): Promise<unknown> => null
-  const ipcMain = {
-    handle: (_channel: string, callback: (event: unknown) => unknown) => { invoke = async event => await callback(event) },
-  } as unknown as PetsIpcDependencies['ipcMain']
-  registerPetsIpc({ ...deps, ipcMain, assertTrustedIpcSender: event => { senderChecked = event === 'trusted' } })
-  const result = await invoke('trusted') as PetLoadItem[]
+  const { ipcMain, handlers } = createFakeIpcMain()
+  registerPetsIpc({ ...deps, ipcMain, assertTrustedIpcSender: event => { senderChecked = event === trustedEvent } })
+  const result = await handlers.get(IPC_CHANNELS.loadPets)!(trustedEvent) as PetLoadItem[]
   assert.equal(senderChecked, true)
   assert.deepEqual(result.map(pet => pet.id), ['built-in', 'custom-one', 'plugin-skin:skin-plugin:blue-cat'])
 })

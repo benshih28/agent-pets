@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createRequire } from 'node:module'
 import { LOCAL_USAGE_ADAPTER_IDS, LOCAL_USAGE_SOURCES, type AgentStatusEvent } from '../src/types/agent.ts'
-import { isValidPetId } from '../src/utils/pet-id.ts'
+import { DEFAULT_PET_ID, isValidPetId } from '../src/utils/pet-id.ts'
 import type { ProgressionSnapshot } from '../src/types/progression.ts'
 import {
   ACHIEVEMENT_DEFINITIONS,
@@ -15,11 +15,17 @@ import {
   type AchievementUnlock,
 } from '../src/types/achievement.ts'
 import { localDateKey, localHour as localHourOf } from '../src/utils/local-date.ts'
+import { MAX_TOKEN_COUNT } from './event-normalizer.ts'
 import { applyWalPragmas, type SqlitePragmaState } from './sqlite-pragmas.ts'
+import { optimizeAndVacuum } from './sqlite-maintenance.ts'
 import { StatementCache } from './sqlite-statements.ts'
 import { isProjectId } from '../src/types/id-patterns.ts'
 
 type SqliteRow = Record<string, unknown>
+
+/** 解鎖評估與快照每次事件都會查定義，用索引避免逐筆線性掃描。 */
+const DEFINITION_BY_ID: ReadonlyMap<string, (typeof ACHIEVEMENT_DEFINITIONS)[number]> =
+  new Map(ACHIEVEMENT_DEFINITIONS.map(definition => [definition.id, definition]))
 
 interface SqliteStatement {
   run(...params: unknown[]): { changes: number | bigint }
@@ -31,6 +37,7 @@ interface SqliteDatabase {
   exec(sql: string): void
   prepare(sql: string): SqliteStatement
   close(): void
+  isTransaction?: boolean
 }
 
 type DatabaseSyncConstructor = new (filePath: string) => SqliteDatabase
@@ -50,11 +57,10 @@ export interface AchievementCompletedSessionFact {
   completedAt: number
 }
 
-const DEFAULT_PET_ID = 'aang-airbender'
 const ADAPTER_ID = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_EVENT_ID_LENGTH = 256
-const MAX_TOKEN_COUNT = 1_000_000_000_000
 const LOCAL_TOKEN_TOTAL_KEY = 'local_token_total'
+const GROWTH_RESET_AT_KEY = 'growth_reset_at'
 const LOCAL_TOKEN_COMPACT_BATCH = 5_000
 // Codex and Claude Code token usage is read exactly from their local session
 // logs (LocalUsageReader). That ledger is the single source of truth for these
@@ -200,6 +206,8 @@ export class AchievementStore {
   private readonly localDate: (timestamp: number) => string
   private readonly localHour: (timestamp: number) => number
   private closed = false
+  /** 最近一次重設成長資料的時間；早於它的歷史事實不可再被補回。 */
+  private growthResetAt = 0
 
   constructor(filePath: string, options: AchievementStoreOptions = {}) {
     mkdirSync(dirname(filePath), { recursive: true })
@@ -211,6 +219,7 @@ export class AchievementStore {
     this.localHour = options.localHour ?? localHourOf
     try {
       this.migrate()
+      this.growthResetAt = this.readGrowthResetAt()
     } catch (error) {
       this.database.close()
       throw error
@@ -306,6 +315,8 @@ export class AchievementStore {
         const adapterId = safeAdapterId(fact.adapterId)
         const completedAt = Number.isFinite(fact.completedAt) ? fact.completedAt : this.now()
         if (!sessionId) continue
+        // 重設之前完成的 session 不補回，否則剛重設就被 history reconcile 加回去。
+        if (completedAt < this.growthResetAt) continue
         const projectId = isProjectId(fact.projectId)
           ? fact.projectId
           : 'unbound'
@@ -369,7 +380,7 @@ export class AchievementStore {
    */
   syncLocalTokenUsage(records: readonly LocalTokenUsageFact[], options: LocalTokenSyncOptions): LocalTokenSyncResult {
     const now = this.now()
-    const compactBefore = Number.isFinite(options.compactBefore) ? options.compactBefore : 0
+    const compactBefore = Math.max(Number.isFinite(options.compactBefore) ? options.compactBefore : 0, this.growthResetAt)
     return this.transaction(() => {
       let delta = 0
       for (const record of records) {
@@ -440,7 +451,7 @@ export class AchievementStore {
     const unlocked = new Map<AchievementId, SqliteRow>()
     for (const row of rows) {
       const id = row.achievement_id
-      if (typeof id === 'string' && ACHIEVEMENT_DEFINITIONS.some(definition => definition.id === id)) {
+      if (typeof id === 'string' && DEFINITION_BY_ID.has(id)) {
         unlocked.set(id as AchievementId, row)
       }
     }
@@ -470,11 +481,71 @@ export class AchievementStore {
     }
   }
 
+  getGrowthResetAt(): number {
+    return this.growthResetAt
+  }
+
+  /**
+   * 清掉所有成就事實、計數器與本機 token 帳本，並把 `cutoff` 記為重設時間（同一個交易）。
+   * `beforeCommit` 在交易提交前執行（用來在另一個資料庫做同一件事）：它丟錯就整個回復，
+   * 所以兩個資料庫要嘛一起重設，要嘛都不動。重設時間讓 history reconcile 與本機 token 同步
+   * 忽略重設之前的事實，避免剛清掉又被補回。可重複執行。
+   */
+  resetGrowth(cutoff: number, beforeCommit?: () => void): void {
+    const resetAt = Math.max(0, Math.floor(cutoff))
+    this.transaction(() => {
+      this.database.exec(`
+        DELETE FROM completed_sessions;
+        DELETE FROM daily_completions;
+        DELETE FROM active_days;
+        DELETE FROM adapter_usage;
+        DELETE FROM token_usage;
+        DELETE FROM achievement_unlocks;
+        DELETE FROM pet_counters;
+        DELETE FROM local_token_usage;
+      `)
+      this.statement(`
+        INSERT INTO achievement_metadata(key, value) VALUES (?, '0')
+        ON CONFLICT(key) DO UPDATE SET value = '0'
+      `).run(LOCAL_TOKEN_TOTAL_KEY)
+      this.statement(`
+        INSERT INTO achievement_metadata(key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(GROWTH_RESET_AT_KEY, String(resetAt))
+      beforeCommit?.()
+    })
+    this.growthResetAt = resetAt
+  }
+
+  /** 刪掉不會再被掃描器重送的本機 token 去重列（保留期清理）；回傳刪除列數。 */
+  compactLocalTokenUsage(before: number): number {
+    let removed = 0
+    for (;;) {
+      const step = changedCount(this.statement(`
+        DELETE FROM local_token_usage WHERE rowid IN (
+          SELECT rowid FROM local_token_usage WHERE occurred_at < ? LIMIT ?
+        )
+      `).run(before, LOCAL_TOKEN_COMPACT_BATCH))
+      removed += step
+      if (step < LOCAL_TOKEN_COMPACT_BATCH) return removed
+    }
+  }
+
+  /** 使用者觸發的資料庫整理（optimize + VACUUM）；交易進行中會丟 SqliteBusyError。 */
+  compact(): void {
+    optimizeAndVacuum(this.database)
+  }
+
   close(): void {
     if (this.closed) return
     this.closed = true
     this.statements.clear()
     this.database.close()
+  }
+
+  private readGrowthResetAt(): number {
+    const value = Number(this.statement('SELECT value FROM achievement_metadata WHERE key = ?').get(GROWTH_RESET_AT_KEY)?.value)
+    return Number.isFinite(value) && value > 0 ? value : 0
   }
 
   private evaluateAndUnlock(
@@ -486,7 +557,7 @@ export class AchievementStore {
     const context = this.readContext(petId, this.localDate(occurredAt), nightOwlCompletion, progression)
     const unlocks: AchievementUnlock[] = []
     for (const evaluation of evaluateAchievements(context)) {
-      const definition = ACHIEVEMENT_DEFINITIONS.find(candidate => candidate.id === evaluation.id)
+      const definition = DEFINITION_BY_ID.get(evaluation.id)
       if (!definition) continue
       const tokenQuality = evaluation.tokenQuality ?? 'none'
       const unlockedAt = this.now()

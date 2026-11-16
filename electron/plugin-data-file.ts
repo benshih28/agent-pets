@@ -1,7 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { renameSyncWithRetry } from './fs-rename.ts'
+import { pidTimestampTemporaryPath, writeFileAtomicSync } from './atomic-file-write.ts'
 import { isPluginId } from '../src/types/id-patterns.ts'
+import { isRecord } from './value-guards.ts'
 
 
 export class PluginDataFileError extends Error {
@@ -51,8 +52,8 @@ export function readPluginDataJson(filePath: string, maxBytes: number): Record<s
     const stat = fs.fstatSync(descriptor)
     if (!stat.isFile() || stat.size > maxBytes) throw new PluginDataFileError()
     const value: unknown = JSON.parse(fs.readFileSync(descriptor, 'utf8'))
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PluginDataFileError()
-    return value as Record<string, unknown>
+    if (!isRecord(value)) throw new PluginDataFileError()
+    return value
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return Object.create(null) as Record<string, unknown>
     if (error instanceof PluginDataFileError) throw error
@@ -66,25 +67,17 @@ export function readPluginDataJson(filePath: string, maxBytes: number): Record<s
 }
 
 export function writePluginDataJson(filePath: string, value: Record<string, unknown>): void {
-  const directory = path.dirname(filePath)
-  const basename = path.basename(filePath)
-  const temporaryPath = path.join(directory, `.${basename}.${process.pid}.${Date.now()}.tmp`)
   try {
-    try {
-      const stat = fs.lstatSync(filePath)
-      if (!stat.isFile() || stat.isSymbolicLink()) throw new PluginDataFileError()
-    } catch (error) {
-      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error
-    }
-    fs.writeFileSync(temporaryPath, JSON.stringify(value), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    renameSyncWithRetry(temporaryPath, filePath)
-    if (process.platform !== 'win32') {
-      try { fs.chmodSync(filePath, 0o600) } catch {}
-    }
+    const stat = fs.lstatSync(filePath)
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new PluginDataFileError()
   } catch (error) {
-    try { fs.rmSync(temporaryPath, { force: true }) } catch {}
-    throw error
+    if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error
   }
+  writeFileAtomicSync(filePath, JSON.stringify(value), {
+    temporaryPath: pidTimestampTemporaryPath(filePath),
+    mode: 0o600,
+    enforceMode: true,
+  })
 }
 
 export function removePluginDataFile(filePath: string): void {

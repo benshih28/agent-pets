@@ -121,8 +121,8 @@ test('multi pet: the name shows at the large size; below it the name, then the q
   assert.deepEqual(at(0.6, 'Idle'), { showLabel: false, showReadout: true, badgeCount: 0, showOverflow: false })
 })
 
-test('the geometry and fonts match DesktopPet.css and the tokens', () => {
-  const css = readFileSync(new URL('../src/components/DesktopPet.css', import.meta.url), 'utf8')
+test('the geometry and fonts match PetStatusLine.css and the tokens', () => {
+  const css = readFileSync(new URL('../src/components/desktop-pet/PetStatusLine.css', import.meta.url), 'utf8')
   const tokens = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8')
   const rule = (selector: string) => {
     const start = css.indexOf(`\n${selector} {`)
@@ -173,8 +173,9 @@ test('the geometry and fonts match DesktopPet.css and the tokens', () => {
 })
 
 test('quota colours are chosen in CSS by data-quota-tier, not built as strings in script', () => {
-  const css = readFileSync(new URL('../src/components/DesktopPet.css', import.meta.url), 'utf8')
-  const vue = readFileSync(new URL('../src/components/DesktopPet.vue', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../src/components/desktop-pet/PetStatusLine.css', import.meta.url), 'utf8')
+  const vue = readFileSync(new URL('../src/composables/usePetStatusLines.ts', import.meta.url), 'utf8')
+  const line = readFileSync(new URL('../src/components/desktop-pet/PetStatusLine.vue', import.meta.url), 'utf8')
   const tiers: Record<string, string> = {
     low: '--organic-quota-error', warning: '--organic-quota-warning', claude: '--organic-quota-accent', normal: '--organic-quota-sage',
   }
@@ -187,7 +188,7 @@ test('quota colours are chosen in CSS by data-quota-tier, not built as strings i
     const returned = new RegExp(`return [^\\n]*'${tier}'`).test(vue) || new RegExp(`^  \\w+: '${tier}',$`, 'm').test(vue)
     assert.ok(returned, `quotaTier returns ${tier}`)
   }
-  assert.match(vue, /const QUOTA_FAMILY_TIER = Object\.freeze\(\{\n  codex: 'normal',\n  claude: 'claude',\n\} as const satisfies Record<QuotaFamilyKey, QuotaTier>\)/)
-  assert.equal(vue.match(/:data-quota-tier="quotaTier\(line\.key\)"/g)?.length, 2)
+  assert.match(vue, /const QUOTA_FAMILY_TIER = Object\.freeze\(\{\n {2}codex: 'normal',\n {2}claude: 'claude',\n\} as const satisfies Record<QuotaFamilyKey, QuotaTier>\)/)
+  assert.equal(line.match(/:data-quota-tier="view\.quota\?\.tier"/g)?.length, 1)
   assert.doesNotMatch(vue.split('<template>')[0], /'var\(--/)
 })

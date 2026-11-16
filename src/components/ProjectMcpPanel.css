@@ -17,8 +17,10 @@
   max-height: min(760px, calc(100vh - 28px));
   box-sizing: border-box;
   flex-direction: column;
-  gap: 15px;
-  padding: 22px;
+  gap: var(--dialog-shell-gap);
+  padding: var(--dialog-shell-padding);
+  /* 檔案與預覽列對齊勾選框右側的文字。 */
+  --mcp-detail-indent: 26px;
   overflow: hidden;
   border-radius: var(--organic-radius-lg);
   background: var(--organic-surface);
@@ -212,7 +214,7 @@
 
 .mcp-project-card {
   gap: var(--organic-space-2);
-  padding: 15px var(--organic-space-4);
+  padding: var(--list-card-padding-y) var(--organic-space-4);
   border: 0;
   border-radius: var(--organic-radius-md);
   box-shadow: none;
@@ -325,7 +327,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-0-5);
-  margin-left: 26px;
+  margin-left: var(--mcp-detail-indent);
   color: var(--organic-text-muted);
   font-size: var(--font-body-sm);
 }
@@ -339,7 +341,7 @@
 }
 
 .mcp-preview {
-  margin-left: 26px;
+  margin-left: var(--mcp-detail-indent);
   color: var(--organic-text-secondary);
   font-size: var(--font-body-sm);
 }

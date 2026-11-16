@@ -12,10 +12,11 @@ import {
   PLUGIN_WORKER_CONTENT_SECURITY_POLICY,
 } from '../electron/plugin-protocol.ts'
 import { pluginHostAssets } from '../electron/plugin-host-assets.ts'
+import { removeTempTree } from './support/temp-dir.mts'
 
 async function withPluginRoot(run: (root: string) => void | Promise<void>): Promise<void> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-plugin-protocol-'))
-  try { await run(root) } finally { fs.rmSync(root, { recursive: true, force: true }) }
+  try { await run(root) } finally { removeTempTree(root) }
 }
 
 test('plugin protocol serves only current plugin files with the required CSP and MIME headers', async () => {

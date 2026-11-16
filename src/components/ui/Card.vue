@@ -74,7 +74,7 @@ withDefaults(defineProps<{
   font-family: var(--font-heading, var(--font-ui));
   font-size: var(--font-heading-sm, var(--font-xs));
   font-weight: var(--weight-bold);
-  line-height: 1.2;
+  line-height: var(--leading-tight);
 }
 
 .tone-accent .card-title {

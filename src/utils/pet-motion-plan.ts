@@ -1,6 +1,7 @@
 import type { AgentState } from '@/types/agent'
 import type { PetAutonomousBehavior } from '@/types/pet'
 // tests/pet-motion-plan.test.mts 用 Node 直接執行，值 import 必須是相對路徑。
+import { AGENT_STATE_POLICY } from '../types/agent.ts'
 import { PET_ATLAS_MOTIONS, type PetMotionName } from '../types/pet-atlas.ts'
 
 // 狀態 → 動作的純對應，放在元件外面，節奏規則才能做單元測試。
@@ -17,8 +18,8 @@ export interface PlannedMotionPlan {
   repeat: boolean
 }
 
-/** 工作完成後顯示「成功」多久才回到閒置。 */
-export const SUCCESS_DISPLAY_MS = 4_000
+/** 工作完成後顯示「成功」多久才回到閒置；值在狀態 registry，這裡只是給動作節奏用的別名。 */
+export const SUCCESS_DISPLAY_MS = AGENT_STATE_POLICY.success.quiet.afterMs
 
 // 慶祝動作用內建節奏跑一輪的長度；寵物包改了時長，揮手次數也只會差一點點。
 const loopMs = (frames: readonly number[]) => frames.reduce((sum, ms) => sum + ms, 0)

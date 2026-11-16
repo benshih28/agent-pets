@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="Id extends string = string">
 import { nextTick, onUnmounted, ref, useId } from 'vue'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -6,8 +6,9 @@ import Icon from '@/components/ui/Icon.vue'
 // A small popup of actions anchored to a trigger button. It is rendered inside
 // the page (not a native menu) so it keeps the panel's focus: a native menu
 // would blur the window, which the main process reads as "hide the panel".
-export interface ActionMenuItem {
-  id: string
+// id 是泛型：呼叫端用 `as const` 定義選單時能推導出 id 聯集，handler map 漏一項就在編譯期報錯。
+export interface ActionMenuItem<Id extends string = string> {
+  id: Id
   label: string
   disabled?: boolean
   danger?: boolean
@@ -24,7 +25,7 @@ export interface ActionMenuItem {
 }
 
 withDefaults(defineProps<{
-  items: ActionMenuItem[]
+  items: readonly ActionMenuItem<Id>[]
   ariaLabel?: string
   variant?: 'primary' | 'secondary' | 'ghost'
   size?: 'sm' | 'md'
@@ -39,7 +40,7 @@ withDefaults(defineProps<{
   align: 'end',
 })
 
-const emit = defineEmits<{ select: [id: string] }>()
+const emit = defineEmits<{ select: [id: Id] }>()
 
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
@@ -99,7 +100,7 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-function pick(id: string): void {
+function pick(id: Id): void {
   close(true)
   emit('select', id)
 }

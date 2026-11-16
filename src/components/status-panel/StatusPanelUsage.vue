@@ -18,7 +18,7 @@ import UsageBlockSummary from '@/components/growth/UsageBlockSummary.vue'
 
 const props = withDefaults(defineProps<{ nowTick: number; active?: boolean }>(), { active: true })
 const store = useAgentStore()
-const { formatReset, formatResetAt, formatClock, formatAge, usedRemaining, quotaTone, toneLabel } = useQuotaFormat(() => props.nowTick)
+const { forecastText, formatReset, formatResetAt, formatClock, formatAge, usedRemaining, quotaTone, toneLabel } = useQuotaFormat(() => props.nowTick)
 
 const TONE_FOR_QUOTA = { healthy: 'success', warn: 'warn', critical: 'error' } as const
 const copiedProvider = ref('')
@@ -82,6 +82,19 @@ function errorText(provider: UsageProvider): string {
     default: return translateBackendError(provider.error)
   }
 }
+
+// 以 computed 一次算好每個視窗的預測文字，template 只查表；nowTick 與額度更新都會觸發重算。
+const forecastTexts = computed(() => {
+  const result: Record<string, string> = {}
+  for (const provider of providers.value) {
+    if (provider.error || isStale(provider)) continue
+    for (const quota of provider.windows) {
+      const text = forecastText(store.quotaForecast(provider.id, quota.id, props.nowTick))
+      if (text) result[`${provider.id}:${quota.id}`] = text
+    }
+  }
+  return result
+})
 
 function fetchedMs(provider: UsageProvider): number | null {
   if (!provider.fetchedAt) return null
@@ -221,6 +234,10 @@ onBeforeUnmount(() => {
               <Icon name="warning" :size="14" />
               <span>{{ toneLabel(quotaTone(quota.remainingPercent), quota.overage) }}</span>
             </div>
+            <div v-if="forecastTexts[`${provider.id}:${quota.id}`]" class="quota-forecast">
+              <Icon name="info" :size="14" />
+              <span>{{ forecastTexts[`${provider.id}:${quota.id}`] }}</span>
+            </div>
             <div class="quota-reset">
               <span :title="formatResetAt(quota.resetsAt) || undefined">{{ formatReset(quota.resetsAt) }}</span>
             </div>
@@ -303,6 +320,14 @@ onBeforeUnmount(() => {
 
 .quota-warning.critical {
   color: var(--state-error);
+}
+
+.quota-forecast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
 }
 
 .usage-spinner {

@@ -1,6 +1,7 @@
 import { GENERIC_HTTP_CAPABILITIES, type AgentCapabilities } from './capabilities.ts'
 import type { AgentFamilyKey, AgentSource, AgentStatusEvent } from './agent'
 import { AGENT_FAMILY_REGISTRY, FAMILY_SOURCES, SOURCE_LABELS } from './agent.ts'
+import { LOCAL_WIRE_PATHS } from './local-wire.ts'
 
 export type AdapterInstallTarget = 'opencode' | 'codex' | 'claudeCode'
 
@@ -58,7 +59,7 @@ export const AGENT_ADAPTER_REGISTRY = Object.freeze([
     capabilities: CLAUDE_CAPABILITIES, installTarget: 'claudeCode', installable: true, testSource: 'claude',
   },
   {
-    id: 'generic-http', displayName: 'Generic HTTP', family: null, sources: Object.freeze([]), sourceLabels: Object.freeze(['/v1/events']),
+    id: 'generic-http', displayName: 'Generic HTTP', family: null, sources: Object.freeze([]), sourceLabels: Object.freeze([LOCAL_WIRE_PATHS.events]),
     capabilities: GENERIC_HTTP_CAPABILITIES, installable: false,
   },
 ] as const satisfies ReadonlyArray<AgentAdapterRegistryEntry>)
@@ -86,8 +87,24 @@ export interface DiagnosticReport {
   checks: ReadonlyArray<AdapterDiagnosticCheck>
 }
 
+/** 搬移 agent 使用者層設定目錄的環境變數（只在主行程解析，見 electron/agent-config-dirs.ts）。 */
+export type AgentConfigDirVariable = 'CLAUDE_CONFIG_DIR' | 'CODEX_HOME' | 'XDG_CONFIG_HOME'
+/** 變數有設定卻沒採用的原因；只描述值的形狀，不帶值。 */
+export type AgentConfigDirIgnoredReason = 'invalid' | 'not_absolute' | 'missing'
+
+export interface AdapterConfigDirStatus {
+  variable: AgentConfigDirVariable
+  /** 實際讀寫的資料夾（本機設定頁才顯示）。 */
+  path: string
+  source: 'env' | 'default'
+  ignored?: AgentConfigDirIgnoredReason
+  /** 變數搬走目錄後，預設位置仍留著的 Agent Pets 設定檔；解除安裝會一併移除。 */
+  staleLocation?: string
+}
+
 export interface AdapterDetection {
   installed: boolean
+  configDir?: AdapterConfigDirStatus
   health: AdapterHealth
   version?: string
   message?: string
@@ -128,11 +145,13 @@ export type InstallErrorCode =
   | 'config_unparseable'
   | 'config_unsafe'
   | 'config_too_large'
+  | 'config_changed'
   | 'permission_denied'
   | 'file_busy'
   | 'read_only'
   | 'node_missing'
   | 'node_unsupported'
+  | 'config_dir_unusable'
   | 'unknown'
 
 /** Structured result of one install/repair; the renderer localizes it from these codes. */

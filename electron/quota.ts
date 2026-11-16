@@ -2,7 +2,9 @@ import { execFile } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { renameSyncWithRetry } from './fs-rename.ts'
+import { writeFileAtomicSync } from './atomic-file-write.ts'
+import { currentAgentConfigDirs } from './agent-config-dirs.ts'
+import { asRecord } from './value-guards.ts'
 import { promisify } from 'node:util'
 import { translateBackendError } from '../src/i18n.ts'
 import type { QuotaFamilyKey } from '../src/types/agent.ts'
@@ -116,14 +118,15 @@ export class QuotaDisplayError extends Error {}
 // The CLI could not answer; the stored-token request is tried instead.
 class ClaudeCliUnavailable extends Error {}
 
-function asObject(value: unknown): Record<string, any> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, any>
-    : null
-}
-
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+// 服務回應與憑證檔裡的數字欄位有時是字串（例如 "18000"），沿用 Number() 的轉型規則，
+// 只把轉不出有限數字的值當成沒給；與 main/runtime.ts 只收 number 的 finiteNumber 刻意不同。
+function coercedFiniteNumber(value: unknown): number | undefined {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : undefined
 }
 
 // Clamps a reported percentage into [0, 100] instead of discarding the whole
@@ -210,7 +213,7 @@ async function readLimitedResponse(response: Response): Promise<string> {
 async function requestJson(
   url: string,
   init: RequestInit,
-): Promise<{ status: number; body: Record<string, any> }> {
+): Promise<{ status: number; body: Record<string, unknown> }> {
   if (!ALLOWED_ENDPOINTS.has(url) || new URL(url).protocol !== 'https:') {
     throw new QuotaDisplayError('Refused an untrusted quota endpoint.')
   }
@@ -223,10 +226,10 @@ async function requestJson(
       signal: controller.signal,
     })
     const text = await readLimitedResponse(response)
-    let body: Record<string, any> = {}
+    let body: Record<string, unknown> = {}
     if (text) {
       try {
-        body = asObject(JSON.parse(text)) ?? {}
+        body = asRecord(JSON.parse(text)) ?? {}
       } catch {
         if (response.ok) throw new QuotaDisplayError('Usage response was not valid JSON.')
       }
@@ -238,53 +241,35 @@ async function requestJson(
 }
 
 function atomicWriteJson(filePath: string, value: Record<string, unknown>): void {
-  const directory = path.dirname(filePath)
-  const tempPath = path.join(
-    directory,
+  const temporaryPath = path.join(
+    path.dirname(filePath),
     `.${path.basename(filePath)}.agent-pets-${process.pid}-${tempSequence++}.tmp`,
   )
-  const data = `${JSON.stringify(value, null, 2)}\n`
-  let wroteTemp = false
-  try {
-    const descriptor = fs.openSync(tempPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600)
-    wroteTemp = true
-    try {
-      fs.writeFileSync(descriptor, data, 'utf8')
-      fs.fsyncSync(descriptor)
-    } finally {
-      fs.closeSync(descriptor)
-    }
-    renameSyncWithRetry(tempPath, filePath)
-  } finally {
-    if (wroteTemp && fs.existsSync(tempPath)) {
-      try { fs.unlinkSync(tempPath) } catch {}
-    }
-  }
+  writeFileAtomicSync(filePath, `${JSON.stringify(value, null, 2)}\n`, { temporaryPath, mode: 0o600, fsync: true })
 }
 
 function codexAuthPath(): string {
-  const configuredHome = nonEmptyString(process.env.CODEX_HOME)
-  return path.join(configuredHome || path.join(os.homedir(), '.codex'), 'auth.json')
+  return path.join(currentAgentConfigDirs().codex.path, 'auth.json')
 }
 
 function loadCodexCredential(): {
   filePath: string
-  root: Record<string, any>
+  root: Record<string, unknown>
   accessToken: string
   refreshToken?: string
   accountId?: string
 } {
   const filePath = codexAuthPath()
-  let root: Record<string, any>
+  let root: Record<string, unknown>
   try {
-    root = asObject(JSON.parse(fs.readFileSync(filePath, 'utf8'))) ?? {}
+    root = asRecord(JSON.parse(fs.readFileSync(filePath, 'utf8'))) ?? {}
   } catch {
     throw new QuotaDisplayError('No existing Codex CLI subscription session was found. Agent Pets never asks for credentials.')
   }
   if (nonEmptyString(root.OPENAI_API_KEY)) {
     throw new QuotaDisplayError('Codex CLI is using API-key mode; subscription quota requires an existing Codex CLI subscription session.')
   }
-  const tokens = asObject(root.tokens)
+  const tokens = asRecord(root.tokens)
   const accessToken = nonEmptyString(tokens?.access_token ?? tokens?.accessToken)
   if (!tokens || !accessToken) {
     throw new QuotaDisplayError('The existing Codex CLI subscription session is unavailable. Agent Pets never asks for credentials.')
@@ -298,7 +283,7 @@ function loadCodexCredential(): {
   }
 }
 
-function codexNeedsRefresh(root: Record<string, any>): boolean {
+function codexNeedsRefresh(root: Record<string, unknown>): boolean {
   const lastRefresh = Date.parse(String(root.last_refresh ?? ''))
   return !Number.isFinite(lastRefresh) || Date.now() - lastRefresh > 8 * 24 * 60 * 60_000
 }
@@ -326,7 +311,7 @@ async function refreshCodexCredential(
   // Do not overwrite a login that changed while the refresh request was in flight.
   const current = loadCodexCredential()
   if (current.accessToken !== credential.accessToken) return current
-  const currentTokens = asObject(current.root.tokens) ?? {}
+  const currentTokens = asRecord(current.root.tokens) ?? {}
   const nextRoot = {
     ...current.root,
     last_refresh: new Date().toISOString(),
@@ -342,28 +327,28 @@ async function refreshCodexCredential(
 }
 
 function mapCodexWindow(id: string, raw: unknown, fallbackLabel?: string): QuotaWindow | null {
-  const window = asObject(raw)
+  const window = asRecord(raw)
   const usage = clampedUsage(window?.used_percent)
   if (!window || usage === null) return null
-  const duration = Number(window.limit_window_seconds)
+  const duration = coercedFiniteNumber(window.limit_window_seconds)
   const label = displayString(
     fallbackLabel,
     duration === 18_000 ? 'Session' : duration === 604_800 ? 'Weekly' : 'Usage',
   )
-  const resetSeconds = Number(window.reset_at)
+  const resetSeconds = coercedFiniteNumber(window.reset_at)
   return {
     id,
     label,
     ...usage,
-    ...(Number.isFinite(resetSeconds) && resetSeconds > 0
+    ...(resetSeconds !== undefined && resetSeconds > 0
       ? { resetsAt: new Date(resetSeconds * 1000).toISOString() }
       : {}),
   }
 }
 
-export function parseCodexUsage(body: Record<string, any>): Pick<QuotaProvider, 'plan' | 'windows'> {
+export function parseCodexUsage(body: Record<string, unknown>): Pick<QuotaProvider, 'plan' | 'windows'> {
   const windows: QuotaWindow[] = []
-  const rateLimit = asObject(body.rate_limit)
+  const rateLimit = asRecord(body.rate_limit)
   const mainWindows = [rateLimit?.primary_window, rateLimit?.secondary_window]
     .map((window, index) => mapCodexWindow(`main-${index}`, window))
     .filter((window): window is QuotaWindow => window !== null)
@@ -374,8 +359,8 @@ export function parseCodexUsage(body: Record<string, any>): Pick<QuotaProvider, 
     for (let entryIndex = 0; entryIndex < body.additional_rate_limits.length; entryIndex += 1) {
       if (windows.length >= MAX_WINDOWS_PER_PROVIDER) break
       const entry: unknown = body.additional_rate_limits[entryIndex]
-      const additional = asObject(entry)
-      const additionalRate = asObject(additional?.rate_limit)
+      const additional = asRecord(entry)
+      const additionalRate = asRecord(additional?.rate_limit)
       const label = displayString(additional?.limit_name ?? additional?.metered_feature, 'Additional')
       for (const [slot, raw] of [
         ['primary', additionalRate?.primary_window],
@@ -453,15 +438,14 @@ function parseClaudeCredential(
   raw: string,
   source: ClaudeCredential['source'],
 ): ClaudeCredential {
-  const root = asObject(JSON.parse(raw))
-  const oauth = asObject(root?.claudeAiOauth)
+  const root = asRecord(JSON.parse(raw))
+  const oauth = asRecord(root?.claudeAiOauth)
   const accessToken = nonEmptyString(oauth?.accessToken)
   if (!root || !oauth || !accessToken) throw new QuotaDisplayError('Claude OAuth credentials are unavailable.')
-  const expiresAt = Number(oauth.expiresAt)
   return {
     root,
     accessToken,
-    expiresAt: Number.isFinite(expiresAt) ? expiresAt : undefined,
+    expiresAt: coercedFiniteNumber(oauth.expiresAt),
     source,
   }
 }
@@ -477,7 +461,7 @@ async function loadClaudeCredential(): Promise<ClaudeCredential> {
     if (raw) return parseClaudeCredential(raw, 'keychain')
   }
 
-  const filePath = path.join(os.homedir(), '.claude', '.credentials.json')
+  const filePath = path.join(currentAgentConfigDirs().claude.path, '.credentials.json')
   try {
     return parseClaudeCredential(fs.readFileSync(filePath, 'utf8'), 'file')
   } catch {
@@ -486,7 +470,7 @@ async function loadClaudeCredential(): Promise<ClaudeCredential> {
 }
 
 function mapClaudeWindow(id: string, label: string, raw: unknown): QuotaWindow | null {
-  const window = asObject(raw)
+  const window = asRecord(raw)
   const usage = clampedUsage(window?.utilization ?? window?.percent)
   if (!window || usage === null) return null
   const resetValue = nonEmptyString(window.resets_at)
@@ -499,7 +483,7 @@ function mapClaudeWindow(id: string, label: string, raw: unknown): QuotaWindow |
   }
 }
 
-export function parseClaudeUsage(body: Record<string, any>): QuotaWindow[] {
+export function parseClaudeUsage(body: Record<string, unknown>): QuotaWindow[] {
   const windows: QuotaWindow[] = []
   const definitions: Array<[string, string, string[]]> = [
     ['session', 'Session', ['five_hour']],
@@ -524,10 +508,10 @@ export function parseClaudeUsage(body: Record<string, any>): QuotaWindow[] {
     for (let index = 0; index < body.limits.length; index += 1) {
       if (windows.length >= MAX_WINDOWS_PER_PROVIDER) break
       const raw: unknown = body.limits[index]
-      const limit = asObject(raw)
+      const limit = asRecord(raw)
       if (limit?.group !== 'weekly' || limit?.kind !== 'weekly_scoped') continue
-      const scope = asObject(limit?.scope)
-      const model = asObject(scope?.model)
+      const scope = asRecord(limit?.scope)
+      const model = asRecord(scope?.model)
       const displayName = nonEmptyString(model?.display_name)?.slice(0, MAX_DISPLAY_TEXT_LENGTH)
       if (!displayName || /(^|[-_ ])all[-_ ]models$/i.test(displayName)) continue
       const label = ['sonnet', 'opus', 'designs', 'daily routines'].includes(displayName.toLowerCase())
@@ -553,6 +537,8 @@ function claudeBinaryCandidates(): string[] {
     // where the Claude Code installers put the command.
     path.join(home, '.local', 'bin'),
     path.join(home, '.claude', 'local'),
+    // 安裝位置與設定目錄不一定相同：舊版 local 安裝在 ~/.claude/local，搬了 CLAUDE_CONFIG_DIR 後可能在新目錄。
+    path.join(currentAgentConfigDirs().claude.path, 'local'),
     ...(process.platform === 'win32'
       ? []
       : ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.npm-global', 'bin'), path.join(home, '.bun', 'bin')]),
@@ -578,6 +564,9 @@ function claudeCliEnv(): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(process.env)) {
     if (!CLAUDE_CLI_BLOCKED_ENV.has(key)) env[key] = value
   }
+  // login shell 查到的 CLAUDE_CONFIG_DIR 不在 process.env 裡；明確帶上，CLI 才會讀我們讀的那份登入。
+  const claudeDir = currentAgentConfigDirs().claude
+  if (claudeDir.source === 'env') env.CLAUDE_CONFIG_DIR = claudeDir.path
   return { ...env, DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1', DISABLE_AUTOUPDATER: '1' }
 }
 
@@ -721,9 +710,9 @@ export function parseClaudeCliUsage(text: string, now = Date.now()): QuotaWindow
 
 async function readClaudeCliUsage(binary: string): Promise<QuotaWindow[]> {
   const stdout = await runClaudeCliUsage(binary)
-  let result: Record<string, any> | null = null
+  let result: Record<string, unknown> | null = null
   try {
-    result = asObject(JSON.parse(stdout))
+    result = asRecord(JSON.parse(stdout))
   } catch {}
   const text = nonEmptyString(result?.result) ?? stdout
   if (result?.is_error === true) {
@@ -737,7 +726,7 @@ async function readClaudeCliUsage(binary: string): Promise<QuotaWindow[]> {
 
 async function claudePlan(): Promise<string | undefined> {
   try {
-    const oauth = asObject((await loadClaudeCredential()).root.claudeAiOauth)
+    const oauth = asRecord((await loadClaudeCredential()).root.claudeAiOauth)
     return cleanPlan(oauth?.subscriptionType ?? oauth?.rateLimitTier)
   } catch {
     return undefined
@@ -777,7 +766,7 @@ async function fetchClaudeApiQuota(binary: string | undefined): Promise<QuotaPro
   if (status < 200 || status >= 300) throw new QuotaDisplayError(`Claude usage request failed (${status}).`)
   const windows = parseClaudeUsage(body)
   if (windows.length === 0) throw new QuotaDisplayError('Claude returned no quota windows.')
-  const oauth = asObject(credential.root.claudeAiOauth)
+  const oauth = asRecord(credential.root.claudeAiOauth)
   return {
     id: 'claude',
     name: 'Claude Code',

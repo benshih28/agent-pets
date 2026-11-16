@@ -66,6 +66,7 @@
   "onboarding.errorConfigUnparseable": "{path} 不是有效的 JSON（不支援註解或結尾逗號），所以 Agent Pets 沒有修改它。請修正後再試。",
   "onboarding.errorConfigUnsafe": "{path} 不是一般檔案，所以沒有修改。",
   "onboarding.errorConfigTooLarge": "{path} 太大，所以沒有修改。",
+  "onboarding.errorConfigChanged": "{path} 在寫入時被其他程式修改，所以 Agent Pets 沒有改動它。請稍後再試。",
   "onboarding.errorPermissionDenied": "沒有寫入權限{path}。請檢查檔案或資料夾權限。",
   "onboarding.errorFileBusy": "檔案正被其他程式使用{path}。請關閉該工具後重試。",
   "onboarding.errorReadOnly": "磁碟或資料夾是唯讀的{path}，無法寫入設定。",
@@ -141,5 +142,11 @@
   "onboarding.mcpChooseFolder": "選擇專案資料夾",
   "onboarding.mcpConcepts": "hook 讓寵物知道工具的狀態（全域，不用選專案）。專案寵物讓每個專案有自己的寵物。這裡的 MCP 設定則讓專案裡的 AI 工具能讓寵物說話與做表情。",
   "onboarding.mcpWarnGitOutside": "這個專案的 .git 指向專案資料夾以外的位置，為了安全沒有寫入「僅限本機」排除清單；設定檔可能會被 Git 追蹤。",
-  "onboarding.mcpWarnExcludeFailed": "無法寫入 .git/info/exclude，設定檔可能會被 Git 追蹤。請檢查資料夾權限後重試。"
+  "onboarding.mcpWarnExcludeFailed": "無法寫入 .git/info/exclude，設定檔可能會被 Git 追蹤。請檢查資料夾權限後重試。",
+  "onboarding.configDir.env": "設定目錄：{path}（來自 {variable}）",
+  "onboarding.configDir.ignored.invalid": "{variable} 的值含有無法使用的字元或過長，所以讀取時改用預設位置 {path}；安裝會被拒絕，請修正變數後重新啟動 Agent Pets。",
+  "onboarding.configDir.ignored.not_absolute": "{variable} 不是絕對路徑，所以讀取時改用預設位置 {path}；安裝會被拒絕，請改成完整路徑後重新啟動 Agent Pets。",
+  "onboarding.configDir.ignored.missing": "{variable} 指向的資料夾不存在，所以讀取時改用預設位置 {path}；安裝會被拒絕，請先建立該資料夾。",
+  "onboarding.configDir.stale": "舊位置 {path} 仍有 Agent Pets 的設定，工具已不再讀取它；按「移除」會連同這裡一起清除。",
+  "onboarding.errorConfigDirUnusable": "環境變數 {path} 指定的設定目錄無法使用（必須是已存在的絕對路徑），所以沒有寫入任何設定。請修正後重新啟動 Agent Pets 再試。"
 }

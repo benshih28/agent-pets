@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AGENT_STATE_POLICY, AGENT_STATES, isAgentState, STATE_PRIORITY } from '../src/types/agent.ts'
+import { AGENT_STATE_POLICY, AGENT_STATES, isAgentState, STATE_PRIORITY, type AgentState } from '../src/types/agent.ts'
 import { AGENT_STATE_PRESENTATION, statePresentation } from '../src/utils/agent-state-presentation.ts'
 import { shouldPlayCue, type SoundGate } from '../src/utils/sound-policy.ts'
 import { classifyNotification } from '../electron/notification-policy.ts'
 import { nextFinalState } from '../electron/history-sessions.ts'
+import { makeAgentStatusEvent } from './support/agent-status-event.mts'
 
 // 特性測試：數值是重構成 registry 前各處散落常數與 switch 的實際輸出，任何一格變了都算外部契約改變。
 
@@ -43,7 +44,6 @@ test('priority, labels, colors and status-line words stay exactly as before', ()
 })
 
 test('desktop notifications per state are unchanged', () => {
-  const base = { source: 'codex', sessionId: 's1', project: 'p', timestamp: 1 }
   const session = { source: 'codex', sessionId: 's1' }
   const expected: Record<string, unknown> = {
     offline: null,
@@ -60,12 +60,12 @@ test('desktop notifications per state are unchanged', () => {
     toString: null,
   }
   for (const [state, value] of Object.entries(expected)) {
-    assert.deepEqual(classifyNotification({ ...base, state } as any), value, state)
+    assert.deepEqual(classifyNotification(makeAgentStatusEvent(state as AgentState, { sessionId: 's1', project: 'p', timestamp: 1 })), value, state)
   }
   assert.deepEqual(classifyNotification({
     source: 'claude', sessionId: 's1', state: 'waiting-permission', timestamp: 1,
     permissionNotice: { responseMode: 'external_only' },
-  } as any), {
+  }), {
     key: 'claude:s1:waiting-permission', kind: 'waiting-permission',
     title: 'Claude 等你核准（請回原工具處理）', body: 'Agent 工作', terminal: false,
     session: { source: 'claude', sessionId: 's1' },
@@ -88,7 +88,7 @@ test('history final-state classification per state is unchanged', () => {
     constructor: ['open', 'success', 'error', 'cancelled', 'open'],
   }
   for (const [state, values] of Object.entries(expected)) {
-    assert.deepEqual(previous.map(p => nextFinalState(p, state as any)), values, state)
+    assert.deepEqual(previous.map(p => nextFinalState(p, state as AgentState)), values, state)
   }
 })
 
