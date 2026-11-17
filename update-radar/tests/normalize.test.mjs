@@ -121,3 +121,42 @@ Prompt Cache Diagnostics is now generally available for GPT-5.6 Sol.
   const [update] = parseDatedMarkdown(definition, markdown)
   assert.equal(update.category, 'api-change')
 })
+
+// OpenAI 停用頁 2026-11 起的格式：沒有日期標題，只有停用總表。
+const noticeTable = status => `# Deprecations
+
+## Upcoming deprecations
+
+| Shutdown date    | Affected model                 |${status ? ' Status     |' : ''} Recommended replacement | Notice date  |
+| ---------------- | ------------------------------ |${status ? ' ---------- |' : ''} ----------------------- | ------------ |
+| **Dec 11, 2026** | \`gpt-5\`, \`gpt-5-2025-08-07\`    |${status ? ' Deprecated |' : ''} \`gpt-6.1-sol\`           | Jun 11, 2026 |
+| **Dec 11, 2026** | \`o3\`, \`o3-2025-04-16\`          |${status ? ' Deprecated |' : ''} \`gpt-6.1-sol\`           | Jun 11, 2026 |
+| **Jan 6, 2027**  | \`tts-1\`                        |${status ? ' Deprecated |' : ''}                         | Oct 1, 2026  |
+| not a date       | ignored                        |${status ? ' Deprecated |' : ''} none                    | sometime     |
+
+| Name | Value |
+| ---- | ----- |
+| a    | b     |
+`
+
+test('OpenAI deprecation tables without dated headings group into one update per notice date', () => {
+  const definition = {
+    id: 'openai-deprecations',
+    provider: 'openai',
+    product: 'api',
+    publicUrl: 'https://developers.openai.com/api/docs/deprecations',
+    splitBullets: false,
+    maxItems: 32,
+  }
+  const updates = parseDatedMarkdown(definition, noticeTable(true))
+  assert.deepEqual(updates.map(update => update.publishedAt), ['2026-10-01', '2026-06-11'])
+  const june = updates[1]
+  assert.equal(june.title, 'Deprecated: gpt-5, gpt-5-2025-08-07 · o3, o3-2025-04-16')
+  assert.equal(june.changeType, 'deprecated')
+  assert.equal(june.effectiveAt, '2026-12-11')
+  assert.equal(june.replacement, 'gpt-6.1-sol')
+  assert.deepEqual(june.subjects, ['gpt-5', 'gpt-5-2025-08-07', 'gpt-6.1-sol', 'o3', 'o3-2025-04-16'])
+  assert.equal(updates[0].replacement, null)
+  assert.deepEqual(parseDatedMarkdown(definition, noticeTable(false)).map(update => update.id), updates.map(update => update.id))
+  assert.deepEqual(parseDatedMarkdown(definition, '# Deprecations\n\n| Name | Value |\n| --- | --- |\n| a | b |\n'), [])
+})

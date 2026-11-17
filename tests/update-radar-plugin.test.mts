@@ -1840,6 +1840,66 @@ test('deprecation tables become structured retirements and leave prose as the su
   assert.deepEqual(extractRetirements('| Name | Value |\n| --- | --- |\n| a | b |'), [])
 })
 
+// OpenAI 停用頁 2026-11 起的格式：沒有日期標題，只有「即將停用」與「已停用」兩張總表。
+const noticeTableMarkdown = (status: boolean) => `# Deprecations
+
+## Upcoming deprecations
+
+| Shutdown date    | Affected model                         |${status ? ' Status     |' : ''} Recommended replacement | Notice date  |
+| ---------------- | -------------------------------------- |${status ? ' ---------- |' : ''} ----------------------- | ------------ |
+| **Dec 11, 2026** | \`gpt-5\`, \`gpt-5-2025-08-07\`            |${status ? ' Deprecated |' : ''} \`gpt-6.1-sol\`           | Jun 11, 2026 |
+| **Dec 11, 2026** | \`o3\`, \`o3-2025-04-16\`                  |${status ? ' Deprecated |' : ''} \`gpt-6.1-sol\`           | Jun 11, 2026 |
+| **Jan 6, 2027**  | \`tts-1\`                                |${status ? ' Deprecated |' : ''} \`gpt-realtime-2.1-mini\` | Oct 1, 2026  |
+
+## Feature and endpoint deprecations
+
+| Shutdown date    | Affected feature or endpoint | Status     | Recommended replacement | Notice date  |
+| ---------------- | ---------------------------- | ---------- | ----------------------- | ------------ |
+| **Nov 30, 2026** | Agent Builder                | Deprecated | Agents SDK. [Migration guide](https://developers.openai.com/x) | Jun 3, 2026 |
+| not a date       | ignored                      | Deprecated | none                    | sometime     |
+
+## Past deprecations
+
+| Shutdown date    | Affected model or feature | Listed replacement | Notice date |
+| ---------------- | ------------------------- | ------------------ | ----------- |
+| **Dec 3, 2022**  | \`/v1/engines\`             | [/v1/models](https://platform.openai.com/docs/api-reference/models/list) | Jun 3, 2022 |
+
+| Name | Value |
+| ---- | ----- |
+| a    | b     |
+`
+
+test('OpenAI deprecation tables without dated headings group into one retirement update per notice date', () => {
+  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'openai-deprecations')!
+  const updates = parseDatedMarkdown(definition, noticeTableMarkdown(true))
+  assert.deepEqual(updates.map(update => update.publishedAt), ['2026-10-01', '2026-06-11', '2026-06-03', '2022-06-03'])
+  const june = updates[1]
+  assert.equal(june.title, 'Deprecated: gpt-5, gpt-5-2025-08-07 · o3, o3-2025-04-16')
+  assert.equal(june.changeType, 'deprecated')
+  assert.equal(june.summary, '')
+  assert.equal(june.effectiveAt, '2026-12-11')
+  assert.equal(june.replacement, 'gpt-6.1-sol')
+  assert.deepEqual(june.retirements, [
+    { model: 'gpt-5, gpt-5-2025-08-07', date: '2026-12-11', replacement: 'gpt-6.1-sol' },
+    { model: 'o3, o3-2025-04-16', date: '2026-12-11', replacement: 'gpt-6.1-sol' },
+  ])
+  assert.deepEqual(updates[2].retirements, [{ model: 'Agent Builder', date: '2026-11-30', replacement: 'Agents SDK. Migration guide' }])
+  assert.deepEqual(updates[3].retirements, [{ model: '/v1/engines', date: '2022-12-03', replacement: '/v1/models' }])
+  // 欄寬或狀態欄改變（例如從「即將停用」移到「已停用」表）時識別碼不變，不會重複通知。
+  assert.deepEqual(
+    parseDatedMarkdown(definition, noticeTableMarkdown(false)).map(update => update.id),
+    updates.map(update => update.id),
+  )
+})
+
+test('dated headings still take precedence over notice tables, and unrelated tables yield nothing', () => {
+  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'openai-deprecations')!
+  const [update] = parseDatedMarkdown(definition, `${deprecationMarkdown}\n${noticeTableMarkdown(true)}`)
+  assert.equal(update.publishedAt, '2026-10-01')
+  assert.equal(update.title, 'GPT-5.3-Codex and TTS')
+  assert.deepEqual(parseDatedMarkdown(definition, '# Deprecations\n\n| Name | Value |\n| --- | --- |\n| a | b |\n'), [])
+})
+
 test('retirement status counts down to the nearest upcoming shutdown and reports past ones', () => {
   const source = ['formatDate', 'daysUntil', 'retirementStatus'].map(panelFunctionSource).join('\n')
   const retirementStatus = runInNewContext(`(() => { const DAY_MS = 86400000\n${source}\nreturn retirementStatus })()`, { Intl, Date }) as (rows: unknown[]) => { text: string, tone: string }

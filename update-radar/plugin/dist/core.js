@@ -253,6 +253,59 @@ function extractDatedSections(markdown) {
   return sections
 }
 
+const NOTICE_DATE_HEADER = /\bnotice\s+date\b/i
+const AFFECTED_HEADER = /\baffected\b/i
+const MAX_NOTICE_TITLE_NAMES = 3
+
+// OpenAI 停用頁改成「停用日 | 受影響項目 | 替代 | 公告日」的總表後就沒有日期標題了。
+// 改以公告日分組，一次公告成一筆；同一列從「即將停用」移到「已停用」表時內容相同，識別碼不變，不會再通知一次。
+function extractNoticeTableSections(markdown) {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+  const groups = new Map()
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!isTableLine(lines[index]) || !/^\s*\|?\s*:?-{3,}/.test(lines[index + 1])) continue
+    const header = tableCells(lines[index])
+    const shutdownIndex = header.findIndex(cell => RETIREMENT_DATE_HEADER.test(cell))
+    const noticeIndex = header.findIndex(cell => NOTICE_DATE_HEADER.test(cell))
+    const affectedIndex = header.findIndex(cell => AFFECTED_HEADER.test(cell))
+    const replacementIndex = header.findIndex(cell => RETIREMENT_REPLACEMENT_HEADER.test(cell))
+    let rowIndex = index + 2
+    for (; rowIndex < lines.length && isTableLine(lines[rowIndex]); rowIndex += 1) {
+      if (shutdownIndex < 0 || noticeIndex < 0 || affectedIndex < 0) continue
+      const cells = tableCells(lines[rowIndex])
+      const publishedAt = parseDateText(stripMarkdown(cells[noticeIndex] ?? ''))
+      const affected = cells[affectedIndex] ?? ''
+      const name = stripMarkdown(affected).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
+      if (!publishedAt || !name) continue
+      const shutdown = stripMarkdown(cells[shutdownIndex] ?? '')
+      const replacement = replacementIndex >= 0 ? cells[replacementIndex] ?? '' : ''
+      if (!groups.has(publishedAt)) groups.set(publishedAt, new Map())
+      const rows = groups.get(publishedAt)
+      const key = `${shutdown}\n${name}`
+      if (!rows.has(key)) rows.set(key, { shutdown, affected, replacement, name })
+    }
+    index = rowIndex - 1
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([publishedAt, rowMap]) => {
+      const rows = [...rowMap.values()]
+      const names = rows.slice(0, MAX_NOTICE_TITLE_NAMES).map(row => row.name).join(' · ')
+      const more = rows.length > MAX_NOTICE_TITLE_NAMES ? ` +${rows.length - MAX_NOTICE_TITLE_NAMES}` : ''
+      const headingTitle = `Deprecated: ${names}${more}`
+      // 只保留正規化後的三個欄位，原表的欄寬或狀態欄變動不會改變內容雜湊。
+      const lines = [
+        headingTitle,
+        '',
+        '| Shutdown date | Affected model | Recommended replacement |',
+        '| --- | --- | --- |',
+        ...rows.map(row => `| ${row.shutdown} | ${row.affected} | ${row.replacement} |`),
+      ]
+      return { publishedAt, headingTitle, lines }
+    })
+}
+
 function splitTopLevelBullets(lines) {
   const chunks = []
   let current = null
@@ -267,7 +320,9 @@ function splitTopLevelBullets(lines) {
 export function parseDatedMarkdown(definition, markdown) {
   if (typeof markdown !== 'string' || markdown.length === 0) return []
   const updates = []
-  for (const section of extractDatedSections(markdown)) {
+  const datedSections = extractDatedSections(markdown)
+  const sections = datedSections.length ? datedSections : extractNoticeTableSections(markdown)
+  for (const section of sections) {
     const bullets = definition.splitBullets ? splitTopLevelBullets(section.lines) : []
     for (const [position, chunk] of (bullets.length ? bullets : [section.lines.join('\n')]).entries()) {
       const update = normalizeUpdate(definition, { body: chunk, publishedAt: section.publishedAt, headingTitle: section.headingTitle })

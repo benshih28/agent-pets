@@ -155,10 +155,10 @@ export function normalizeUpdate(definition, rawEntry) {
     title: truncate(stripMarkdown(title), 180),
     summary: truncate(plain, 700),
     publishedAt,
-    effectiveAt: extractEffectiveAt(plain),
+    effectiveAt: extractEffectiveAt(plain) ?? rawEntry.effectiveAt ?? null,
     version,
     subjects: extractSubjects(rawEntry.body, metadata),
-    replacement: extractReplacement(rawEntry.body),
+    replacement: extractReplacement(rawEntry.body) ?? rawEntry.replacement ?? null,
     sourceUrl: rawEntry.sourceUrl ?? definition.publicUrl,
     sourceHash: sha256(rawEntry.body),
   }
@@ -206,6 +206,79 @@ export function extractDatedSections(markdown) {
   return sections
 }
 
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{3,}/
+const SHUTDOWN_DATE_HEADER = /\b(?:shutdown|retirement)\s+date\b/i
+const NOTICE_DATE_HEADER = /\bnotice\s+date\b/i
+const AFFECTED_HEADER = /\baffected\b/i
+const REPLACEMENT_HEADER = /\breplacement\b/i
+const MAX_NOTICE_TITLE_NAMES = 3
+
+function isTableLine(line) {
+  return line.trim().startsWith('|')
+}
+
+// 儲存格內的 \| 是同一格裡的多個名稱，不是欄位分隔。
+function tableCells(line) {
+  return line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/)
+    .map(cell => cell.replace(/\\\|/g, ' / ').trim())
+}
+
+// OpenAI 停用頁改成「停用日 | 受影響項目 | 替代 | 公告日」的總表後就沒有日期標題了。
+// 改以公告日分組，一次公告成一筆；只用正規化後的三欄組內容，狀態欄或欄寬改變時識別碼不變。
+// 與外掛 plugin/dist/core.js 的同名函式保持相同的分組與識別規則。
+export function extractNoticeTableSections(markdown) {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+  const groups = new Map()
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!isTableLine(lines[index]) || !TABLE_DIVIDER.test(lines[index + 1])) continue
+    const header = tableCells(lines[index])
+    const shutdownIndex = header.findIndex(cell => SHUTDOWN_DATE_HEADER.test(cell))
+    const noticeIndex = header.findIndex(cell => NOTICE_DATE_HEADER.test(cell))
+    const affectedIndex = header.findIndex(cell => AFFECTED_HEADER.test(cell))
+    const replacementIndex = header.findIndex(cell => REPLACEMENT_HEADER.test(cell))
+    let rowIndex = index + 2
+    for (; rowIndex < lines.length && isTableLine(lines[rowIndex]); rowIndex += 1) {
+      if (shutdownIndex < 0 || noticeIndex < 0 || affectedIndex < 0) continue
+      const cells = tableCells(lines[rowIndex])
+      const publishedAt = parseDateText(stripMarkdown(cells[noticeIndex] ?? ''))
+      const affected = cells[affectedIndex] ?? ''
+      const name = stripMarkdown(affected).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
+      if (!publishedAt || !name) continue
+      const shutdown = stripMarkdown(cells[shutdownIndex] ?? '')
+      const replacement = replacementIndex >= 0 ? cells[replacementIndex] ?? '' : ''
+      if (!groups.has(publishedAt)) groups.set(publishedAt, new Map())
+      const rows = groups.get(publishedAt)
+      const key = `${shutdown}\n${name}`
+      if (!rows.has(key)) rows.set(key, { shutdown, affected, replacement, name })
+    }
+    index = rowIndex - 1
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([publishedAt, rowMap]) => {
+      const rows = [...rowMap.values()]
+      const names = rows.slice(0, MAX_NOTICE_TITLE_NAMES).map(row => row.name).join(' · ')
+      const more = rows.length > MAX_NOTICE_TITLE_NAMES ? ` +${rows.length - MAX_NOTICE_TITLE_NAMES}` : ''
+      const headingTitle = `Deprecated: ${names}${more}`
+      const shutdownDates = rows.map(row => parseDateText(row.shutdown)).filter(Boolean).sort()
+      const replacements = [...new Set(rows.map(row => stripMarkdown(row.replacement)).filter(Boolean))]
+      return {
+        publishedAt,
+        headingTitle,
+        effectiveAt: shutdownDates[0] ?? null,
+        replacement: replacements.length === 1 ? truncate(replacements[0], 80) : null,
+        lines: [
+          headingTitle,
+          '',
+          '| Shutdown date | Affected model | Recommended replacement |',
+          '| --- | --- | --- |',
+          ...rows.map(row => `| ${row.shutdown} | ${row.affected} | ${row.replacement} |`),
+        ],
+      }
+    })
+}
+
 function splitTopLevelBullets(lines) {
   const chunks = []
   let current = null
@@ -226,7 +299,9 @@ function splitTopLevelBullets(lines) {
 
 export function parseDatedMarkdown(definition, markdown) {
   const updates = []
-  for (const section of extractDatedSections(markdown)) {
+  const datedSections = extractDatedSections(markdown)
+  const sections = datedSections.length ? datedSections : extractNoticeTableSections(markdown)
+  for (const section of sections) {
     const bulletChunks = definition.splitBullets ? splitTopLevelBullets(section.lines) : []
     const chunks = bulletChunks.length > 0 ? bulletChunks : [section.lines.join('\n')]
 
@@ -235,6 +310,8 @@ export function parseDatedMarkdown(definition, markdown) {
         body: chunk,
         publishedAt: section.publishedAt,
         headingTitle: section.headingTitle,
+        effectiveAt: section.effectiveAt,
+        replacement: section.replacement,
       }, updates.length)
       if (update) updates.push(update)
       if (updates.length >= definition.maxItems) return updates
