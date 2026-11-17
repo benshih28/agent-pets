@@ -144,7 +144,8 @@ function extractReplacement(raw) {
 const RETIREMENT_DATE_HEADER = /\b(?:shutdown|retirement)\s+date\b/i
 const RETIREMENT_MODEL_HEADER = /\b(?:model|system|snapshot|endpoint)/i
 const RETIREMENT_REPLACEMENT_HEADER = /\breplacement\b/i
-const MAX_RETIREMENTS = 12
+// 一次公告可能有數十列（例如 2023-07-06 有 34 項）；main.js 的儲存驗證共用這個上限，兩邊不一致時重新載入會丟掉資料。
+export const MAX_RETIREMENTS = 64
 
 function isTableLine(line) {
   return line.trim().startsWith('|')
@@ -290,7 +291,12 @@ function extractNoticeTableSections(markdown) {
   return [...groups.entries()]
     .sort(([left], [right]) => right.localeCompare(left))
     .map(([publishedAt, rowMap]) => {
-      const rows = [...rowMap.values()]
+      const rows = [...rowMap.values()].sort((left, right) => {
+        // 同一公告的列可能分散在「即將停用」與「已停用」表；固定排序，列跨表移動時標題與識別碼才不會變。
+        const leftKey = JSON.stringify([parseDateText(left.shutdown) ?? left.shutdown, left.name, stripMarkdown(left.replacement)])
+        const rightKey = JSON.stringify([parseDateText(right.shutdown) ?? right.shutdown, right.name, stripMarkdown(right.replacement)])
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0
+      })
       const names = rows.slice(0, MAX_NOTICE_TITLE_NAMES).map(row => row.name).join(' · ')
       const more = rows.length > MAX_NOTICE_TITLE_NAMES ? ` +${rows.length - MAX_NOTICE_TITLE_NAMES}` : ''
       const headingTitle = `Deprecated: ${names}${more}`

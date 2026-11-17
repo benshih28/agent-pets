@@ -160,3 +160,14 @@ test('OpenAI deprecation tables without dated headings group into one update per
   assert.deepEqual(parseDatedMarkdown(definition, noticeTable(false)).map(update => update.id), updates.map(update => update.id))
   assert.deepEqual(parseDatedMarkdown(definition, '# Deprecations\n\n| Name | Value |\n| --- | --- |\n| a | b |\n'), [])
 })
+
+test('a CLI notice keeps its id when one of its rows moves to the past table', () => {
+  const definition = { id: 'openai-deprecations', provider: 'openai', product: 'api', publicUrl: 'https://developers.openai.com/api/docs/deprecations', splitBullets: false, maxItems: 32 }
+  const table = (heading, rows) => [`## ${heading}`, '', '| Shutdown date | Affected model | Recommended replacement | Notice date |', '| --- | --- | --- | --- |', ...rows, ''].join('\n')
+  const zz = '| **Oct 23, 2026** | `zz-model` | `gpt-6-sol` | Apr 22, 2026 |'
+  const aa = '| **Oct 23, 2026** | `aa-model` | `gpt-6-luna` | Apr 22, 2026 |'
+  const [before] = parseDatedMarkdown(definition, table('Upcoming deprecations', [zz, aa]))
+  const [after] = parseDatedMarkdown(definition, `${table('Upcoming deprecations', [aa])}\n${table('Past deprecations', [zz])}`)
+  assert.equal(after.id, before.id)
+  assert.equal(before.title, 'Deprecated: aa-model · zz-model')
+})

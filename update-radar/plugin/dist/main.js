@@ -1,5 +1,6 @@
 import {
   SOURCE_DEFINITIONS,
+  MAX_RETIREMENTS,
   localDateKey,
   parseSource,
   parseXProfile,
@@ -196,7 +197,7 @@ function isStoredUpdate(value) {
     && (value.postKind === undefined || ['root', 'self-reply'].includes(value.postKind))
     && (value.replyToId === undefined || /^x-\d{1,19}$/.test(value.replyToId))
     && (value.position === undefined || (Number.isSafeInteger(value.position) && value.position >= 0 && value.position < 1000))
-    && (value.retirements === undefined || (Array.isArray(value.retirements) && value.retirements.length <= 12 && value.retirements.every(isStoredRetirement)))
+    && (value.retirements === undefined || (Array.isArray(value.retirements) && value.retirements.length <= MAX_RETIREMENTS && value.retirements.every(isStoredRetirement)))
     && isSafeSourceUrl(definition, value.sourceUrl)
 }
 
@@ -491,7 +492,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
   }
 
   async function notifyNewUpdates(entries) {
-    const isCritical = update => ['deprecated', 'removed'].includes(update.changeType)
+    // App 的 PluginFeedController 只接受 normal／low，其他值會回 invalid_request，通知中心就收不到。
     if (entries.length > 3) {
       const updates = entries.flatMap(entry => entry.updates ?? [entry.update])
       const key = entries.map(entry => (entry.kind === 'release' ? `claude-code-${entry.version}` : (entry.updates ?? [entry.update])[0].id)).join('-')
@@ -499,7 +500,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
         title: `AI 更新雷達有 ${entries.length} 則新內容`,
         body: '打開更新雷達查看詳情。',
         link: updates[0].sourceUrl,
-        priority: updates.some(isCritical) ? 'high' : 'normal',
+        priority: 'normal',
         dedupeKey: `update-radar-batch-${key.slice(0, 95)}`,
       })
       return
@@ -511,7 +512,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
           title: `Claude Code ${entry.version} 已發布`,
           body: truncate(`${first.publishedAt ?? '日期未提供'} · ${releaseCountsText(entry.updates)}`, 240),
           link: first.sourceUrl,
-          priority: entry.updates.some(isCritical) ? 'high' : 'normal',
+          priority: 'normal',
           dedupeKey: truncate(`update-radar-claude-code-${entry.version}`, 128),
         })
         continue
@@ -522,7 +523,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
           title: `Claude Platform 有 ${entry.updates.length} 項更新`,
           body: truncate(`${entry.date} · ${releaseCountsText(entry.updates)} · ${first.title}`, 240),
           link: first.sourceUrl,
-          priority: entry.updates.some(isCritical) ? 'high' : 'normal',
+          priority: 'normal',
           dedupeKey: `update-radar-${first.id}-day`,
         })
         continue
@@ -536,7 +537,7 @@ export function createUpdateRadarRuntime(api, options = {}) {
         title,
         body: update.sourceId === 'x-ajambrosino' ? truncate(update.summary || update.title, 240) : notificationBody(update),
         link: update.sourceUrl,
-        priority: isCritical(update) ? 'high' : 'normal',
+        priority: 'normal',
         dedupeKey: `update-radar-${update.id}`,
       })
     }

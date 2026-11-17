@@ -8,6 +8,7 @@ import { parsePluginManifest } from '../electron/plugin-manifest.ts'
 import { PluginRegistry } from '../electron/plugin-registry.ts'
 import { PluginUiMessageGuard } from '../electron/plugin-ui-messages.ts'
 import {
+  MAX_RETIREMENTS,
   SOURCE_DEFINITIONS,
   extractRetirements,
   parseDatedMarkdown,
@@ -215,6 +216,8 @@ function createApiFixture() {
     },
     feed: {
       async notify(item: Record<string, unknown>) {
+        // 與 App 的 PluginFeedController 相同：只接受 normal／low。
+        if (item.priority !== undefined && item.priority !== 'normal' && item.priority !== 'low') throw new Error('invalid_request')
         notifications.push(item)
         return { itemId: `item-${notifications.length}`, delivery: 'center' as const }
       },
@@ -771,7 +774,7 @@ test('a new Claude Code version sends one notification with per-type counts', as
   assert.equal(fixture.notifications.length, 1)
   assert.equal(fixture.notifications[0]?.title, 'Claude Code v2.2.0 已發布')
   assert.equal(fixture.notifications[0]?.body, '2026-10-28 · 新增 1 · 修正 3 · 移除 1')
-  assert.equal(fixture.notifications[0]?.priority, 'high')
+  assert.equal(fixture.notifications[0]?.priority, 'normal')
   assert.equal(fixture.notifications[0]?.dedupeKey, 'update-radar-claude-code-v2.2.0')
   assert.ok(runtime.getState().updates.filter(update => update.version === 'v2.2.0').every(update => Number.isInteger(update.position)))
 })
@@ -2423,4 +2426,78 @@ test('updates density keeps accessible heading, co-locates counts, and preserves
   assert.match(styles, /\.card-disclosure-button \{ min-height: 36px;/)
   assert.match(panelFunctionSource('renderOfficialUpdate'), /heading\.append\(disclosure\.root\)/)
   assert.match(styles, /\.official-headline-row > \.card-disclosure \{ display: contents; \}/)
+})
+
+const DEPRECATIONS_URL = 'https://developers.openai.com/api/docs/deprecations.md'
+type NoticeRow = [shutdown: string, model: string, replacement: string, notice: string]
+const noticeTables = (upcoming: NoticeRow[], past: NoticeRow[]) => [
+  '# Deprecations',
+  '',
+  '## Upcoming deprecations',
+  '',
+  '| Shutdown date | Affected model | Status | Recommended replacement | Notice date |',
+  '| --- | --- | --- | --- | --- |',
+  ...upcoming.map(([shutdown, model, replacement, notice]) => `| **${shutdown}** | \`${model}\` | Deprecated | \`${replacement}\` | ${notice} |`),
+  '',
+  '## Past deprecations',
+  '',
+  '| Shutdown date | Affected model or feature | Listed replacement | Notice date |',
+  '| --- | --- | --- | --- |',
+  ...past.map(([shutdown, model, replacement, notice]) => `| **${shutdown}** | \`${model}\` | \`${replacement}\` | ${notice} |`),
+  '',
+].join('\n')
+
+test('a notice keeps its id when some of its rows move from the upcoming table to the past table', () => {
+  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'openai-deprecations')!
+  const first: NoticeRow = ['Oct 23, 2026', 'zz-model', 'gpt-6-sol', 'Apr 22, 2026']
+  const second: NoticeRow = ['Oct 23, 2026', 'aa-model', 'gpt-6-luna', 'Apr 22, 2026']
+  const before = parseDatedMarkdown(definition, noticeTables([first, second], []))
+  const after = parseDatedMarkdown(definition, noticeTables([second], [first]))
+  const reordered = parseDatedMarkdown(definition, noticeTables([], [second, first]))
+  assert.equal(before.length, 1)
+  assert.equal(after[0].id, before[0].id)
+  assert.equal(reordered[0].id, before[0].id)
+  assert.equal(before[0].title, 'Deprecated: aa-model · zz-model')
+  assert.deepEqual(after[0].retirements, before[0].retirements)
+})
+
+test('large notices keep every retirement row up to the shared bound, including after a storage reload', async () => {
+  const rows = (count: number) => Array.from({ length: count }, (_, index): NoticeRow => (
+    ['Jan 4, 2027', `legacy-model-${String(index).padStart(2, '0')}`, 'gpt-6-sol', 'Jul 6, 2026']
+  ))
+  const definition = SOURCE_DEFINITIONS.find(source => source.id === 'openai-deprecations')!
+  assert.equal(MAX_RETIREMENTS, 64)
+  assert.equal(parseDatedMarkdown(definition, noticeTables(rows(80), []))[0].retirements.length, MAX_RETIREMENTS)
+
+  const fixture = createApiFixture()
+  fixture.setResponse(DEPRECATIONS_URL, { status: 200, body: noticeTables(rows(34), []) })
+  await createUpdateRadarRuntime(fixture.api, { now: fixture.now }).start()
+
+  // 停用再啟用：新的執行個體從儲存讀回狀態；來源暫時失敗，只能靠儲存的資料。
+  fixture.setResponse(DEPRECATIONS_URL, { status: 500, body: '' })
+  const reloaded = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await reloaded.start()
+  const stored = reloaded.getState().updates.find(update => update.sourceId === 'openai-deprecations')
+  assert.equal(stored?.retirements?.length, 34)
+})
+
+test('deprecation notices notify once with a priority the App accepts, and table moves do not renotify', async () => {
+  const fixture = createApiFixture()
+  const existing: NoticeRow = ['Dec 11, 2026', 'gpt-5', 'gpt-6.1-sol', 'Jun 11, 2026']
+  const added: NoticeRow = ['Feb 1, 2027', 'gpt-5.5-cyber-preview', 'gpt-6-sol', 'Nov 5, 2026']
+  fixture.setResponse(DEPRECATIONS_URL, { status: 200, body: noticeTables([existing], []) })
+  const runtime = createUpdateRadarRuntime(fixture.api, { now: fixture.now })
+  await runtime.start()
+  assert.equal(fixture.notifications.length, 0)
+
+  fixture.setResponse(DEPRECATIONS_URL, { status: 200, body: noticeTables([existing, added], []) })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-deprecations' })
+  assert.equal(fixture.notifications.length, 1)
+  assert.equal(fixture.notifications[0]?.priority, 'normal')
+  assert.equal(fixture.notifications[0]?.title, 'OpenAI Deprecations 有新更新')
+
+  fixture.setResponse(DEPRECATIONS_URL, { status: 200, body: noticeTables([added], [existing]) })
+  await fixture.getPanelHandler()?.({ type: 'radar:retry-source', sourceId: 'openai-deprecations' })
+  assert.equal(fixture.notifications.length, 1)
+  assert.equal(runtime.getState().sources.find(source => source.id === 'openai-deprecations')?.status, 'ok')
 })
