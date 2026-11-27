@@ -1,17 +1,10 @@
-// 插件面板主題的封閉顏色文法（spec §3.3）。純函式：不 import Electron
-// 或 Node，讓目錄驗證器可以原封不動地內嵌（vendor）這個檔案。
-//
-// 每種接受的格式都由錨定的正規表示式比對，該表示式只能描述一個由數字、
-// '.'、'%'、','、'/'、空白與固定單位組成的函式呼叫，因此 `;`、`}`、`\`、
-// 引號、url()、var()、calc() 與具名顏色都不可能通過。接受的顏色會轉成 sRGB，
-// 再由主機以 `rgb(R G B / A)` 重新輸出；插件的字串永遠不會直接進到 CSS。
+// 不能 import Electron 或 Node：目錄驗證器會原封不動內嵌（vendor）這個檔案。
+// 只接受錨定的封閉文法，主機以 `rgb(R G B / A)` 重新輸出；插件的字串永遠不會直接進到 CSS。
 
 export interface PanelThemeRgba {
-  /** 0–255，正規化後為整數。 */
   r: number
   g: number
   b: number
-  /** 0–1，正規化後最多 3 位小數。 */
   a: number
 }
 
@@ -32,7 +25,6 @@ const HSL_SPACE = new RegExp(String.raw`^hsla?\((${NUM})(?:deg)? (${NUM})% (${NU
 const OKLCH = new RegExp(String.raw`^oklch\((${NUM}%?) (${NUM}) (${NUM})(?:deg)?(?: \/ (${NUM}%?))?\)$`)
 
 const CHANNEL = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]\\d|\\d)'
-/** 主機唯一會輸出（也是渲染端唯一接受）的顏色字串格式。 */
 export const PANEL_THEME_CANONICAL_RGB = new RegExp(`^rgb\\(${CHANNEL} ${CHANNEL} ${CHANNEL} \\/ (?:0|1|0\\.\\d{0,2}[1-9])\\)$`)
 
 const GAMUT_EPSILON = 0.0001
@@ -45,7 +37,6 @@ function numberOf(token: string): number {
   return Number(isPercent(token) ? token.slice(0, -1) : token)
 }
 
-/** Alpha：0–1 或 0–100%。超出範圍時回傳 null。 */
 function parseAlpha(token: string | undefined): number | null {
   if (token === undefined) return 1
   const value = numberOf(token)
@@ -108,7 +99,6 @@ function encodeSrgb(linear: number): number {
   return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
 }
 
-/** OKLCH -> OKLab -> LMS -> 線性 sRGB（Ottosson）。超出 sRGB 色域時為 null。 */
 export function oklchToLinearSrgb(lightness: number, chroma: number, hueDegrees: number): [number, number, number] | null {
   const radians = (hueDegrees * Math.PI) / 180
   const a = chroma * Math.cos(radians)
@@ -141,7 +131,6 @@ function parseOklch(match: RegExpExecArray): PanelThemeColorResult {
   return { ok: true, color: { r: r!, g: g!, b: b!, a: roundAlpha(alpha) } }
 }
 
-/** 以封閉文法解析一個 manifest 顏色。絕不拋出例外。 */
 export function parsePanelThemeColor(value: unknown): PanelThemeColorResult {
   if (typeof value !== 'string' || value.length < 4 || value.length > PANEL_THEME_COLOR_MAX_LENGTH) {
     return { ok: false, error: 'invalid_color' }
@@ -165,7 +154,6 @@ function formatAlpha(alpha: number): string {
   return String(rounded)
 }
 
-/** 主機的標準字串：`rgb(R G B / A)`。 */
 export function formatPanelThemeColor(color: PanelThemeRgba): string {
   return `rgb(${channel(color.r)} ${channel(color.g)} ${channel(color.b)} / ${formatAlpha(color.a)})`
 }
@@ -174,7 +162,6 @@ export function isCanonicalPanelThemeColor(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 32 && PANEL_THEME_CANONICAL_RGB.test(value)
 }
 
-/** 逐通道的 sRGB 混色並四捨五入（spec §3.5）。保留 `a` 的 alpha。 */
 export function mixColor(a: PanelThemeRgba, b: PanelThemeRgba, t: number): PanelThemeRgba {
   return {
     r: channel(a.r * (1 - t) + b.r * t),
@@ -188,7 +175,7 @@ export function withAlpha(color: PanelThemeRgba, alpha: number): PanelThemeRgba 
   return { r: color.r, g: color.g, b: color.b, a: roundAlpha(alpha) }
 }
 
-/** 在 sRGB gamma 空間做 source-over 合成（與 Chromium 的繪製方式一致）。結果不透明且未經四捨五入。 */
+// 在 sRGB gamma 空間合成，與 Chromium 的繪製方式一致；結果未四捨五入。
 export function compositeColor(foreground: PanelThemeRgba, background: PanelThemeRgba): PanelThemeRgba {
   const alpha = foreground.a
   return {
@@ -204,12 +191,10 @@ function linearChannel(value: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
 }
 
-/** 不透明顏色的 WCAG 2.x 相對亮度。 */
 export function relativeLuminance(color: PanelThemeRgba): number {
   return 0.2126 * linearChannel(color.r) + 0.7152 * linearChannel(color.g) + 0.0722 * linearChannel(color.b)
 }
 
-/** 對比度；半透明的前景會先合成到（不透明的）背景上。 */
 export function contrastRatio(foreground: PanelThemeRgba, background: PanelThemeRgba): number {
   const painted = foreground.a < 1 ? compositeColor(foreground, background) : foreground
   const first = relativeLuminance(painted)
@@ -227,7 +212,6 @@ function decodeSrgb(channel: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
 }
 
-/** sRGB -> OKLab（Ottosson）。狀態色的色相界線與色差都以這個空間計算，與人眼感知較一致。 */
 export function rgbToOklab(color: PanelThemeRgba): { l: number; a: number; b: number } {
   const r = decodeSrgb(color.r)
   const g = decodeSrgb(color.g)
@@ -242,24 +226,19 @@ export function rgbToOklab(color: PanelThemeRgba): { l: number; a: number; b: nu
   }
 }
 
-/** OKLCH 的色度與色相（度，0–360）。 */
 export function rgbToOklch(color: PanelThemeRgba): { l: number; c: number; h: number } {
   const { l, a, b } = rgbToOklab(color)
   const hue = (Math.atan2(b, a) * 180) / Math.PI
   return { l, c: Math.hypot(a, b), h: hue < 0 ? hue + 360 : hue }
 }
 
-/** OKLab 歐氏色差（ΔE_ok）。 */
 export function oklabDistance(first: PanelThemeRgba, second: PanelThemeRgba): number {
   const x = rgbToOklab(first)
   const y = rgbToOklab(second)
   return Math.hypot(x.l - y.l, x.a - y.a, x.b - y.b)
 }
 
-/**
- * OKLCH -> sRGB（整數通道）。超出色域時以二分法降低色度（與瀏覽器的色域對應方式相同），
- * 所以一定有結果；固定 16 次迭代，結果是確定性的。主題編輯器的微調與色盤產生器使用。
- */
+// 超出色域時以二分法降低色度，固定 16 次迭代，結果是確定性的。
 export function oklchToRgb(lightness: number, chroma: number, hueDegrees: number, alpha = 1): PanelThemeRgba {
   const l = Math.min(1, Math.max(0, lightness))
   const hue = ((hueDegrees % 360) + 360) % 360

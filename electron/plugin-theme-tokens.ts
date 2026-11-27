@@ -16,11 +16,9 @@ import {
   type PluginThemeToken,
 } from '../src/types/plugin-theme.ts'
 
-// 把目前生效的主題（或內建色盤）轉成插件可讀的 `--ap-*` 快照。純函式、不碰 Electron。
-// 不輸出主題插件的 id、主題 id、背景圖或使用者圖片；`@font` 別名只在設定面板文件內註冊，
-// 插件頁面載不到，且是以 session salt 推導的識別值，所以一律去掉、只留本機字型與通用字族。
+// 不輸出主題插件的 id、主題 id、背景圖或使用者圖片；`@font` 別名插件頁面載不到且是 session salt 推導的識別值，所以一律去掉。
 
-/** 公開 token → 已驗證的色盤鍵。`focus` 與 App 的焦點環相同，是 accentText（在每個表面上都 >= 3:1）。 */
+// `focus` 與 App 的焦點環相同，是 accentText。
 const COLOR_SOURCES: Readonly<Record<PluginThemeColorToken, PluginPanelThemeColorKey>> = Object.freeze({
   '--ap-bg': 'bg',
   '--ap-surface': 'surface',
@@ -64,10 +62,7 @@ function freezeSnapshot(mode: PanelThemeMode, tokens: Record<PluginThemeToken, s
   return Object.freeze({ apiVersion: PLUGIN_THEME_API_VERSION, mode, tokens: Object.freeze(tokens) })
 }
 
-/**
- * `theme` 為 null（內建、插件停用、forced-colors）時輸出內建色盤；
- * 否則 `theme.modes[mode]` 必須存在，呼叫端只在該模式的槽位為 active 時傳入。
- */
+// `theme.modes[mode]` 必須存在，呼叫端只在該模式的槽位為 active 時傳入。
 export function buildPluginThemeSnapshot(theme: ResolvedPanelTheme | null, mode: PanelThemeMode): PluginThemeSnapshot {
   const resolvedTheme = theme?.modes[mode] ? theme : null
   const colors = resolvedTheme?.modes[mode]?.colors ?? BUILTIN_COLORS[mode]

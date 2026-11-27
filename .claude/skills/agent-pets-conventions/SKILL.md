@@ -83,26 +83,23 @@ import PetAnimation from './PetAnimation.vue'
 
 ## 2. 註解規則
 
-### 現況
-專案內大部分的既有註解其實是有價值的「為什麼」型註解（例如 `DesktopPet.vue:16-17`、`:97-100` 解釋動畫節流的原因），**不要把這些刪掉**。問題出在新增程式碼時容易補上「做什麼」型的贅字註解，或是複製貼上舊邏輯時忘記更新的過期註解。
+完整準則在 `.agents/skills/pet-skill/SKILL.md` 的「Keep comments rare」，這裡只摘要。註解會佔用每個 agent 讀檔時的上下文，卻不會讓 agent 更懂專案；背景、歷史與設計理由請放 phase 報告、`docs/` 或工作記錄的知識頁，需要時用 `work_recall` 查，不要寫進程式碼。
 
 ### 規則
-- **保留**：解釋隱藏限制、非顯而易見的 workaround、容易被誤改的 invariant。
+- **預設不寫註解**：名稱、型別、registry、測試名稱已經表達意思。
+- **保留**：拿掉後下一個讀者很可能會改壞程式時才留，例如平台或第三方怪癖、外部契約值、排序／安全／並行 invariant、看起來像 bug 的刻意取捨。最多一到兩行，只寫為什麼。
   ```typescript
-  // ✅ 保留：解釋「為什麼」用 class toggle 而非 CSS transition
-  // A quota drop is the pet "taking damage" — flash the meter for a moment so
-  // a change that happened while you weren't looking still registers. Driven
-  // by a class toggle (not a CSS transition) so consecutive drops re-run the
-  // animation from the start instead of being swallowed mid-flight.
+  // ✅ 保留：一句話說明為什麼不用 CSS transition
+  // Class toggle, not a transition, so consecutive drops restart the animation.
   ```
-- **刪除**：只是把程式碼翻譯成中文的註解。
+- **一律保留功能性標記**：shebang、`/// <reference …>`、`<!-- raw-control: <理由> -->`、`eslint-disable*`、`@ts-expect-error`、`as unknown as` 旁的理由。
+- **刪除**：翻譯程式碼的註解、區塊標頭（`// --- … ---`）、修改歷史、被註解掉的程式碼、測試裡逐步說明的註解、長篇設計說明。
   ```typescript
-  // ❌ 刪除：變數/函式名稱已經說明了「做什麼」
+  // ❌ 刪除：名稱已經說明了「做什麼」
   // 設定 loading 為 true
   loading.value = true
   ```
-- **檢查標準**：拿掉這行註解，下一個讀者會不會困惑？會才留。
-- 新增註解一律繁體中文（沿用 `devtools-conventions` 慣例，讓專案風格一致）。
+- 新增註解用繁體中文；既有註解不要只為了換語言而翻譯。
 
 ---
 
@@ -205,10 +202,12 @@ ADAPTER_HANDLERS[adapterId]?.()
 
 ## 5. `<script setup>` 大檔案的區塊組織
 
-### 決策：功能分組 + 區塊標頭註解，而非強制的全域 phase 排序
+> **2026-11-27 更新**：1.14.6 已依 §2 的新準則移除所有區塊標頭註解，不要再加回去。下方保留「依功能分組、不做全域 phase 排序」的決策；大檔案靠功能分組與拆 composable 導覽，不靠 `// ---` 標頭。
+
+### 決策：功能分組，而非強制的全域 phase 排序
 原本設想的做法是把整個 `<script setup>` 依「imports → state → computed → function → lifecycle → watch」的全域 phase 硬性排序。實際動手處理 `DesktopPet.vue`（1542 行）、`StatusPanel.vue`（2082 行）、`agentStore.ts`（1558 行）後改變了做法：這三個檔案原本就已經大致依「功能」分組（例如 quota 顯示的 state 跟它的 computed／function 放在一起、drag 相關的 state 跟 handler 放在一起），全域 phase 排序反而會把同一個功能的 state 和使用它的邏輯拆到檔案的兩端，增加跳轉成本，收益不明顯，還要冒著搬動上千行互相依賴的閉包程式碼、手滑弄壞邏輯的風險。
 
-改採更安全、收益更直接的做法：**保留原有的功能分組順序，只在每個分組開頭加上區塊標頭註解**，讓大檔案可以用「跳到下一個 `// ---`」的方式導覽，不搬動任何程式碼：
+改採更安全、收益更直接的做法：**保留原有的功能分組順序，同一功能的 state／computed／function／watch 放在一起，不加區塊標頭註解**。分組靠空行分隔；分組臃腫就拆成 composable，而不是用註解標示：
 
 ```typescript
 <script setup lang="ts">
@@ -219,16 +218,13 @@ import PetAnimation from '@/components/PetAnimation.vue'
 const store = useAgentStore()
 const dragOffset = ref({ x: 0, y: 0 })
 
-// --- 狀態列與 Quota 顯示 ---------------------------------------------------
 const displayLines = computed(() => { ... })
 function quotaColor(familyKey: string) { ... }
 
-// --- Quota 下降時的閃爍動畫 -------------------------------------------------
 const draining = ref<Record<string, boolean>>({})
 function flashDrain(familyKey: string) { ... }
 watch(() => store.quotaByFamily, (quotas) => { ... })
 
-// --- 拖曳與點擊 --------------------------------------------------------------
 function onMouseDown(e: MouseEvent) { ... }
 </script>
 ```
@@ -237,7 +233,7 @@ function onMouseDown(e: MouseEvent) { ... }
 如果同一段 `<script setup>` 內，同一個功能的 state／function 分散在檔案的三、四個不同角落（不是集中一起、只是順序上跳著出現），那才值得真的搬動程式碼讓它們相鄰——但要一次只搬一個功能區塊，搬完立刻跑型別檢查與測試，不要一次搬整個檔案。
 
 ### 已完成
-`DesktopPet.vue`、`StatusPanel.vue`、`agentStore.ts`（Pinia setup store）都已加上區塊標頭註解，涵蓋各自的主要功能分組（quota、drag、permission、mood、presentation、progression/achievements、project pets 等）。之後新增程式碼時，判斷屬於哪個既有分組就放進該分組；分組本身開始臃腫（單一分組超過 ~150 行）再考慮拆成獨立 composable。
+`DesktopPet.vue`、`StatusPanel.vue`、`agentStore.ts`（Pinia setup store）的程式碼依功能分組（quota、drag、permission、mood、presentation、progression/achievements、project pets 等），區塊標頭已在 1.14.6 移除。之後新增程式碼時，判斷屬於哪個既有分組就放進該分組；分組本身開始臃腫（單一分組超過 ~150 行）再考慮拆成獨立 composable。
 
 ---
 

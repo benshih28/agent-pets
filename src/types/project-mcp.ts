@@ -46,11 +46,9 @@ export interface ProjectMcpSetupSummary {
   projectPath?: string
   results: ProjectMcpInstallResult[]
   error?: string
-  /** Files added to .git/info/exclude (local-only mode). */
   excluded?: string[]
   /** Written files that Git already tracks, so they cannot be kept local-only. */
   trackedFiles?: string[]
-  /** Stable warning codes; the renderer localizes them. */
   warnings?: ProjectMcpSetupWarning[]
 }
 
@@ -67,7 +65,6 @@ export interface ProjectMcpPlanClient {
   message?: string
   /** true/false when the project is a Git repo with a readable index; null when unknown. */
   gitTracked: boolean | null
-  /** The client appears to be in use on this machine/project. */
   suggested: boolean
   /** What will be added (contains local paths; shown only in this UI). */
   preview: string
@@ -105,7 +102,6 @@ export interface ProjectMcpProjectRecord {
   lastCheckedAt: string
   status: ProjectMcpProjectStatus
   results: ProjectMcpInstallResult[]
-  /** Why the check failed (status 'error'). */
   error?: string
 }
 

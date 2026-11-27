@@ -2,8 +2,6 @@ import fs from 'node:fs'
 import { writeJsonAtomic } from './desktop-preferences.ts'
 import { parsePanelUserSize, serializePanelUserSize, type PanelSize } from '../src/utils/panel-layout.ts'
 
-// The one size the user dragged the control panel to. A single small versioned JSON;
-// a missing, corrupt or tampered file is ignored and the first-run default applies.
 export class PanelSizeStore {
   private timer: ReturnType<typeof setTimeout> | null = null
   private pending: PanelSize | null | undefined
@@ -24,7 +22,7 @@ export class PanelSizeStore {
     }
   }
 
-  // Dragging an edge fires continuously, so writes are coalesced. null clears the file.
+  // Dragging an edge fires continuously, so writes are coalesced.
   save(size: PanelSize | null): void {
     this.pending = size
     if (this.timer) clearTimeout(this.timer)
@@ -41,7 +39,7 @@ export class PanelSizeStore {
       if (pending === null) fs.rmSync(this.filePath, { force: true })
       else writeJsonAtomic(this.filePath, serializePanelUserSize(pending))
     } catch {
-      // Remembering the size is a convenience; a failed write must not affect the panel.
+      // A failed write must not affect the panel.
     }
   }
 }

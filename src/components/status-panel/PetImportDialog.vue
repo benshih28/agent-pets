@@ -68,7 +68,6 @@ const conflictMessage = computed(() => {
     : `${t('pet.importConflict', { id: conflict.id })} ${t('pet.importConflictChoice', { suggested: conflict.suggestedId })}`
 })
 
-// 待命動畫用計時器切換背景位置；減少動態效果時只顯示第一格。
 const reducedMotion = useReducedMotion()
 let idleTimer: ReturnType<typeof setInterval> | null = null
 function stopIdle(): void {
@@ -83,7 +82,6 @@ function startIdle(): void {
 }
 
 watch(() => props.preview?.token, token => (token ? startIdle() : stopIdle()), { immediate: true })
-// 預覽開著時切換系統的「減少動態效果」也要立即生效。
 watch(reducedMotion, () => { if (props.preview) startIdle() })
 onUnmounted(stopIdle)
 </script>

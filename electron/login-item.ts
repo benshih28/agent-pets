@@ -1,7 +1,6 @@
 import type { LaunchAtStartupStatus } from '../src/types/desktop'
 import { resolveLoginItemExecutable } from './desktop-preferences.ts'
 
-/** The subset of Electron's LoginItemSettings this module reads. */
 export interface LoginItemSettingsLike {
   openAtLogin: boolean
   status?: 'not-registered' | 'enabled' | 'requires-approval' | 'not-found'
@@ -16,13 +15,12 @@ export interface LoginItemApp {
 
 export interface LoginItemAdapter {
   supported: boolean
-  /** The OS-reported state; never throws. */
+  /** Never throws. */
   getStatus(): LaunchAtStartupStatus
-  /** Applies the request and returns the resulting OS state; never throws. */
+  /** Never throws. */
   setLaunchAtStartup(enabled: boolean): LaunchAtStartupStatus
 }
 
-/** Pure mapping of macOS SMAppService state. `path` does not apply to macOS. */
 export function mapDarwinLoginItemStatus(
   settings: LoginItemSettingsLike,
   inApplicationsFolder: boolean,
@@ -62,23 +60,18 @@ export function createLoginItemAdapter(options: {
           return 'error'
         }
         const status = read()
-        // Asking to enable but landing on plain "disabled" while the app is in
-        // /Applications means the OS refused for a reason we cannot name.
+        // Enabling but landing on "disabled" inside /Applications means the OS refused for an unnamed reason.
         return enabled && status === 'disabled' ? 'error' : status
       },
     }
   }
 
-  // Electron's login-item API only works on macOS and Windows; on Linux it is a
-  // no-op (an AppImage execPath is also an ephemeral mount), so report it as
-  // unsupported instead of showing a toggle that silently does nothing.
+  // Electron's login-item API is a no-op on Linux (an AppImage execPath is also an ephemeral mount), so report it unsupported.
   if (platform !== 'win32') {
     return { supported: false, getStatus: () => 'unsupported', setLaunchAtStartup: () => 'unsupported' }
   }
 
-  // electron-builder's Windows portable target runs from a temporary
-  // extraction directory. Register the original launcher path, never that
-  // ephemeral process.execPath. Unsupported/invalid paths fail closed.
+  // The Windows portable target runs from a temporary extraction directory: register the original launcher, never that ephemeral execPath.
   const executable = resolveLoginItemExecutable(platform, app.isPackaged, options.execPath, options.portableExecutableFile)
   if (!executable) {
     return { supported: false, getStatus: () => 'unsupported', setLaunchAtStartup: () => 'unsupported' }

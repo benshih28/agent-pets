@@ -6,8 +6,6 @@ import { agentDisplayName } from '@/utils/agent-label'
 import Card from '@/components/ui/Card.vue'
 import ProgressTrack from '@/components/ui/ProgressTrack.vue'
 
-// Per-model token totals for the History range. Only local-log usage names a
-// model, so the hint explains why hook-only agents are missing here.
 const props = defineProps<{ models: HistoryModelStat[]; totalTokens: number }>()
 const { tokens } = useHistoryFormat()
 
@@ -15,7 +13,6 @@ function modelLabel(stat: HistoryModelStat): string {
   return `${agentDisplayName(stat.adapterId)} · ${stat.model || t('growth.modelUnknown')}`
 }
 
-// Share of the range's fresh input + output, the same basis as the headline.
 function modelShare(stat: HistoryModelStat): number {
   return props.totalTokens > 0 ? Math.round(((stat.tokenInput + stat.tokenOutput) / props.totalTokens) * 100) : 0
 }

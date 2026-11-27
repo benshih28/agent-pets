@@ -1,4 +1,4 @@
-// 檔案大小顯示：二進位單位（1 KB = 1024 B），小數至多一位；不依賴 i18n，單位符號跨語系一致。
+// 二進位單位（1 KB = 1024 B）；不依賴 i18n，單位符號跨語系一致。
 const UNITS = ['B', 'KB', 'MB', 'GB'] as const
 
 export function formatBytes(value: number): string {

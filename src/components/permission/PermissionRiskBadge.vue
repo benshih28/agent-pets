@@ -3,8 +3,7 @@ import { computed } from 'vue'
 import { t, type TranslationKey } from '@/i18n'
 import type { PermissionRisk } from '@/types/permission'
 
-// Risk is conveyed three ways, never by colour alone: an icon with a distinct
-// silhouette, the text label, and (on the bubble) a distinct border style.
+// Risk is never conveyed by colour alone: icon silhouette and text label carry it too.
 const props = defineProps<{
   risk: PermissionRisk
   network?: boolean
@@ -18,13 +17,9 @@ const LABEL_KEYS: Record<PermissionRisk, TranslationKey> = {
 }
 
 const ICON_PATHS: Record<PermissionRisk, string> = {
-  // Triangle with exclamation.
   high: 'M8 2.4 14.4 13.6H1.6zM8 6.4v3.2M8 11.6v.4',
-  // Eye: review before allowing.
   medium: 'M1.6 8S4 3.6 8 3.6 14.4 8 14.4 8 12 12.4 8 12.4 1.6 8 1.6 8ZM8 6.2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6',
-  // Check in a circle.
   low: 'M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8ZM5.2 8.2l2 2 3.6-4',
-  // Question mark in a circle.
   unknown: 'M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8ZM6.2 6.4a1.8 1.8 0 1 1 2.6 1.6c-.5.3-.8.6-.8 1.2M8 11.4v.2',
 }
 

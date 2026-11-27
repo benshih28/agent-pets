@@ -7,8 +7,7 @@ import Icon from '@/components/ui/Icon.vue'
 const failed = ref(false)
 
 onErrorCaptured(() => {
-  // The error itself is reported by app.config.errorHandler; here we only
-  // swap the broken tree for a recoverable message.
+  // The error itself is reported by app.config.errorHandler.
   failed.value = true
   return false
 })

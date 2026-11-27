@@ -2,9 +2,6 @@
 import { t } from '@/i18n'
 import Toast from '@/components/ui/Toast.vue'
 
-// Fixed-position stack of plugin feedback. Each message is the shared Toast
-// primitive; the stack only positions it and adds the collapsible technical
-// code for errors. Being fixed means a message never moves the layout.
 export interface PluginToastItem {
   id: number
   tone: 'success' | 'error' | 'info'

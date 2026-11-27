@@ -11,10 +11,6 @@ import PanelThemeImageControls from '@/components/panel-theme/PanelThemeImageCon
 import { PANEL_THEME_FITS, PANEL_THEME_POSITIONS, type PanelThemeCatalogEntry, type PanelThemeFit, type PanelThemeMode, type PanelThemePosition } from '@/types/panel-theme'
 import type { UserPanelThemeModeDefinition } from '@/types/panel-theme-user'
 
-// 主題編輯器的「背景」區塊（一個模式）：純色（背景色）、線性或放射漸層（2–5 個色標），
-// 或使用者自己的背景圖（遮罩色、預設遮罩不低於計算出的最小值、填滿方式）。圖片本身沿用
-// 主機的匯入流程：主題存檔後才有地方放，選圖、位置、模糊與遮罩由 PanelThemeImageControls 處理。
-
 type BackgroundKind = 'solid' | 'linear' | 'radial' | 'image'
 
 const props = defineProps<{
@@ -77,7 +73,6 @@ const KIND_BUILDERS: Record<BackgroundKind, (next: UserPanelThemeModeDefinition)
   },
 }
 
-/** 換成漸層時保留原本的色標，沒有時從背景色漸到表面色。 */
 function defaultStops(next: UserPanelThemeModeDefinition) {
   return stops.value.length >= MIN_STOPS ? structuredClone(stops.value) : [{ color: next.colors.bg, at: 0 }, { color: next.colors.surface, at: 100 }]
 }
@@ -91,7 +86,6 @@ function setStop(index: number, patch: { color?: string; at?: number }): void {
   emitWith(next => {
     if (next.background.type !== 'gradient') return
     Object.assign(next.background.stops[index]!, patch)
-    // 位置不能遞減：改了一個色標的位置後依位置重新排序。
     next.background.stops.sort((first, second) => first.at - second.at)
   })
 }

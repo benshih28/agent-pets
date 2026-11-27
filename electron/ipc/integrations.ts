@@ -3,7 +3,6 @@ import type { IntegrationTarget } from '../setup'
 import { isAgentSource, type AgentSource } from '../../src/types/agent.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
-// 每個來源都能送測試事件，清單就是來源 registry。
 export type IntegrationTestSource = AgentSource
 
 // 'claude' 是舊版面板送的安裝目標（跟 claudeCode 同義），setup.ts 仍接受，這裡不能拿掉。

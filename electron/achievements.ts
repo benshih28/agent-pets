@@ -23,7 +23,6 @@ import { isProjectId } from '../src/types/id-patterns.ts'
 
 type SqliteRow = Record<string, unknown>
 
-/** 解鎖評估與快照每次事件都會查定義，用索引避免逐筆線性掃描。 */
 const DEFINITION_BY_ID: ReadonlyMap<string, (typeof ACHIEVEMENT_DEFINITIONS)[number]> =
   new Map(ACHIEVEMENT_DEFINITIONS.map(definition => [definition.id, definition]))
 
@@ -62,14 +61,8 @@ const MAX_EVENT_ID_LENGTH = 256
 const LOCAL_TOKEN_TOTAL_KEY = 'local_token_total'
 const GROWTH_RESET_AT_KEY = 'growth_reset_at'
 const LOCAL_TOKEN_COMPACT_BATCH = 5_000
-// Codex and Claude Code token usage is read exactly from their local session
-// logs (LocalUsageReader). That ledger is the single source of truth for these
-// agents, so token usage on their live events is ignored here; otherwise the
-// same message would count twice. Other agents (OpenCode, generic HTTP) have
-// no local log reader and keep using event-reported usage. Which agents have a local log is
-// AGENT_FAMILY_REGISTRY.localUsageSource (LOCAL_USAGE_ADAPTER_IDS / LOCAL_USAGE_SOURCES).
+// Agents with a local log (Codex, Claude Code) get tokens only from that ledger; their live-event usage is ignored or the same message counts twice.
 
-/** Minimal shape of one exact local-log usage record (see HistoryTokenUsageRecord). */
 export interface LocalTokenUsageFact {
   adapterId: string
   sourceEventId: string
@@ -79,13 +72,8 @@ export interface LocalTokenUsageFact {
 }
 
 export interface LocalTokenSyncOptions {
-  /**
-   * Records older than this are never re-presented by the scanner (its cutoff
-   * is at least now - retention), so their dedupe rows can be dropped while
-   * the running total keeps their tokens. Records older than it are ignored.
-   */
+  /** The scanner never re-presents older records, so their dedupe rows can be dropped; the running total keeps their tokens. */
   compactBefore: number
-  /** Pet to evaluate for unlocks after the sync; null to only update the ledger. */
   evaluatePetId: string | null
   progression?: ProgressionSnapshot
 }
@@ -206,7 +194,6 @@ export class AchievementStore {
   private readonly localDate: (timestamp: number) => string
   private readonly localHour: (timestamp: number) => number
   private closed = false
-  /** 最近一次重設成長資料的時間；早於它的歷史事實不可再被補回。 */
   private growthResetAt = 0
 
   constructor(filePath: string, options: AchievementStoreOptions = {}) {
@@ -295,8 +282,6 @@ export class AchievementStore {
         }
       }
 
-      // A replayed success (session already counted, nothing new) cannot change
-      // any counter, so skip the unlock evaluation entirely.
       if (!completed && !tokenRecorded) return []
       return this.evaluateAndUnlock(petId, occurredAt, nightOwlCompletion, progression)
     })
@@ -355,8 +340,6 @@ export class AchievementStore {
       }
 
       const unlocks: AchievementUnlock[] = []
-      // Reconcile is the self-healing path: recompute the touched pets' counters
-      // from the indexed base tables instead of trusting the increments.
       for (const petId of touchedPets.keys()) this.recomputeCounters(petId)
       for (const [petId, context] of touchedPets) {
         unlocks.push(...this.evaluateAndUnlock(
@@ -370,14 +353,7 @@ export class AchievementStore {
     })
   }
 
-  /**
-   * Upserts exact local-log usage into an account-level ledger keyed by the
-   * record's stable source id. A rescan presents the same ids again: unchanged
-   * rows add nothing and a streamed Claude message whose usage grew adds only
-   * the difference, so the running total is idempotent across rescans. The
-   * total is account-level (local logs describe the machine, not a pet), the
-   * same way History shows local token totals for every pet.
-   */
+  // Keyed by stable source id so rescans are idempotent (a grown streamed message adds only the difference). Account-level, not per pet.
   syncLocalTokenUsage(records: readonly LocalTokenUsageFact[], options: LocalTokenSyncOptions): LocalTokenSyncResult {
     const now = this.now()
     const compactBefore = Math.max(Number.isFinite(options.compactBefore) ? options.compactBefore : 0, this.growthResetAt)
@@ -416,10 +392,7 @@ export class AchievementStore {
           ON CONFLICT(key) DO UPDATE SET value = MIN(?, MAX(0, CAST(value AS INTEGER) + ?))
         `).run(LOCAL_TOKEN_TOTAL_KEY, Math.max(0, Math.min(MAX_TOKEN_COUNT, delta)), MAX_TOKEN_COUNT, delta)
       }
-      // Bounded compaction: drop dedupe rows the scanner can no longer present.
-      // Safe because local records carry stable dates: an undated log line
-      // inherits the previous real timestamp in its file, never the file mtime
-      // (which moves on every append and would let a pruned row come back).
+      // Pruning is safe only because undated log lines inherit the previous real timestamp, never the file mtime (which would resurrect pruned rows).
       this.statement(`
         DELETE FROM local_token_usage WHERE rowid IN (
           SELECT rowid FROM local_token_usage WHERE occurred_at < ? LIMIT ?
@@ -432,15 +405,12 @@ export class AchievementStore {
     })
   }
 
-  /** Evaluates one pet's unlocks against the current counters (used once per local-log scan). */
   evaluateTokenAchievements(petIdValue: string, progression?: ProgressionSnapshot): AchievementUnlock[] {
     return this.transaction(() => this.evaluateAndUnlock(safePetId(petIdValue), this.now(), false, progression))
   }
 
   getSnapshot(petIdValue: string, progression?: ProgressionSnapshot): AchievementSnapshot {
     const petId = safePetId(petIdValue)
-    // Progress is read from the same facts evaluate() uses, so a bar can never
-    // disagree with the unlock rule.
     const context = this.readContext(petId, this.localDate(this.now()), false, progression)
     const rows = this.statement(`
       SELECT achievement_id, version, unlocked_at, token_quality
@@ -485,12 +455,7 @@ export class AchievementStore {
     return this.growthResetAt
   }
 
-  /**
-   * 清掉所有成就事實、計數器與本機 token 帳本，並把 `cutoff` 記為重設時間（同一個交易）。
-   * `beforeCommit` 在交易提交前執行（用來在另一個資料庫做同一件事）：它丟錯就整個回復，
-   * 所以兩個資料庫要嘛一起重設，要嘛都不動。重設時間讓 history reconcile 與本機 token 同步
-   * 忽略重設之前的事實，避免剛清掉又被補回。可重複執行。
-   */
+  // `beforeCommit` 丟錯會整個回復，兩個資料庫要嘛一起重設要嘛都不動；`cutoff` 讓 reconcile 與本機 token 同步忽略重設之前的事實。
   resetGrowth(cutoff: number, beforeCommit?: () => void): void {
     const resetAt = Math.max(0, Math.floor(cutoff))
     this.transaction(() => {
@@ -517,7 +482,6 @@ export class AchievementStore {
     this.growthResetAt = resetAt
   }
 
-  /** 刪掉不會再被掃描器重送的本機 token 去重列（保留期清理）；回傳刪除列數。 */
   compactLocalTokenUsage(before: number): number {
     let removed = 0
     for (;;) {
@@ -531,7 +495,6 @@ export class AchievementStore {
     }
   }
 
-  /** 使用者觸發的資料庫整理（optimize + VACUUM）；交易進行中會丟 SqliteBusyError。 */
   compact(): void {
     optimizeAndVacuum(this.database)
   }
@@ -594,7 +557,6 @@ export class AchievementStore {
     nightOwlCompletion: boolean,
     progression?: ProgressionSnapshot,
   ): AchievementEvaluationContext {
-    // O(1) primary-key read; the counters are maintained incrementally.
     const counters = this.statement(`
       SELECT completed_sessions, token_rows, token_estimated, token_total
       FROM pet_counters WHERE pet_id = ?
@@ -617,8 +579,6 @@ export class AchievementStore {
       completedSessions: Math.max(0, asInteger(counters?.completed_sessions)),
       completedSessionsToday: Math.max(0, asInteger(today?.sessions_completed)),
       tokenTotal: Math.min(MAX_TOKEN_COUNT, petTokens + localTokens),
-      // Local-log tokens are exact; any estimated event-reported row keeps the
-      // combined total labelled estimated.
       tokenQuality: petQuality !== 'none' ? petQuality : localTokens > 0 ? 'exact' : 'none',
       adapterCount: Math.max(0, asInteger(adapters?.total)),
       activeDays: Math.max(0, asInteger(activeDays?.total)),
@@ -692,8 +652,6 @@ export class AchievementStore {
     })
     const hasV2 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 2').get())
     if (!hasV2) this.transaction(() => {
-      // pet_id indexes for the base tables (previously full scans) and the
-      // incremental per-pet counters that make readContext O(1).
       this.database.exec(`
         CREATE INDEX IF NOT EXISTS idx_token_usage_pet ON token_usage(pet_id);
         CREATE INDEX IF NOT EXISTS idx_completed_sessions_pet ON completed_sessions(pet_id);
@@ -714,8 +672,6 @@ export class AchievementStore {
         VALUES (2, 'achievements-pet-counters', ?, 'achievements-pet-counters')
       `).run(this.now())
     })
-    // Additive v3: the exact local-log token ledger. CREATE ... IF NOT EXISTS
-    // keeps it idempotent; the running total starts at 0 and fills on the next scan.
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS local_token_usage(
         token_event_id TEXT PRIMARY KEY,
@@ -750,7 +706,6 @@ export class AchievementStore {
     `).run(petId, completed, tokenRows, tokenEstimated, tokenTotal)
   }
 
-  /** Full recompute from the base tables (indexed by pet_id); used by reconcile and the v2 migration. */
   private recomputeCounters(petId: string): void {
     this.statement(`
       INSERT INTO pet_counters(pet_id, completed_sessions, token_rows, token_estimated, token_total)

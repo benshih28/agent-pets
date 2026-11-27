@@ -8,7 +8,6 @@ import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 function fixture() {
   const { ipcMain, listeners } = createFakeIpcMain()
-  // 以物件身分辨識來源，取代原本的字串哨兵。
   const petEvent = fakeIpcMainEvent()
   const foreignEvent = fakeIpcMainEvent()
   const calls: string[] = []
@@ -18,7 +17,6 @@ function fixture() {
   let cursor = { x: 10, y: 10 }
   let dragHandle: ReturnType<typeof setInterval> | null = null
   let intervalCallback: (() => void) | null = null
-  // 只需要一個可用物件身分比對的 timer handle；立刻清掉，避免真的排程。
   const handle = setInterval(() => undefined, 60_000)
   clearInterval(handle)
   const pet = fakeBrowserWindow({
@@ -95,7 +93,6 @@ test('pet drag IPC polls OS cursor coordinates and persists once when drag ends'
   state.getIntervalCallback()?.()
   assert.equal(state.calls.filter(call => call === 'position:105,202').length, 1)
 
-  // 陣列上就算帶了 moved 欄位也不算有效 payload，不排程貼邊。
   state.listeners.get('pet-drag-end')!(state.petEvent, Object.assign([], { moved: true }))
   assert.ok(!state.calls.includes('edge:schedule'))
   state.listeners.get('pet-drag-end')!(state.petEvent, { moved: true })

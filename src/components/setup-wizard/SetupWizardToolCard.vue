@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 設定精靈裡單一工具的卡片：健康狀態、動作按鈕、能力矩陣、安裝／測試／診斷結果。
-// 所有狀態都由父層持有（工具清單會在重新偵測後保留結果），這裡只依 props 渲染並發出事件。
 import { computed } from 'vue'
 import { locale, t } from '@/i18n'
 import { SOURCE_LABELS } from '@/types/agent'
@@ -22,11 +20,8 @@ import {
 
 const props = defineProps<{
   tool: ToolStatus
-  /** 動作按鈕的文字（安裝／修復／重新安裝）。 */
   actionLabel: string
-  /** 任一工具正在安裝、測試或診斷。 */
   busy: boolean
-  /** 任一工具正在移除；移除中連安裝與等待都停用。 */
   removingAny: boolean
   removing: boolean
   testing: boolean
@@ -43,7 +38,6 @@ defineEmits<{
   'toggle-wait': []
 }>()
 
-// 每個卡片各自記憶；切換語系時 t() 會讓它們重算。
 const capabilities = computed(() => capabilityRows(props.tool))
 const configDirNotes = computed(() => buildConfigDirNotes(props.tool))
 const diagnosisRows = computed(() => (props.tool.diagnosis?.checks ?? []).map(check => ({

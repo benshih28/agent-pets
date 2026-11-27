@@ -24,8 +24,7 @@ export function createAttentionBitmap(
       const offset = ((y * width) + x) * 4
       const isInner = distanceSquared <= innerRadius ** 2
 
-      // NativeImage bitmap channel order is platform-dependent. Magenta keeps
-      // the same visible color when red and blue channels are swapped.
+      // NativeImage bitmap channel order is platform-dependent; magenta looks the same with red and blue swapped.
       result[offset] = 255
       result[offset + 1] = isInner ? 64 : 255
       result[offset + 2] = 255

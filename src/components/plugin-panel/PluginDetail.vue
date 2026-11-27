@@ -81,8 +81,6 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-// Move focus to the heading when a detail page opens so keyboard and screen
-// reader users land on the new content instead of the card they came from.
 watch(plugin, async (value, previous) => {
   if (value && !previous) {
     await nextTick()

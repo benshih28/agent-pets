@@ -36,7 +36,6 @@ export function isValidRegularPetId(value: unknown, maxLength = 128): value is s
     && REGULAR_PET_ID_PATTERN.test(value)
 }
 
-/** Accepts ordinary pet ids and the separately validated plugin skin format. */
 export function isValidPetId(value: unknown, maxRegularLength = 128): value is string {
   if (isPluginSkinPetId(value)) return true
   return isValidRegularPetId(value, maxRegularLength)

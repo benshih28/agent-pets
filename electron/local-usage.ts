@@ -33,14 +33,9 @@ export interface IncrementalLocalUsageParserState {
   nextLineNumber: number
   previousCodexTotal: TokenCounters | null
   codexCwd: string | undefined
-  /**
-   * Thread id from the file's session_meta line. token_count events carry no
-   * session id, and the hook reports this same id, so it is the join key.
-   */
+  /** token_count events carry no session id; the hook reports this same id, so it is the join key. */
   codexSessionId?: string
-  /** Latest model announced by a Codex turn_context line; later token_count events inherit it. */
   codexModel?: string
-  /** Latest real timestamp seen in this file; undated lines inherit it. */
   lastTimestamp: number | undefined
   discardingLongLine: boolean
 }
@@ -50,17 +45,11 @@ interface LocalUsageFileCacheEntry extends IncrementalLocalUsageParserState {
   ino: number
   size: number
   mtimeMs: number
-  // Byte position this entry's read stopped at. A file larger than
-  // maxFileBytes is consumed in successive chunks, one per scan.
   readEnd: number
 }
 
 export interface ProjectPathResolver {
-  // Must resolve AND register the project (not a read-only lookup): a
-  // project whose only evidence is historical Claude/Codex log files, never
-  // a live routed event, still needs a row in the project list so its token
-  // totals are reachable from the History project filter instead of always
-  // reading back as zero.
+  // Must register the project (not a read-only lookup): a project known only from historical logs still needs a row so its token totals are reachable from the History filter.
   trackSeen(value: unknown, seenAt?: number): { projectId: string } | null
 }
 
@@ -71,10 +60,7 @@ export interface LocalUsageConfigDirs {
 
 export interface LocalUsageReaderOptions {
   homeDir: string
-  /**
-   * Agent config folders, read at the start of every scan (CLAUDE_CONFIG_DIR／CODEX_HOME may only be
-   * known after the login-shell lookup). Defaults to ~/.claude and ~/.codex under homeDir.
-   */
+  /** Read at the start of every scan: CLAUDE_CONFIG_DIR／CODEX_HOME may only be known after the login-shell lookup. */
   configDirs?: () => LocalUsageConfigDirs
   history: HistoryStore
   now?: () => number
@@ -82,17 +68,11 @@ export interface LocalUsageReaderOptions {
   maxFileBytes?: number
   maxTotalBytes?: number
   maxLineBytes?: number
-  /** Wall-clock work budget per scan; the rest continues on the next scan. */
   maxScanMs?: number
-  /** 每批寫入 History 的筆數；批次越小，主執行緒單次被同步寫入佔住的時間越短。 */
   importBatchRecords?: number
-  /** Monotonic clock for the work budget (tests inject a fake one). */
   clock?: () => number
   projectRouting?: ProjectPathResolver | null
-  /**
-   * Called with every fresh record of each import batch (already imported or
-   * not), so a downstream ledger such as achievements can upsert idempotently.
-   */
+  /** Called with every fresh record, already imported or not, so a downstream ledger can upsert idempotently. */
   onRecordsImported?: (records: readonly HistoryTokenUsageRecord[]) => void
 }
 
@@ -101,11 +81,9 @@ export interface LocalUsageScanResult {
   filesSkipped: number
   recordsParsed: number
   recordsImported: number
-  /** Files with bytes still unread because the byte or time budget ran out. */
   filesDeferred: number
-  /** True when another scan should run soon to finish the deferred work. */
   pending: boolean
-  /** Bytes read by this scan; 0 means it made no progress. */
+  /** 0 means the scan made no progress. */
   bytesRead: number
 }
 
@@ -114,12 +92,9 @@ export interface LocalUsageScanDiagnostics extends LocalUsageScanResult {
   durationMs: number
 }
 
-// Yield to the event loop every this many file-system entries so a scan over
-// thousands of session logs never blocks the main process for long.
 const YIELD_EVERY = 25
 const PARSE_SLICE_BYTES = 1024 * 1024
-// node:sqlite 寫入是同步的：實測單批 500 筆約佔住主執行緒 31ms、100 筆約 7ms，
-// 批次之間讓出事件迴圈，所以用小批次縮短單次阻塞（見 docs/perf/local-usage-worker.md）。
+// node:sqlite 寫入是同步的（單批 500 筆約佔住主執行緒 31ms、100 筆約 7ms），所以用小批次並在批次間讓出事件迴圈。
 const DEFAULT_IMPORT_BATCH_RECORDS = 100
 const yieldToEventLoop = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
 
@@ -157,11 +132,8 @@ function outputCount(value: Record<string, unknown>): number {
   return output > 0 ? output : token(value.reasoning_output_tokens)
 }
 
-// No file-mtime fallback: an mtime changes whenever the log is appended, so a
-// record dated by it would move forward on every rescan, slip past the History
-// cutoff and be re-counted once older dedupe rows are pruned. Undated lines
-// inherit the latest real timestamp seen earlier in the same file (stable,
-// because JSONL logs are append-only); with none, the record is dropped.
+// No file-mtime fallback: it moves on every append, so a record dated by it would slip past the History cutoff and be re-counted.
+// Undated lines inherit the latest real timestamp earlier in the same file (JSONL is append-only); with none, the record is dropped.
 function timestamp(value: unknown, fallback: number | undefined): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     // Some JSONL producers use Unix seconds while others use milliseconds.
@@ -174,8 +146,7 @@ function timestamp(value: unknown, fallback: number | undefined): number | undef
   return fallback
 }
 
-// UTF-8 位元組數介於 UTF-16 長度的 1～3 倍之間，只有落在灰色地帶時才需要
-// 真正走一遍 Buffer.byteLength（O(n)），絕大多數短行可 O(1) 判定。
+// UTF-8 位元組數介於 UTF-16 長度的 1～3 倍之間，只有落在灰色地帶才需要 Buffer.byteLength。
 function lineTooLong(line: string, maxLineBytes: number): boolean {
   if (line.length > maxLineBytes) return true
   if (line.length * 3 <= maxLineBytes) return false
@@ -202,9 +173,7 @@ function claudeUsage(
   lineNumber: number,
   inheritedAt: number | undefined,
 ): ParsedUsage | null {
-  // Fresh input only. Cache reads are re-sent context (often >90% of a long
-  // session) and cache writes are reported separately, so neither is folded
-  // into "input" or the headline token total would be wildly inflated.
+  // Fresh input only: cache reads are re-sent context (often >90% of a long session) and cache writes are reported separately; folding them in would inflate the total.
   const input = token(usage.input_tokens)
   const cacheRead = token(usage.cache_read_input_tokens)
   const topLevelCacheCreation = token(usage.cache_creation_input_tokens)
@@ -243,11 +212,9 @@ function claudeUsage(
 }
 
 interface CodexUsageResult {
-  // Null when this event carries no importable token delta (first sighting
-  // of a baseline, a repeated snapshot, or a post-reset event - see below).
+  // Null for a first sighting, a repeated snapshot, or a post-reset event.
   record: ParsedUsage | null
-  // The raw cumulative counter this event reported, always populated so the
-  // caller can rebase its running baseline even when `record` is null.
+  // Always populated so the caller can rebase its baseline even when `record` is null.
   cumulative: TokenCounters
 }
 
@@ -265,25 +232,17 @@ function codexUsage(
   fileSessionId: string | undefined,
 ): CodexUsageResult | null {
   const totalUsage = asRecord(info.total_token_usage)
-  // Codex's total_token_usage is cumulative for the rollout. last_token_usage
-  // is a context snapshot and may be repeated on rate-limit-only events, so it
-  // is never treated as a fresh spend when the cumulative counter is present.
+  // last_token_usage is a context snapshot that may repeat on rate-limit-only events, so never treat it as fresh spend when the cumulative counter is present.
   if (!totalUsage) return null
   const currentTotal: TokenCounters = {
     input: token(totalUsage.input_tokens),
     cached: token(totalUsage.cached_input_tokens),
     output: outputCount(totalUsage),
   }
-  // A drop below the previous cumulative total means context compaction or a
-  // resumed/forked thread re-based the counter - not that Codex refunded
-  // tokens. We cannot tell how much of the smaller new total was already
-  // billed before the reset, so the safe choice is to count zero new tokens
-  // for this event and simply rebase the baseline to the new total, rather
-  // than (as before) treating the entire post-reset value as fresh spend,
-  // which could spike the displayed total far past what Codex actually used.
+  // A drop below the previous cumulative total means compaction or a resumed/forked thread rebased the counter, not a refund:
+  // count zero new tokens and rebase, since the post-reset value as fresh spend could spike the total.
   const rawInput = previousTotal ? Math.max(0, currentTotal.input - previousTotal.input) : currentTotal.input
-  // Codex reports cached_input_tokens as a subset of input_tokens: split it
-  // out so fresh input excludes cache reads (Codex exposes no cache writes).
+  // Codex reports cached_input_tokens as a subset of input_tokens (and exposes no cache writes).
   const cacheRead = Math.min(
     rawInput,
     previousTotal ? Math.max(0, currentTotal.cached - previousTotal.cached) : currentTotal.cached,
@@ -300,7 +259,6 @@ function codexUsage(
     ?? fileKey
   const stableKey = `line:${fileKey}:${lineNumber}`
   const occurredAt = timestamp(record.timestamp ?? payload.timestamp, inheritedAt)
-  // Still rebase the baseline so the next dated event computes the right delta.
   if (occurredAt === undefined) return { record: null, cumulative: currentTotal }
   return {
     record: {
@@ -330,8 +288,6 @@ export function parseLocalUsageLine(
   inheritedAt?: number,
 ): ParsedUsage | null {
   if (provider !== 'claude-code') return null
-  // 逐字預篩：transcript 大多是 user/tool 紀錄，先用 O(n) 子字串比對排除
-  // 不可能是 assistant usage 的行，省下昂貴的 JSON.parse。
   if (!line.includes('"assistant"') || !line.includes('"usage"')) return null
   const record = parseObject(line)
   if (!record) return null
@@ -361,11 +317,8 @@ interface DirectoryListing {
   entries: Array<{ name: string, kind: 'file' | 'directory' | 'other' }>
 }
 
-/** Survives between scans so an idle tree costs one lstat per entry, not three syscalls. */
 export interface UsageScanCache {
-  /** Directory listings keyed by path, valid while the directory's own mtime is unchanged. */
   directories: Map<string, DirectoryListing>
-  /** Files whose containment in the root was verified once: (dev, ino) -> real path. */
   verifiedFiles: Map<string, { dev: number, ino: number, realPath: string }>
 }
 
@@ -374,17 +327,12 @@ export function createUsageScanCache(): UsageScanCache {
 }
 
 const LISTING_MAX_AGE_MS = 10 * 60_000
-// A directory modified this recently might still gain entries within the same
-// timestamp tick, so its listing is re-read next time instead of cached.
+// A directory modified this recently might still gain entries within the same timestamp tick, so it is re-read instead of cached.
 const LISTING_SETTLE_MS = 2_000
 const MAX_CACHED_DIRECTORIES = 4096
 const MAX_VERIFIED_FILES = 8192
 
-/**
- * Codex stores sessions as YYYY/MM/DD. A date directory whose whole range ends
- * before the cutoff cannot hold importable records, so the walk never enters it:
- * cost is O(retained days) instead of O(files).
- */
+// Codex stores sessions as YYYY/MM/DD; a date directory ending before the cutoff cannot hold importable records.
 export function isExpiredDateDirectory(parts: readonly string[], cutoffMs: number): boolean {
   const [year, month, day] = parts
   if (year === undefined || !/^\d{4}$/.test(year)) return false
@@ -475,8 +423,7 @@ async function filesUnder(
         if (!isWithinRoot(realCandidate)) continue
         await visit(candidate, stat, depth + 1, [...parts, entry.name])
       } else if (stat.isFile() && extname(entry.name).toLowerCase() === '.jsonl') {
-        // Containment is verified once per (path, dev, ino); an unchanged file
-        // identity is trusted afterwards, so the steady state skips realpath.
+        // Containment is verified once per (path, dev, ino); an unchanged identity is trusted afterwards.
         const known = cache.verifiedFiles.get(candidate)
         let realCandidate: string
         if (known && known.dev === stat.dev && known.ino === stat.ino) {
@@ -513,8 +460,7 @@ export function parseUsageFile(
 
   if (provider === 'codex') {
     let previousCodexTotal: TokenCounters | null = null
-    // Codex only reports the workspace path once, on the file's leading
-    // session_meta line; every later token_count event inherits it.
+    // Codex reports the workspace path only once, on the leading session_meta line; later token_count events inherit it.
     let codexCwd: string | undefined
     let codexModel: string | undefined
     let codexSessionId: string | undefined
@@ -524,7 +470,6 @@ export function parseUsageFile(
       const wantsCwd = (codexCwd === undefined || codexSessionId === undefined) && line.includes('"session_meta"')
       const wantsModel = line.includes('"turn_context"') || (codexModel === undefined && line.includes('"session_meta"'))
       if (!wantsCwd && !wantsModel && !line.includes('"token_count"')) continue
-      // 每行只 JSON.parse 一次，同時供 session_meta、turn_context 與 token_count 判斷使用。
       const record = parseObject(line)
       if (!record) continue
       if (wantsCwd) {
@@ -535,10 +480,7 @@ export function parseUsageFile(
       lastAt = timestamp(record.timestamp, lastAt)
       const result = parseCodexUsageRecord(record, fileKey, index + 1, lastAt, previousCodexTotal, codexCwd, codexModel, codexSessionId)
       if (!result) continue
-      // Rebase the running baseline even when this event produced no
-      // importable record (first sighting, repeat, or a reset) - otherwise a
-      // reset would leave the old, now-stale total in place and every
-      // following event would keep computing its delta against it.
+      // Rebase even when no record was produced, or a reset would leave a stale total that every later delta is computed against.
       previousCodexTotal = result.cumulative
       if (result.record) records.set(result.record.dedupeKey, result.record)
     }
@@ -551,8 +493,7 @@ export function parseUsageFile(
     const parsed = parseLocalUsageLine(provider, line, fileKey, index + 1, lastAt)
     if (!parsed) continue
     lastAt = parsed.occurredAt
-    // Claude streaming records may repeat the same message id with cumulative
-    // usage. Keep the latest record for that message and import it once.
+    // Claude streaming records may repeat a message id with cumulative usage; keep the latest.
     records.set(parsed.dedupeKey, parsed)
   }
   return [...records.values()]
@@ -609,7 +550,6 @@ function parseUsageLine(
   return result.record
 }
 
-/** Parses only complete JSONL lines and returns the byte offset to resume from. */
 export function parseIncrementalLocalUsageChunk(
   provider: UsageProvider,
   fileKey: string,
@@ -667,7 +607,6 @@ export function parseIncrementalLocalUsageChunk(
   return [...records.values()]
 }
 
-/** Round-robin over roots: file i of every root before file i + 1 of any root. */
 function* interleaveByRoot(perRoot: ReadonlyArray<{ root: UsageRoot, files: UsageFile[] }>): Generator<{ root: UsageRoot, file: UsageFile }> {
   const longest = perRoot.reduce((max, entry) => Math.max(max, entry.files.length), 0)
   for (let index = 0; index < longest; index += 1) {
@@ -680,10 +619,7 @@ function* interleaveByRoot(perRoot: ReadonlyArray<{ root: UsageRoot, files: Usag
 
 type UsageFileHandle = Awaited<ReturnType<typeof open>>
 
-/**
- * Opens a candidate without following a final symlink and re-checks that the
- * opened inode is the one the walk verified (no swap between stat and open).
- */
+// Does not follow a final symlink and re-checks the opened inode is the one the walk verified (no swap between stat and open).
 async function openVerifiedUsageFile(
   filePath: string,
   expected: Pick<UsageFile, 'dev' | 'ino'>,
@@ -788,7 +724,6 @@ export class LocalUsageReader {
     return this.activeScan
   }
 
-  /** Last completed scan, for the History footer and Advanced diagnostics. */
   getDiagnostics(): LocalUsageScanDiagnostics | null {
     return this.diagnostics
   }
@@ -811,19 +746,15 @@ export class LocalUsageReader {
     let remainingFiles = this.maxFiles
     let remainingBytes = this.maxTotalBytes
 
-    // Walk every root first, then interleave their files, so a slow or large
-    // Codex tree can never starve the Claude roots of the read budget.
+    // Interleave roots so a slow or large Codex tree can never starve the Claude roots of the read budget.
     const perRoot: Array<{ root: UsageRoot, files: UsageFile[] }> = []
     for (const root of roots) {
       if (remainingFiles <= 0) break
-      // Files not modified since the cutoff cannot hold importable records,
-      // so they are never stat-resolved, opened, or read.
       const files = await filesUnder(root.directory, remainingFiles, cutoff, this.scanCaches.get(root.directory) ?? this.newScanCache(root.directory), root.provider === 'codex', this.now())
       remainingFiles -= files.length
       perRoot.push({ root, files })
     }
-    // The work budget starts after the walk: directory listing time must not
-    // eat the read budget and leave every file deferred with no progress.
+    // The budget starts after the walk, or directory listing time could leave every file deferred.
     const deadline = this.clock() + this.maxScanMs
     let scanBytes = 0
 
@@ -855,30 +786,22 @@ export class LocalUsageReader {
           }
         : createIncrementalLocalUsageParserState()
       const readStart = appendedOnly || resumePartial ? parserState.readOffset : 0
-      // At least one slice is read per scan, whatever the clock says, so a
-      // budget-limited scan always makes forward progress.
+      // At least one slice is read per scan so a budget-limited scan always makes progress.
       if (remainingBytes <= 0 || (scanBytes > 0 && this.clock() >= deadline)) {
-        // Budget spent: leave this file's cache entry untouched so the next
-        // scan resumes exactly here instead of silently dropping the file.
+        // Leave this file's cache entry untouched so the next scan resumes here instead of dropping the file.
         result.filesDeferred += 1
         continue
       }
-      // A file bigger than the per-file or remaining per-scan budget is
-      // consumed in successive scans from the persisted parser offset.
       const readEnd = Math.min(stat.size, readStart + this.maxFileBytes, readStart + remainingBytes)
       const opened = await openVerifiedUsageFile(filePath, stat)
       if (!opened) { result.filesSkipped += 1; continue }
       const fileKey = digest(`${root.provider}:${filePath}`)
       const records = new Map<string, ParsedUsage>()
       let position = readStart
-      // Deferred only when a budget (byte cap or deadline) stopped the read,
-      // never when the file simply ended early (truncated, short read).
+      // Deferred only when a budget stopped the read, never when the file simply ended early.
       let stoppedOnBudget = false
       try {
         const end = Math.min(readEnd, opened.size)
-        // Single forward pass: each slice is read once; only the unfinished
-        // tail line (bounded by maxLineBytes, longer lines are discarded)
-        // is carried into the next slice, so memory stays ~1 MB per file.
         let carry: Buffer = Buffer.alloc(0)
         while (position < end) {
           const want = Math.min(PARSE_SLICE_BYTES, end - position)
@@ -900,7 +823,6 @@ export class LocalUsageReader {
             await yieldToEventLoop()
           }
         }
-        // The byte caps shortened this read and it reached that cap.
         if (!stoppedOnBudget && readEnd < stat.size && position >= readEnd) stoppedOnBudget = true
       } catch {
         result.filesSkipped += 1
@@ -923,10 +845,7 @@ export class LocalUsageReader {
 
   private async importRecords(records: ParsedUsage[], cutoff: number): Promise<number> {
     const fresh = records.filter(record => record.occurredAt > cutoff)
-    // Resolve each distinct cwd once (positive and negative results). A deleted
-    // worktree used to cost one synchronous lstat per record; now it costs one.
-    // trackSeen (not a read-only resolve) so a project whose only evidence is
-    // this log file still gets a project-list row. It gets the newest usage time.
+    // Resolve each distinct cwd once (including negative results); trackSeen gets the newest usage time.
     const latestByCwd = new Map<string, number>()
     for (const record of fresh) {
       if (!record.cwd) continue

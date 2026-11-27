@@ -340,7 +340,6 @@ test('agent.emit reaches only the observe-only event source callback', () => {
   } finally { harness.cleanup() }
 })
 
-// 以下測試鎖住 storage 容量判斷：任何寫入是否被接受，都必須等同「寫入後整份 JSON 的 UTF-8 位元組數不超過上限」。
 const STORAGE_LIMIT = 64 * 1024
 
 function storageFile(harness: ReturnType<typeof createHarness>): string {
@@ -351,7 +350,6 @@ function serializedBytes(values: Record<string, unknown>): number {
   return Buffer.byteLength(JSON.stringify(values), 'utf8')
 }
 
-/** 固定種子的亂數，讓失敗可以重現。 */
 function seededRandom(seed: number): () => number {
   let state = seed >>> 0
   return () => {
@@ -418,7 +416,6 @@ test('storage size accounting matches a full re-serialization across random set/
 test('storage accepts a write that lands exactly on the limit and rejects one byte more, including data loaded from disk', () => {
   const harness = createHarness({ storageBytesPerPlugin: STORAGE_LIMIT })
   try {
-    // 檔案內有縮排與多位元組字元：容量看的是重新序列化後的大小，不是檔案大小。
     const initial = { '既有': '中文🐾', list: [1, 2, 3] }
     fs.mkdirSync(path.dirname(storageFile(harness)), { recursive: true })
     fs.writeFileSync(storageFile(harness), JSON.stringify(initial, null, 2))
@@ -431,7 +428,6 @@ test('storage accepts a write that lands exactly on the limit and rejects one by
     assert.deepEqual(harness.broker.handle('sample', request('exact', 'storage.set', ['fill', exact])), {
       id: 'exact', ok: true, value: { stored: true },
     })
-    // 覆寫成較短的值、刪除後再寫回，都要沿用同一份計算。
     assert.deepEqual(harness.broker.handle('sample', request('short', 'storage.set', ['fill', 'y'])), {
       id: 'short', ok: true, value: { stored: true },
     })
@@ -454,7 +450,6 @@ test('storage accepts a write that lands exactly on the limit and rejects one by
 })
 
 test('storage.get never reads inherited Object.prototype members after writes', () => {
-  // 修正前每次寫入都用 spread 換成一般物件，之後讀 'toString' 會拿到 Object.prototype 的函式。
   const harness = createHarness({ storageBytesPerPlugin: STORAGE_LIMIT })
   try {
     assert.deepEqual(harness.broker.handle('sample', request('set', 'storage.set', ['a', 1])), {

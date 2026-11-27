@@ -1,4 +1,3 @@
-// 光暈色：由 sprite 像素算出，算不出來時沿用呼叫端給的 fallback（色盤的高光色）。
 import { PET_CELL_HEIGHT, PET_CELL_WIDTH } from '@/types/pet-atlas'
 
 export function deriveAuraTintFromPixels(pixels: Uint8ClampedArray, fallbackTint: string): string {

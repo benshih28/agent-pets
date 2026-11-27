@@ -9,9 +9,6 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 用真正的 integrations/agent-hook.mjs 檢查 Claude Code 事件對應到的寵物狀態（送到假的本機伺服器）。
-// 寫法同 agent-hook-delivery.test.mts：只改事件網址的副本，HOME 是暫時目錄。
-
 const HOOK_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'integrations', 'agent-hook.mjs')
 const EVENT_TOKEN = 'e'.repeat(64)
 
@@ -126,7 +123,6 @@ test('codex still reports ordinary projects, including look-alike folder names',
     'thinking',
   )
   assert.equal(await sentState('codex', home => ({ hook_event_name: 'UserPromptSubmit', cwd: path.join(home, '.codex') })), 'thinking')
-  // Claude 的事件不受 Codex 的目錄規則影響。
   assert.equal(
     await sentState('claude', home => ({ hook_event_name: 'UserPromptSubmit', cwd: path.join(home, '.codex', 'memories_v2') })),
     'thinking',

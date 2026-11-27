@@ -80,7 +80,6 @@ export interface AchievementDefinition {
   category: AchievementCategory
   /** Shown as "???" until unlocked, to keep some discovery. */
   hidden?: boolean
-  /** Distance to unlock, from the same context evaluate() uses. */
   progress: (context: AchievementEvaluationContext) => AchievementProgress
   evaluate: (context: AchievementEvaluationContext) => AchievementEvaluation | null
 }

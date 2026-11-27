@@ -22,7 +22,6 @@ export const PLUGIN_PANEL_IPC_ERROR_CODES = Object.freeze([
   'panel_unavailable',
 ] as const)
 
-/** Stable error codes returned across the main/renderer IPC boundary. */
 const ipcErrorCodeEntries = [
   ...PLUGIN_ERROR_CODES,
   ...PLUGIN_REGISTRY_ERROR_CODES,

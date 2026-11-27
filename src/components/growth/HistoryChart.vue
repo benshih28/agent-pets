@@ -15,7 +15,6 @@ const gridLines = computed(() => [1, 0.5].map(fraction => ({
   fraction,
   label: tokens(Math.round(maxTokens.value * fraction)),
 })))
-// About seven axis labels whatever the range.
 const labelStep = computed(() => Math.max(1, Math.ceil(props.days.length / 7)))
 
 function dateLabel(day: HistoryDailyStat, withWeekday: boolean): string {
@@ -34,7 +33,6 @@ function segmentHeight(value: number): string {
   return `${Math.min(100, (value / maxTokens.value) * 100)}%`
 }
 
-// 依 days 與語系預先算好；hover 只改 activeDay，不該重新格式化每一根長條的標籤。
 const barAriaLabels = computed(() => props.days.map(day => t('growth.barAria', {
   date: dateLabel(day, true),
   tokens: tokens(total(day), 'full'),

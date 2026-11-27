@@ -2,8 +2,6 @@ name: CI
 
 on:
   pull_request:
-    # 純文件變更不需要型別檢查與建置
-    paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
   push:
     branches: [main]
     paths-ignore: ['docs/**', '**/*.md', 'LICENSE']
@@ -16,8 +14,35 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - id: diff
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          files=$(git diff --name-only HEAD^1 HEAD)
+          printf '%s\n' "$files"
+          if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Ev '^docs/|\.md$|^LICENSE$' > /dev/null; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # branch protection 要求 check；只改文件時用 job 層級的 if 跳過，跳過的 job 仍會回報成功。
   check:
     name: check
+    needs: changes
+    if: needs.changes.outputs.code != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

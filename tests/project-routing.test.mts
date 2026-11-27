@@ -74,16 +74,12 @@ test('trackSeen resolves without hitting the filesystem twice and throttles the 
     const first = store.trackSeen(database.project, now)
     assert.ok(first)
 
-    // A second call moments later for the same raw path must resolve from
-    // the in-memory cache (same identity) and skip the SQLite write - the
-    // project row's last_seen_at should not have moved yet.
     now += 1_000
     const second = store.trackSeen(database.project, now)
     assert.equal(second?.projectId, first.projectId)
     const beforeThrottleExpires = store.getProject(first.projectId)
     assert.equal(beforeThrottleExpires?.lastSeenAt, 1_700_000_000_000)
 
-    // Past the throttle window, the next call is allowed to write again.
     now += 30_000
     store.trackSeen(database.project, now)
     const afterThrottleExpires = store.getProject(first.projectId)
@@ -127,8 +123,6 @@ test('disabling routing suppresses new resolution but keeps stored bindings for 
     assert.equal(store.isEnabled(), false)
     assert.equal(store.resolvePath(database.project), null)
     assert.equal(store.registerPath(database.project, 1_700_000_000_500, available), null)
-    // Listing and rebinding previously seen projects must keep working while
-    // disabled - only new path resolution (live routing) is suppressed.
     const stillListed = store.listProjects(available)
     assert.equal(stillListed.length, 1)
     assert.equal(stillListed[0].boundPetId, 'wolf')

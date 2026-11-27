@@ -9,7 +9,6 @@ import { fakeBrowserWindow, fakeIpcMainInvokeEvent, fakeWebContents } from './su
 import { fakeService } from './support/fake-service.mts'
 import { createFakeIpcMain, type FakeIpcMain } from './support/fake-ipc.mts'
 
-// 沒被該測試用到的依賴一律給無作用的預設值，讓測試只需要覆寫自己關心的那幾項。
 function baseDeps(ipcMain: FakeIpcMain['ipcMain']): PluginFeedIpcDependencies {
   return {
     ipcMain,
@@ -57,7 +56,6 @@ test('plugin feed IPC keeps pet and panel sender scopes and bounded payload chec
   }
   const badges = { list: () => [{ id: 'badge' }] }
   const eventSource = { list: () => [{ id: 'source' }] }
-  // 三個 controller 都有狀態與持久化，IPC 層只呼叫下面這些方法，所以只實作它們。
   registerPluginFeedIpc({
     ...baseDeps(ipcMain),
     assertTrustedIpcSender: (event, window) => { trusted.push({ event, window }) },

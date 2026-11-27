@@ -1,11 +1,3 @@
-// 由 sessions 衍生的畫面資料：面板清單、各家族狀態列、目前主導的 session 與寵物、外部權限提示、寵物視窗尺寸。
-// 全部是 computed，來源只有 `sessionsByKey`（reactive Map）與注入的寵物選擇。
-//
-// - 事件輸入：無；`sessionsByKey` 變動就重算。`dismissPermissionNotice()`（使用者關掉提示）與
-//   `forgetDismissedNotice(key)`（該 session 離開 waiting-permission 時由 handleEvent 呼叫）寫入已關閉集合。
-// - 計時器：無。
-// - storage：無。
-// - 跨視窗同步：無；兩個視窗各自從同一串事件算出自己的結果。尺寸 watch 兩邊都會送，主程序重複套用同一組 bounds 無害。
 import { computed, shallowRef, watch } from 'vue'
 import { t } from '@/i18n'
 import type { AgentFamilyKey, AgentSession, AgentSource, AgentState } from '@/types/agent'
@@ -22,8 +14,7 @@ import {
 import { compareAttention, mostUrgentSession, summarizeFamilies } from '@/utils/session-attention'
 import { petWindowHeight, petWindowWidth } from '@/utils/pet-window-size'
 
-// 面板清單排序的最後一層：來源名稱的 localeCompare 順序在載入時算成名次，
-// 每次比較只做整數相減，不必在每次事件重排時反覆做語系比對（順序與 localeCompare 相同）。
+// 排序最後一層：localeCompare 順序在載入時算成名次，每次比較只做整數相減。
 const SOURCE_LABEL_RANK = Object.freeze(Object.fromEntries(
   [...ALL_SOURCES]
     .sort((a, b) => SOURCE_LABELS[a].localeCompare(SOURCE_LABELS[b]))
@@ -48,12 +39,9 @@ export function useSessionViews(deps: SessionViewsDeps) {
     if (recencyDelta !== 0) return recencyDelta
     return SOURCE_LABEL_RANK[a.source] - SOURCE_LABEL_RANK[b.source]
   }))
-  // Preserve the store's existing object-shaped view for any internal caller
-  // that still needs keyed access; the Map remains the source of truth.
   const sessions = computed(() => Object.fromEntries(sessionsByKey))
 
-  // Unsorted on purpose: the pet only needs counts and the per-family winner (summarizeFamilies),
-  // so the hot path never pays for sessionList's full sort. The panel sorts its own view.
+  // Unsorted on purpose so the hot path never pays for sessionList's full sort.
   const activeSessions = computed(() => [...sessionsByKey.values()].filter(session => session.state !== 'offline'))
 
   const hasQuotaCapableSessions = computed(
@@ -64,10 +52,6 @@ export function useSessionViews(deps: SessionViewsDeps) {
     return activeSessions.value.some((s) => s.state === 'success')
   })
 
-  // One line per tool family (CLI + Desktop combined), only shown while that
-  // family has an active session — up to one line per AGENT_FAMILY_REGISTRY row.
-  // `variants` records which of CLI/Desktop are actually active so the line
-  // can still say which one, even though they share a row.
   const familyLines = computed(() => summarizeFamilies(sessionsByKey.values()).map((family) => {
     const top = family.top
     const variants = FAMILY_SOURCES[family.key]
@@ -78,7 +62,6 @@ export function useSessionViews(deps: SessionViewsDeps) {
       label: family.label,
       variants,
       state: top.state,
-      // 最需要你處理的工作階段（優先度，其次最近）；專案名稱只出現在狀態列的提示與 aria-label。
       project: top.project,
       since: top.lastSeenAt,
       petId: top.routedPetId ?? getPetForFamily(family.key),
@@ -86,20 +69,11 @@ export function useSessionViews(deps: SessionViewsDeps) {
     }
   }))
 
-  // When more than one tool family is active at once and the user has opted
-  // in, the pet window shows one small pet per family side by side instead
-  // of collapsing them all into a single highest-priority pet.
   const isMultiPet = computed(() => multiPetEnabled.value && familyLines.value.length > 1)
 
   const scaledW = computed(() => petWindowWidth(familyLines.value.length, isMultiPet.value, petScale.value))
   const scaledH = computed(() => {
-    // The toast/activity bubble deliberately does NOT grow the window here
-    // (see DesktopPet.vue) — it overlays the existing canvas instead, so
-    // showing/hiding it never triggers a resize+reposition of the window.
-    // The tooltip headroom below is unscaled and always reserved (rather
-    // than added only while a tooltip is open) for the same reason: growing
-    // the window on hover would reposition/animate it, which is distracting
-    // for a "just glance at it" hover interaction.
+    // Bubbles and tooltip headroom must never resize the window: a resize repositions/animates it.
     return petWindowHeight(familyLines.value.length, isMultiPet.value, petScale.value)
   })
 
@@ -113,8 +87,6 @@ export function useSessionViews(deps: SessionViewsDeps) {
     return highestPrioritySession.value?.source ?? null
   })
 
-  // Reverse-lookup from the currently-controlling source into its tool
-  // family for multi-pet skin selection.
   const currentFamilyKey = computed<AgentFamilyKey | null>(() => {
     const source = currentSource.value
     return source ? familyOfSource(source) : null
@@ -123,27 +95,20 @@ export function useSessionViews(deps: SessionViewsDeps) {
   const activePetId = computed(() => {
     const routedPetId = highestPrioritySession.value?.routedPetId
     if (routedPetId && petsById.value.has(routedPetId)) return routedPetId
-    // Per-family skins are a multi-pet feature. When that mode is off, keep
-    // the original single-pet behavior: always render the global selection.
     if (!multiPetEnabled.value) return selectedPet.value
     return currentFamilyKey.value ? getPetForFamily(currentFamilyKey.value) : selectedPet.value
   })
 
-  // Live "what's it doing right now" bubble text — only meaningful while a
-  // tool is actively running and the hook payload included a tool name.
   const activityText = computed<string | null>(() => {
     const s = highestPrioritySession.value
     if (!s || s.state !== 'tool-running' || !s.toolName) return null
     return s.toolName
   })
 
-  // Codex / Claude can only *report* a permission wait; the answer has to be
-  // given in the original tool. Every such session is listed (not just the
-  // highest-priority one) so the user can see how many agents are blocked.
+  // Codex / Claude can only report a permission wait; every such session is listed so the user sees how many are blocked.
   const dismissedPermissionNotices = shallowRef<ReadonlySet<string>>(new Set())
 
   const permissionNoticeItems = computed(() => {
-    // 單趟掃描只收集等待中的少數 session，不複製整張 Map；之後只排序這幾筆。
     const waiting: AgentSession[] = []
     for (const session of sessionsByKey.values()) {
       if (
@@ -191,12 +156,9 @@ export function useSessionViews(deps: SessionViewsDeps) {
     window.electronAPI?.resizeWindow(scaledW.value, scaledH.value)
   }
 
-  // Grows/shrinks the pet window whenever scale or active status-line count
-  // changes — firing from either window's store instance is harmless, since
-  // main process just re-applies the same bounds to the (single) pet window.
+  // Either window's store fires this; main re-applies the same bounds harmlessly.
   watch([scaledW, scaledH], resizePetWindow, { immediate: true })
 
-  /** 該 session 離開 waiting-permission 後，下次再等權限時要能重新提示。 */
   function forgetDismissedNotice(key: string): void {
     if (!dismissedPermissionNotices.value.has(key)) return
     const next = new Set(dismissedPermissionNotices.value)

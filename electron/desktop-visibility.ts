@@ -1,12 +1,7 @@
 import type { DesktopVisibilityCapabilities } from '../src/types/desktop-visibility.ts'
 import { UNSUPPORTED_DESKTOP_VISIBILITY_CAPABILITIES } from '../src/types/desktop-visibility.ts'
 
-/**
- * Keep platform claims explicit. Electron's content-protection API maps to a
- * system capture exclusion on Windows, while macOS has a best-effort sharing
- * exclusion that newer ScreenCaptureKit clients may ignore. Linux is not
- * advertised until it has a tested equivalent.
- */
+// macOS sharing exclusion is best-effort (newer ScreenCaptureKit clients may ignore it); Linux is not advertised until it has a tested equivalent.
 export function desktopVisibilityCapabilitiesForPlatform(
   platform: NodeJS.Platform,
   contentProtectionAvailable: boolean,
@@ -28,13 +23,8 @@ export function desktopVisibilityCapabilitiesForPlatform(
   }
 }
 
-/**
- * macOS cannot detect another app's fullscreen Space, so "hide in fullscreen"
- * is expressed as not following fullscreen Spaces. A pending permission request
- * temporarily overrides that so the user can still see (and answer) it, the
- * same way the Windows path restores windows while a request is active. This
- * only affects visibility; decisions still go through the broker.
- */
+// macOS cannot detect another app's fullscreen Space, so "hide in fullscreen" means not following fullscreen Spaces;
+// a pending permission request overrides that so the user can still answer it.
 export function macVisibleOnFullScreen(
   fullscreenAutoHideEnabled: boolean,
   hasActivePermissionRequest: boolean,

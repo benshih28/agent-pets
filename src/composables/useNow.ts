@@ -1,8 +1,5 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 
-// One shared wall-clock ref for tiny "elapsed" labels. The timer only runs
-// while at least one component is subscribed and the document is visible, and
-// only the components that read `now` re-render — not whole lists.
 const now = ref(Date.now())
 let subscribers = 0
 let timer: ReturnType<typeof setInterval> | null = null

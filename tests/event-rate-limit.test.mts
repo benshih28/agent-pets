@@ -27,7 +27,6 @@ test('a full tracking table fails closed with a shared overflow bucket', () => {
   const limiter = createEventRateLimiter({ now: () => 0, perSessionLimit: 2, maxTrackedSessions: 2, terminalPerSessionLimit: 1 })
   assert.equal(limiter.allowEvent('a', false), true)
   assert.equal(limiter.allowEvent('b', false), true)
-  // Unknown sessions now share one bucket instead of each getting a free pass.
   assert.deepEqual(['c', 'd', 'e', 'f'].map(key => limiter.allowEvent(key, false)), [true, true, false, false])
   assert.deepEqual(['x', 'y'].map(key => limiter.allowEvent(key, true)), [true, false])
 })

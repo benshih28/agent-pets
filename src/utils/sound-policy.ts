@@ -1,4 +1,4 @@
-// 測試會直接用 Node 執行這個檔案，執行期 import 必須是相對路徑（見 agent-pets-conventions §1）。
+// 測試會直接用 Node 執行這個檔案，執行期 import 必須是相對路徑。
 import { SOUND_CUE_REGISTRY, SOUND_POLICY, type SoundCue, type SoundCueSwitch } from '../types/sound.ts'
 
 export interface SoundGate extends Readonly<Record<SoundCueSwitch, boolean>> {
@@ -8,7 +8,6 @@ export interface SoundGate extends Readonly<Record<SoundCueSwitch, boolean>> {
   readonly petVisible: boolean
 }
 
-/** 這個音效能不能播：總開關、勿擾、可見性與 registry 指定的 cue 開關都要通過。 */
 export function shouldPlayCue(cue: SoundCue, gate: SoundGate): boolean {
   if (!gate.soundEnabled || gate.dndEnabled || !gate.petVisible) return false
   const toggle = SOUND_CUE_REGISTRY[cue].toggle

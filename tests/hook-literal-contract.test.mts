@@ -16,15 +16,8 @@ import {
 import { isValidPetId } from '../src/utils/pet-id.ts'
 import { openCodePluginContent } from '../electron/setup.ts'
 
-// integrations/*.mjs 與 OpenCode plugin 模板安裝後在 app 之外執行，不能 import TS，所以許多字面值是手動同步的。
-// 逐一固定「每個字面值對哪個 TS 來源」的測試分散在：
-//   tests/local-wire-contract.test.mts  埠、路徑、header、部署檔名、啟動標記檔名、權限 route
-//   tests/id-patterns.test.mts          IDENTIFIER_PATTERN
-//   tests/agent-source-registry.test.mts validSources
-// 這個檔案補上其餘的：來源與狀態字串、事件名稱對照、等待秒數、host 提示格式、presentation MCP 的 schema、cmd 包裝。
-// 做法是讀原始碼文字再用括號配對取出片段，而不是在 vm 裡執行：agent-hook.mjs 一載入就會 main()、
-// 讀 stdin 並結束程序，setup.ts 的常數也沒有 export，文字解析不需要改動任何來源檔，
-// 也不會因為其他欄位怎麼重構而失效（只依賴函式名稱與常數名稱）。
+// integrations/*.mjs 與 OpenCode plugin 模板在 app 之外執行，不能 import TS，字面值靠這些測試同步。
+// 讀原始碼文字而不在 vm 裡執行：agent-hook.mjs 一載入就會 main() 並結束程序，setup.ts 的常數也沒有 export。
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 const hook = read('integrations/agent-hook.mjs')
@@ -33,7 +26,6 @@ const cmd = read('integrations/agent-hook.cmd')
 const setup = read('electron/setup.ts')
 const hostApp = read('electron/host-app.ts')
 
-/** 從 `open` 所在位置起，取出到對應右括號為止的文字（略過字串字面值裡的括號）。 */
 function balanced(text: string, openIndex: number): string {
   const pairs: Record<string, string> = { '{': '}', '[': ']', '(': ')' }
   const stack: string[] = []
@@ -61,7 +53,6 @@ function functionBody(text: string, name: string): string {
   return balanced(text, text.indexOf('{', text.indexOf(')', match.index)))
 }
 
-/** `const NAME = ...` 後第一個 { 或 [ 的區塊（支援 Object.freeze({...}) 與 new Set([...])，以及型別註記）。 */
 function constBlock(text: string, name: string): string {
   const match = new RegExp(`(?:^|\\n)(?:export )?const ${name}\\b[^=\\n]*=`).exec(text)
   assert.ok(match, `const ${name} not found`)
@@ -74,10 +65,6 @@ function constBlock(text: string, name: string): string {
 const quoted = (text: string) => [...text.matchAll(/'([^']*)'/g)].map(match => match[1])
 const cases = (body: string) => [...body.matchAll(/case '([^']+)'/g)].map(match => match[1])
 
-/**
- * 函式回傳的狀態字串：`return 'x'`、三元式或物件值（`: 'x'`）。函式內引用的全大寫常數（例如對照表）也一併掃描，
- * 所以把狀態搬進對照表不會讓測試失效。
- */
 function mappedStates(text: string, name: string): string[] {
   const body = functionBody(text, name)
   const referenced = new Set([...body.matchAll(/\b[A-Z][A-Z0-9_]{3,}\b/g)].map(match => match[0]))
@@ -94,7 +81,6 @@ const installedClaude = quoted(constBlock(setup, 'CLAUDE_CODE_HOOK_EVENTS'))
 const installedCodex = quoted(constBlock(setup, 'CODEX_HOOK_EVENTS'))
 
 test('the extractors find the literals they are meant to guard', () => {
-  // 防止解析器壞掉時其餘測試空轉。
   assert.ok(claudeCases.length >= 8 && codexCases.length >= 5)
   assert.ok(installedClaude.length >= 8 && installedCodex.length >= 5)
   assert.ok(mappedStates(hook, 'mapClaudeEvent').length >= 5)
@@ -102,7 +88,6 @@ test('the extractors find the literals they are meant to guard', () => {
 })
 
 test('hook source names are registered sources', () => {
-  // validSources 的內容本身由 agent-source-registry.test.mts 固定。這裡檢查其餘兩個寫死的來源：預設值與 desktop 對應。
   const defaultSource = hook.match(/validSources\.includes\(process\.argv\[2\]\) \? process\.argv\[2\] : '([^']+)'/)
   assert.ok(defaultSource, 'default source not found')
   const desktopBlock = hook.match(/source === 'claude' && process\.env\.CLAUDE_CODE_ENTRYPOINT === 'claude-desktop'\) \{\s*source = '([^']+)'/)
@@ -117,7 +102,6 @@ test('the OpenCode plugin template stamps registered opencode sources', () => {
     assert.equal(AGENT_SOURCE_REGISTRY[source].family, 'opencode')
     assert.ok(openCodePluginContent(source).includes(`const SOURCE = '${source}';`), source)
   }
-  // 模板函式的參數型別列出的來源，要等於 registry 裡 opencode 家族的來源。
   const signature = setup.match(/function openCodePluginContent\(source: ([^)]+)\)/)
   assert.ok(signature, 'openCodePluginContent signature not found')
   assert.deepEqual(new Set(quoted(signature[1])), new Set(FAMILY_SOURCES.opencode))
@@ -135,7 +119,6 @@ test('every state the hook and the OpenCode plugin send is a registry state', ()
   for (const [owner, states] of Object.entries(sets)) {
     for (const state of states) assert.ok(isAgentState(state), `${owner} returns unknown state ${state}`)
   }
-  // 沒有 hook 會送出的狀態以外的值：所有狀態都至少有一條路徑（offline 由 SessionEnd 送出）。
   const reachable = new Set(Object.values(sets).flat())
   for (const state of AGENT_STATES) assert.ok(reachable.has(state), `no integration ever sends ${state}`)
 })
@@ -169,7 +152,6 @@ test('RESOLVING_EVENTS only lists events Claude actually sends to the hook', () 
     assert.ok(claudeCases.includes(event), `${event} is never mapped`)
     assert.ok(installedClaude.includes(event), `${event} is never installed`)
   }
-  // 權限請求本身也走 respond 模式。
   assert.ok(installedClaude.includes('PermissionRequest'))
 })
 
@@ -179,7 +161,6 @@ test('the permission wait limits equal the app clamp', () => {
 })
 
 test('the respond opt-in file keeps the keys the hook reads', () => {
-  // setup.ts 寫 { enabled, waitSeconds }；hook 讀同兩個欄位。
   assert.ok(setup.includes('JSON.stringify({ enabled: true, waitSeconds: clampClaudePermissionWaitSeconds(waitSeconds) })'))
   assert.ok(hook.includes('value?.enabled !== true || typeof value.waitSeconds !== \'number\''))
 })
@@ -190,13 +171,11 @@ test('host hint formats are shared between the hook, the plugin and the app', ()
   assert.ok(appPattern('TERM_PROGRAM_PATTERN'))
   assert.equal(hookPattern(hook, 'termProgram'), appPattern('TERM_PROGRAM_PATTERN'))
   assert.equal(hookPattern(hook, 'entrypoint'), appPattern('ENTRYPOINT_PATTERN'))
-  // OpenCode plugin 與 hook 的 termProgram／bundleId 格式相同。
   const plugin = openCodePluginContent('opencode-cli')
   for (const name of ['termProgram', 'bundleId']) {
     assert.ok(hookPattern(hook, name), name)
     assert.equal(hookPattern(plugin.replaceAll(';', ''), name), hookPattern(hook, name), name)
   }
-  // hook 傳出的 key 都在 app 認得的 HINT_KEYS 裡；bundleId 長度上限與 app 的上限相同。
   const sent = [...functionBody(hook, 'hostHints').matchAll(/^\s{4}(\w+):/gm)].map(match => match[1])
   const known = new Set(quoted(constBlock(hostApp, 'HINT_KEYS')))
   assert.ok(sent.length >= 5)
@@ -217,7 +196,6 @@ test('presentation-mcp.mjs tool schemas match the controller limits', () => {
     assert.equal(Number(schema.match(/minimum: (\d+)/)![1]), PRESENTATION_MIN_TTL_MS)
     assert.equal(Number(schema.match(/maximum: (\d+)/)![1]), PRESENTATION_MAX_TTL_MS)
     const petPattern = new RegExp(schema.match(/pattern: '([^']+)'/)![1])
-    // MCP 端只接受一般寵物 id（較嚴），而且被它接受的值 app 一定也接受。
     const maxLength = Number(petPattern.source.match(/\{1,(\d+)\}/)![1])
     assert.equal(isValidPetId('a'.repeat(maxLength), maxLength), true)
     assert.equal(petPattern.test('a'.repeat(maxLength + 1)), false)

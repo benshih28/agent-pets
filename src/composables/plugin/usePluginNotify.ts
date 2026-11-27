@@ -13,7 +13,6 @@ export interface PluginToast {
   text: string
   detail?: string
   action?: PluginToastAction
-  // 成功與資訊訊息會自動消失；錯誤需要使用者手動關閉。
   sticky: boolean
 }
 
@@ -22,7 +21,6 @@ export interface PluginNotifyInput {
   text: string
   detail?: string
   action?: PluginToastAction
-  // 毫秒；省略時成功 4 秒、資訊 6 秒、錯誤不自動消失（含動作的成功訊息給 8 秒）。
   durationMs?: number
 }
 
@@ -38,7 +36,7 @@ export function toastDuration(input: Pick<PluginNotifyInput, 'tone' | 'action' |
   return input.tone === 'success' ? SUCCESS_TOAST_MS : INFO_TOAST_MS
 }
 
-// 佇列最多同時顯示 MAX_VISIBLE_TOASTS 則；相同文字的訊息會取代舊的，避免連點時堆疊。
+// 相同文字的訊息取代舊的，避免連點時堆疊。
 export function usePluginNotify() {
   const toasts = ref<PluginToast[]>([])
   const timers = new Map<number, ReturnType<typeof setTimeout>>()

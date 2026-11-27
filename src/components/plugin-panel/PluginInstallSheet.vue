@@ -10,12 +10,7 @@ import type { PermissionGroupView } from '@/composables/usePluginPanelController
 import { FOCUSABLE_SELECTOR, nextTrapIndex } from '@/utils/focus-trap'
 import { shouldFocusCancelOnInstall, type InstallAcknowledgementReason } from '@/utils/plugin-permissions'
 
-// Install / update / downgrade confirmation. This is the consent screen for
-// untrusted code, so it is a scrollable sheet with a fixed header and a sticky
-// action bar: the permission list is never clipped, and the decision buttons
-// are always reachable. High-risk changes additionally need an explicit
-// acknowledgement checkbox and start with focus on Cancel. The IPC payload sent
-// on confirm is unchanged; the checkbox only gates the button in the UI.
+// The acknowledgement checkbox only gates the button in the UI; the IPC payload is unchanged.
 const {
   pendingPlan: plan, pendingPluginName, pendingPermissionSections: sections, installAcknowledgements: reasons,
   busy, displayFingerprint, planKindLabel, confirmInstall,

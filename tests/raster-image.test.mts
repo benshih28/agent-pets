@@ -14,9 +14,6 @@ import { rasterImageTypeIn, sniffRasterImageType } from '../electron/raster-imag
 import { jpeg, png, webp } from './support/panel-theme-fixtures.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 固定每個入口「依檔頭接受哪些圖片格式」。各入口的白名單刻意不同，
-// 共用的格式辨識不得改變任何一個入口的結果。
-
 type RasterType = 'image/png' | 'image/jpeg' | 'image/webp'
 
 const ascii = (value: string) => [...value].map(character => character.charCodeAt(0))
@@ -26,7 +23,6 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const JPEG_SOI = [0xff, 0xd8, 0xff]
 const WEBP_HEADER = [...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WEBP')]
 
-/** 只有檔頭的樣本：辨識格式用，沒有可讀的尺寸。 */
 const HEADER_SAMPLES = {
   pngSignature: bytes(PNG_SIGNATURE),
   jpegSoi: bytes(JPEG_SOI),
@@ -52,7 +48,6 @@ const HEADER_SAMPLES = {
 
 type HeaderSample = keyof typeof HEADER_SAMPLES
 
-/** 寵物 spritesheet（匯入、自訂寵物、插件 skin 的讀取與 agent-pets:// 回應）：PNG、JPEG、WebP。 */
 const PET_SPRITE_EXPECTED: Record<HeaderSample, RasterType | null> = {
   pngSignature: 'image/png',
   jpegSoi: 'image/jpeg',
@@ -76,7 +71,6 @@ const PET_SPRITE_EXPECTED: Record<HeaderSample, RasterType | null> = {
   empty: null,
 }
 
-/** 插件套件內的 icon 與 skin spritesheet：只接受 PNG、WebP。 */
 const PLUGIN_ARCHIVE_ACCEPTS: Record<HeaderSample, boolean> = {
   ...Object.fromEntries(Object.keys(HEADER_SAMPLES).map(name => [name, false])) as Record<HeaderSample, boolean>,
   pngSignature: true,
@@ -84,7 +78,6 @@ const PLUGIN_ARCHIVE_ACCEPTS: Record<HeaderSample, boolean> = {
 }
 
 function embedded(data: Uint8Array): Uint8Array {
-  // 以帶 byteOffset 的 view 傳入，確認辨識不是讀整個底層 ArrayBuffer。
   const backing = new Uint8Array(data.length + 6).fill(0x89)
   backing.set(data, 3)
   return backing.subarray(3, 3 + data.length)
@@ -188,7 +181,6 @@ test('panel theme images: packaged PNG and WebP, user PNG, JPEG and WebP; malfor
     assert.deepEqual(checkPanelThemePackagedImage(data), { ok: false, error: 'image_invalid' })
     assert.deepEqual(checkPanelThemeUserImage(data), { ok: false, error: 'image_invalid' })
   }
-  // 尺寸正確但 signature 錯一個位元組：由格式辨識擋下，不靠尺寸解析。
   for (const valid of [png(512, 256), webp(512, 256), jpeg(512, 256)]) {
     for (const index of valid[0] === 0xff ? [0, 1, 2] : valid[0] === 0x89 ? [0, 3, 7] : [0, 3, 8, 11]) {
       const altered = new Uint8Array(valid)
@@ -210,8 +202,7 @@ test('the shared sniffer only names a format; each entry keeps its own whitelist
 })
 
 test('header readers dispatch on the full signature, not on the first two bytes', () => {
-  // 1.12.5 的讀取函式只看 89 50（或 FF D8、52 49 … 57）就分派，單獨呼叫時會從
-  // 這種檔頭讀出尺寸。所有正式入口都先做完整 signature 檢查，所以入口結果不變。
+  // 單獨呼叫的讀取函式只看前一兩個位元組就分派；正式入口都先做完整 signature 檢查，所以入口結果不變。
   const prefixOnly = new Uint8Array(64)
   prefixOnly.set([0x89, 0x50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
   new DataView(prefixOnly.buffer).setUint32(16, 1536)

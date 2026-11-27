@@ -13,7 +13,6 @@ interface FeedPriorityBucket {
   head: number
 }
 
-/** FIFO queue indexed by id and partitioned by the feed's fixed priority set. */
 export class PluginFeedQueue {
   private readonly buckets = new Map<FeedPriority, FeedPriorityBucket>([
     ['low', { entries: [], head: 0 }],

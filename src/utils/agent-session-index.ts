@@ -15,7 +15,6 @@ function compareEvictionPriority(left: HeapEntry, right: HeapEntry): number {
   return left.insertionOrder - right.insertionOrder
 }
 
-/** Map-backed session lookup with an indexed heap for bounded-session eviction. */
 export class AgentSessionIndex<T extends AgentSession = AgentSession> {
   private readonly sessions: Map<string, T>
   private readonly heap: HeapEntry[] = []

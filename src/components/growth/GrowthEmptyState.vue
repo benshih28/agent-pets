@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// One empty/error/loading block for the Growth, History and Usage views, so
-// "nothing yet", "failed" and "loading" read as the same family instead of a
-// bare line of text. Keeps a live region so state changes are announced.
 import Icon from '@/components/ui/Icon.vue'
 
 withDefaults(defineProps<{

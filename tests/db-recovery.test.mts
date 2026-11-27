@@ -106,7 +106,6 @@ test('a failing history migration rolls back and keeps the original data', () =>
   const dir = mkdtempSync(join(tmpdir(), 'ap-db-'))
   const file = join(dir, 'history.sqlite')
   new HistoryStore(file).close()
-  // Simulate a pre-v6 database whose migration will fail (events table gone).
   const raw = new DatabaseSync(file)
   raw.exec("DELETE FROM schema_migrations WHERE version = 6; DROP TABLE events;")
   raw.close()

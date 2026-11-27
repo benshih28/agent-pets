@@ -1,6 +1,5 @@
 import type { PetMotionManifest, PetMotionName, PetMotionOverride, PetOptionalMotionName } from './pet-atlas.ts'
 
-/** 自主行為（Shimeji）會要求的選用動作。 */
 export type PetBehaviorName = PetOptionalMotionName
 export type PetAutonomousBehavior = 'idle' | 'walk' | 'sleep' | 'cursor-look' | 'poke'
 
@@ -13,7 +12,6 @@ export interface PluginSkinPetSource {
 }
 
 export type PetBehaviorDefinition = PetMotionOverride
-/** 寵物包介面：任何 PetMotionName 都能被覆蓋（規格見 types/pet-atlas.ts）。 */
 export type PetBehaviorManifest = PetMotionManifest
 export type { PetMotionName }
 
@@ -45,7 +43,6 @@ export const SHIMEJI_MIN_TICK_MS = 1_500
 export const SHIMEJI_IDLE_DELAY_MS = 15_000
 export const SHIMEJI_IDLE_DELAY_MIN_MS = 8_000
 export const SHIMEJI_IDLE_DELAY_MAX_MS = 25_000
-/** While asleep the scheduler just re-checks at this pace. */
 export const SHIMEJI_SLEEP_RECHECK_MS = 15_000
 export const SHIMEJI_SLEEP_AFTER_MS = 90_000
 export const SHIMEJI_WALK_STEP_PX = 18
@@ -96,8 +93,7 @@ export class ShimejiScheduler {
       return { behavior: 'idle', delayMs: SHIMEJI_IDLE_DELAY_MS }
     }
 
-    // Once asleep the pet stays asleep until something resets the scheduler
-    // (activity, the cursor arriving, a click) — it does not wake on its own.
+    // Once asleep the pet does not wake on its own; only a scheduler reset wakes it.
     if (this.sleeping && context.canSleep) {
       return { behavior: 'sleep', delayMs: SHIMEJI_SLEEP_RECHECK_MS }
     }
@@ -129,7 +125,6 @@ export class ShimejiScheduler {
       return { behavior, delayMs: SHIMEJI_SLEEP_RECHECK_MS }
     }
 
-    // Vary the pause so idle gestures do not tick like a metronome.
     const idleDelay = SHIMEJI_IDLE_DELAY_MIN_MS
       + shimejiRoll(context.random) * (SHIMEJI_IDLE_DELAY_MAX_MS - SHIMEJI_IDLE_DELAY_MIN_MS)
     return {

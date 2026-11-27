@@ -5,12 +5,10 @@ import type {
   PermissionRequestView,
 } from '@/types/permission'
 
-/** Remaining time is shown in the warning style below this threshold. */
 export const PERMISSION_URGENT_MS = 15_000
 
 const EXPIRY_SLACK_MS = 2_000
 
-/** How long a finished request's result stays visible in the bubble. */
 export const PERMISSION_OUTCOME_VISIBLE_MS = 5_000
 export const PERMISSION_FAILURE_VISIBLE_MS = 8_000
 
@@ -21,7 +19,6 @@ export function permissionRemainingMs(
   return Math.max(0, request.expiresAt - now)
 }
 
-/** 0..1 fraction of the request's lifetime that is left. */
 export function permissionRemainingFraction(
   request: Pick<PermissionRequestView, 'expiresAt' | 'receivedAt'>,
   now: number,
@@ -38,16 +35,11 @@ export function permissionIsUrgent(
   return permissionRemainingMs(request, now) < PERMISSION_URGENT_MS
 }
 
-/**
- * A request that left the active list without us deciding it either ran out
- * of time or was resolved elsewhere (agent answered, adapter disconnected).
- */
 export function inferVanishedOutcome(
   request: Pick<PermissionRequestView, 'expiresAt'>,
   now: number,
 ): PermissionOutcomeKind {
-  // The broker's expiry timer fires at expiresAt and the broadcast lands a
-  // moment later, so allow a little slack for IPC latency.
+  // The broker's broadcast lands a moment after its expiry timer fires, so allow slack for IPC latency.
   return now >= request.expiresAt - EXPIRY_SLACK_MS ? 'expired' : 'cancelled'
 }
 
@@ -55,7 +47,6 @@ export function outcomeVisibleMs(kind: PermissionOutcomeKind): number {
   return kind === 'delivery_failed' || kind === 'error' ? PERMISSION_FAILURE_VISIBLE_MS : PERMISSION_OUTCOME_VISIBLE_MS
 }
 
-/** Maps the `permissionDecide` IPC response onto what the UI should do next. */
 export function classifyDecideResponse(
   response: { ok: boolean; status?: PermissionRequestStatus; error?: string } | null | undefined,
 ): PermissionDecideResult {
@@ -77,17 +68,12 @@ export function isPermissionClickArmed(shownAt: number, now: number): boolean {
 }
 
 export interface PermissionQueueGroup {
-  /** First request of the group; its requestId is the group's identity. */
   first: PermissionRequestView
   requestIds: string[]
   count: number
 }
 
-/**
- * Folds consecutive requests of the same session asking for the same action
- * with the same content. Each request keeps its own id: folding only changes
- * how the list is drawn, never what a decision applies to.
- */
+/** Each request keeps its own id: folding only changes how the list is drawn, never what a decision applies to. */
 export function groupPermissionRequests(requests: ReadonlyArray<PermissionRequestView>): PermissionQueueGroup[] {
   const groups: PermissionQueueGroup[] = []
   for (const request of requests) {

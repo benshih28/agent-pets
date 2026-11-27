@@ -6,24 +6,16 @@ export const MAX_CORRUPT_COPIES = 3
 export interface DbRecoveryOptions<T = unknown> {
   now?: () => number
   log?: (message: string, detail?: unknown) => void
-  /** Extra health check on a database that opened; return false when it is corrupt. */
   verify?: (opened: T) => boolean
-  /** Closes an opened database before it is set aside. */
   dispose?: (opened: T) => void
-  /** Called after a corrupt database was set aside and a fresh one created. */
   onRecovered?: (info: { copyName: string }) => void
-  /** Called when opening failed and the database was left untouched (retry later). */
   onOpenFailed?: (error: unknown) => void
   maxCopies?: number
 }
 
 const CORRUPT_CODES = new Set([11, 26]) // SQLITE_CORRUPT, SQLITE_NOTADB
 
-/**
- * True only when SQLite itself says the file is damaged. Busy/locked, full disk,
- * permission, IO and migration errors are NOT corruption and must never cause the
- * database to be set aside.
- */
+// Busy/locked, full disk, permission, IO and migration errors are NOT corruption and must never cause the database to be set aside.
 export function isCorruptDatabaseError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const info = error as { errcode?: unknown, code?: unknown, message?: unknown }
@@ -47,7 +39,6 @@ function corruptCopyStamps(databasePath: string): string[] {
   return [...stamps]
 }
 
-/** Deletes `.corrupt-*` copies. `keep` newest are retained (0 removes all). */
 export function pruneCorruptCopies(databasePath: string, keep = MAX_CORRUPT_COPIES): void {
   const stamps = corruptCopyStamps(databasePath).sort((a, b) => Number(b) - Number(a))
   for (const stamp of stamps.slice(Math.max(0, keep))) {
@@ -57,14 +48,7 @@ export function pruneCorruptCopies(databasePath: string, keep = MAX_CORRUPT_COPI
   }
 }
 
-/**
- * Opens a SQLite-backed store. Only a database that is actually corrupt
- * (SQLITE_CORRUPT / SQLITE_NOTADB, or a failed health check) is renamed aside as
- * `<name>.corrupt-<timestamp>` and recreated; at most MAX_CORRUPT_COPIES copies are
- * kept. Any other open failure (locked, busy, disk full, permissions, a migration
- * that rolled back) leaves the files untouched and returns null so the caller can
- * retry later.
- */
+// Only a corrupt database is renamed aside and recreated; any other open failure leaves the files untouched and returns null so the caller can retry later.
 export function openWithCorruptionRecovery<T>(
   databasePath: string,
   open: () => T,

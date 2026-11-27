@@ -56,7 +56,6 @@ export interface PluginInstallPlan {
 
 export type { PluginRegistryError } from '../src/types/ipc.ts'
 
-/** `diagnostic` 只會在開發者模式安裝時設定（經清理，<= 200 字元）。 */
 export type PluginRegistryResult<T> = { ok: true; value: T } | { ok: false; error: PluginRegistryError; diagnostic?: string }
 
 interface PreparedPlan {
@@ -80,7 +79,7 @@ function compareVersions(left: string, right: string): number {
   return 0
 }
 
-// 套件內的 icon 與 skin spritesheet 只接受 PNG、WebP（比寵物 spritesheet 的白名單窄，不含 JPEG）。
+// 比寵物 spritesheet 的白名單窄，不含 JPEG。
 const PLUGIN_ARCHIVE_RASTER_TYPES: ReadonlySet<RasterImageType> = new Set(['image/png', 'image/webp'])
 
 function hasRasterSignature(data: Uint8Array): boolean {
@@ -285,7 +284,6 @@ export class PluginRegistry {
     const manifest = parsed.manifest
     const skinPaths = new Set((manifest.contributes.skins ?? []).map(skin => skin.spritesheet))
     const themeAssets = panelThemeAssetPaths(manifest.contributes.panelThemes)
-    // 「資產套件」（skins 及/或面板主題）適用較大的總大小上限。
     const assetPackage = skinPaths.size > 0 || themeAssets.images.size > 0 || themeAssets.fonts.size > 0
     const totalBytes = [...guarded.files.values()].reduce((total, bytes) => total + bytes.byteLength, 0)
     const archiveLimit = assetPackage ? PLUGIN_ARCHIVE_SKIN_MAX_BYTES : PLUGIN_ARCHIVE_MAX_BYTES
@@ -298,7 +296,6 @@ export class PluginRegistry {
           : themeAssets.fonts.has(name) ? PANEL_THEME_FONT_MAX_BYTES
             : PLUGIN_ARCHIVE_MAX_BYTES
       if (bytes.byteLength > fileLimit) return { ok: false, error: 'archive_too_large' }
-      // 每個套件內的字型都必須由主題的字型 face 宣告。
       if (path.posix.extname(name).toLowerCase() === '.woff2' && !themeAssets.fonts.has(name)) {
         return { ok: false, error: 'invalid_panel_theme', ...(developerMode ? { diagnostic: 'panelThemes: a packaged .woff2 is not referenced by any fonts[].src' } : {}) }
       }
@@ -390,7 +387,6 @@ export class PluginRegistry {
     }, guarded.files, manifest)
   }
 
-  /** Package a developer-selected folder in memory, then run the exact archive validator. */
   async planInstallDirectory(directory: string): Promise<PluginRegistryResult<PluginInstallPlan>> {
     if (typeof directory !== 'string' || !path.isAbsolute(directory)) return { ok: false, error: 'invalid_archive' }
     const root = path.resolve(directory)

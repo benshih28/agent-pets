@@ -4,24 +4,16 @@ import { join } from 'node:path'
 import type { AgentFamilyKey } from '../src/types/agent.ts'
 import { asRecord } from './value-guards.ts'
 
-// 從 agent 自己寫的對話紀錄檔判斷「回合是不是已經結束」。
-//
-// 為什麼需要：agent 不保證會送結束事件。使用者按 Esc 中斷、拒絕工具時，Claude Code 與 Codex 都不送 Stop，
-// 寵物會停在 thinking／tool-running。紀錄檔結尾有明確的事實（Claude 的中斷訊息、Codex 的
-// turn_aborted／task_complete），用它判斷比猜時間準，長時間的思考或 build 也不會被誤判。
-//
 // 安全邊界：
 // - 檔案位置由主程序從 agent 設定目錄與 session id 自己組出來，不接受事件帶來的路徑。
-// - session id 先過白名單（不含路徑分隔字元與 `.`）才拿去比對檔名。
-// - 只讀檔尾固定大小，只取出「結束了沒、什麼時候」，對話內容不保存、不記錄、不離開這個函式。
-// - 紀錄格式不是公開契約：看不懂就當成「還在進行」，最壞情況等同沒有這個功能（由狀態期限接手）。
+// - 只讀檔尾，只取出「結束了沒、什麼時候」，對話內容不保存、不記錄、不離開這個檔案。
+// - 紀錄格式不是公開契約：看不懂就當成「還在進行」（由狀態期限接手）。
 
 export const TRANSCRIPT_TAIL_BYTES = 64 * 1024
-/** 與 src/types/id-patterns.ts 的精神相同，但更嚴：這裡的值會用來比對檔名。 */
+// 比 id-patterns.ts 更嚴：這裡的值會用來比對檔名。
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/
 
 export interface TranscriptTurnEnd {
-  /** 紀錄檔裡那筆結束紀錄的時間。 */
   endedAt: number
   reason: 'interrupted' | 'completed'
 }
@@ -29,14 +21,13 @@ export interface TranscriptTurnEnd {
 /** 'open'：回合還在進行。null：這筆紀錄跟回合邊界無關，繼續往前看。 */
 type RecordVerdict = TranscriptTurnEnd | 'open' | null
 
-/** 找紀錄檔時用到的檔案系統操作；測試可以換掉。失敗一律當成「沒有」。 */
+// 失敗一律當成「沒有」。
 export interface TranscriptFs {
   list(directory: string): Promise<string[]>
   isFile(filePath: string): Promise<boolean>
 }
 
 interface TranscriptFormat {
-  /** 找出這個 session 的紀錄檔；找不到回 null。 */
   locate(configDir: string, sessionId: string, fs: TranscriptFs): Promise<string | null>
   classify(record: Record<string, unknown>): RecordVerdict
 }
@@ -46,8 +37,6 @@ function timestampMs(value: unknown): number | null {
   const parsed = Date.parse(value)
   return Number.isFinite(parsed) ? parsed : null
 }
-
-// --- Claude Code：<config>/projects/<專案 slug>/<sessionId>.jsonl -----------------------------------
 
 // Claude Code 在使用者中斷回合時寫入的 user 訊息，整則就是這段文字。
 const CLAUDE_INTERRUPT_TEXT = /^\[Request interrupted by user(?: for tool use)?\]$/
@@ -82,8 +71,6 @@ const claudeFormat: TranscriptFormat = {
   },
 }
 
-// --- Codex：<config>/sessions/<年>/<月>/<日>/rollout-<時間>-<sessionId>.jsonl -------------------------
-
 const CODEX_DATE_PART = /^\d{2,4}$/
 
 const codexFormat: TranscriptFormat = {
@@ -91,7 +78,6 @@ const codexFormat: TranscriptFormat = {
     const root = join(configDir, 'sessions')
     const suffix = `-${sessionId}.jsonl`
     const newestFirst = (names: string[]) => names.filter(name => CODEX_DATE_PART.test(name)).sort().reverse()
-    // 新的在前：正在跑的 session 幾乎都在最近幾天的目錄裡。
     for (const year of newestFirst(await fs.list(root))) {
       for (const month of newestFirst(await fs.list(join(root, year)))) {
         for (const day of newestFirst(await fs.list(join(root, year, month)))) {
@@ -113,7 +99,6 @@ const codexFormat: TranscriptFormat = {
   },
 }
 
-// 每個家族都要明確填：有紀錄檔可讀就給格式，沒有就填 null（由狀態期限處理）。
 const TRANSCRIPT_FORMATS = Object.freeze({
   claude: claudeFormat,
   codex: codexFormat,
@@ -133,7 +118,6 @@ const realFs: TranscriptFs = {
   },
 }
 
-/** 紀錄檔的位置；session id 不合格、家族沒有紀錄檔或找不到都回 null。 */
 export async function locateTranscript(
   family: AgentFamilyKey,
   configDir: string,
@@ -145,10 +129,7 @@ export async function locateTranscript(
   return format.locate(configDir, sessionId, fs)
 }
 
-/**
- * 從檔尾的文字往回找第一筆能判斷回合邊界的紀錄。`truncated` 表示這段文字不是從檔案開頭讀的，
- * 第一行可能是半行，直接丟掉。
- */
+// `truncated` 時第一行可能是半行，直接丟掉。
 export function turnEndFromTail(family: AgentFamilyKey, tail: string, truncated: boolean): TranscriptTurnEnd | null {
   const format = TRANSCRIPT_FORMATS[family]
   if (!format) return null
@@ -174,11 +155,9 @@ export interface TranscriptFingerprint {
 
 export interface TranscriptProbe {
   fingerprint: TranscriptFingerprint
-  /** 檔案跟上次看到的一樣時不重讀，回 'unchanged'。 */
   turnEnd: TranscriptTurnEnd | null | 'unchanged'
 }
 
-/** 讀紀錄檔結尾並判斷；檔案不存在、不是一般檔案或讀取失敗回 null。 */
 export async function probeTranscript(
   family: AgentFamilyKey,
   filePath: string,

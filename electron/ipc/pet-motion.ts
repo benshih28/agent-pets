@@ -34,11 +34,8 @@ export interface PetMotionIpcDependencies {
   clampWindowBounds(bounds: WindowBounds, workArea: WorkArea): WindowBounds
   setNormalPetBounds(bounds: WindowBounds | null): void
   scheduleShimejiPositionPersist(): void
-  /** Optional: when present the panel follows the pet during a drag instead of hiding. */
   repositionVisiblePanel?(): void
-  /** Optional: re-dock to the edge once the cursor stays away after a hover expand. */
   scheduleEdgeRedock?(): void
-  /** Glide walk steps over a short tween instead of jumping. */
   smoothWalk?: boolean
 }
 
@@ -66,15 +63,12 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
     if (previousHandle) deps.clearInterval(previousHandle)
     const startCursor = deps.getCursorScreenPoint()
     const [startX, startY] = petWindow.getPosition()
-    // Fixed for the whole drag: setPosition can grow a window on mixed-DPI
-    // setups, setBounds with the original size cannot.
+    // Fixed for the whole drag: setPosition can grow a window on mixed-DPI setups, setBounds with the original size cannot.
     const [startWidth, startHeight] = petWindow.getSize()
     let lastAppliedX = startX
     let lastAppliedY = startY
     let lastPanelFollowAt = 0
     deps.setAnchorBottomCenter(null)
-    // The panel is anchored to the pet, so it follows the drag when it can;
-    // otherwise it is hidden rather than left stranded.
     if (!deps.repositionVisiblePanel) deps.getPanelWindow()?.hide()
 
     const dragPollHandle = deps.setInterval(() => {
@@ -159,7 +153,6 @@ export function registerPetMotionIpc(deps: PetMotionIpcDependencies): void {
       deps.scheduleShimejiPositionPersist()
       return
     }
-    // Glide so the walk cycle in the sprite matches actual movement.
     const startedAt = Date.now()
     const fromX = current.x
     walkTween = deps.setInterval(() => {

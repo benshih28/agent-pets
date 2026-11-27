@@ -16,9 +16,6 @@ import type { ProgressionAward, ProgressionEventResult, ProgressionSnapshot } fr
 import { makeAgentStatusEvent } from './support/agent-status-event.mts'
 import { fakeService } from './support/fake-service.mts'
 
-// 階段 11 之前在 electron/main/runtime.ts 內的成就／progression 行為，改由抽出的服務搭配
-// 假 store、假視窗與 node:test 假計時器驗證。
-
 const snapshot = (xp: number): ProgressionSnapshot => ({
   petId: 'pet-a', totalXp: xp, level: 1, xpIntoLevel: xp, xpToNext: 10, evolutionStage: 'egg',
   currentStreak: 0, longestStreak: 0, updatedAt: 1,
@@ -234,14 +231,13 @@ test('granted awards are broadcast with level and stage transitions; an empty re
   h.service.broadcastProgressionAwards({ ...base, awards: [] })
   assert.equal(h.sent.filter(([channel]) => channel === IPC_CHANNELS.progressionAwarded).length, 0)
 
-  // 以變數傳入以保留額外欄位 extra：驗證服務不會把 ledger 的其他欄位送出去。
+  // 以變數傳入以保留額外欄位 extra：驗證 ledger 的其他欄位不會送出去。
   const award = { ruleId: 'task-success', amount: 3, extra: 'dropped' }
   const awards: ProgressionAward[] = [award]
   h.service.broadcastProgressionAwards({ ...base, awards })
   const awarded = h.sent.filter(([channel]) => channel === IPC_CHANNELS.progressionAwarded)
   assert.equal(awarded.length, 1)
   const payload = awarded[0][1] as Record<string, unknown>
-  // 只送出規則與數量；ledger 的其他欄位不外流到 renderer。
   assert.deepEqual(payload.awards, [{ ruleId: 'task-success', amount: 3 }])
   assert.deepEqual(
     { petId: payload.petId, levelBefore: payload.levelBefore, levelAfter: payload.levelAfter, stageBefore: payload.stageBefore, stageAfter: payload.stageAfter },

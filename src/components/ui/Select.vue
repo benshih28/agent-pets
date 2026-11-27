@@ -1,18 +1,5 @@
 <script setup lang="ts">
-// The one dropdown in the app. Replaces two divergent implementations:
-// .language-select (which never set appearance:none, so it rendered the OS
-// arrow — a grey button on Windows, blue chevrons on macOS — and opened a
-// white-on-black option list) and .family-pet-select (custom arrow, dark
-// options, but a different radius and a sub-11px font).
-//
-// This stays a native <select> on purpose. A hand-rolled listbox would gain
-// full control of the popup, but in a transparent frameless Electron window
-// the popup has to be drawn inside the page, where it gets clipped by the
-// panel's `overflow: hidden` and loses the OS keyboard/typeahead behaviour.
-// The popup itself is painted by the OS and cannot be fully styled — we set
-// an opaque background on <option> so neither platform falls back to its own
-// light palette, and take full control of the closed (collapsed) state, which
-// is what the user actually looks at.
+// Native <select> on purpose: a custom popup would be clipped by the panel's `overflow: hidden`.
 withDefaults(defineProps<{
   size?: 'sm' | 'md'
   ariaLabel?: string
@@ -95,8 +82,7 @@ const model = defineModel<string>({ required: true })
   opacity: 0.55;
 }
 
-/* Painted by the OS. Only background/color reliably apply, and only when
-   opaque — a translucent value makes Windows fall back to system colours. */
+/* The OS paints the popup; a translucent background makes Windows fall back to system colours. */
 .select :deep(option) {
   background: var(--surface-option);
   color: var(--text-on-option);

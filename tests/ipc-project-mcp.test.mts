@@ -52,7 +52,6 @@ test('project MCP IPC preserves setup, list, remove, and forget contracts throug
     IPC_CHANNELS.projectMcpRemove,
     IPC_CHANNELS.projectMcpForget,
   ])
-  // Applying before a folder was picked in the dialog is refused.
   const request = { projectPath: 'test-project', clients: ['claude'], localOnly: true }
   assert.deepEqual(await invoke(IPC_CHANNELS.projectMcpApply, request), {
     ok: false, results: [], error: 'Project folder was not chosen in this session',

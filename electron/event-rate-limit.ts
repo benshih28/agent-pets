@@ -1,16 +1,13 @@
 export interface EventRateLimiterOptions {
   now?: () => number
   windowMs?: number
-  /** Pre-parse ceiling across all callers; only protects the process from a request flood. */
+  /** Pre-parse ceiling; only protects the process from a request flood. */
   globalLimit?: number
-  /** Ordinary events (heartbeats, tool use) per source session per window. */
   perSessionLimit?: number
-  /** Terminal events (success/error/permission) get their own, separate budget per session. */
   terminalPerSessionLimit?: number
   maxTrackedSessions?: number
-  /** Budget for all ordinary events combined, whatever their session ids (rotating ids cannot bypass it). */
+  /** Whatever the session ids, so rotating ids cannot bypass it. */
   globalEventLimit?: number
-  /** Same, for terminal events. */
   globalTerminalLimit?: number
 }
 
@@ -57,7 +54,6 @@ export function createEventRateLimiter(options: EventRateLimiterOptions = {}): E
     },
     allowEvent(sessionKey, terminal) {
       roll()
-      // Global event budgets apply to every caller regardless of the session id they claim.
       if (terminal) {
         terminalEvents += 1
         if (terminalEvents > globalTerminal) return false
@@ -67,8 +63,7 @@ export function createEventRateLimiter(options: EventRateLimiterOptions = {}): E
       }
       let entry = counters.get(sessionKey)
       if (!entry) {
-        // Fail closed: once the table is full, unknown sessions share one overflow bucket
-        // instead of getting a free pass or a fresh budget each.
+        // Fail closed: once the table is full, unknown sessions share one overflow bucket.
         entry = counters.size >= maxTracked ? overflow : { normal: 0, terminal: 0 }
         if (entry !== overflow) counters.set(sessionKey, entry)
       }

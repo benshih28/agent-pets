@@ -26,10 +26,7 @@ export interface PluginDashboardTab {
   plugin: PluginPanelPlugin
 }
 
-// Read-only view of the plugin list for the dashboard tab bar. It only reads the
-// snapshot / feed IPC the plugin panel already uses; the plugin panel controller
-// (settings, install, remove) stays the single writer, so this refreshes whenever
-// the dashboard is shown again or gains focus (full snapshot); feed events refetch only notifications.
+// Read-only: the plugin panel controller stays the single writer.
 export function usePluginTabs() {
   const snapshot = ref<PluginPanelSnapshot | null>(null)
   const notifications = ref<PluginNotificationRecord[]>([])

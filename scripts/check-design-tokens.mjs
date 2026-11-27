@@ -1,31 +1,4 @@
 #!/usr/bin/env node
-// Design-token guard (report-only by default; pass --strict to fail on findings).
-//
-// Checks renderer CSS/Vue sources against docs in
-// .agents/skills/pet-skill/references/ui-design-system.md:
-//   undefined-var   var(--x) with no declaration anywhere in src/
-//   bare-color      hex / rgb()/rgba()/hsl() literal outside tokens.css
-//   small-font      font-size below 11px (or a non-token px size under 11)
-//   literal-blur    backdrop-filter blur(<n>px) instead of a --blur-* token
-//   literal-spacing margin／padding／gap 寫死的 px 剛好等於某個 --space-* 的值（改用該 token）
-//   literal-transition  transition 寫死時長（改用 --transition-* 或 --duration-*）
-//   literal-easing  寫死的 cubic-bezier()（改用 --ease-*）
-//   glyph-icon     arrow/dingbat/emoji/× glyph in a .vue template (use ui/Icon.vue)
-//   english-literal  untranslated [A-Za-z]{4,} text node in a .vue template (use t())
-// 只回報、不讓 --strict 失敗（info）：
-//   unused-token    --token declared in tokens.css but never referenced; tokens that
-//                   docs/plugins/ux-guidelines.md promises to plugin pages count as used
-//   raw-control     <button|select|input> outside src/components/ui. A control preceded by
-//                   `<!-- raw-control: <理由> -->` is counted as accepted instead.
-//   raw-spacing     不在 --space-* 刻度上（或為負值）的 margin／padding／gap px：光學微調
-//   raw-motion      keyframe animation 的寫死時長：只出現一次的裝飾動畫
-//   raw-color       任何寫死的顏色（hex、rgb()/hsl()/oklch() 等、CSS 具名色、
-//                   TS／Vue script 字串中的顏色），只有主題色盤來源 `--builtin-organic-*`
-//                   例外。目前是基準模式（只回報、不讓 --strict 失敗）；
-//                   `--raw-colors=fail` 會讓它失敗，統一主題完成後 CI 改用此旗標
-//                   （見 docs/design/theme-token-audit.md）。
-//
-// 每個檔案只讀一次、每份 CSS 只切一次宣告；所有規則共用同一份切好的資料。
 // Dependency-free so it can run before `pnpm install` finishes in CI.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
@@ -43,12 +16,9 @@ function walk(dir, pattern = /\.(css|vue|ts)$/, out = []) {
   return out
 }
 
-// ── raw-color ────────────────────────────────────────────────────────────
-// 主題色盤的唯一字面值來源；其餘地方都必須經由 token 取得顏色。
 const PALETTE_SOURCE = /^--builtin-organic-/
 const COLOR_FUNCTION = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i
 const HEX = /#[0-9a-f]{3,8}\b/i
-// CSS 具名色（不含 transparent、currentcolor 與 forced-colors 用的系統色）。
 const NAMED_COLORS = new Set(('aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown '
   + 'burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod '
   + 'darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen '
@@ -76,10 +46,7 @@ function cssValueHasColor(property, value) {
   return HEX.test(bare) || COLOR_FUNCTION.test(bare) || (COLOR_PROPERTY.test(property) && hasNamedColor(bare))
 }
 
-/**
- * 每筆字面顏色歸到一個介面群組，作為統一主題（spec §16）的工作清單。
- * 依 token 名稱或檔案判斷；第一個符合的規則勝出。
- */
+// 第一個符合的規則勝出。
 const RAW_COLOR_GROUPS = [
   { group: 'pet-bubbles', test: ({ token }) => /^--pet-bubble-/.test(token ?? '') },
   { group: 'pet-status-pill', test: ({ token }) => /^--organic-status-/.test(token ?? '') },
@@ -100,11 +67,7 @@ function rawColorGroup(entry) {
   return RAW_COLOR_GROUPS.find(rule => rule.test(entry))?.group ?? 'other'
 }
 
-/**
- * 依宣告（而非逐行）切開 CSS：跨多行的值（例如多層 box-shadow）也會完整檢查。
- * 括號內的 `;`、`{`、`}`（如 data: URL）不算分隔。回傳每筆宣告的起始行、所屬選擇器
- * 與外層路徑（`path`，含 @media 等外層區塊）。
- */
+// 括號內的 `;`、`{`、`}`（如 data: URL）不算分隔。
 export function cssDeclarations(css) {
   const out = []
   const selectors = []
@@ -133,7 +96,7 @@ export function cssDeclarations(css) {
   return out
 }
 
-/** TS／Vue script 只看字串字面值；註解先去掉，避免把文件裡的格式說明算進來。 */
+// 註解先去掉，避免把文件裡的格式說明算進來。
 function scriptColorLines(text) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
   const hits = []
@@ -149,14 +112,12 @@ function scriptColorLines(text) {
 
 const blank = (m) => m.replace(/[^\n]/g, ' ')
 
-/** Strip /* *\/ comments but keep line numbers stable. */
 function stripComments(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, blank)
 }
 
 function styleOnly(file, text) {
   if (!file.endsWith('.vue')) return text
-  // Only analyse <style> blocks, but keep line numbers.
   const lines = text.split('\n')
   const keep = lines.map(() => false)
   let inStyle = false
@@ -168,9 +129,7 @@ function styleOnly(file, text) {
   return lines.map((l, i) => (keep[i] ? l : '')).join('\n')
 }
 
-// ── 插件頁面可讀的共用 token ─────────────────────────────────────────────
-// docs/plugins/ux-guidelines.md「Shared stylesheet tokens」表承諾給插件頁面的 token；
-// app 自己沒用到也不算 unused（刪掉會弄壞插件）。tests/check-design-tokens.test.mts 會比對文件與此清單。
+// docs/plugins/ux-guidelines.md 承諾給插件頁面的 token；app 自己沒用到也不算 unused（刪掉會弄壞插件）。
 export const PLUGIN_SHARED_TOKENS = new Set([
   '--surface-panel', '--surface-raised', '--surface-raised-hover', '--surface-sunken', '--surface-overlay',
   '--text-primary', '--text-secondary', '--text-muted', '--text-danger', '--text-success', '--text-warning',
@@ -183,7 +142,6 @@ export const PLUGIN_SHARED_TOKENS = new Set([
   '--hit-min', '--focus-ring-color', '--focus-ring-width', '--focus-ring-offset', '--transition-fast', '--transition-base',
 ])
 
-// ── 動態與間距 ───────────────────────────────────────────────────────────
 const SPACING_PROPERTY = /^(?:(?:margin|padding)(?:-(?:top|right|bottom|left|inline|block)(?:-start|-end)?)?|gap|row-gap|column-gap)$/i
 const TRANSITION_PROPERTY = /^transition(?:-duration|-delay)?$/i
 const ANIMATION_PROPERTY = /^animation(?:-duration|-delay)?$/i
@@ -193,14 +151,12 @@ const CUBIC_BEZIER = /\bcubic-bezier\(/i
 const INNER_FUNCTION = /[a-z-]*\([^()]*\)/gi
 const SPACE_TOKEN = /^--space-[0-9-]+$/
 
-/** 拿掉所有函式呼叫（var()、calc()、max() …）後剩下的頂層字詞：函式裡的值是公式，不是寫死的刻度。 */
 function topLevelWords(value) {
   let v = value
   for (let prev = ''; prev !== v;) { prev = v; v = v.replace(INNER_FUNCTION, ' ') }
   return v.split(/[\s,/]+/).filter(Boolean)
 }
 
-/** tokens.css 的 --space-* 刻度：px 值 → token 名稱（同值取先宣告者）。 */
 function spacingScale(decls) {
   const scale = new Map()
   for (const { property, value, path } of decls) {
@@ -211,7 +167,6 @@ function spacingScale(decls) {
   return scale
 }
 
-/** template 的靜態 style="…" 也算宣告（行號照原檔）。 */
 function inlineStyleDeclarations(template) {
   const out = []
   template.split('\n').forEach((line, i) => {
@@ -225,13 +180,12 @@ function inlineStyleDeclarations(template) {
   return out
 }
 
-/** 一個檔案只讀一次，並一次算好所有規則要用的視圖。 */
 function loadSource(file) {
   const raw = readFileSync(file, 'utf8')
   const isVue = file.endsWith('.vue')
   const isScript = file.endsWith('.ts')
   const css = isScript ? '' : stripComments(styleOnly(file, raw))
-  // template：script、style 換成空白；withComments 保留 HTML 註解，給 raw-control 讀理由。
+  // withComments 保留 HTML 註解，給 raw-control 讀理由。
   const withComments = isVue ? raw.replace(/<script\b[\s\S]*?<\/script>/g, blank).replace(/<style\b[\s\S]*?<\/style>/g, blank) : ''
   const template = withComments.replace(/<!--[\s\S]*?-->/g, blank)
   const script = isScript ? raw : isVue ? raw.replace(/<style\b[\s\S]*?<\/style>/g, blank) : ''
@@ -254,14 +208,13 @@ export function analyze(root = defaultRoot) {
   const tokensPath = join(srcDir, 'styles', 'tokens.css')
   const sources = walk(srcDir).map(loadSource)
   const declared = new Set()
-  const used = new Map() // name -> [{file,line,fallback}]
+  const used = new Map()
   const findings = []
   const rel = (f) => relative(root, f).split(sep).join('/')
   const tokens = sources.find(source => source.file === tokensPath)
   const scale = spacingScale(tokens?.decls ?? [])
   const info = { unused: [], rawColors: [], rawControls: [], rawControlsAccepted: [], rawSpacing: [], rawMotion: [] }
 
-  // Runtime-defined variables (style bindings / setProperty) count as declared.
   for (const { raw, isScript } of sources) {
     if (isScript) continue
     for (const m of raw.matchAll(DECLARED_PROPERTY)) declared.add(m[1])
@@ -382,7 +335,6 @@ export function summarize({ findings, info }) {
   }
 }
 
-/** raw-color 目前只回報；`rawColorsFail` 開啟後（統一主題完成時）任何一筆都會失敗。 */
 export function shouldFail(result, { strict = false, rawColorsFail = false } = {}) {
   return (strict && result.findings.length > 0) || (rawColorsFail && result.info.rawColors.length > 0)
 }

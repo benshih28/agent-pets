@@ -1,13 +1,10 @@
 import { HOST_APPS, type AgentHost, type HostAppId } from '../src/types/host-app.ts'
 
-// Hooks send only these hints, read from a handful of environment variables (never an env
-// dump, pid or tty). Everything here is attacker-controllable by any local token holder, so
-// each value is shape-checked and mapped onto the fixed allowlist in src/types/host-app.ts.
+// Everything here is attacker-controllable by any local token holder, so each value is shape-checked and mapped onto the fixed allowlist.
 
 const TERM_PROGRAM_PATTERN = /^[A-Za-z0-9._-]{1,32}$/
 const ENTRYPOINT_PATTERN = /^[a-z0-9_-]{1,32}$/
-// Reverse-DNS: 2-8 labels of letters, digits and hyphens (never leading, so it cannot read as a
-// command-line option), at most 128 characters.
+// Labels never start with a hyphen, so the value cannot read as a command-line option.
 const BUNDLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}(?:\.[A-Za-z0-9][A-Za-z0-9-]{0,62}){1,7}$/
 const MAX_BUNDLE_ID_LENGTH = 128
 const HINT_KEYS: ReadonlySet<string> = new Set(['termProgram', 'bundleId', 'entrypoint', 'windowsTerminal', 'vscode', 'cursor'])
@@ -32,7 +29,7 @@ const BUNDLE_APPS: ReadonlyMap<string, HostAppId> = new Map(
 
 export interface ParsedHost {
   host: AgentHost
-  /** Allowlisted macOS bundle id the hook reported; main-process only. */
+  /** Main-process only. */
   bundleId?: string
 }
 
@@ -44,7 +41,6 @@ function hostFor(app: HostAppId): AgentHost {
   return { kind: app === 'unknown' ? 'unknown' : HOST_APPS[app].kind, app }
 }
 
-/** Maps hook-reported hints onto an allowlisted host; null when no hints were sent at all. */
 export function parseHostHints(value: unknown): ParsedHost | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>
@@ -69,10 +65,7 @@ export function parseHostHints(value: unknown): ParsedHost | null {
   return { host: hostFor('unknown') }
 }
 
-/**
- * The only bundle id main will pass to LaunchServices for a host: the reported one when it is on
- * that app's allowlist, otherwise the app's unambiguous default. Re-validated on every call.
- */
+// The only bundle id main passes to LaunchServices; re-validated on every call.
 export function resolveHostBundleId(app: HostAppId | undefined, reported?: string): string | null {
   if (!app || app === 'unknown') return null
   const definition = HOST_APPS[app]

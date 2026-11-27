@@ -10,7 +10,7 @@ export interface PermissionIpcDependencies {
   getPetWindow(): BrowserWindow | null
   getPanelWindow(): BrowserWindow | null
   getPermissionBroker(): PermissionBroker | null
-  /** Newest-last audit entries, already reduced to the fields the UI may show. */
+  /** Already reduced to the fields the UI may show. */
   listAudit(limit: number): PermissionAuditEntry[]
   clearAudit(): void
 }
@@ -24,9 +24,7 @@ export function registerPermissionIpc(deps: PermissionIpcDependencies): void {
   })
 
   deps.ipcMain.handle(IPC_CHANNELS.permissionDecide, async (event, payload: unknown) => {
-    // Both app windows may answer (the bubble and the panel card). Which one
-    // asked is decided here from the sender, never taken from the payload, so
-    // the audit trail cannot be spoofed by renderer-supplied fields.
+    // Which window answered is decided here from the sender, never from the payload, so the audit trail cannot be spoofed.
     deps.assertTrustedIpcSender(event)
     const petWindow = deps.getPetWindow()
     const panelWindow = deps.getPanelWindow()

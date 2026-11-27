@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/Icon.vue'
 
-// Shared "nothing here yet" block: icon, title, optional description and an
-// action slot. Replaces the per-view empty/unavailable treatments.
 withDefaults(defineProps<{
   title: string
   description?: string
   icon?: string
-  /** "inline" drops the surrounding padding for use inside a Card. */
   compact?: boolean
 }>(), {
   compact: false,

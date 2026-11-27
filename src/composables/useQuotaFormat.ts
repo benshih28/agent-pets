@@ -4,8 +4,6 @@ import type { QuotaForecast } from '@/utils/quota-forecast'
 import { quotaTone, relativeAge, resetCountdown, type QuotaTone } from '@/utils/quota-math'
 import { formatDateParts, formatTime } from '@/utils/intl-format'
 
-// Shared by the Usage tab and the Sessions quota strip so reset countdowns,
-// percentage text and low-quota tones can never drift apart again.
 export function useQuotaFormat(now: () => number) {
   function quotaPercent(value: number): string {
     return `${roundQuotaPercent(value)}%`
@@ -22,8 +20,6 @@ export function useQuotaFormat(now: () => number) {
     }
   }
 
-  // Short absolute time ("Wed 14:30 GMT+8"): weekday and time-of-day only
-  // within a week, otherwise month/day too; never the year.
   function formatResetAt(timestamp?: string): string {
     if (!timestamp) return ''
     const reset = new Date(timestamp)
@@ -63,7 +59,7 @@ export function useQuotaFormat(now: () => number) {
     return ''
   }
 
-  // 預測文案：資料不足與已用完不回傳文字（用完已有獨立警示），避免顯示猜測值。
+  // 資料不足與已用完不回傳文字（用完已有獨立警示），避免顯示猜測值。
   function forecastText(forecast: QuotaForecast): string {
     switch (forecast.kind) {
       case 'idle': return t('growth.forecastIdle')

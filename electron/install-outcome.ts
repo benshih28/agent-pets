@@ -4,7 +4,6 @@ import { ConfigRefusedError } from './safe-config-write.ts'
 import { NodeNotFoundError, NodeUnsupportedError } from './node-resolver.ts'
 import { AgentConfigDirError } from './agent-config-dirs.ts'
 
-// Record 而不是巢狀三元：新增 ConfigRefusalCode 時型別檢查會強迫這裡補上對應。
 const CONFIG_REFUSAL_TO_INSTALL_ERROR: Record<ConfigRefusalCode, InstallErrorCode> = {
   unparseable: 'config_unparseable',
   not_object: 'config_unparseable',
@@ -38,10 +37,6 @@ export function classifyInstallError(error: unknown): { code: InstallErrorCode, 
   return { code: 'unknown', path }
 }
 
-/**
- * `before` is the health before the install: a degraded integration that gets files rewritten is
- * a repair; nothing rewritten is "unchanged".
- */
 export function buildOutcome(
   adapterId: AgentAdapterId,
   report: InstallReport,

@@ -1,8 +1,4 @@
-// 寵物狀態列的寬度預算：狀態詞永遠完整、狀態列永遠單行。
-// 放不下時依序拿掉「+N」、插件徽章（由後往前），再讓名稱以省略號縮短、拿掉名稱，最後才拿掉 Quota 百分比
-// （分段條仍在，百分比也還在提示框與 aria-label 裡）。
-// 寬度由呼叫端的 measure() 提供（renderer 用 canvas measureText，測試用假的），
-// 這裡只做加總與取捨，所以是純函式。
+// 狀態詞永遠完整、狀態列永遠單行。放不下時依序拿掉「+N」、插件徽章（由後往前），再縮短名稱、拿掉名稱，最後才拿掉 Quota 百分比。
 
 import { PET_CELL_WIDTH } from '../types/pet-atlas.ts'
 
@@ -12,15 +8,13 @@ export type MeasureText = (text: string, part: StatusLinePart) => number
 export interface StatusLineFitInput {
   /** 狀態列的內容寬度（外寬扣掉 padding 與邊框）。 */
   contentWidth: number
-  /** 工具家族名稱；沒有家族的整體狀態列為 ''。 */
+  /** 沒有家族的整體狀態列為 ''。 */
   label: string
-  /** 狀態列上的狀態詞，永遠不縮短。 */
+  /** 永遠不縮短。 */
   state: string
-  /** Quota 百分比文字（如 '71%'）；沒有 Quota 時為 null。 */
+  /** 沒有 Quota 時為 null。 */
   readout: string | null
-  /** 插件徽章文字，依顯示順序。 */
   badges: readonly string[]
-  /** 超過每隻寵物上限的徽章數（「+N」）。 */
   hiddenCount: number
 }
 
@@ -63,7 +57,6 @@ export const STATUS_LINE_GEOMETRY = {
   slack: 2,
 } as const
 
-/** 多寵物狀態列的最小寬度（.multi-pet-status-line），仍在 0.6 倍寵物欄內。 */
 export const MULTI_PET_LINE_MIN_W = 112
 export const MULTI_PET_SPRITE_W = PET_CELL_WIDTH
 
@@ -79,10 +72,6 @@ const g = STATUS_LINE_GEOMETRY
 const CHROME_X = 2 * (g.paddingX + g.borderX)
 const BADGE_CHROME_X = 2 * (g.badgePaddingX + g.borderX)
 
-/**
- * 狀態列內容寬度。單寵物的上限是寵物視窗寬（--pet-w，即 store.scaledW）減 14px；
- * 多寵物填滿各自的寵物欄，最小 112px。
- */
 export function statusLineContentWidth(multiPet: boolean, petScale: number, petWindowWidth: number): number {
   const outer = multiPet
     ? Math.max(MULTI_PET_SPRITE_W * petScale - g.multiPetInsetX, MULTI_PET_LINE_MIN_W)
@@ -90,7 +79,7 @@ export function statusLineContentWidth(multiPet: boolean, petScale: number, petW
   return outer - CHROME_X
 }
 
-/** 依取捨結果算出狀態列內容需要的寬度（不含 slack）。 */
+/** 不含 slack。 */
 export function statusLineWidth(input: StatusLineFitInput, fit: StatusLineFit, measure: MeasureText): number {
   const items = [g.dot, measure(input.state, 'state')]
   if (fit.showLabel && input.label) {

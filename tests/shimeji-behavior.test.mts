@@ -83,7 +83,6 @@ test('sleep persists across ticks until the scheduler is reset', () => {
   const sleepy = context({ idleMs: SHIMEJI_SLEEP_AFTER_MS, random: 0.1 })
   assert.equal(scheduler.next(sleepy).behavior, 'sleep')
   assert.equal(scheduler.isSleeping, true)
-  // A roll that would normally walk still keeps sleeping.
   assert.equal(scheduler.next({ ...sleepy, random: 0.5 }).behavior, 'sleep')
   scheduler.reset()
   assert.equal(scheduler.isSleeping, false)

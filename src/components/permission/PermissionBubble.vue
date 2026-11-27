@@ -30,7 +30,6 @@ function outcomeText(kind: PermissionOutcomeKind, agentId: string): string {
   return t(OUTCOME_KEYS[kind], { source: permissionSourceName(agentId) })
 }
 
-// A request that is still pending but whose last decision attempt errored.
 const inlineError = computed(() => {
   const current = request.value
   const result = outcome.value
@@ -38,9 +37,7 @@ const inlineError = computed(() => {
   return outcomeText(result.kind, current.agentId)
 })
 
-// A new request ignores clicks for a moment (see usePermissionClickGuard); then the safe
-// choice (Deny) takes focus, but only if this window already has focus: stealing focus
-// from another app's text field would be worse than not focusing at all.
+// Deny takes focus only if this window already has focus: stealing it from another app's text field is worse.
 const denyButton = ref<InstanceType<typeof Button> | null>(null)
 const { armed, arm } = usePermissionClickGuard(() => {
   if (document.hasFocus()) (denyButton.value?.$el as HTMLButtonElement | undefined)?.focus({ preventScroll: true })
@@ -55,7 +52,6 @@ function decide(decision: 'allow_once' | 'deny', viaKeyboard = false): void {
   void store.decidePermission(current.requestId, decision)
 }
 
-// --- Queue overview -----------------------------------------------------------
 const queueOpen = ref(false)
 const hasQueue = computed(() => store.permissionRequests.length > 1)
 
@@ -79,25 +75,20 @@ const announcement = computed(() => {
   })
 })
 
-// Global shortcut labels come from the main process (platform-correct); they
-// are only advertised when the shortcut is actually registered.
 const hotkey = computed(() => request.value?.hotkey ?? null)
 const showHotkeys = computed(() => hotkey.value?.status === 'active')
-// Main reports a platform-formatted label ("⌘⇧Y" or "Ctrl+Shift+Y"); render one key cap per key.
 function keyCaps(label: string | undefined): string[] {
   if (!label) return []
   return label.includes('+') ? label.split('+').filter(Boolean) : Array.from(label)
 }
 const denyKeyCaps = computed(() => keyCaps(hotkey.value?.denyLabel))
 const allowKeyCaps = computed(() => keyCaps(hotkey.value?.allowLabel))
-// 模板裡多處用到，算一次。
 const sourceName = computed(() => (request.value ? permissionSourceName(request.value.agentId) : ''))
 const hotkeyBlocked = computed(() => hotkey.value?.status === 'unavailable')
 const alsoAnswerKey = computed(() => (request.value ? alsoAnswerableKey(request.value.agentId) : null))
 // The broker drops allow_once for a risky request whose arguments were cut off.
 const canAllow = computed(() => request.value?.allowedDecisions.includes('allow_once') ?? false)
 
-// --- In-window keyboard (only while focus is inside the bubble) --------------
 const { needsHold, holdProgress, cancelHold, onKeydown, onKeyup } = usePermissionKeyboard({
   risk: computed(() => request.value?.risk),
   decide,

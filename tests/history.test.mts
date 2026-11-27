@@ -323,7 +323,6 @@ test('history v6 migration adds cache columns and downgrades legacy exact local-
   const { DatabaseSync } = moduleRequire('node:sqlite') as {
     DatabaseSync: new (filePath: string) => { exec(sql: string): void; close(): void }
   }
-  // Rebuild a v5-shaped database: no cache columns, no v6 record.
   const raw = new DatabaseSync(database.filePath)
   raw.exec(`
     DROP INDEX IF EXISTS idx_daily_stats_summary_cover;
@@ -341,7 +340,6 @@ test('history v6 migration adds cache columns and downgrades legacy exact local-
   assert.equal(summary.totals.tokenInput, 900)
   assert.equal(summary.totals.tokenCacheRead, 0)
   assert.equal(summary.tokenQuality, 'estimated')
-  // A later scan with the cache split replaces the legacy row in place.
   assert.equal(migrated.recordTokenUsage({
     adapterId: 'claude-code', agentId: 'claude', sourceEventId: 'legacy-1', occurredAt: now,
     input: 40, output: 10, cacheRead: 860, quality: 'exact',
@@ -396,9 +394,7 @@ test('summary supports 30 and 90 day ranges with a previous-period comparison', 
   const quarter = store.getSummary('aang-airbender', undefined, 90)
   assert.equal(quarter.days.length, 90)
   assert.equal(quarter.totals.sessionsCompleted, 3)
-  // Unsupported ranges fall back to a week.
   assert.equal(store.getSummary('aang-airbender', undefined, 12).days.length, 7)
-  // The range query is served by the covering index, not a table scan.
   const plan = rawDatabase(store)
     .prepare('EXPLAIN QUERY PLAN SELECT local_date FROM daily_stats WHERE pet_id IN (?, ?) AND local_date BETWEEN ? AND ?')
     .all('a', 'b', '2026-01-01', '2026-02-01').map(row => row.detail).join(' ')
@@ -637,8 +633,7 @@ test('v6 migration is set-based: 50k events rebuild identically to the legacy ro
     DELETE FROM daily_stats;
   `)
 
-  // Oracle: the legacy migration, reimplemented over the raw rows (read AFTER the
-  // v6 exact->estimated downgrade is applied, exactly as the old order did).
+  // Oracle rows are read AFTER the v6 exact->estimated downgrade, as the old order did.
   const expected = new Map<string, Record<string, number | string>>()
   const bump = (key: string, base: Record<string, number | string>, patch: (row: Record<string, number | string>) => void): void => {
     const row = expected.get(key) ?? { ...base, sessions_completed: 0, sessions_failed: 0, active_ms: 0, token_input: 0, token_output: 0, token_cache_read: 0, token_cache_write: 0, token_quality: 'none' }
@@ -690,12 +685,10 @@ test('v6 migration is set-based: 50k events rebuild identically to the legacy ro
     row.sessions_completed, row.sessions_failed, row.active_ms, row.token_input, row.token_output,
     row.token_cache_read, row.token_cache_write, row.token_quality,
   ]
-  // Heartbeat-only zero rows are not materialised by the new writer; compare non-empty rows.
   const nonEmpty = (rows: Map<string, Record<string, unknown>>): Array<[string, unknown[]]> => [...rows.entries()]
     .map(([key, row]) => [key, shape(row)] as [string, unknown[]])
     .filter(([, values]) => values.some(value => value !== 0 && value !== 'none'))
     .sort((a, b) => a[0].localeCompare(b[0]))
-  // v6 downgrades exact local-log rows; the synthetic rows are not 'agent.token_usage', so they are unchanged.
   assert.deepEqual(nonEmpty(actual), nonEmpty(expected as Map<string, Record<string, unknown>>))
   assert.ok(actual.size > 50, 'synthetic data produced a meaningful aggregate')
   raw.close()
@@ -742,7 +735,6 @@ test('v8 migration adds the model column, model aggregates and token-time index 
     { adapterId: 'codex', agentId: 'codex', sourceEventId: 'b', occurredAt: now - 500, input: 12, output: 3, quality: 'exact' },
   ])
   first.close()
-  // Reduce to the v7 shape: no model column, table, index or v8 marker.
   const DatabaseSync = (createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new (file: string) => { exec(sql: string): void, prepare(sql: string): { all(...p: unknown[]): Array<Record<string, unknown>> }, close(): void } }).DatabaseSync
   const raw = new DatabaseSync(database.filePath)
   raw.exec(`
@@ -756,7 +748,6 @@ test('v8 migration adds the model column, model aggregates and token-time index 
   for (let open = 0; open < 2; open += 1) {
     const store = new HistoryStore(database.filePath, { now: () => now, localDate: () => '2026-08-13' })
     const summary = store.getSummary()
-    // Pre-v8 rows have no model yet: they are grouped as unknown with exact totals.
     assert.deepEqual(summary.models.map(stat => [stat.adapterId, stat.model, stat.tokenInput, stat.tokenOutput]), [
       ['claude-code', '', 30, 5],
       ['codex', '', 12, 3],
@@ -785,14 +776,11 @@ test('model aggregates follow updates, moves, clear and rebuild, and usage block
   t.after(() => { store.close(); removeTempTree(database.directory) })
   const base = { adapterId: 'claude-code', agentId: 'claude', quality: 'exact' as const }
   store.recordTokenUsage({ ...base, sourceEventId: 'm1', occurredAt: now - 20 * 60_000, input: 10, output: 1, model: 'claude-sonnet-4-5' })
-  // Streaming update of the same message: replaced, not added.
   store.recordTokenUsage({ ...base, sourceEventId: 'm1', occurredAt: now - 20 * 60_000, input: 25, output: 4, model: 'claude-sonnet-4-5' })
-  // An unknown model never erases a known one.
   store.recordTokenUsage({ ...base, sourceEventId: 'm1', occurredAt: now - 20 * 60_000, input: 26, output: 4 })
   store.recordTokenUsageBatch([{ ...base, sourceEventId: 'm2', occurredAt: now - 10 * 60_000, input: 5, output: 1, model: 'claude-opus-4-5' }])
   const read = () => store.getSummary().models.map(stat => [stat.model, stat.tokenInput, stat.tokenOutput])
   assert.deepEqual(read(), [['claude-sonnet-4-5', 26, 4], ['claude-opus-4-5', 5, 1]])
-  // A live event with token usage is not a local-log row and never enters blocks or models.
   store.recordEvent(event({ state: 'success', timestamp: now - 60_000, tokenUsage: { input: 999, output: 0, quality: 'estimated' } }))
 
   const [block] = store.getSummary().usageBlocks

@@ -138,11 +138,7 @@ export class ProgressionStore {
     return this.getSnapshot(this.activePetId)
   }
 
-  /**
-   * Drops per-session activity rows idle for `maxAgeMs`. Awarded XP lives in the
-   * ledger (unique idempotency keys), so a session that resumes after expiry
-   * restarts its active-time counter but can never be paid twice.
-   */
+  // Awarded XP lives in the ledger (unique idempotency keys), so a resumed session restarts its counter but is never paid twice.
   pruneStaleActivity(maxAgeMs = ACTIVITY_RETENTION_MS, limit = 5000): number {
     const cutoff = this.now() - maxAgeMs
     return changedCount(this.statement(`
@@ -209,8 +205,6 @@ export class ProgressionStore {
       return result
     })
 
-    // Progress rows only change through awards or a completion's streak update,
-    // so a plain heartbeat can reuse the snapshot read before the transaction.
     const unchanged = awards.length === 0 && event.state !== 'success'
     return {
       snapshot: unchanged ? before : this.getSnapshot(petId),
@@ -220,7 +214,6 @@ export class ProgressionStore {
     }
   }
 
-  /** Newest-first ledger rows. Read-only; XP only ever changes via handleEvent. */
   getRecentLedger(petId = this.activePetId, limit = 20): ProgressionLedgerEntry[] {
     const safePetId = normalizePetId(petId, this.defaultPetId)
     const bounded = Math.max(1, Math.min(50, Math.floor(limit)))
@@ -261,17 +254,12 @@ export class ProgressionStore {
       todayXp: Math.max(0, asInteger(todayRow?.total)),
       firstCompletionClaimed: Boolean(claimed),
       recent: this.getRecentLedger(safePetId, limit),
-      // Fewer than three active days is too little signal for a pace estimate.
       averageDailyXp: activeDays >= 3 ? Math.round((asInteger(week?.total) / 7) * 10) / 10 : null,
       generatedAt,
     }
   }
 
-  /**
-   * 清掉 XP 帳本、活動計時與每隻寵物的 XP／連續天數，單一交易、可重複執行。
-   * 保留 pets 表與目前選擇的寵物（非成長設定）。進度與成就分屬兩個資料庫檔，
-   * 跨檔原子性由 growth-service 協調。
-   */
+  // 進度與成就分屬兩個資料庫檔，跨檔原子性由 growth-service 協調。
   resetGrowth(): number {
     return this.transaction(() => {
       const removed = changedCount(this.statement('DELETE FROM xp_ledger').run())
@@ -284,7 +272,6 @@ export class ProgressionStore {
     })
   }
 
-  /** 使用者觸發的資料庫整理（optimize + VACUUM）；交易進行中會丟 SqliteBusyError。 */
   compact(): void {
     optimizeAndVacuum(this.database)
   }
@@ -356,8 +343,7 @@ export class ProgressionStore {
       ).run(this.now(), XP_POLICY_VERSION)
     })
 
-    // v2 scopes idempotency to each pet. Without this, a first completion on
-    // one routed project consumes the same daily reward for every other pet.
+    // v2 scopes idempotency to each pet; otherwise one pet's first completion consumes the daily reward of every other pet.
     const hasV2 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 2').get())
     if (!hasV2) this.transaction(() => {
       this.statement(`
@@ -371,7 +357,6 @@ export class ProgressionStore {
       ).run(this.now(), `${XP_POLICY_VERSION}-pet-idempotency`)
     })
 
-    // v3 bounds xp_session_activity (one row per session, previously forever).
     const hasV3 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 3').get())
     if (!hasV3) this.transaction(() => {
       this.database.exec('CREATE INDEX IF NOT EXISTS idx_xp_session_activity_seen ON xp_session_activity(last_seen_at)')
@@ -399,7 +384,6 @@ export class ProgressionStore {
   }
 
   private ensurePet(petId: string): void {
-    // Pets are never deleted at runtime; once ensured, skip both INSERT OR IGNORE writes.
     if (this.ensuredPets.has(petId)) return
     const now = this.now()
     this.statement(`
@@ -505,8 +489,7 @@ export class ProgressionStore {
     occurredAt: number,
     awards: ProgressionAward[],
   ): void {
-    // Include the canonical project route so identical session IDs from two
-    // workspaces cannot suppress one another's completion XP.
+    // The project route keeps identical session IDs from two workspaces from suppressing each other's XP.
     const sessionKey = `${event.source}:${event.sessionId}:${event.projectId ?? 'unbound'}`.slice(0, MAX_SESSION_KEY_LENGTH)
     const date = this.localDate(occurredAt)
     const completedRule = `${XP_POLICY_VERSION}.session-completed`
@@ -521,8 +504,7 @@ export class ProgressionStore {
 
     const progress = this.readProgress(petId)
     if (progress.lastActiveLocalDate === date) return
-    // A late-arriving event for a day before the current streak head still
-    // earns its XP above, but must never rewind or reset the streak.
+    // A late event for an earlier day still earns XP above but must never rewind the streak.
     if (progress.lastActiveLocalDate && date < progress.lastActiveLocalDate) return
 
     const continued = progress.lastActiveLocalDate === previousLocalDate(date)

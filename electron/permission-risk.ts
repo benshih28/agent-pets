@@ -1,17 +1,10 @@
 import type { PermissionRisk } from '../src/types/permission'
 
-// Fail-closed risk classification for tool names reported by an adapter.
-//
-// Only tools on an explicit read-only allowlist are `low`. Anything the table
-// does not know — renamed tools, new tools, MCP-wrapped tools — is `high`, so
-// a tool that merely *sounds* harmless (or hides a dangerous word inside a
-// longer name) can never be approved with the global hotkey by accident.
-// `unknown` is reserved for requests whose adapter supplied no classification.
+// Fail-closed: only an explicit read-only allowlist is `low`; any tool the table does not know
+// (renamed, new, MCP-wrapped) is `high`, so it can never be approved with the global hotkey by accident.
 
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(['read', 'glob', 'grep', 'list'])
 
-// Tools that reach outside the machine. They stay high-risk (no hotkey) and
-// are additionally flagged so the UI can say "connects to the network".
 const NETWORK_TOOLS: ReadonlySet<string> = new Set([
   'webfetch',
   'websearch',
@@ -21,7 +14,7 @@ const NETWORK_TOOLS: ReadonlySet<string> = new Set([
   'external_directory',
 ])
 
-/** Display/network-flag helper only (never used for risk): the tool name with any `mcp__server__` / `server:` / `ns.` prefix removed. */
+// Display/network-flag only; never used for risk.
 export function toolBaseName(permission: string): string {
   const segments = permission
     .toLowerCase()
@@ -32,8 +25,7 @@ export function toolBaseName(permission: string): string {
 }
 
 export function classifyPermissionRisk(permission: string): PermissionRisk {
-  // Exact match on the whole (trimmed, lower-cased) name. No prefix stripping:
-  // `mcp__x__read`, `foo:list`, `x/read` or `rm -rf x list` are never `low`.
+  // No prefix stripping: `mcp__x__read`, `foo:list`, `x/read` are never `low`.
   const name = typeof permission === 'string' ? permission.trim().toLowerCase() : ''
   if (READ_ONLY_TOOLS.has(name)) return 'low'
   return 'high'
@@ -43,11 +35,8 @@ export function isNetworkPermission(permission: string): boolean {
   return NETWORK_TOOLS.has(toolBaseName(permission))
 }
 
-// Claude Code reports its own tool names (PascalCase). A shell command can do
-// anything, so it is `high`. File edits start as `high` too and are lowered to
-// `medium` only by classifyClaudeFileEdit, once the target is known to be an
-// ordinary file inside the project. MCP tools and any tool this table does not
-// know are `unknown`, which (like `high`) is never hotkey-approvable.
+// File edits start as `high` and are lowered to `medium` only by classifyClaudeFileEdit.
+// Unlisted tools are `unknown`, which (like `high`) is never hotkey-approvable.
 const CLAUDE_TOOL_RISK: Readonly<Record<string, PermissionRisk>> = Object.freeze({
   Bash: 'high',
   Write: 'high',
@@ -71,9 +60,7 @@ export function isClaudeNetworkTool(toolName: string): boolean {
   return CLAUDE_NETWORK_TOOLS.has(toolName)
 }
 
-// Writing any of these leads to code running later (git hooks, agent / editor
-// settings, package binaries, shell start-up files), so such an edit is never
-// treated as a routine in-project change.
+// Writing any of these leads to code running later, so such an edit is never a routine in-project change.
 const EXECUTION_DIRECTORIES: ReadonlySet<string> = new Set(['.git', '.claude', '.husky', '.vscode', '.idea', '.devcontainer'])
 const EXECUTION_FILES: ReadonlySet<string> = new Set([
   '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zshenv', '.zprofile', '.zlogin',
@@ -83,15 +70,11 @@ const EXECUTION_FILES: ReadonlySet<string> = new Set([
 
 export interface FileEditClassification {
   risk: 'medium' | 'high'
-  /** Path relative to the project when the file is inside it; never an absolute home path. */
+  /** Never an absolute home path. */
   relativePath?: string
 }
 
-/**
- * `medium` only when `filePath` resolves inside `cwd` (lexically and, when `realpath` is
- * given, after resolving symlinks of the deepest existing ancestor) and is not an
- * execution-relevant location. Anything else, including a missing or relative cwd, is `high`.
- */
+// `medium` only when inside `cwd` both lexically and after resolving symlinks; anything else is `high`.
 export function classifyClaudeFileEdit(
   filePath: unknown,
   cwd: unknown,
@@ -119,8 +102,7 @@ export function classifyClaudeFileEdit(
 }
 
 function isExecutionRelevant(relative: string): boolean {
-  // Lower-cased on every platform: macOS and Windows volumes are usually case-insensitive,
-  // so `.Git/hooks` must not slip past the `.git` rule.
+  // Lower-cased everywhere: macOS and Windows volumes are usually case-insensitive.
   const segments = relative.split(/[\\/]+/).filter(Boolean).map(segment => segment.toLowerCase())
   if (segments.some(segment => EXECUTION_DIRECTORIES.has(segment))) return true
   if (EXECUTION_FILES.has(segments[segments.length - 1] ?? '')) return true

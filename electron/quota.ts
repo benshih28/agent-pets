@@ -18,31 +18,24 @@ const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const REQUEST_TIMEOUT_MS = 15_000
 const MAX_RESPONSE_BYTES = 1024 * 1024
-// Deliberately shorter than the renderer's poll interval: at equal values a
-// scheduled poll lands on a cache entry that is only just about to expire and
-// gets served a stale reading, doubling the effective lag. This still
-// coalesces the pet and panel windows asking at roughly the same moment.
+// Deliberately shorter than the renderer's poll interval: at equal values a scheduled poll lands on a
+// nearly expired entry and gets a stale reading.
 const CACHE_TTL_MS = 90_000
 const FORCE_REFRESH_COOLDOWN_MS = 10_000
-// Failures are not worth holding for the full success TTL: a user who fixes a
-// login and presses Refresh must not keep seeing the same error for 90s.
+// A user who fixes a login and presses Refresh must not keep seeing the same error for the full TTL.
 const ERROR_CACHE_TTL_MS = 10_000
-// Auth/limit failures (not signed in, expired token, rate limited) will not fix themselves in
-// seconds; hammering the usage endpoint with the user's OAuth token can trigger stricter limits.
+// Auth/limit failures will not fix themselves in seconds; hammering the usage endpoint with the OAuth token can trigger stricter limits.
 const AUTH_ERROR_CACHE_TTL_MS = 60_000
 const MAX_ERROR_CACHE_TTL_MS = 15 * 60_000
 const MAX_WINDOWS_PER_PROVIDER = 32
 const MAX_DISPLAY_TEXT_LENGTH = 96
-// Claude Code answers /usage itself without asking a model. Running it lets
-// the CLI refresh (and rotate) its own login, which an expired Keychain token
-// otherwise blocks; Agent Pets never refreshes or rewrites that login.
+// Running the CLI lets it refresh (and rotate) its own login, which an expired Keychain token otherwise blocks;
+// Agent Pets never refreshes or rewrites that login.
 const CLAUDE_USAGE_ARGS = [
   '-p', '/usage', '--output-format', 'json',
   '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--no-session-persistence',
 ]
 const CLAUDE_CLI_TIMEOUT_MS = 30_000
-// Variables that would point the CLI at another endpoint or make it believe it
-// runs inside a parent Claude Code session.
 const CLAUDE_CLI_BLOCKED_ENV = new Set([
   'ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BETAS',
   'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CODE_EXTRA_BODY',
@@ -68,8 +61,7 @@ export interface QuotaWindow {
   usedPercent: number
   remainingPercent: number
   resetsAt?: string
-  // True when the provider reported more than 100% used; the percentages are
-  // clamped to [0, 100] and this flag preserves the fact of the overage.
+  // The percentages are clamped to [0, 100]; this preserves the fact of the overage.
   overage?: boolean
 }
 
@@ -81,23 +73,20 @@ export type QuotaErrorKind =
   | 'unavailable'
 
 export interface QuotaProvider {
-  /** 就是家族 key（AGENT_FAMILY_REGISTRY 裡 quotaProvider 為 true 的家族）。 */
   id: QuotaFamilyKey
   name: string
   plan?: string
   windows: QuotaWindow[]
   error?: string
   errorKind?: QuotaErrorKind
-  /** ISO time of this provider's last successful reading. */
   fetchedAt?: string
-  /** True when `windows` are the last good reading kept after a failure. */
+  /** `windows` are the last good reading kept after a failure. */
   stale?: boolean
 }
 
 export interface QuotaUsageResult {
   updatedAt: string
   providers: QuotaProvider[]
-  /** Set when a forced refresh was answered from cache during the cooldown. */
   throttled?: { retryInSec: number }
 }
 
@@ -115,22 +104,19 @@ let tempSequence = 0
 let lastFetchStartedAt = 0
 
 export class QuotaDisplayError extends Error {}
-// The CLI could not answer; the stored-token request is tried instead.
 class ClaudeCliUnavailable extends Error {}
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-// 服務回應與憑證檔裡的數字欄位有時是字串（例如 "18000"），沿用 Number() 的轉型規則，
-// 只把轉不出有限數字的值當成沒給；與 main/runtime.ts 只收 number 的 finiteNumber 刻意不同。
+// 服務回應與憑證檔的數字欄位有時是字串（例如 "18000"）；與 main/runtime.ts 只收 number 的 finiteNumber 刻意不同。
 function coercedFiniteNumber(value: unknown): number | undefined {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : undefined
 }
 
-// Clamps a reported percentage into [0, 100] instead of discarding the whole
-// window, so an over-quota reading (e.g. 105%) shows as exhausted, not missing.
+// An over-quota reading (e.g. 105%) shows as exhausted, not missing.
 export function clampedUsage(value: unknown): Pick<QuotaWindow, 'usedPercent' | 'remainingPercent' | 'overage'> | null {
   const numeric = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
   if (!Number.isFinite(numeric)) return null
@@ -533,11 +519,10 @@ function claudeBinaryCandidates(): string[] {
   const name = process.platform === 'win32' ? 'claude.exe' : 'claude'
   const directories = [
     ...(process.env.PATH ?? '').split(path.delimiter),
-    // A GUI launch does not inherit the login shell's PATH, so also look
-    // where the Claude Code installers put the command.
+    // A GUI launch does not inherit the login shell's PATH, so also look where the installers put the command.
     path.join(home, '.local', 'bin'),
     path.join(home, '.claude', 'local'),
-    // 安裝位置與設定目錄不一定相同：舊版 local 安裝在 ~/.claude/local，搬了 CLAUDE_CONFIG_DIR 後可能在新目錄。
+    // 搬了 CLAUDE_CONFIG_DIR 後，local 安裝可能在新目錄。
     path.join(currentAgentConfigDirs().claude.path, 'local'),
     ...(process.platform === 'win32'
       ? []
@@ -564,7 +549,7 @@ function claudeCliEnv(): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(process.env)) {
     if (!CLAUDE_CLI_BLOCKED_ENV.has(key)) env[key] = value
   }
-  // login shell 查到的 CLAUDE_CONFIG_DIR 不在 process.env 裡；明確帶上，CLI 才會讀我們讀的那份登入。
+  // login shell 查到的 CLAUDE_CONFIG_DIR 不在 process.env 裡；明確帶上，CLI 才會讀同一份登入。
   const claudeDir = currentAgentConfigDirs().claude
   if (claudeDir.source === 'env') env.CLAUDE_CONFIG_DIR = claudeDir.path
   return { ...env, DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1', DISABLE_AUTOUPDATER: '1' }
@@ -607,7 +592,6 @@ function zoneOffsetMillis(utcMillis: number, timeZone: string): number {
   return wall - Math.floor(utcMillis / 1000) * 1000
 }
 
-// The instant a wall-clock time in timeZone names (local time without one).
 function zonedMillis(year: number, month: number, day: number, hour: number, minute: number, timeZone?: string): number {
   if (!timeZone) return new Date(year, month, day, hour, minute).getTime()
   const wall = Date.UTC(year, month, day, hour, minute)
@@ -624,9 +608,7 @@ function validTimeZone(value: string | undefined): string | undefined {
   }
 }
 
-// Reads "Oct 23 at 1:39pm (Asia/Taipei)", "Oct 9, 2:59pm (UTC)" or
-// "3pm (Asia/Taipei)". A date without a year, or a time without a date, is
-// the next one that ends a window of spanMs from now.
+// A date without a year, or a time without a date, is the next one that ends a window of spanMs from now.
 export function parseClaudeResetTime(raw: string, now: number, spanMs: number): string | undefined {
   const zoneMatch = raw.trim().match(/^(.*?)\s*\(([^)]+)\)$/)
   const timeZone = validTimeZone(zoneMatch?.[2]?.trim())
@@ -672,8 +654,7 @@ function claudeScopeWindow(scope: string): Pick<QuotaWindow, 'id' | 'label'> {
   }
 }
 
-// Reads the windows Claude Code's /usage prints. An empty list means the CLI
-// gave no reading; a lapsed sign-in is reported instead of falling back.
+// A lapsed sign-in is reported instead of falling back.
 export function parseClaudeCliUsage(text: string, now = Date.now()): QuotaWindow[] {
   const lines = text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').split(/\r?\n/).map((line) => line.trim())
   const windows: QuotaWindow[] = []
@@ -792,9 +773,7 @@ async function fetchClaudeQuota(): Promise<QuotaProvider> {
   }
 }
 
-// Last good reading per provider, kept so a transient failure can still show
-// (clearly marked stale) numbers instead of replacing the whole card with an
-// error. Only ever holds already-sanitized display data.
+// Only ever holds already-sanitized display data.
 const lastGoodProviders = new Map<QuotaProvider['id'], QuotaProvider>()
 let cachedTtlMs = CACHE_TTL_MS
 let consecutiveFailures = 0
@@ -818,7 +797,6 @@ function withRetainedReadings(providers: QuotaProvider[], nowIso: string): Quota
   })
 }
 
-/** Cache lifetime after a fetch: exponential back-off while providers keep failing. */
 export function nextQuotaCacheTtl(fetched: QuotaProvider[]): number {
   const failed = fetched.filter((provider) => provider.error)
   if (failed.length === 0) {

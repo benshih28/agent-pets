@@ -1,6 +1,3 @@
-// Single definition of "a day": the user's local calendar date. Shared by
-// progression, history, achievements and the Growth views.
-
 export function localDateKey(timestamp: number): string {
   const date = new Date(timestamp)
   const year = date.getFullYear()

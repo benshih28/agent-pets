@@ -130,7 +130,6 @@ test('a success event reports each award plus the level boundary it crossed', ()
     ])
     assert.equal(result.levelBefore, 1)
     assert.equal(result.stageBefore, 'egg')
-    // Replaying the same event grants nothing: awards are idempotent.
     assert.deepEqual(store.handleEvent(event('success', 1_700_000_000_000)).awards, [])
   })
 })
@@ -228,7 +227,6 @@ test('heartbeat snapshot reuse is identical to a fresh read and XP stays idempot
     const beat = store.handleEvent(event('tool-running', start + 60_000, 'hb'))
     assert.deepEqual(beat.awards, [])
     assert.deepEqual(beat.snapshot, store.getSnapshot())
-    // Crossing the 30-minute interval awards exactly once, however often it is replayed.
     let total = 0
     for (let minute = 2; minute <= 40; minute += 1) {
       const result = store.handleEvent(event('tool-running', start + minute * 60_000, 'hb'))
@@ -267,7 +265,6 @@ test('stale session activity is pruned without changing XP or allowing double pa
     assert.equal(store.pruneStaleActivity(), 2, 'old and fresh were idle > 90 days')
     const db = (store as unknown as { database: { prepare(sql: string): { get(): Record<string, number> } } }).database
     assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM xp_session_activity').get().n), 1)
-    // Replaying the old session after expiry restarts counting but the ledger keeps XP idempotent.
     assert.equal(work('old', clock), beforeTotal)
   } finally {
     store.close()

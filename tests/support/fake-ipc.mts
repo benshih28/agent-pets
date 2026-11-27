@@ -4,7 +4,6 @@ export type FakeIpcHandler = (...args: unknown[]) => unknown
 
 export interface FakeIpcMain {
   ipcMain: Pick<IpcMain, 'handle' | 'on'>
-  /** `ipcMain.handle` 註冊的 invoke handler。 */
   handlers: Map<string, FakeIpcHandler>
   /** `ipcMain.on` 註冊的單向 listener；跟 handlers 分開，避免同名 channel 互相覆蓋而測不到。 */
   listeners: Map<string, FakeIpcHandler>

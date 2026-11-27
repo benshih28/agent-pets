@@ -98,7 +98,6 @@ test('pet animation cadence and terminal frame behavior stay fixed', () => {
     'waving: motion(\'waving\', 3, [140, 140, 140, 280])',
     'jumping: motion(\'jumping\', 4, [140, 140, 140, 140, 280])',
   ]) assert.ok(atlas.includes(cadence), `missing animation cadence: ${cadence}`)
-  // 動作表只有一份：PetAnimation 從 types/pet-atlas.ts 匯入，不再自己定義。
   assert.match(source, /from '@\/types\/pet-atlas'/)
   assert.doesNotMatch(source, /const motions\b|const CELL_[WH]\b/)
   assert.ok(source.includes('刻意停在最後一格'))

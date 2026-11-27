@@ -64,7 +64,6 @@ test('starting from a plugin theme copies colours, gradient, radii and user-imag
   assert.equal(definition.modes.light.image?.dim, 0.9)
   assert.equal(definition.modes.dark.petStatus?.text, 'rgb(232 246 246 / 1)')
   assert.equal(validateUserPanelTheme(definition).valid, true)
-  // 同一份定義在主程序解析出的顏色，與插件主題的目錄完全相同。
   const mine = resolvePanelThemes([userPanelThemeContribution('u-0123456789ab', 'Copy', definition)])!
   assert.deepEqual(mine[0]!.modes.light!.colors, themes[0]!.modes.light!.colors)
 })
@@ -97,10 +96,8 @@ test('drafts track changes, undo the last steps, reset to the starting point and
     draft = commitChange(draft, next)
   }
   assert.ok(draft.undo.length <= EDITOR_UNDO_LIMIT)
-  // 新主題永遠算未儲存；存檔後以目前內容為新基準。
   const fresh = createDraft(null, 'New', builtinDefinition())
   assert.equal(isDirty(fresh), true)
-  // 關閉提醒：剛開啟的新主題不需要確認，動過之後才需要。
   assert.equal(hasUnsavedChanges(fresh), false)
   assert.equal(hasUnsavedChanges({ ...fresh, name: 'Other' }), true)
   assert.equal(hasUnsavedChanges(commitChange(fresh, changed)), true)
@@ -130,10 +127,8 @@ test('saving keeps edits made while the save was in flight: only the id and base
   assert.equal(isDirty(saved), true, 'the unsaved edit still counts as unsaved')
   assert.equal(hasUnsavedChanges(saved), true)
   assert.equal(saved.undo.length, during.undo.length, 'undo history survives a save')
-  // 基準是複本：之後改動快照不會改到草稿。
   snapshot.definition.modes.light.colors.accent = 'rgb(0 0 0 / 1)'
   assert.equal(saved.baseline.definition.modes.light.colors.accent, 'rgb(10 120 200 / 1)')
-  // 沒有在途變更時，存檔後就是乾淨的。
   assert.equal(isDirty(markSaved(beforeSave, 'u-0123456789ab', { name: 'Mine', definition: beforeSave.definition })), false)
 })
 
@@ -164,7 +159,6 @@ test('"Use suggested" applies the fix for a pair, falling back to the foreground
   assert.notEqual(next, definition)
   validation = validateUserPanelTheme(next)
   assert.equal(validation.valid, true)
-  // 不認得的路徑不改任何東西。
   assert.equal(applyFix(definition, 'light', 'colors.nope', 'rgb(0 0 0 / 1)'), definition)
   assert.equal(applyFix(definition, 'light', 'userImage.overlay.opacity', 0.9), definition, 'no image settings to change')
 })
@@ -180,7 +174,6 @@ test('colour inputs accept every manifest grammar and round-trip through the nat
   assert.equal(colorFromHex('fff', 'rgb(0 0 0 / 1)'), null)
   const oklch = colorToOklch('rgb(31 122 128 / 1)')
   assert.equal(colorFromOklch(oklch, 'rgb(0 0 0 / 1)'), 'rgb(31 122 128 / 1)')
-  // 超出色域時降低色度而不是拒絕。
   assert.match(colorFromOklch({ l: 0.9, c: 0.4, h: 140 }, 'rgb(0 0 0 / 1)'), /^rgb\(\d+ \d+ \d+ \/ 1\)$/)
 })
 
@@ -222,11 +215,6 @@ test('validator surface names become readable phrases, recursively and for every
   }
 })
 
-/**
- * 驗證器能產生的每一種表面名稱：所有顏色都相同時，每一組對比都失敗，所以不變量、懸停底、
- * 狀態晶片、泡泡與膠囊（含焦點框、額度條與軌道）、徽章、按下的按鈕、最多 5 個色標的漸層、
- * 寵物膠囊的每個配對、色差的比較對象都會出現一次。兩個模式都跑。
- */
 function everyValidatorIssue(): Array<PanelThemeIssue & { mode: 'light' | 'dark' }> {
   const gray = { r: 128, g: 128, b: 128, a: 1 }
   const colors = Object.fromEntries(USER_PANEL_THEME_COLOR_KEYS.map(key => [key, gray])) as Parameters<typeof panelThemeModeIssues>[0]['colors']
@@ -242,7 +230,6 @@ function everyValidatorIssue(): Array<PanelThemeIssue & { mode: 'light' | 'dark'
 }
 
 const CATALOGS = { 'zh-TW': themeEditorZhTW, 'en-US': themeEditorEnUS } as const
-/** 驗證器內部的英文識別字：駝峰式的鍵名、surface2、bg、alpha 與混色比例等內部寫法。 */
 const RAW_NAME = /[a-z][A-Z]|\bsurface2\b|\bbg\b|\(state chip\)|\(badge fill\)|\bat 0\.|\bmixed 12%/
 
 test('every surface name the validator can emit has a translated label in en-US and zh-TW', () => {
@@ -267,7 +254,6 @@ test('every surface name the validator can emit has a translated label in en-US 
       assert.doesNotMatch(text, RAW_NAME, `${locale}: "${name}" → "${text}" shows no validator identifier`)
       if (locale === 'zh-TW') assert.doesNotMatch(text, /[A-Za-z]{2,}/, `zh-TW: "${name}" → "${text}" has no English`)
     }
-    // 整句也一樣：每個問題（含「懸停底上的某段文字」這種前景與背景不同的句子）都沒有內部名稱。
     for (const issue of issues) {
       const text = describeIssue(issue, keyLabel, translate)
       assert.doesNotMatch(text, RAW_NAME, `${locale}: ${issue.path} ${issue.kind} → "${text}"`)

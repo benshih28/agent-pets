@@ -62,7 +62,6 @@ const quotaStripFamilies = computed(() => (
   QUOTA_FAMILY_KEYS.flatMap((id) => {
     const quota = store.quotaByFamily[id]
     if (!quota) return []
-    // 標籤來自提供者的 payload，新增提供者時這裡不必改。
     const name = store.quotaUsage?.providers.find(provider => provider.id === id)?.name ?? id
     return [{ id, ...quota, label: name }]
   })

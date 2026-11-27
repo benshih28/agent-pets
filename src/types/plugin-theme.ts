@@ -1,8 +1,7 @@
 import { PANEL_THEME_FAMILY_ENTRY_PATTERN, PANEL_THEME_PX_PATTERN, PANEL_THEME_RGB_PATTERN, type PanelThemeMode } from './panel-theme.ts'
 
-// 插件讀取主題 API（`theme.get()`／`theme.onDidChange`）與注入 panelView 的 `--ap-*` 公開契約。
-// 名稱與值的格式一經發布就不能改；新增 token 只能在新的 apiVersion 或向後相容地追加。
-// 主程序產生所有值，preload 與面板橋接層在寫入 CSS 或交給插件前再用下方規則逐一檢查。
+// 公開契約：名稱與值的格式一經發布就不能改；新增 token 只能在新的 apiVersion 或向後相容地追加。
+// preload 與面板橋接層在寫入 CSS 或交給插件前，會再用下方規則逐一檢查主程序產生的值。
 
 export const PLUGIN_THEME_API_VERSION = 1
 

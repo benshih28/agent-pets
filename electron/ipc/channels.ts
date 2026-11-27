@@ -1,4 +1,3 @@
-/** Single source of truth for renderer/main IPC channel names. */
 export const IPC_CHANNELS = {
   achievementsInit: 'achievements-init',
   achievementsUpdated: 'achievements-updated',

@@ -17,14 +17,10 @@ import { POSIX_FILE_MODES, SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capab
 import { builtinDefinition, png } from './support/panel-theme-fixtures.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 以呼叫點為單位固定「暫存檔 → rename → 權限 → 失敗清理」的現有行為。
-// 每個案例都經由該模組公開的寫入入口，所以底層實作換掉後同一組斷言仍適用。
-
 type SymlinkPolicy = 'refuse' | 'follow' | 'replace'
 
 interface CallSite {
   target: string
-  /** 第 n 輪寫入；吞掉錯誤的呼叫點要把失敗轉成 throw。 */
   write(round: number): void
 }
 
@@ -32,7 +28,6 @@ interface CallSiteCase {
   name: string
   setup(directory: string): CallSite
   temporaryName: RegExp
-  /** POSIX 上寫入後的權限；undefined 表示不固定。 */
   mode?: number
   symlink: SymlinkPolicy
 }
@@ -43,7 +38,7 @@ function fsError(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`${code}: injected`), { code })
 }
 
-/** 暫時替換 node:fs 的一個函式；ESM 的具名匯出要靠 syncBuiltinESMExports 才會跟著換。 */
+/** ESM 的具名匯出要靠 syncBuiltinESMExports 才會跟著換。 */
 function withFsPatch<K extends 'renameSync' | 'writeFileSync'>(
   name: K,
   replacement: (original: typeof fs[K]) => typeof fs[K],
@@ -62,7 +57,6 @@ function withFsPatch<K extends 'renameSync' | 'writeFileSync'>(
 
 const isTemporary = (file: unknown): file is string => typeof file === 'string' && file.endsWith('.tmp')
 
-/** rename 暫存檔時依序丟出 codes 裡的錯誤（用完後走真正的 rename），並記下暫存檔路徑。 */
 function withRenameFailures(codes: string[], run: (temporaryPaths: string[]) => void): void {
   const temporaryPaths: string[] = []
   withFsPatch('renameSync', original => ((from: fs.PathLike, to: fs.PathLike) => {
@@ -84,7 +78,6 @@ function onlyTemporaryPath(temporaryPaths: readonly string[]): string {
   return distinct[0]!
 }
 
-/** 寫入暫存檔時先寫一半再丟出 ENOSPC，模擬寫到一半磁碟滿。 */
 function withPartialWriteFailure(run: () => void): void {
   withFsPatch('writeFileSync', original => ((file: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView, options?: fs.WriteFileOptions) => {
     if (typeof file === 'number' || isTemporary(file)) {
@@ -357,7 +350,6 @@ test('panel-theme-images storeUserImage: content-addressed write, cleanup and sy
     assert.deepEqual(new Uint8Array(fs.readFileSync(target)), prepared.bytes)
     if (POSIX_FILE_MODES) assert.equal(fs.statSync(target).mode & 0o777, 0o600)
 
-    // 相同內容已存在：不再寫入。
     withRenameFailures([], temporaryPaths => {
       storeUserImage(userData, 'demo-plugin', prepared)
       assert.equal(temporaryPaths.length, 0)

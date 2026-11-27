@@ -1,7 +1,4 @@
-/* 主題編輯器的版面：只有 .editor 捲動（對話框本身不捲動）。寬度足夠時預覽固定在捲動區頂端，
-   修改任何值時都看得到結果；預覽是完整顯示的縮圖（高度上限 --ep-max-height），自己不捲動。 */
 .editor {
-  /* 欄寬判斷（預覽並排或堆疊）以編輯區本身的寬度為準，不是視窗寬度。 */
   container: editor / inline-size;
   display: flex;
   min-height: 0;
@@ -11,8 +8,7 @@
   overflow-y: auto;
   /* 留出焦點框的空間（捲動容器會裁掉超出內距的外框）。 */
   padding: var(--space-1);
-  /* 鍵盤移動焦點或捲到錯誤時，不要讓目標停在固定的預覽後面（WCAG 2.4.11）；
-     --editor-sticky-height 由元件依預覽實際高度設定，預覽不固定時為 0。 */
+  /* 鍵盤焦點或捲到錯誤時，目標不可停在固定的預覽後面（WCAG 2.4.11）。 */
   scroll-padding-top: calc(var(--editor-sticky-height, 0px) + var(--space-2));
 }
 
@@ -31,9 +27,8 @@
   --ep-max-height: 30vh;
 
   position: sticky;
-  /* 貼齊捲動區的上緣（抵銷 .editor 的上內距），捲過去的內容不會從預覽上方露出來。 */
+  /* 抵銷 .editor 的上內距，捲過去的內容才不會從預覽上方露出。 */
   top: calc(-1 * var(--space-1));
-  /* 區域堆疊：只需壓過同一捲動區內的內容。 */
   z-index: calc(var(--z-base) + 1);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -46,8 +41,6 @@
   box-shadow: var(--shadow-raised);
 }
 
-/* 窄的編輯區（例如 360 px 寬的面板）：預覽改為上下堆疊、不固定，依欄寬完整顯示；
-   可以用「隱藏預覽」收起來，把空間留給欄位。 */
 @container editor (width < 22rem) {
   .editor-previews {
     --ep-max-height: none;

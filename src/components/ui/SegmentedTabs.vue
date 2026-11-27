@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { useRovingTabs } from '@/composables/useRovingTabs'
 
-// A segmented tablist with roving focus. The panel body is rendered by the
-// caller; each tab id maps to `${idPrefix}-tab-${id}` and the caller marks its
-// panel with `${idPrefix}-panel-${id}` so aria-controls resolves.
+// Callers must give each panel the id `${idPrefix}-panel-${id}` so aria-controls resolves.
 const props = withDefaults(defineProps<{
   tabs: Array<{ id: string; label: string; badge?: number | string }>
   ariaLabel?: string
@@ -77,7 +75,7 @@ const { onKeydown } = useRovingTabs({
   color: var(--text-primary);
 }
 
-/* 文字放在實心強調色上時用 accentHover：onAccent 在其上保證 >= 4.5:1（在 accent 上只保證 3:1）。 */
+/* 實心強調色底用 accentHover：onAccent 在其上保證 >= 4.5:1（accent 只保證 3:1）。 */
 .segment.active {
   background: var(--accent-hover);
   color: var(--accent-bright);
@@ -104,7 +102,6 @@ const { onKeydown } = useRovingTabs({
   line-height: var(--leading-normal);
 }
 
-/* 主動分頁上的數字徽章：accentHover 字在 onAccent 底上 >= 4.5:1（accent 只保證 3:1）。 */
 .segment.active .segment-badge {
   background: var(--accent-bright);
   color: var(--accent-hover);

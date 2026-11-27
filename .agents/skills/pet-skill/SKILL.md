@@ -30,6 +30,17 @@ Work in Traditional Chinese for user-facing plans, phase reports, and handoffs. 
 - Treat Traditional Chinese UI copy as a cross-phase acceptance requirement; do not add a new user-visible surface without its Traditional Chinese wording or an explicitly recorded localization gap.
 - Reuse `src/i18n.ts` for renderer and Electron-native user-visible copy; keep canonical status, agent, MCP, and token terms stable when they are part of an external contract.
 
+## Keep comments rare
+
+Comments cost every agent that reads the file context without explaining the project. Background, history, and design rationale belong in phase reports, `docs/`, or Work Intelligence Knowledge; look them up there (`work_recall`, Knowledge pages) instead of writing them into code.
+
+- Default to no comment. Names, types, registries, and test names carry the meaning.
+- Keep a comment only when removing it would likely lead the next reader to break the code: a platform or third-party quirk, an external contract value, an ordering, security, or concurrency invariant, or a deliberate trade-off that looks like a bug. One or two lines; say why, not what.
+- Always keep functional markers: shebangs, `/// <reference …>`, `<!-- raw-control: <理由> -->`, `eslint-disable*`, `@ts-expect-error`, and the reason next to an `as unknown as` cast.
+- On exported plugin, MCP, IPC, or persisted types, keep a short doc comment only for what the type cannot say (units, ranges, who writes it, stability).
+- Delete: comments that restate the code, section banners (`// --- … ---`), change history ("改成…", "原本…", phase or version notes), commented-out code, step-by-step narration in tests, and long design essays.
+- Write any new comment in Traditional Chinese. Do not translate an existing comment just to change its language.
+
 ## Implement one phase at a time
 
 1. Establish the phase baseline and acceptance criteria before editing.

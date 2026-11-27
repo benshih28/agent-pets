@@ -1,6 +1,3 @@
-// Pure quota helpers shared by the Usage tab and the Sessions quota strip.
-// Kept free of i18n so they can be unit-tested directly under node.
-
 export type QuotaTone = 'healthy' | 'warn' | 'critical'
 
 export type ResetCountdown =
@@ -10,7 +7,6 @@ export type ResetCountdown =
   | { kind: 'hours'; hours: number; minutes: number }
   | { kind: 'days'; days: number; hours: number }
 
-// Healthy above 30% remaining, warning from 10-30%, critical below 10%.
 export function quotaTone(remainingPercent: number): QuotaTone {
   if (!Number.isFinite(remainingPercent)) return 'healthy'
   if (remainingPercent < 10) return 'critical'
@@ -18,9 +14,7 @@ export function quotaTone(remainingPercent: number): QuotaTone {
   return 'healthy'
 }
 
-// Rounds the remaining time UP so "59.6 minutes" never reads as "1 hour 0
-// minutes" a minute early and a live reading never shows "now" while seconds
-// remain; anything under a minute is "soon".
+// Rounds UP so "59.6 minutes" never reads as "1 hour 0 minutes" early and a live reading never shows "now" while seconds remain.
 export function resetCountdown(resetIso: string | undefined, nowMs: number): ResetCountdown {
   if (!resetIso) return { kind: 'unavailable' }
   const reset = Date.parse(resetIso)
@@ -43,7 +37,6 @@ export function quotaFreshness(fetchedAtMs: number | null | undefined, nowMs: nu
   return nowMs - fetchedAtMs > QUOTA_STALE_AFTER_MS ? 'stale' : 'fresh'
 }
 
-// "3 minutes ago" style bucket for a past instant.
 export type RelativeAge =
   | { kind: 'now' }
   | { kind: 'minutes'; minutes: number }

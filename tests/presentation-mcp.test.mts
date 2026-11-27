@@ -144,7 +144,6 @@ test('presentation MCP body and auth failures keep their status codes and error 
   assert.equal(wrongMethod.headers.get('allow'), 'POST')
   await expectError(wrongMethod, 405, 'method_not_allowed')
 
-  // 空 body 視為 `{}`：沒有 client header 的 intent 是 client_id_required，disconnect 照常回 removed。
   const { [PRESENTATION_CLIENT_HEADER]: _client, ...withoutClient } = headers
   await expectError(await fetch(intents, { method: 'POST', headers: withoutClient }), 400, 'client_id_required')
   const disconnect = await fetch(`${base}/v1/presentation/disconnect`, { method: 'POST', headers })

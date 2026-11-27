@@ -12,7 +12,6 @@ test('persistent permission audit remains bounded and excludes sensitive fields'
   const filePath = path.join(directory, 'permission-audit.jsonl')
   try {
     for (let index = 0; index < 505; index += 1) {
-      // 呼叫端可能夾帶審計紀錄以外的敏感欄位（結構型別允許），驗證落盤時會被剔除。
       const leaky: PermissionAuditRecord & { description: string; responseHandle: string } = {
         requestId: `request-${index}`,
         adapterId: 'opencode-cli',

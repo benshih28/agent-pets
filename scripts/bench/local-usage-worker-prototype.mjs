@@ -1,6 +1,4 @@
-// 量測用的原型 worker：只做檔案走訪與 JSONL 解析（純函式），把解析結果批次回傳，
-// 不碰 node:sqlite。只供 local-usage-lag.mjs 比較「主執行緒掃描」與「worker 解析」，
-// 不是 production 程式碼。
+// 量測原型，只供 local-usage-lag.mjs 比較用；不是 production 程式碼。
 import { open, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'

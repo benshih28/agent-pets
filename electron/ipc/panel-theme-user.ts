@@ -6,10 +6,7 @@ import { parseUserPanelThemeExport, USER_PANEL_THEME_NAME_INPUT_MAX, userPanelTh
 import { handleWithSenderGuard } from './trusted.ts'
 import { IPC_CHANNELS } from './channels.ts'
 
-// 「我的主題」與主題編輯器的 IPC（spec R21、R22）。每個頻道都只接受設定面板的 main frame；
-// payload 有大小上限（定義序列化後 ≤ 16 KiB、名稱在正規化前 ≤ 192 個 UTF-16 單位）並在主程序
-// 嚴格解析，寫入前一律經過與插件主題相同的驗證器。
-// 套用沿用 `panel-theme-slot-set`（擁有者 `_user`）；背景圖沿用既有的使用者圖片頻道。
+// 每個頻道都只接受設定面板的 main frame；payload 有大小上限並在主程序嚴格解析，寫入前一律經過與插件主題相同的驗證器。
 
 type OpenDialogOptions = {
   title: string
@@ -51,7 +48,6 @@ const STORE_ERRORS: Record<UserPanelThemeStoreErrorCode, IpcErrorCode> = {
   unsafe_directory: 'preferences_unsafe',
 }
 
-/** 序列化後 ≤ 16 KiB 的值；無法序列化（循環、過深）一律視為過大。 */
 function withinLimit(value: unknown): boolean {
   try {
     const encoded = JSON.stringify(value)
@@ -61,7 +57,6 @@ function withinLimit(value: unknown): boolean {
   }
 }
 
-/** 名稱引數：字串且在正規化前就有長度上限（實際的清理與 1–48 字元規則在 store）。 */
 function isNameArgument(value: unknown): value is string {
   return typeof value === 'string' && value.length <= USER_PANEL_THEME_NAME_INPUT_MAX
 }
@@ -70,11 +65,6 @@ function isNameArgument(value: unknown): value is string {
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i
 const EXPORT_NAME_MAX_CODE_POINTS = 40
 
-/**
- * 名稱只用來組預設檔名：保留各語系的字母、數字與組合記號（中文名稱不會變成 `theme`），其餘
- * （路徑分隔、控制與格式字元、`<>:"/\|?*`、`.`）一律換成連字號；依碼位截斷（不切斷代理對），
- * 去掉頭尾的連字號，Windows 保留名稱改用 `theme`。
- */
 export function exportFileName(name: string): string {
   const words = name.normalize('NFKC').replace(/[^\p{L}\p{N}\p{M}_-]+/gu, ' ').trim().replace(/\s+/g, '-')
   const stem = [...words].slice(0, EXPORT_NAME_MAX_CODE_POINTS).join('').replace(/^[-_]+|[-_]+$/g, '')
@@ -89,14 +79,12 @@ function failure(error: unknown) {
 }
 
 export function registerUserPanelThemeIpc(deps: UserPanelThemeIpcDependencies): void {
-  // 對話框篩選器名稱依目前語系（每次開啟時取，語系切換後立即生效）。
   const jsonFilter = () => [{ name: deps.translate('design.themeEditor.fileFilter'), extensions: ['json'] }]
   const listResult = (runtime: UserPanelThemeRuntime, id?: string) => ({
     ok: true as const,
     value: { themes: runtime.userThemes.list() as UserPanelThemeRecord[], ...(id ? { id } : {}) },
   })
 
-  /** 寫入型操作的共同流程：取得 runtime、執行、重建目錄並廣播，再回傳最新清單。 */
   const mutate = (run: (runtime: UserPanelThemeRuntime) => string | undefined) => {
     const runtime = deps.getRuntime()
     if (!runtime) return { ok: false as const, error: 'plugin_service_unavailable' as const }
@@ -129,7 +117,7 @@ export function registerUserPanelThemeIpc(deps: UserPanelThemeIpcDependencies): 
     return mutate(runtime => runtime.userThemes.create(name, definition).id)
   })
 
-  // 儲存：可選的 `name` 與定義一起寫入（一次原子寫入），編輯器的「儲存」不會只改到一半。
+  // `name` 與定義一次原子寫入，「儲存」不會只改到一半。
   handleWithSenderGuard(deps.ipcMain, IPC_CHANNELS.panelThemeUserUpdate, deps.assertPluginPanelSender, (_event, id: unknown, definition: unknown, ...rest: unknown[]) => {
     const [name, ...extra] = rest
     if (extra.length > 0 || !isUserPanelThemeId(id) || (name !== undefined && !isNameArgument(name)) || !withinLimit(definition)) return { ok: false, error: 'invalid_request' }
@@ -146,7 +134,7 @@ export function registerUserPanelThemeIpc(deps: UserPanelThemeIpcDependencies): 
     return mutate(runtime => runtime.userThemes.duplicate(id, name).id)
   })
 
-  // 刪除：refreshUserThemes 的修剪會清掉指向它的插槽（退回內建）與它的背景圖。
+  // refreshUserThemes 的修剪會清掉指向它的插槽與背景圖。
   handleWithSenderGuard(deps.ipcMain, IPC_CHANNELS.panelThemeUserDelete, deps.assertPluginPanelSender, (_event, id: unknown, ...rest: unknown[]) => {
     if (rest.length > 0 || !isUserPanelThemeId(id)) return { ok: false, error: 'invalid_request' }
     return mutate(runtime => {

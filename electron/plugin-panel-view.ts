@@ -85,7 +85,6 @@ export interface PluginPanelViewControllerOptions {
   pluginRootForToken: (token: string) => string | null
   messageGuard: PluginUiMessageGuard
   onApiRequest: (pluginId: string, request: { id: string; method: string; args: unknown[] }) => unknown | Promise<unknown>
-  /** 目前給插件的主題快照（頁面載入時同步取得）。 */
   getThemeSnapshot?: () => PluginThemeSnapshot | null
   onClosed?: (event: PluginPanelViewClosedEvent) => void
   onBlockedRequest?: (url: string) => void
@@ -212,8 +211,7 @@ export class PluginPanelViewController {
       parent.addChildView(view)
       active.attached = true
       this.configureWebContents(active)
-      // 宿主要等 open() 回傳後才會送 bounds，所以載入期間另外計時；
-      // 載入完成才開始等握手，避免主程序忙碌時把正常載入的面板誤關。
+      // 宿主要等 open() 回傳後才會送 bounds，所以載入期間另外計時，避免主程序忙碌時把正常載入的面板誤關。
       this.armAckTimeout(active, this.options.loadTimeoutMs ?? 15_000)
       const entry = descriptor.entry.split('/').map(segment => encodeURIComponent(segment)).join('/')
       await view.webContents.loadURL(`agent-pets://plugin/${token}/${entry}`)
@@ -292,8 +290,7 @@ export class PluginPanelViewController {
     if (active?.insets) this.applyLayout(active, windowSize)
   }
 
-  // 尺寸暫時不合法（例如視窗縮到比邊距還小）只隱藏內容、保留插件狀態；
-  // 真正無法顯示時交給 ack timeout 與視窗隱藏事件關閉。
+  // 尺寸暫時不合法只隱藏內容、保留插件狀態；真正無法顯示時交給 ack timeout 與視窗隱藏事件關閉。
   private applyLayout(active: ActivePanelView, windowSize: PluginPanelSize): boolean {
     const bounds = active.insets ? layoutPluginPanelView(active.insets, windowSize) : null
     if (!bounds) {
@@ -303,8 +300,7 @@ export class PluginPanelViewController {
     return this.setBounds(active.openToken, bounds)
   }
 
-  // 面板視窗隱藏時只暫停已顯示的插件畫面、保留頁面狀態，視窗再次顯示時由 relayout 還原；
-  // 尚未完成握手的面板沒有可還原的畫面，照舊關閉。
+  // 尚未完成握手的面板沒有可還原的畫面，所以關閉；已顯示的只暫停，由 relayout 還原。
   onPanelWindowHidden(): void {
     const active = this.active
     if (!active) return
@@ -344,14 +340,13 @@ export class PluginPanelViewController {
     })
   }
 
-  /** 只送給目前開啟中的頁面；快照對所有插件相同，所以不需要依插件過濾。 */
   notifyThemeChanged(snapshot: PluginThemeSnapshot): void {
     const contents = this.active?.view.webContents
     if (!contents || contents.isDestroyed()) return
     try { contents.send(IPC_CHANNELS.pluginPanelThemeChanged, snapshot) } catch {}
   }
 
-  /** 頁面 preload 的第一份主題快照：只回給目前開啟中的 view，其他寄件者一律 null。 */
+  // 其他寄件者一律 null。
   initialTheme(sender: unknown): PluginThemeSnapshot | null {
     const active = this.active
     if (!active || active.view.webContents !== sender || active.view.webContents.isDestroyed()) return null

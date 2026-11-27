@@ -42,7 +42,6 @@ test('session jump IPC rejects malformed payloads without running anything', asy
     { action: 'show-folder', source: 'claude', sessionId: '' },
     { action: 'show-folder', source: 'claude', sessionId: 'x'.repeat(257) },
     { action: 'show-folder', source: 'claude', sessionId: 42 },
-    // The renderer may not supply a path or bundle id.
     { action: 'show-folder', source: 'claude', sessionId: 'abc', path: '/Applications/Calculator.app' },
     { action: 'switch-app', source: 'claude', sessionId: 'abc', bundleId: 'com.apple.Terminal' },
   ]

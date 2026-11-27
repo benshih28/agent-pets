@@ -1,6 +1,3 @@
-// 在 Node 掛載真的 `usePluginPanelController()`：以最小的自訂 renderer 讓 onMounted／onUnmounted
-// 真的執行，假的 window／document／ResizeObserver／HTMLElement，可記錄呼叫與訂閱的 electronAPI，
-// 以及 node:test 的假計時器（setTimeout／Date）。每個測試呼叫 `mountPluginPanel()`，結束時 `unmount()`。
 import './src-alias.mts'
 import { mock } from 'node:test'
 import { createRenderer, defineComponent, nextTick, reactive } from 'vue'
@@ -15,8 +12,6 @@ export const START_TIME = Date.UTC(2026, 10, 10, 8, 0, 0)
 export interface ApiCall { name: string; args: unknown[] }
 
 type ApiOverride = (...args: never[]) => unknown
-
-// --- 假 DOM -----------------------------------------------------------------
 
 interface Rect { left: number; top: number; width: number; height: number }
 
@@ -100,8 +95,6 @@ const { usePluginPanelController } = await import('../../src/composables/usePlug
 
 export type PluginPanelController = ReturnType<typeof usePluginPanelController>
 
-// --- 最小 renderer：只需要讓元件的生命週期鉤子執行 --------------------------------
-
 const renderer = createRenderer<object, object>({
   patchProp() {},
   insert() {},
@@ -114,8 +107,6 @@ const renderer = createRenderer<object, object>({
   parentNode: () => null,
   nextSibling: () => null,
 })
-
-// --- Fixture ---------------------------------------------------------------
 
 export function preferences(patch: Partial<PluginPreferences> = {}): PluginPreferences {
   return {
@@ -189,19 +180,15 @@ export function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-// --- Harness ---------------------------------------------------------------
-
 export interface PluginPanelHarness {
   controller: PluginPanelController
   props: { requestedPluginId?: string; requestNonce?: number }
   calls: ApiCall[]
   callsOf(name: string): ApiCall[]
-  /** 目前有效（尚未取消）的 electronAPI 事件訂閱數。 */
   liveSubscriptions(): number
   emit(name: string, payload?: unknown): void
   window: FakeWindow
   document: typeof fakeDocument
-  /** 還沒觸發、也沒被 clearTimeout 的計時器數量。 */
   liveTimers(): number
   tick(ms: number): void
   flush(rounds?: number): Promise<void>
@@ -264,7 +251,6 @@ export async function mountPluginPanel(options: {
           return () => { set.delete(handler) }
         }
         const override = overrides[name] as ((...values: unknown[]) => unknown) | undefined
-        // 沒有指定回應的 invoke 一律回傳已完成的 Promise；send 類呼叫的回傳值不會被讀。
         return override ? override(...args) : Promise.resolve(undefined)
       }
     },
@@ -315,7 +301,6 @@ export async function mountPluginPanel(options: {
   }
 }
 
-/** afterEach 用：前一個測試忘了 unmount 時補做。 */
 export function unmountLeftover(): void {
   mounted?.unmount()
 }

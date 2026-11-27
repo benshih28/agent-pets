@@ -2,21 +2,16 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { writeTextAtomic } from './safe-config-write.ts'
 
-// Dependency-free, read-only Git awareness for the project MCP setup. We never spawn git: the
-// index is parsed directly and `.git/info/exclude` is the only file ever written.
+// We never spawn git: the index is parsed directly and `.git/info/exclude` is the only file ever written.
 
 const MAX_INDEX_BYTES = 64 * 1024 * 1024
 const INDEX_FIXED_ENTRY_BYTES = 62
 
 export interface GitLocation {
-  /** Directory holding index / info/exclude for this working tree. */
   gitDir: string
-  /** Shared directory (differs from gitDir for linked worktrees). */
+  /** Differs from gitDir for linked worktrees. */
   commonDir: string
-  /**
-   * Set when `.git` points (via `gitdir` / `commondir`) outside the picked folder. Such a
-   * location is never read or written; callers report it and skip.
-   */
+  /** `.git` points outside the picked folder; such a location is never read or written. */
   outside?: boolean
 }
 
@@ -54,7 +49,6 @@ export function findGitLocation(projectPath: string): GitLocation | null {
   return { gitDir: realGitDir, commonDir: realCommon }
 }
 
-/** Paths (POSIX separators) recorded in the index, or null if the index is absent/unsupported. */
 export function readTrackedPaths(location: GitLocation): Set<string> | null {
   if (location.outside) return null
   const indexPath = path.join(location.gitDir, 'index')
@@ -92,7 +86,6 @@ export function toPosixRelative(projectPath: string, filePath: string): string {
   return path.relative(projectPath, filePath).split(path.sep).join('/')
 }
 
-/** Adds patterns to the repository-local exclude file. Returns the patterns that were newly added. */
 export function addLocalExcludes(location: GitLocation, patterns: string[]): string[] {
   if (location.outside) throw new Error('Refusing to edit a git directory outside the project folder')
   const infoDir = path.join(location.commonDir, 'info')

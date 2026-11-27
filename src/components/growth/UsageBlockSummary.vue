@@ -8,8 +8,6 @@ import { agentDisplayName } from '@/utils/agent-label'
 import { USAGE_BLOCK_MS, usageBlockView } from '@/utils/usage-blocks'
 import ProgressTrack from '@/components/ui/ProgressTrack.vue'
 
-// One local 5-hour block, shown beside the provider quota. It is computed from
-// local logs only, so the source line is always visible next to the numbers.
 const props = defineProps<{ block: HistoryUsageBlock; nowTick: number; showAgent?: boolean }>()
 const { tokens, duration } = useHistoryFormat()
 const { formatClock } = useQuotaFormat(() => props.nowTick)

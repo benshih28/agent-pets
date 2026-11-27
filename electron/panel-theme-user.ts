@@ -1,9 +1,4 @@
-// 「我的主題」的定義文法（spec R20）。純函式：不 import Electron 或 Node。
-//
-// 使用者主題不是 CSS，也不是插件 manifest：它是一份封閉的結構（31 個顏色鍵、可選的寵物膠囊、
-// 純色或漸層背景、可選的使用者背景圖設定、系統字型組合 id、圓角），每個值都在這裡逐一檢查並
-// 重新輸出成主機標準格式。存檔、套用與匯入前都會再轉成 panelThemes 宣告，交給與插件主題相同的
-// 驗證器（parsePanelThemes），所以使用者主題不可能繞過任何對比或語意規則。
+// 使用者主題最後都會轉成 panelThemes 宣告交給 parsePanelThemes，不可能繞過任何對比或語意規則。
 
 import { formatPanelThemeColor, parsePanelThemeColor } from './panel-theme-color.ts'
 import { normalizePanelThemePlainText } from './plugin-panel-themes.ts'
@@ -64,7 +59,6 @@ function recordAt(value: unknown, path: string): Record<string, unknown> {
   return value
 }
 
-/** 任何 manifest 顏色文法都接受，一律重新輸出成 `rgb(R G B / A)`。 */
 function colorAt(value: unknown, path: string, opaque = false): string {
   const parsed = parsePanelThemeColor(value)
   if (!parsed.ok) fail(path, 'not an allowed colour')
@@ -77,7 +71,6 @@ function integerAt(value: unknown, min: number, max: number, path: string): numb
   return value
 }
 
-/** 最多兩位小數、落在範圍內的數字（與 manifest 的 scale、dim 規則相同）。 */
 function decimalAt(value: unknown, min: number, max: number, path: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || !/^\d+(?:\.\d{1,2})?$/.test(String(value))) {
     fail(path, `must be a number ${min}-${max} with at most 2 decimals`)
@@ -194,18 +187,13 @@ function attempt<T>(parse: () => T): UserThemeParseResult<T> {
   }
 }
 
-/** 嚴格解析一份定義：多出或缺少的鍵、文法錯誤都拒絕；顏色重新輸出成標準格式。 */
 export function parseUserPanelThemeDefinition(value: unknown): UserThemeParseResult<UserPanelThemeDefinition> {
   return attempt(() => parseDefinitionStrict(value))
 }
 
-/**
- * 正規化之前的名稱長度上限（UTF-16 單位）。NFKC 與空白收合只會讓合理的名稱變短或稍長，
- * 先擋下過長的輸入，不讓任意大的字串進到正規化。
- */
+// 先擋下過長的輸入，不讓任意大的字串進到正規化。
 export const USER_PANEL_THEME_NAME_INPUT_MAX = USER_PANEL_THEME_NAME_MAX * 4
 
-/** 主題名稱：與 manifest 顯示名稱相同的清理（NFKC、去除控制字元與角括號），1–48 字元。 */
 export function parseUserPanelThemeName(value: unknown): string | null {
   if (typeof value !== 'string' || value.length > USER_PANEL_THEME_NAME_INPUT_MAX) return null
   return normalizePanelThemePlainText(value, USER_PANEL_THEME_NAME_MAX)
@@ -225,7 +213,6 @@ function familyList(id: UserPanelThemeFontStackId): string[] | undefined {
   return stack ? [...stack] : undefined
 }
 
-/** 轉成一筆 panelThemes 宣告，交給插件主題的驗證器（顯示名稱兩種語系相同）。 */
 export function userPanelThemeContribution(id: string, name: string, definition: UserPanelThemeDefinition): Record<string, unknown> {
   const body = familyList(definition.typography.body)
   const heading = familyList(definition.typography.heading)
@@ -238,17 +225,13 @@ export function userPanelThemeContribution(id: string, name: string, definition:
   }
 }
 
-/**
- * 由較新版本寫入的記錄（降級後才會遇到）：看不懂它的內容，但它不是損毀，
- * 絕不能改名備份或修剪——升級回去之後要原封不動地還在。
- */
+// 降級後才會遇到：不是損毀，絕不能改名備份或修剪，升級回去後要原封不動。
 export function isFutureUserPanelThemeRecord(value: unknown): boolean {
   return isRecord(value) && typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion) && value.schemaVersion > USER_PANEL_THEME_SCHEMA_VERSION
 }
 
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 
-/** 解析磁碟上的一筆記錄；任何欄位不符（包括 id 與檔名不一致）都回傳 null。 */
 export function parseUserPanelThemeRecord(value: unknown, expectedId: string): UserPanelThemeRecord | null {
   if (!isRecord(value)) return null
   const keys = Object.keys(value)
@@ -265,7 +248,6 @@ export function userPanelThemeExport(record: Pick<UserPanelThemeRecord, 'name' |
   return { format: USER_PANEL_THEME_EXPORT_FORMAT, schemaVersion: USER_PANEL_THEME_SCHEMA_VERSION, name: record.name, definition: structuredClone(record.definition) }
 }
 
-/** 匯入檔：只接受 format／schemaVersion／name／definition 四個鍵（沒有 id、時間、圖片或路徑）。 */
 export function parseUserPanelThemeExport(value: unknown): UserThemeParseResult<{ name: string; definition: UserPanelThemeDefinition }> {
   return attempt(() => {
     const file = recordAt(value, 'file')

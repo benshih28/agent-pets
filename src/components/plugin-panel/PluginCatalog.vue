@@ -31,7 +31,6 @@ const lastChecked = computed(() => catalogLoadedAt.value === null
   : formatTime(catalogLoadedAt.value, locale.value))
 const expanded = ref<Record<string, boolean>>({})
 
-// 進入探索分頁（或啟用目錄）時自動載入一次。
 watch(() => [props.active, onlineCatalogEnabled.value] as const, ([active, enabled]) => {
   if (active && enabled) void ensureCatalogLoaded()
 }, { immediate: true })

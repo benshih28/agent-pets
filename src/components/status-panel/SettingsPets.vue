@@ -107,7 +107,6 @@ async function commitImport(decision: PetImportDecision): Promise<void> {
       store.setPet(result.id)
       return
     }
-    // 主程序發現預覽後狀態有變：換成新的預覽，讓使用者重新選擇，而不是沿用舊的決定。
     if (result.code === 'E_IMPORT_STATE_CHANGED' && result.preview) {
       importPreview.value = result.preview
       importDialogError.value = t('pet.importStateChanged')
@@ -127,7 +126,6 @@ function cancelImport(): void {
   if (preview) void window.electronAPI?.cancelImportPetZip(preview.token)
 }
 
-// 面板切走時丟棄尚未確認的預覽，主程序會一併刪除暫存目錄。
 onUnmounted(() => {
   const preview = importPreview.value
   importPreview.value = null

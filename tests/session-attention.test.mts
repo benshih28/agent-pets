@@ -24,8 +24,6 @@ test('attention order is priority, then most recent, then key, whatever the inpu
 })
 
 test('two busy sessions keep a stable winner while their heartbeats alternate', () => {
-  // Regression: with a recency tie-break the top session (and the multi-pet sprite) flipped on
-  // every event. Busy sessions now tie-break on firstSeenAt, waiting ones on recency.
   const a = session('claude:a', { state: 'thinking', firstSeenAt: 10, lastSeenAt: 10, routedPetId: 'pet-a' })
   const b = session('claude:b', { state: 'tool-running', firstSeenAt: 20, lastSeenAt: 20, routedPetId: 'pet-b' })
   b.state = 'thinking'
@@ -112,7 +110,7 @@ test('family summary stays linear for a large session set', () => {
   const startedAt = performance.now()
   const summary = summarizeFamilies(sessions)
   assert.equal(summary[0]?.count, 20_000)
-  assert.equal(summary[0]?.top.key, 'codex:0') // busy: oldest first
+  assert.equal(summary[0]?.top.key, 'codex:0')
   assert.ok(performance.now() - startedAt < 500)
 })
 
@@ -131,10 +129,9 @@ test('the pet template no longer renders a (+N) session count', async () => {
   const source = ['DesktopPet.vue', 'desktop-pet/PetStatusLine.vue'].map(file => fs.readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8')).join('\n')
   assert.doesNotMatch(source, /line\.count - 1/)
   assert.doesNotMatch(source, /line-more/)
-  // One thin line: no second project row on the pill (the project is in the tooltip / aria-label).
   assert.doesNotMatch(source, /line-project|line-main/)
   assert.equal(source.match(/:aria-label="view\.aria"/g)?.length, 1)
-  // A generic div only gets its aria-label announced with a role.
+  // aria-label on a generic div is only announced with a role.
   assert.equal(source.match(/class="status-line[^"]*"\s+role="group"/g)?.length, 1)
   assert.equal(source.match(/<span class="line-state">\{\{ stateLineLabel\(line\.state\) \}\}<\/span>/g)?.length, 1)
 })
@@ -147,13 +144,11 @@ test('on-pet state words are short English for every state; the catalogs no long
   }
   for (const [state, word] of Object.entries(expected)) assert.equal(stateLineLabel(state), word)
   assert.equal(stateLineLabel('not-a-state'), 'Idle')
-  // The overall line (no family) uses the same English word for its title and accessible name.
   assert.equal(statusLineText({ label: '', variants: [] }, stateLineLabel('offline')), 'Offline')
   const fs = await import('node:fs')
   const en = JSON.parse(fs.readFileSync(new URL('../src/locales/pet/en-US.json', import.meta.url), 'utf8')) as Record<string, string>
   const zh = JSON.parse(fs.readFileSync(new URL('../src/locales/pet/zh-TW.json', import.meta.url), 'utf8')) as Record<string, string>
   for (const catalog of [en, zh]) assert.equal(Object.keys(catalog).filter(key => key.startsWith('pet.lineState')).length, 0)
-  // Per-family tooltip / aria-label keep the localized long form.
   assert.equal(en['pet.statePermission'], 'waiting for permission')
   assert.ok(zh['pet.statePermission'])
 })

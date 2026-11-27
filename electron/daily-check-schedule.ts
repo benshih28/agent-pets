@@ -1,6 +1,3 @@
-// 「每天最多檢查一次」的泛用排程：plugin 目錄更新與 App 新版檢查共用同一套規則。
-// 呼叫端（main 的服務）每小時喚醒一次 `checkIfDue()`；這裡負責當日去重與防重入。
-
 export interface DailyCheckDependencies<Result> {
   isEnabled: () => boolean
   getLastCheckedDay: () => string | null

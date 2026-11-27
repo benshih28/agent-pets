@@ -2,8 +2,6 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-// 回歸：Windows 補上「切換到 App」後，設定頁的開關也必須在 Windows 顯示，
-// 否則使用者無法關掉這個會把其他程式帶到前景的動作。
 const source = readFileSync(new URL('../src/components/status-panel/SettingsDesktop.vue', import.meta.url), 'utf8')
 
 test('the switch-to-app toggle is offered on macOS and Windows', () => {

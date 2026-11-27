@@ -1,27 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * install.mjs - command-line front end for the Agent Pets integrations.
- *
- * This is a thin wrapper around the same installer the app's Setup Wizard uses
- * (electron/setup.ts), so there is only one implementation to keep correct: it never overwrites a
- * config file it cannot parse, backs up before changing, and removes only Agent Pets' own entries.
- * It runs the TypeScript source directly, so it needs a repository checkout and Node.js 22.18+
- * (or `node --experimental-strip-types integrations/install.mjs` on 22.6+).
- *
- * Usage:
- *   node integrations/install.mjs                  # install all
- *   node integrations/install.mjs --opencode       # OpenCode plugin only
- *   node integrations/install.mjs --codex          # Codex hooks only
- *   node integrations/install.mjs --claude-code    # Claude Code (CLI & Desktop) hooks only
- *   node integrations/install.mjs --list           # show the supported integrations
- *
- * Uninstall:
- *   node integrations/install.mjs --uninstall               # remove all hooks (keeps tokens)
- *   node integrations/install.mjs --uninstall --codex       # remove Codex hooks only
- *   node integrations/install.mjs --uninstall --everything  # also remove tokens and ~/.desktop-pet
- */
-
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 

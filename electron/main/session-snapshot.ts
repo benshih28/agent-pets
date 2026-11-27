@@ -4,7 +4,7 @@ import type { AgentHost } from '../../src/types/host-app.ts'
 import { SESSION_REMOVE_MS } from '../../src/utils/session-lifecycle.ts'
 
 export interface SessionSnapshotEntry {
-  /** 事件來自哪個 adapter；主程序替這個 session 補送事件時要帶上，歷史才會記在同一筆。 */
+  /** 主程序替這個 session 補送事件時要帶上，歷史才會記在同一筆。 */
   adapterId?: AgentAdapterId
   source: AgentSource
   sessionId: string
@@ -20,7 +20,6 @@ export interface SessionSnapshotEntry {
 }
 
 const MAX_ENTRIES = 200
-/** Matches the renderer removal horizon: older entries are useless after a reload. */
 const MAX_AGE_MS = SESSION_REMOVE_MS
 
 function snapshotKey(source: AgentSource, sessionId: string): string {
@@ -32,11 +31,6 @@ function cloneEntry(entry: SessionSnapshotEntry): SessionSnapshotEntry {
   return { ...entry, ...(entry.host ? { host: { ...entry.host } } : {}) }
 }
 
-/**
- * Tiny main-owned mirror of the latest state per session. The renderer owns
- * the live list, but a reloaded or crashed renderer asks for this to avoid
- * showing an idle pet while agents are still running.
- */
 export class SessionSnapshotStore {
   private readonly entries = new Map<string, SessionSnapshotEntry>()
 
@@ -83,10 +77,7 @@ export class SessionSnapshotStore {
     return [...this.entries.values()].map(cloneEntry)
   }
 
-  /**
-   * 只取一筆，給只關心單一 session 的呼叫端用，避免每次都複製整份清單。
-   * 過期判斷跟 list() 一致：list() 看不到的項目這裡也看不到，並同樣順手刪掉。
-   */
+  /** 過期判斷跟 list() 一致：list() 看不到的項目這裡也看不到，並同樣順手刪掉。 */
   get(source: AgentSource, sessionId: string): SessionSnapshotEntry | undefined {
     const key = snapshotKey(source, sessionId)
     const entry = this.entries.get(key)

@@ -36,7 +36,6 @@ test('tool identifiers map to readable categories', () => {
   assert.ok(!odd.params.name.includes('<'))
 })
 
-// 短任務不出聲的門檻已移到音效 registry，測試在 tests/sound-registry.test.mts。
 test('waiting reminders have their own lifetime', () => {
   assert.equal(toastDurationFor('waiting'), TOAST_WAITING_MS)
 })

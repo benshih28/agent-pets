@@ -98,7 +98,6 @@ test('merge refreshes an existing Agent Pets group in place so positional hook t
     const file = path.join(dir, 'hooks.json')
     const other = { hooks: [{ type: 'command', command: 'other-tool remind' }] }
     const stale = { hooks: [{ type: 'command', command: 'node', args: ['/old/.desktop-pet/agent-hook.mjs', 'claude'] }] }
-    // Agent Pets first in Stop, second in SessionStart: both positions must survive the refresh.
     fs.writeFileSync(file, JSON.stringify({ hooks: { Stop: [stale, other], SessionStart: [other, stale] } }))
 
     assert.equal((await mergeAgentPetsHooksFile(file, desired())).status, 'written')
@@ -403,18 +402,14 @@ test('ensureAgentPetsHookEntries adds missing handlers and timeouts without touc
     assert.equal(after.model, 'opus')
     assert.deepEqual(after.hooks.Stop, before.hooks.Stop)
     assert.deepEqual(after.hooks.PreToolUse, before.hooks.PreToolUse)
-    // The user's own PermissionRequest handler is kept as-is; ours is appended with the timeout,
-    // reusing the command the user already has (never the current Node path).
     assert.deepEqual(after.hooks.PermissionRequest[0], userPermission)
     assert.deepEqual(after.hooks.PermissionRequest[1], { matcher: '*', hooks: [{ type: 'command', command: 'node', args: [HOOK, 'claude'], timeout: 135 }] })
     assert.deepEqual(after.hooks.PostToolUseFailure, [{ matcher: '*', hooks: [{ type: 'command', command: 'node', args: [HOOK, 'claude'] }] }])
     const userText = JSON.stringify(userStop, null, 2).split('\n').map(line => `      ${line}`).join('\n').trimStart()
     assert.ok(fs.readFileSync(file, 'utf8').includes(userText), 'user handlers keep their exact text')
 
-    // Idempotent: a second run writes nothing.
     assert.equal((await ensureAgentPetsHookEntries(file, required))?.status, 'unchanged')
 
-    // A wrong timeout on our own handler is corrected; the other tool's timeout is not.
     after.hooks.PermissionRequest[1].hooks[0].timeout = 20
     fs.writeFileSync(file, `${JSON.stringify(after, null, 2)}\n`)
     assert.equal((await ensureAgentPetsHookEntries(file, required))?.status, 'written')

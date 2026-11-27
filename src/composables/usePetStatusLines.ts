@@ -1,5 +1,3 @@
-// 寵物狀態列的所有衍生資料：額度分級／百分比／提示列、寬度預算（字寬量測）、插件徽章取捨，
-// 以及額度下降時的閃爍旗標。每條線一次算成 StatusLineView，模板只查表。
 import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import { isQuotaFamilyKey, type AgentState, type QuotaFamilyKey } from '@/types/agent'
@@ -14,10 +12,9 @@ import { formatDateParts } from '@/utils/intl-format'
 import { resolvedPetTheme } from '@/composables/useTheme'
 import type { PluginBadgeSummary } from '@/composables/usePetPluginBadges'
 
-// Quota 顏色由 CSS 依 data-quota-tier 選 token（PetStatusLine.css），插件主題可透過 --pet-status-* 重新上色一般與低額度填色（危急 < 20% 維持內建），也讓 token 檢查看得到用處。
+// 顏色由 CSS 依 data-quota-tier 選 token；插件主題可用 --pet-status-* 重新上色一般與低額度填色（危急 < 20% 維持內建）。
 export type QuotaTier = 'low' | 'warning' | 'claude' | 'normal'
 
-// 額度充足時的顏色：Claude 用品牌 accent，其他家族用 sage。新增有額度的家族時這張表少一格就編譯失敗。
 const QUOTA_FAMILY_TIER = Object.freeze({
   codex: 'normal',
   claude: 'claude',
@@ -38,7 +35,6 @@ export interface QuotaWindowRowView {
 
 export interface QuotaView {
   tier: QuotaTier | undefined
-  /** 已四捨五入的百分比字串（不含 %）。 */
   percent: string
   remainingPercent: number
   meterLabel: string
@@ -49,12 +45,10 @@ export interface QuotaView {
 export interface StatusLineView {
   text: string
   aria: string
-  /** 沒有 Quota 提示框時的 title；含被寬度預算拿掉的徽章。 */
+  /** 含被寬度預算拿掉的徽章。 */
   title: string
   fit: StatusLineFit
-  /** 寬度預算內放得下的徽章。 */
   badges: PluginBadgeView[]
-  /** 「+N」的 N；放不下或沒有時為 0。 */
   overflowCount: number
   quota: QuotaView | null
 }
@@ -69,18 +63,15 @@ export const EMPTY_STATUS_LINE_VIEW: StatusLineView = {
   quota: null,
 }
 
-// 以 canvas 量字寬（不觸發版面計算），結果依字串快取；字型載入完成或主題切換時清快取重算。
-// 沒有 canvas 時的保守估計（每字 8px），寧可多拿掉東西也不讓狀態被截斷。
+// 沒有 canvas 時的保守估計：寧可多拿掉徽章也不讓狀態被截斷。
 const STATUS_TEXT_FALLBACK_CHAR_W = 8
-// 快取的鍵含插件徽章文字，數量沒有上限；超過時整批清掉重量（量一次只要微秒級）。
+// 快取鍵含插件徽章文字、數量無上限，超過就整批清掉。
 const STATUS_TEXT_CACHE_MAX = 256
 
 function quotaResetLabel(resetsAt?: string): string {
   if (!resetsAt) return t('resetTimeUnavailable')
   const reset = new Date(resetsAt)
   if (!Number.isFinite(reset.getTime())) return t('resetTimeUnavailable')
-  // No year: the longest quota window is 7 days out, so it carries no
-  // information and is the single widest chunk of the tooltip.
   return t('resetAt', { time: formatDateParts(reset, {
     month: '2-digit',
     day: '2-digit',
@@ -89,19 +80,14 @@ function quotaResetLabel(resetsAt?: string): string {
   }) })
 }
 
-// 各家族的狀態列：畫面上是英文短字，提示框與可存取名稱是介面語言的完整文字。
-// 沒有家族時的整體狀態列（Idle／Offline）只有英文狀態詞，提示與可存取名稱也用同一個字。
+// 有家族標籤時，提示與可存取名稱用介面語言的完整文字；整體狀態列（Idle／Offline）則沿用英文狀態詞。
 function lineText(line: StatusLineSource & { state: AgentState }): string {
   return statusLineText(line, line.label ? stateAriaLabel(line.state) : stateLineLabel(line.state))
 }
 
-/** 額度下降時的「受傷」閃爍旗標；見 flashDrain 的說明。 */
 function useQuotaDrain() {
   const store = useAgentStore()
-  // A quota drop is the pet "taking damage" — flash the meter for a moment so
-  // a change that happened while you weren't looking still registers. Driven
-  // by a class toggle (not a CSS transition) so consecutive drops re-run the
-  // animation from the start instead of being swallowed mid-flight.
+  // class toggle 而非 CSS transition：連續下降才會從頭重播動畫。
   const draining = ref<Record<string, boolean>>({})
   const drainTimers: Record<string, number> = {}
   const lastRemaining: Record<string, number> = {}
@@ -121,8 +107,7 @@ function useQuotaDrain() {
     for (const [familyKey, quota] of Object.entries(quotas)) {
       const previous = lastRemaining[familyKey]
       lastRemaining[familyKey] = quota.remainingPercent
-      // Only a meaningful drop counts: refreshes that report the same number
-      // (or a reset that refills the bar) shouldn't strobe the meter.
+      // 同值刷新或重置補滿不算下降，避免閃爍。
       if (previous !== undefined && quota.remainingPercent < previous - 0.05) {
         flashDrain(familyKey)
       }
@@ -196,7 +181,6 @@ export function usePetStatusLines(options: {
     return QUOTA_FAMILY_TIER[familyKey]
   }
 
-  // provider 只在額度資料更新時索引一次，每條線不再掃整份清單。
   const providersById = computed(() => new Map<string, NonNullable<typeof store.quotaUsage>['providers'][number]>(
     (store.quotaUsage?.providers ?? []).map(provider => [provider.id, provider]),
   ))
@@ -219,8 +203,6 @@ export function usePetStatusLines(options: {
     }))
   }
 
-  // 每條狀態列的文字、可存取名稱、寬度取捨、徽章與額度一次算好；模板只查表，
-  // 不再於每次 render 對每條線重複過濾徽章、重組文字或掃描 provider。
   const views = computed<Record<string, StatusLineView>>(() => {
     void fontEpoch.value
     const lines = options.lines()

@@ -79,14 +79,12 @@ test('session timeline records state and tool changes, permission waits and the 
     'thinking', 'tool-running(Bash)', 'tool-running(Edit)', 'waiting-permission', 'tool-running(Edit)', 'success',
   ])
   assert.equal(detail.truncated, false)
-  // Metadata only: no raw session id or path above the last segment.
   const serialized = JSON.stringify({ page, detail })
   assert.equal(serialized.includes('raw-session-1'), false)
   assert.equal(serialized.includes('secret-root'), false)
   assert.equal(serialized.includes('/Users/'), false)
   assert.equal(store.getSessionDetail('aang-airbender', 'claude-code:claude:ffffffffffffffffffffffff'), null)
   assert.equal(store.getSessionDetail('aang-airbender', "x' OR 1=1 --"), null)
-  // Another pet cannot open this session's timeline.
   assert.equal(store.getSessionDetail('other-pet', item.id), null)
 })
 
@@ -168,15 +166,12 @@ test('filters: project, agent, outcome, date range and escaped search', (t) => {
   assert.deepEqual(labels({ outcome: 'incomplete' }), ['delta'])
   assert.equal(store.listSessions('aang-airbender', { outcome: 'active' }).items[0]!.lastSeenAt, NOW - 60_000)
   assert.deepEqual(labels({ from: NOW - 45 * 60_000, to: NOW - 25 * 60_000 }), ['gamma', 'beta%app'])
-  // LIKE wildcards in the search text are literals, not patterns.
   assert.deepEqual(labels({ search: '%' }), ['beta%app'])
   assert.deepEqual(labels({ search: '_app' }), ['alpha_app'])
   assert.deepEqual(labels({ search: 'ALPHA' }), ['alpha_app'])
   assert.deepEqual(labels({ search: 'codex' }), ['gamma'])
   assert.equal(labels({ search: "' OR 1=1 --" }).length, 0)
-  // Sessions of another pet are not listed.
   assert.equal(store.listSessions('other-pet', {}).items.length, 0)
-  // An open session goes quiet → incomplete once the active window passes.
   now = NOW + SESSION_ACTIVE_WINDOW_MS
   assert.deepEqual(labels({ outcome: 'active' }), [])
 })
@@ -207,7 +202,6 @@ test('query normalisation drops anything invalid and bounds the rest', () => {
   assert.equal(query.search, 'term')
   assert.equal(query.limit, 7)
   assert.ok(query.cursor)
-  // A reversed range is the same span, never "all time".
   const swapped = normalizeSessionQuery({ from: NOW, to: NOW - 1000 }, NOW)
   assert.equal(swapped.from, NOW - 1000)
   assert.equal(swapped.to, NOW)
@@ -243,7 +237,6 @@ test('list and timeline queries are index-backed and never sort in a temp B-tree
   assert.doesNotMatch(timeline, /TEMP B-TREE/)
   const usage = plan(db, 'SELECT model FROM session_model_usage WHERE usage_key IN (SELECT value FROM json_each(?))', ['["a","b"]'])
   assert.match(usage, /SEARCH session_model_usage USING (COVERING )?INDEX/)
-  // The page reads only limit + 1 rows for an unfiltered list.
   const page = store.listSessions('aang-airbender', { limit: 1 })
   assert.equal(page.items.length, 1)
 })
@@ -266,13 +259,11 @@ test('local-log tokens join the hook session incrementally, with the top model',
   assert.equal(item.tokenOutput, 80)
   assert.equal(item.tokenCacheRead, 1000)
   assert.equal(item.topModel, 'claude-opus')
-  // A rescan that corrects a record moves only its delta.
   assert.equal(store.recordTokenUsage(usage('m2', 'claude-opus', 30, 20)), true)
   item = store.listSessions('aang-airbender', {}).items[0]!
   assert.equal(item.tokenInput, 140)
   assert.equal(item.topModel, 'claude-sonnet')
   assert.equal(Number(db.prepare('SELECT COUNT(*) AS count FROM session_model_usage').get()!.count), 2)
-  // A session without local-log usage falls back to hook-reported tokens.
   store.recordEvent(event({ adapterId: 'opencode', source: 'opencode-cli', sessionId: 'oc', timestamp: NOW - 10_000, tokenUsage: { input: 7, output: 3, quality: 'estimated' } }))
   const hookOnly = store.listSessions('aang-airbender', { adapterId: 'opencode' }).items[0]!
   assert.equal(hookOnly.tokenSource, 'hook')
@@ -287,7 +278,6 @@ test('a rescan that learns the real session id moves the usage onto that session
     adapterId: 'codex', agentId: 'codex', sessionId, sourceEventId: 'line-1',
     occurredAt: NOW - 50_000, input: 40, output: 9, quality: 'exact' as const, model: 'gpt-5-codex',
   })
-  // Rows imported before the fix were keyed by the log file, not the thread.
   assert.equal(store.recordTokenUsage(usage('file-key')), true)
   assert.equal(store.listSessions('aang-airbender', {}).items[0]!.tokenSource, 'none')
   assert.equal(store.recordTokenUsage(usage('thread-1')), true)
@@ -295,7 +285,6 @@ test('a rescan that learns the real session id moves the usage onto that session
   assert.equal(item.tokenSource, 'local')
   assert.equal(item.tokenInput, 40)
   assert.equal(item.tokenOutput, 9)
-  // The move is not a new spend, and a repeat is a no-op.
   assert.equal(store.getSummary().totals.tokenInput, 40)
   assert.equal(store.recordTokenUsage(usage('thread-1')), false)
 })
@@ -312,7 +301,6 @@ test('v9 migration backfills existing sessions additively and is idempotent', (t
     adapterId: 'claude-code', agentId: 'claude', sessionId: 'raw-session-1', sourceEventId: 'u1',
     occurredAt: NOW - 45_000, input: 40, output: 2, quality: 'exact', model: 'claude-haiku',
   })
-  // Roll the database back to its v8 shape.
   const raw = (first as unknown as { database: RawDb }).database
   raw.exec(`
     DROP INDEX idx_history_sessions_pet_seen;
@@ -338,8 +326,7 @@ test('v9 migration backfills existing sessions additively and is idempotent', (t
   assert.deepEqual(second.getSessionDetail('aang-airbender', migrated.id)!.timeline, [])
   second.close()
 
-  // 不能用 t.after 關閉：after hook 依註冊順序執行，會先刪暫存資料夾，
-  // Windows 上 SQLite 檔案仍被開著就會 EPERM。
+  // 不能用 t.after 關閉：它會先刪暫存資料夾，Windows 上 SQLite 檔案仍被開著會 EPERM。
   const third = new HistoryStore(filePath, { now: () => NOW })
   try {
     const db = (third as unknown as { database: RawDb }).database
@@ -394,22 +381,18 @@ test('outcome follows the latest turn of a multi-turn session', (t) => {
   store.recordEvent(event({ state: 'thinking', eventId: 't1', timestamp: at(0) }))
   store.recordEvent(event({ state: 'success', eventId: 'stop-1', timestamp: at(10_000) }))
   assert.equal(outcome(), 'success')
-  // The next prompt makes the session active again.
   store.recordEvent(event({ state: 'thinking', eventId: 't2', timestamp: at(20_000) }))
   assert.equal(outcome(), 'active')
   assert.equal(store.listSessions('aang-airbender', { outcome: 'active' }).items.length, 1)
   assert.equal(store.listSessions('aang-airbender', { outcome: 'success' }).items.length, 0)
   store.recordEvent(event({ state: 'error', eventId: 'stop-fail', timestamp: at(30_000) }))
   assert.equal(outcome(), 'error')
-  // One StopFailure does not stick once a later turn succeeds.
   store.recordEvent(event({ state: 'tool-running', toolName: 'Bash', eventId: 't3', timestamp: at(40_000) }))
   store.recordEvent(event({ state: 'success', eventId: 'stop-2', timestamp: at(50_000) }))
   assert.equal(outcome(), 'success')
-  // idle keeps the last turn's outcome; a late, older event cannot rewrite it.
   store.recordEvent(event({ state: 'idle', eventId: 'idle', timestamp: at(60_000) }))
   store.recordEvent(event({ state: 'thinking', eventId: 'late', timestamp: at(45_000) }))
   assert.equal(outcome(), 'success')
-  // Aggregates still count the session once.
   assert.equal(store.getSummary().totals.sessionsCompleted, 1)
   now = NOW
 })
@@ -427,9 +410,7 @@ test('trigram search reads only matching sessions and agrees with the scan', (t)
   assert.deepEqual(found('管理工'), ['專案管理工具'])
   assert.deepEqual(found('"x" OR alpha'), [])
   assert.deepEqual(found('claude-code').length, 4)
-  // Short terms fall back to the escaped LIKE scan.
   assert.deepEqual(found('%'), ['beta%app'])
-  // A renamed workspace label is re-indexed; the old label no longer matches.
   store.recordEvent(event({ sessionId: 's-0', projectId: PROJECT_A, project: 'omega-service', state: 'thinking', eventId: 'rename', timestamp: NOW - 100 }))
   assert.deepEqual(found('alpha'), [])
   assert.deepEqual(found('omega'), ['omega-service'])
@@ -450,7 +431,6 @@ test('retention removes exactly the expired set even when last-seen times tie', 
   const count = (sql: string) => Number(db.prepare(sql).get()!.count)
   const step = store.pruneBatch(3)
   assert.equal(step.sessions, 3)
-  // No timeline or search row may outlive its session.
   assert.equal(count('SELECT COUNT(*) AS count FROM session_timeline WHERE session_pk NOT IN (SELECT session_pk FROM sessions)'), 0)
   assert.equal(count('SELECT COUNT(*) AS count FROM session_search WHERE rowid NOT IN (SELECT rowid FROM sessions)'), 0)
   while (store.pruneBatch(3).more) { /* bounded steps */ }

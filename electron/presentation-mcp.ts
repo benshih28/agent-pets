@@ -82,8 +82,7 @@ export function createPresentationMcpServer(options: PresentationMcpServerOption
       return
     }
 
-    // 錯誤字串是既有契約：presentation-mcp.mjs 把 body 的 error 當成工具錯誤訊息，所以保留
-    // `request_too_large`／`invalid_json`，不與 event server 的字串統一。空 body 視為 `{}`。
+    // 錯誤字串是既有契約：presentation-mcp.mjs 把 body 的 error 當成工具錯誤訊息，不與 event server 的字串統一。
     const read = await readBoundedJson(request, MAX_BODY_BYTES)
     let body: unknown = {}
     if (read.ok) {

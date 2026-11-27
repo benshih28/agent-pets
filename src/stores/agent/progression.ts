@@ -1,10 +1,3 @@
-// 成長進度與成就：XP／等級／連續天數與成就由主程序計算，renderer 只驗證並保存最新快照與「剛剛發生」的事件。
-//
-// - 事件輸入：主程序廣播經 App.vue 呼叫 `setProgressionSnapshot`／`setAchievementsSnapshot`／
-//   `handleProgressionAwarded`／`handleAchievementUnlocked`；啟動與換寵物時呼叫 `initialize*`／`setProgressionPet`。
-// - 計時器：無。
-// - storage：無（持久化在主程序）。
-// - 跨視窗同步：每個視窗各自接主程序的廣播；升級／解鎖只來自廣播，冷載入或重播事件不會變成慶祝。
 import { ref, shallowRef } from 'vue'
 import type { AchievementSnapshot, AchievementUnlock } from '@/types/achievement'
 import { ACHIEVEMENT_DEFINITIONS } from '@/types/achievement'
@@ -55,17 +48,11 @@ function normalizeProgressionSnapshot(value: unknown): ProgressionSnapshot | nul
   }
 }
 
-/** `selectedPet` 由寵物模組持有；初始化時要用目前選的寵物向主程序要快照。 */
 export function useProgression(selectedPet: { readonly value: string }) {
-  // shallowRef: both are always replaced wholesale (setProgressionSnapshot,
-  // setAchievementsSnapshot each assign a fresh value), never mutated in
-  // place，所以不需要深層響應。
   const progression = shallowRef<ProgressionSnapshot | null>(null)
   const achievements = shallowRef<AchievementSnapshot | null>(null)
   const achievementUnlock = ref<AchievementUnlock | null>(null)
-  // XP the main process actually granted (newest first), and the last
-  // level-up/evolution. Both come only from main's award notifications, so a
-  // cold load or a replayed event can never look like a fresh celebration.
+  // Set only from main's award notifications, so a cold load or replayed event never looks like a fresh celebration.
   const recentAwards = shallowRef<RecentAward[]>([])
   const levelUpEvent = shallowRef<LevelUpEvent | null>(null)
   let awardSequence = 0

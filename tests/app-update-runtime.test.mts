@@ -84,7 +84,6 @@ test('enabling the toggle triggers one automatic check against the fixed GitHub 
     assert.equal(h.notifications.length, 1)
     assert.match(String(h.notifications[0]?.body), /1\.14\.0/)
 
-    // 隔天再檢查：同一版本不重複提示。
     h.setNow(DAY + 25 * 3_600_000)
     await h.runtime.checkNow()
     assert.equal(h.notifications.length, 1)
@@ -100,7 +99,6 @@ test('a newer release announced after the first one is announced again', async (
     assert.equal(h.notifications.length, 1)
     h.setBody(releaseBody('v1.15.0'))
     h.setNow(DAY + 25 * 3_600_000)
-    // 重新開關會觸發一次當日排程檢查（已隔天）。
     h.runtime.setEnabled(false)
     h.runtime.setEnabled(true)
     await new Promise(resolve => setTimeout(resolve, 30))
@@ -123,7 +121,6 @@ test('manual check works regardless of the toggle and reports up to date, new ve
     h.setNow(DAY + 122_000)
     await h.runtime.checkNow()
     assert.equal(h.runtime.getState().lastResult, 'failed')
-    // 失敗不抹掉先前確認過的新版。
     assert.equal(h.runtime.getState().latestVersion, '1.15.0')
     h.setBody('{}', 500)
     h.setNow(DAY + 183_000)
@@ -151,7 +148,6 @@ test('a failed check keeps the known update and openRelease; a later up_to_date 
     assert.equal(failed.lastCheckedAt, DAY + 61_000)
     assert.equal(await h.runtime.openRelease(), true)
     assert.deepEqual(h.opened, [`${APP_UPDATE_RELEASES_PREFIX}tag/v1.14.0`])
-    // 重啟後仍保留。
     assert.equal(new AppUpdateStore(h.dir).get().latestVersion, '1.14.0')
     h.setBody(releaseBody('v1.13.1'))
     h.setNow(DAY + 122_000)

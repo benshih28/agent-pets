@@ -6,20 +6,16 @@ import type { AgentConfigDirIgnoredReason, AgentConfigDirVariable } from '../src
 
 export type { AgentConfigDirIgnoredReason, AgentConfigDirVariable }
 
-// Agent 自己的設定目錄（使用者層）可以用環境變數搬走。hook 安裝、偵測、quota 與本機用量都要讀寫
-// agent 實際使用的那個目錄，所以解析規則集中在這裡。只屬於主行程的檔案系統操作，所以不放進
-// renderer 也會載入的 AGENT_FAMILY_REGISTRY（docs/dev/agent-sources.md「hook 這一側要另外改」）。
-// 第 0 步實測依據見 docs/phase-reports/refactor-01-agent-config-dirs.md。
+// 檔案系統操作只屬於主行程，不可放進 renderer 也會載入的 AGENT_FAMILY_REGISTRY。
 
 export type AgentConfigDirKind = 'claude' | 'codex' | 'opencode'
 
 interface AgentConfigDirSpec {
   variable: AgentConfigDirVariable
-  /** 未設定變數時，相對於 home 的預設位置。 */
   defaultSegments: readonly string[]
-  /** 變數指向的是上一層（XDG_CONFIG_HOME），agent 目錄還要再接這幾段。 */
+  /** 變數指向上一層（XDG_CONFIG_HOME）時，agent 目錄要再接的路徑。 */
   envSuffix: readonly string[]
-  /** agent 本身要求目錄已存在（CODEX_HOME 不存在時 Codex 直接報錯）。 */
+  /** CODEX_HOME 不存在時 Codex 會直接報錯。 */
   mustExist: boolean
 }
 
@@ -40,13 +36,11 @@ export interface AgentConfigDirDeps {
   env: AgentConfigEnv
   homeDir: string
   platform: NodeJS.Platform
-  /** 只有 mustExist 的目錄會呼叫。 */
   isDirectory(target: string): boolean
 }
 
 export interface ResolvedConfigDir {
   path: string
-  /** 未設定變數時的位置；與 path 不同時，舊安裝可能留在這裡。 */
   defaultPath: string
   source: 'env' | 'default'
   variable: AgentConfigDirVariable
@@ -56,7 +50,7 @@ export interface ResolvedConfigDir {
 export type ResolvedAgentConfigDirs = Readonly<Record<AgentConfigDirKind, ResolvedConfigDir>>
 
 const MAX_PATH_LENGTH = 1024
-// Windows 的 path.isAbsolute('\\foo') 也是 true，但那是「目前磁碟機根目錄」，agent 與我們可能落在不同磁碟。
+// Windows 的 path.isAbsolute('\\foo') 也是 true，但那是目前磁碟機根目錄，agent 與我們可能在不同磁碟。
 const WINDOWS_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/
 
 function pathApi(platform: NodeJS.Platform): path.PlatformPath {
@@ -78,7 +72,6 @@ export function resolveAgentConfigDir(kind: AgentConfigDirKind, deps: AgentConfi
     path: defaultPath, defaultPath, source: 'default', variable: spec.variable, ...(ignored ? { ignored } : {}),
   })
   const raw = deps.env[spec.variable]
-  // 空字串視同未設定（常見的「取消設定」寫法），不提示。
   if (raw === undefined || raw.trim() === '') return fallback()
   const problem = classifyValue(raw, deps.platform)
   if (problem) return fallback(problem)
@@ -102,10 +95,8 @@ export function pickAgentConfigEnv(env: NodeJS.ProcessEnv): AgentConfigEnv {
   }))
 }
 
-// --- login shell 查詢（macOS／Linux GUI 啟動） ----------------------------------------------------
-// 從 Dock／桌面啟動的 app 只繼承 launchd／session 環境，看不到使用者在 shell 設定檔 export 的變數。
-// 與 node-resolver.ts 同樣的做法：固定指令、非互動 login shell、2 秒逾時、失敗就當作未設定。
-// 不用 -ilc 後備：互動設定檔可能印訊息或啟動其他程式，為了三個變數不值得冒這個險。
+// GUI 啟動的 app 看不到 shell 設定檔 export 的變數，所以用 login shell 查。
+// 不用 -ilc 後備：互動設定檔可能印訊息或啟動其他程式。
 
 export const LOGIN_SHELL_TIMEOUT_MS = 2_000
 const LOGIN_SHELL_MAX_OUTPUT = 64 * 1024
@@ -148,9 +139,7 @@ function loginShell(deps: AgentConfigEnvironmentDeps): string {
 }
 
 export interface AgentConfigEnvironment {
-  /** process.env 優先，缺的才用 login shell 查到的值；查詢完成前只有 process.env。 */
   snapshot(): AgentConfigEnv
-  /** 開始（只會開始一次）並等待 login shell 查詢；會改寫設定檔的流程先 await 它。 */
   ready(): Promise<void>
 }
 
@@ -158,7 +147,7 @@ export function createAgentConfigEnvironment(deps: AgentConfigEnvironmentDeps = 
   const direct = Object.freeze(pickAgentConfigEnv(deps.env))
   let merged: AgentConfigEnv = direct
   let pending: Promise<void> | null = null
-  // Windows GUI 會繼承使用者／系統環境變數；三個都已設定時也沒有要補的。
+  // Windows GUI 會繼承使用者／系統環境變數，不需要 login shell。
   const needsShell = deps.platform !== 'win32'
     && AGENT_CONFIG_DIR_VARIABLES.some(name => !Object.hasOwn(direct, name))
 
@@ -174,9 +163,6 @@ export function createAgentConfigEnvironment(deps: AgentConfigEnvironmentDeps = 
     },
   }
 }
-
-// --- 主行程目前的解析結果 ------------------------------------------------------------------------
-// 檢查畫面一次會呼叫好幾個路徑函式，每次都 stat CODEX_HOME 沒有意義；短暫快取，home 或變數改了就重算。
 
 const RESOLVE_CACHE_MS = 2_000
 let cache: { key: string, at: number, dirs: ResolvedAgentConfigDirs } | null = null
@@ -200,7 +186,6 @@ export function currentAgentConfigDirs(
   return dirs
 }
 
-/** 等待 login shell 查詢；沒有接上的執行環境（CLI、測試）立即完成。 */
 export async function agentConfigEnvReady(): Promise<void> {
   await setupEnvironment().agentConfigEnvReady?.()
   cache = null
@@ -217,10 +202,7 @@ export class AgentConfigDirError extends Error {
   }
 }
 
-/**
- * 安裝前的檢查：變數有設定卻不能用時，agent 不會讀預設位置以外的地方，我們也不能寫到預設位置
- * 假裝成功。CLAUDE_CONFIG_DIR 不存在時同樣拒絕，不替使用者建立目錄。
- */
+// 變數設了卻不能用時不可退回預設位置：agent 不會讀那裡，寫了只是假裝成功。
 export function writableAgentConfigDir(dir: ResolvedConfigDir): string {
   if (dir.ignored) throw new AgentConfigDirError(dir.variable, dir.ignored)
   if (dir.source === 'env' && dir.variable === 'CLAUDE_CONFIG_DIR' && !isDirectory(dir.path)) {

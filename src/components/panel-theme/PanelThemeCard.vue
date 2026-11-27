@@ -9,14 +9,9 @@ import { panelThemeMedia, panelThemeState } from '@/composables/usePanelTheme'
 import { activePanelThemeModes } from '@/utils/panel-theme-css'
 import { PANEL_THEME_MODES, type PanelThemeCatalogEntry, type PanelThemeMode } from '@/types/panel-theme'
 
-// 一個目錄主題（插件主題或我的主題）的卡片：名稱、使用中徽章、淺色／深色預覽、
-// 「用於淺色／深色／兩種模式」，以及使用中模式的背景圖控制。插件詳情、主題插件分頁與
-// 「我的主題」共用，額外的動作放在 #actions 插槽。
-
 const props = defineProps<{
   entry: PanelThemeCatalogEntry
   title: string
-  /** 預覽只在卡片可見時才渲染（由父層的 IntersectionObserver 決定）。 */
   visible: boolean
   busy: boolean
 }>()

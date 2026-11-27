@@ -1,11 +1,3 @@
-// 不在場時的提醒：未讀的完成／失敗標記，以及「等你輸入」逾時後才出聲的提醒。
-//
-// - 事件輸入：`noteUnreadResult(tone)`（session 進入 success／error）、`scheduleWaitingInputReminder(key)`／
-//   `cancelWaitingInputReminder(key)`（session 進入／離開 waiting-input 或被移除）、`markPetInteraction()`（使用者碰了寵物）。
-// - 計時器：每個等待輸入的 session 一個 `WAITING_INPUT_DELAY_MS` 的 setTimeout；
-//   取消、觸發或 store 的 effect scope 結束（`onScopeDispose`）都會清掉。
-// - storage：無。
-// - 跨視窗同步：不同步；音效只由 App.vue 指定的那個視窗透過 `setCueSink` 發出，避免兩個視窗各播一次。
 import { onScopeDispose, ref } from 'vue'
 import type { AgentSession } from '@/types/agent'
 import type { SoundCue } from '@/types/sound'
@@ -42,7 +34,6 @@ export function useUnreadAlerts(deps: UnreadAlertsDeps) {
     if (next !== unreadResults.value) unreadResults.value = next
   }
 
-  // App.vue decides whether this window may actually make sound.
   function setCueSink(sink: ((cue: SoundCue) => void) | null) {
     cueSink = sink
   }
@@ -53,8 +44,7 @@ export function useUnreadAlerts(deps: UnreadAlertsDeps) {
     waitingInputTimers.delete(key)
   }
 
-  // The prompt must still be unanswered after a short grace period before the
-  // pet speaks up, so a question answered at once never flashes a bubble.
+  // Grace period so a question answered at once never flashes a bubble.
   function scheduleWaitingInputReminder(key: string) {
     cancelWaitingInputReminder(key)
     waitingInputTimers.set(key, setTimeout(() => {

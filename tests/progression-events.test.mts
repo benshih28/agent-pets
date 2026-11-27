@@ -41,7 +41,6 @@ test('a level-up and its evolution fire exactly once per crossing, never when th
   assert.equal(same, null)
   const noEvolve = levelUpFromAward(normalizeProgressionAwardEvent({ ...base, levelBefore: 6, levelAfter: 7, stageBefore: 'baby' })!, 'c')
   assert.equal(noEvolve?.evolved, false)
-  // Two levels in one event is still a single celebration.
   assert.equal(levelUpFromAward(normalizeProgressionAwardEvent({ ...base, levelBefore: 3, levelAfter: 5 })!, 'd')?.toLevel, 5)
 })
 

@@ -4,9 +4,7 @@ import { t } from '@/i18n'
 import type { PermissionRequestView } from '@/types/permission'
 import { permissionSourceName } from '@/utils/permission-source'
 
-// Shared by the pet bubble and the panel card. Everything shown here was
-// already sanitized and redacted in the main process; the copy button only
-// ever copies that same text.
+// Everything shown was already sanitized and redacted in main; copy only copies that same text.
 const props = defineProps<{
   request: PermissionRequestView
   idPrefix: string
@@ -23,7 +21,6 @@ watch(() => props.request.requestId, () => {
 
 const hasDetails = computed(() => props.request.details.length > 0)
 const detailText = computed(() => props.request.details.join('\n'))
-// Description is a summary when details exist, otherwise it is the content.
 const canExpand = computed(() => hasDetails.value || props.request.description.length > 90)
 
 async function copy(): Promise<void> {
@@ -105,7 +102,6 @@ async function copy(): Promise<void> {
   flex: none;
 }
 
-/* 容器（寵物的權限泡泡）高度不夠時，只有程式碼框縮短，至少留一行；完整內容用「展開」或「複製」。 */
 .permission-details-code {
   flex: 0 1 auto;
   min-height: calc(1.4em + var(--space-2) * 2);
@@ -132,7 +128,6 @@ async function copy(): Promise<void> {
   gap: var(--space-3);
 }
 
-/* Visually compact; the pointer target still reaches --hit-min. */
 .permission-details-link::after {
   content: '';
   position: absolute;

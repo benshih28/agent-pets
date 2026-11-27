@@ -57,11 +57,9 @@ test('the seed generator is deterministic and keeps background, image, font and 
   assert.deepEqual(first.definition.typography, base.typography)
   assert.deepEqual(first.definition.shape, base.shape)
   assert.deepEqual(first.definition.modes.light.background, base.modes.light.background)
-  // 背景圖的遮罩色改成新的 bg，預設遮罩被修正到最小值以上。
   const image = first.definition.modes.dark.image!
   assert.equal(image.overlayColor, first.definition.modes.dark.colors.bg)
   assert.ok(image.dim >= validateUserPanelTheme(first.definition).minDim.dark!)
-  // 強調色跟著種子色相走。
   const accent = rgbToOklch(color(first.definition.modes.light.colors.accent))
   assert.ok(Math.abs(accent.h - rgbToOklch(seed).h) < 8)
 })
@@ -86,7 +84,6 @@ function image(width: number, height: number, paint: (x: number, y: number) => [
 }
 
 test('image extraction finds the dominant colours with their weights, ignoring transparent pixels', () => {
-  // 3/4 深藍、1/4 橘色，再加一塊完全透明的紅色（不能被算進去）。
   const pixels = image(64, 64, (x, y) => {
     if (y < 8 && x < 8) return [255, 0, 0, 0]
     return x < 48 ? [20, 40, 120, 255] : [240, 140, 30, 255]
@@ -99,7 +96,6 @@ test('image extraction finds the dominant colours with their weights, ignoring t
   assert.ok(Math.abs(second!.color.r - 240) <= 3 && Math.abs(second!.color.g - 140) <= 3)
   assert.ok(Math.abs(first!.weight - 0.75) < 0.03)
   assert.ok(!clusters.some(cluster => cluster.color.r > 200 && cluster.color.g < 30))
-  // 種子取「大面積又有顏色」：橘色色度高，深藍面積大；中性色相取最大群（藍）。
   const picked = seedFromClusters(clusters)!
   assert.ok(picked.neutralHue > 200 && picked.neutralHue < 300)
   const result = paletteFromSeed(picked.seed, builtinDefinition(), { neutralHue: picked.neutralHue })
@@ -113,8 +109,7 @@ test('image extraction is deterministic and bounded for large inputs', () => {
   const first = extractDominantColors(pixels, width, height)
   assert.ok(first.length <= IMAGE_CLUSTER_COUNT)
   assert.ok(Math.abs(first.reduce((sum, cluster) => sum + cluster.weight, 0) - 1) < 1e-9)
-  // 取樣上限讓 786k 像素的輸入也只處理 16k 像素。直接數讀了幾個像素值，不量時間：
-  // 計時（絕對毫秒或與小圖的比值）在多個全量測試同時跑時都會被 CPU 與記憶體頻寬爭用打破（F2 實測比值曾到 20）。
+  // 直接數讀了幾個像素值，不量時間：多個全量測試同時跑時，計時會被 CPU 與記憶體頻寬爭用打破。
   let reads = 0
   const counted = new Proxy(pixels, {
     get(target, key) {
@@ -123,7 +118,6 @@ test('image extraction is deterministic and bounded for large inputs', () => {
     },
   })
   assert.deepEqual(extractDominantColors(counted, width, height), first)
-  // 每個取樣像素讀 alpha 與 RGB 四個值；取樣失效時會讀 786k × 4 次。
   assert.ok(reads > 0 && reads <= IMAGE_MAX_SAMPLES * 4, `read ${reads} pixel values`)
 })
 

@@ -478,7 +478,6 @@ test('markAllRead marks every unread record in one pass and notifies once', () =
   assert.equal(harness.controller.markAllRead(), 0)
 })
 
-// 以下 characterization 測試鎖住 addToCenter 的淘汰順序，優化實作時不得改變。
 const NOTICE_NAME = { 'zh-TW': '測試插件', 'en-US': 'Test Plugin' }
 
 function addNotice(controller: PluginFeedController, pluginId: string, title: string): void {

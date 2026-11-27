@@ -89,7 +89,6 @@ test('pet packs can override any motion, but only within the real atlas grid', (
   })
   assert.deepEqual(pack.warnings, [])
 
-  // 第 9 列只存在於 v2；8 欄的圖集放不下 9 格。兩者都丟掉並警告，其餘覆蓋值保留。
   const tooBig = parsed({ id: 'fox', behaviorManifest: {
     idle: { row: 9 },
     waving: { row: 3, frames: 9 },
@@ -121,10 +120,8 @@ test('rejects ambiguous, oversized or hostile kits before writing anything', () 
   assert.deepEqual(parsePetZip(kit({ id: 'x' }, {}), OPTIONS), { ok: false, error: 'No spritesheet image found in this zip' })
   const bigJson = parsePetZip(zipSync({ 'pet.json': text(`{"pad":"${'a'.repeat(300 * 1024)}"}`), 'a.png': V2 }), OPTIONS)
   assert.deepEqual(bigJson, { ok: false, error: 'pet.json exceeds the 256 KB safety limit' })
-  // A header advertising a huge canvas is refused from the header alone (pixel cap before decode).
   assert.equal(parsePetZip(kit({ id: 'x' }, { 'a.png': png(192 * 32, 208 * 64) }), OPTIONS).ok, false)
   assert.equal(parsePetZip(zipSync({ '../pet.json': text('{}'), 'a.png': V2 }), OPTIONS).ok, false)
-  // macOS resource forks are ignored rather than picked as the spritesheet.
   const mac = parsed({ id: 'mac' }, { '__MACOSX/._a.png': text('junk'), 'a.png': V2 })
   assert.equal(mac.atlas.version, 2)
 })
@@ -230,7 +227,6 @@ test('a destination that changes after the preview is re-checked (TOCTOU) and re
   assert.equal(refreshed?.conflict?.id, 'owl')
   assert.equal(installedPet(root, 'owl').displayName, 'Mine', 'the user-owned pet is untouched')
 
-  // The existing pet changes again between the second preview and the replace.
   writeFileSync(join(root, 'custom', 'owl', 'spritesheet.webp'), 'changed')
   const second = await importer.commit(preview.token, 'replace', refreshed!.expectedState)
   assert.equal(!second.ok && second.code, 'E_IMPORT_STATE_CHANGED')
@@ -249,7 +245,6 @@ test('a failed replace restores the previous pet and leaves no partial folders',
     builtinPetIds: async () => [],
     renameDirectory: async (from, to) => {
       calls += 1
-      // Second rename is staging -> custom/<id>: fail it after the old pet was moved to the backup.
       if (calls === 2) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
       renameSync(from, to)
     },
@@ -282,12 +277,10 @@ test('if rolling back a failed replace also fails, the backup survives and is re
   await importer.commit(first.token, 'install', first.expectedState)
   const second = await importer.stage(parsed({ id: 'moth', displayName: 'New' }))
   const result = await importer.commit(second.token, 'replace', second.expectedState)
-  // No re-preview: the folder looks free, but offering "Install" would bury the only copy.
   assert.deepEqual(result, { ok: false, code: 'E_IMPORT_FAILED', error: 'Could not install the imported pet' })
   assert.equal(existsSync(join(root, 'custom', 'moth')), false)
   assert.equal(stagingEntries(root).filter(name => name.startsWith('backup-')).length, 1)
 
-  // Another import takes the id before the next start: the unverified backup is kept, not deleted.
   const third = await importer.stage(parsed({ id: 'moth', displayName: 'Third' }))
   assert.equal((await importer.commit(third.token, 'install', third.expectedState)).ok, true)
   assert.deepEqual(await new PetImportStaging(options).recoverStale(), { removed: 0, restored: 0, kept: 1 })
@@ -348,7 +341,6 @@ test('startup recovery restores interrupted replaces and removes only our own st
   const result = await staging(root).recoverStale()
   assert.deepEqual(result, { removed: 2, restored: 1, kept: 1 })
   assert.equal(installedPet(root, 'lost').id, 'lost')
-  // An unmarked backup whose folder is occupied is the only copy of that pet: kept, never deleted.
   assert.deepEqual(stagingEntries(root).sort(), [`backup-${'c'.repeat(32)}-present`, `stage-${'d'.repeat(32)}`, 'unrelated'])
   assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'keep', 'symlinks are never followed')
   assert.equal(lstatSync(join(stagingRoot, `stage-${'d'.repeat(32)}`)).isSymbolicLink(), true)

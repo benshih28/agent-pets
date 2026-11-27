@@ -10,7 +10,6 @@ interface WatchedSource {
   debounce: ReturnType<typeof setTimeout> | null
 }
 
-/** Watches one selected source tree recursively and coalesces edits. */
 export class PluginDeveloperModeWatcher {
   private readonly sources = new Map<string, WatchedSource>()
   private readonly debounceMs: number

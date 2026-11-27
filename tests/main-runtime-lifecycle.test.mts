@@ -3,10 +3,6 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { blockLines, readSources } from './support/source-blocks.mts'
 
-// 只能在 Electron 內執行的主程序生命週期序列的 characterization。階段 11 從
-// electron/main/runtime.ts 抽出服務；這些快照讓啟動順序、結束清理、renderer crash
-// 後的重送與視窗安全設定的任何變動，都必須是明確、經過審查的 diff。
-
 const main = readFileSync('electron/main.ts', 'utf8')
 const mainDirectory = () => readSources('electron/main')
 
@@ -42,7 +38,6 @@ test('teardown releases services in the established order', () => {
     'runMarker.clear()',
     'hookStartupMarker.clear()',
     'flushMainLog()',
-    // 階段 11 後續：plugin 服務的釋放順序移進 pluginRuntime.dispose()，順序由下一個測試固定。
     'pluginRuntime.dispose()',
     'mainState.windowsFullscreenDetector?.stop()',
     'mainState.windowsFullscreenDetector = null',
@@ -50,10 +45,8 @@ test('teardown releases services in the established order', () => {
     'mainState.panelBlurHideHandle = null',
     'mainState.windowsFullscreenAutoHiddenPet = false',
     'mainState.windowsFullscreenAutoHiddenPanel = false',
-    // 階段 11：History runtime 服務另外停止本機用量補掃與清除計時器，改前沒有任何清理步驟會停它們。
     'historyRuntime.dispose()',
     'pluginCatalogRuntime.dispose()',
-    // 週期二：App 新版檢查服務另外清除每小時喚醒計時器。
     'appUpdateRuntime.dispose()',
     'if (mainState.localUsageScanTimer) clearInterval(mainState.localUsageScanTimer)',
     'mainState.localUsageScanTimer = null',
@@ -61,27 +54,22 @@ test('teardown releases services in the established order', () => {
     'mainState.localUsageScanPromise = null',
     'mainState.presentationController?.clear()',
     'mainState.permissionBroker?.shutdown()',
-    // 階段 11 後續：progression／achievement 的釋放順序移進 growth.dispose()，順序由下一個測試固定。
-    // 刻意差異：achievementProgressTimer（進度廣播去抖）改由 dispose() 清除；改前沒有任何清理步驟會停它。
     'growth.dispose()',
     'mainState.historyStore?.close()',
     'mainState.historyStore = null',
     'mainState.projectRoutingStore?.close()',
     'mainState.projectRoutingStore = null',
-    // 階段 11：寵物視窗模式服務另外停止重新貼邊輪詢；改前它是模組變數，沒有任何清理步驟會停。
     'petWindowModes.dispose()',
     'disposeMainTimers(mainState)',
   ])
 })
 
 test('the growth service releases its stores in the established order', () => {
-  // 改前這些行逐字是 teardownMainServices 的 progression／achievement 段；去抖計時器是唯一新增的清理步驟。
   assert.deepEqual(blockLines(readFileSync('electron/main/growth-service.ts', 'utf8'), /function dispose\(\): void \{/), [
     'state.progressionStore?.close()',
     'state.progressionStore = null',
     'if (state.achievementStoreRetryTimer) cancel(state.achievementStoreRetryTimer)',
     'state.achievementStoreRetryTimer = null',
-    // 刻意差異：改前沒有任何清理步驟會清掉這個去抖計時器。
     'if (achievementProgressTimer) cancel(achievementProgressTimer)',
     'achievementProgressTimer = null',
     'state.achievementStore?.close()',
@@ -90,7 +78,6 @@ test('the growth service releases its stores in the established order', () => {
 })
 
 test('the plugin runtime releases its services in the established order', () => {
-  // 改前這些行逐字是 teardownMainServices 的 plugin 段；搬進 dispose() 後順序不可改變。
   assert.deepEqual(blockLines(readFileSync('electron/main/plugin-runtime.ts', 'utf8'), /function dispose\(\): void \{/), [
     'mainState.pluginPanelViewController?.close()',
     'mainState.pluginPanelViewController = null',

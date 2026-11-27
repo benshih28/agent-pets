@@ -1,13 +1,4 @@
-// Presentation MCP 與插件的短暫反應／說話佇列。只決定「寵物現在要不要演一下」，
-// 不能執行命令、讀檔、決定權限或改 XP（MCP 只做展示，見 pet-skill）。
-//
-// - 事件輸入：`handlePresentationIntent()`（主程序轉來的 MCP／插件 intent，先在這裡重新驗證形狀）；
-//   主 store 在 agent 進入高優先度狀態、DND 開啟或關閉 MCP 時呼叫 `clearPresentation()`／`clearMcpPresentation()`。
-// - 優先序：佇列最多 8 筆（滿了丟最舊的）；agent 狀態優先度 ≥ waiting-input、DND、偏好還沒載入時一律不演；
-//   關掉 MCP 只清掉 MCP 的 intent，插件的反應留著。
-// - 計時器：同時只有一個，指向目前 intent 的到期時間；clear／換下一筆都會先清掉，store 的 effect scope 結束時也會清掉。
-// - storage：無。
-// - 跨視窗同步：無；主程序把同一個 intent 送到寵物視窗。
+// 只決定「寵物現在要不要演一下」；不能執行命令、讀檔、決定權限或改 XP。
 import { computed, onScopeDispose, ref } from 'vue'
 import { STATE_PRIORITY, type AgentState } from '@/types/agent'
 import {
@@ -26,13 +17,10 @@ function isPresentationReaction(value: unknown): value is PresentationReaction {
 }
 
 export interface PresentationGate {
-  /** 主程序的桌面偏好已經送到。 */
   ready(): boolean
   mcpEnabled(): boolean
   dnd(): boolean
-  /** 目前最需要注意的 agent 狀態。 */
   currentState(): AgentState
-  /** 目前畫面上的寵物；指定 petId 的 intent 只給這些寵物。 */
   visiblePetIds(): Iterable<string>
 }
 

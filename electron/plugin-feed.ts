@@ -319,7 +319,6 @@ export class PluginFeedController {
     return { accepted: true, itemId: item.id, queued: this.queue.length, delivery: 'bubble' }
   }
 
-  /** Adds a host-owned notice to the center without starting a plugin bubble or rate budget. */
   addSystemNotification(pluginId: unknown, pluginName: unknown, title: unknown, body: unknown): boolean {
     const now = this.readNow()
     if (now === null || !isPluginId(pluginId)) return false
@@ -345,7 +344,7 @@ export class PluginFeedController {
     return true
   }
 
-  /** Shares the same sliding per-plugin/global budget with non-feed RPCs such as reactions. */
+  // Shares the same budget with non-feed RPCs such as reactions.
   consumeRateLimit(pluginId: string): PluginFeedRateResult {
     const now = this.readNow()
     if (now === null || !isPluginId(pluginId)) return { allowed: false, error: 'disabled' }
@@ -362,7 +361,6 @@ export class PluginFeedController {
     return { allowed: true }
   }
 
-  /** Call after the host's pet visibility changes to flush only the newest hidden item. */
   onVisibilityChanged(): void {
     const now = this.readNow()
     if (now !== null) this.observeVisibility(now)
@@ -413,7 +411,6 @@ export class PluginFeedController {
     return true
   }
 
-  /** Marks every unread record (optionally one plugin's) read and notifies once. */
   markAllRead(pluginId?: string): number {
     if (pluginId !== undefined && !isPluginId(pluginId)) return 0
     let marked = 0
@@ -579,8 +576,7 @@ export class PluginFeedController {
     this.notifyNotificationsChanged()
   }
 
-  // 不另外維護 per-plugin 計數 Map：center 有新增、刪除、清空、修剪多條修改路徑，
-  // 每條都要同步計數容易出錯；n 上限只有 500，每次新增掃一次就夠。
+  // 不維護 per-plugin 計數 Map：center 有多條修改路徑，同步計數容易出錯；上限只有 500，掃一次就夠。
   private trimPluginOverflow(pluginId: string): void {
     let pluginCount = 0
     for (const record of this.center) {
@@ -588,7 +584,6 @@ export class PluginFeedController {
     }
     let toDrop = pluginCount - PLUGIN_FEED_MAX_PER_PLUGIN
     if (toDrop <= 0) return
-    // 原地壓縮一次，避免在迴圈裡反覆 splice 搬移整個陣列。
     let writeIndex = 0
     for (const record of this.center) {
       if (toDrop > 0 && record.item.pluginId === pluginId) {

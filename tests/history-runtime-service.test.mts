@@ -14,9 +14,6 @@ import type { ProgressionStore } from '../electron/progression.ts'
 import { LOCAL_USAGE_CATCH_UP_DELAY_MS, LOCAL_USAGE_TICK_MS } from '../electron/main/scan-schedule.ts'
 import { fakeService } from './support/fake-service.mts'
 
-// 階段 11 之前在 electron/main/runtime.ts 內 createHistoryServices()／refreshLocalUsage()
-// 的行為，改由抽出的服務搭配假 store 與 node:test 假計時器驗證。
-
 interface ScanResult { recordsImported: number; bytesRead: number; pending: boolean }
 
 function setup(t: TestContext, options: { failOpens?: number; scan?: () => ScanResult } = {}) {
@@ -77,7 +74,6 @@ function setup(t: TestContext, options: { failOpens?: number; scan?: () => ScanR
   return { service, state, calls, scans: () => scans, readerOptions: () => readerOptions }
 }
 
-// 讓掃描的 promise 鏈（then／catch／finally）在假計時器下跑完。
 async function settle(): Promise<void> {
   for (let index = 0; index < 5; index += 1) await Promise.resolve()
 }
@@ -115,7 +111,6 @@ test('a failed open retries with backoff and stops after the last delay', t => {
   assert.equal(state.historyStore, null)
   assert.ok(calls.includes('error:History storage is unavailable'))
   const opens = () => calls.filter(call => call.startsWith('open:')).length
-  // openWithCorruptionRecovery 每次嘗試可能開不只一次；以次數是否增加判斷。
   let previous = opens()
   for (const delay of HISTORY_STORE_RETRY_DELAYS_MS) {
     t.mock.timers.tick(delay - 1)

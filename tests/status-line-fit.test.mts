@@ -28,7 +28,6 @@ const measure: MeasureText = (text, part) => MEASURED[`${part}:${text}`] ?? Arra
 
 const STATES = ['Idle', 'Thinking', 'Working', 'Permission', 'Needs input', 'Done', 'Failed', 'Offline']
 const LABELS = ['Codex', 'Claude', 'OpenCode']
-// store.scaledW 的單寵物視窗寬：max(round(250 × 倍率), 260)。
 const SINGLE_WINDOW_W: Record<number, number> = { 0.6: 260, 0.8: 260, 1: 260, 1.2: 300, 1.5: 375 }
 const FULL: StatusLineFit = { showLabel: true, showReadout: true, badgeCount: 2, showOverflow: true }
 
@@ -81,7 +80,6 @@ test('single pet: the wider XL / XXL windows keep more; the default size gives u
     const xl = fitStatusLine(worst(label, 'Needs input', statusLineContentWidth(false, 1.2, SINGLE_WINDOW_W[1.2])), measure)
     assert.equal(xl.showLabel && xl.showReadout && xl.badgeCount >= 1, true, `1.2 ${label}: ${JSON.stringify(xl)}`)
   }
-  // XL 比預設尺寸多 40px：預設尺寸放不下的兩個徽章，在 XL 放得下。
   const both = (scale: number) => fitStatusLine({
     contentWidth: statusLineContentWidth(false, scale, SINGLE_WINDOW_W[scale]), label: 'Claude', state: 'Working', readout: '71%', badges: ['Build', 'Deploy'], hiddenCount: 0,
   }, measure).badgeCount
@@ -122,7 +120,7 @@ test('multi pet: the name shows at the large size; below it the name, then the q
 })
 
 test('the geometry and fonts match PetStatusLine.css and the tokens', () => {
-  const css = readFileSync(new URL('../src/components/desktop-pet/PetStatusLine.css', import.meta.url), 'utf8')
+  const css = `\n${readFileSync(new URL('../src/components/desktop-pet/PetStatusLine.css', import.meta.url), 'utf8')}`
   const tokens = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8')
   const rule = (selector: string) => {
     const start = css.indexOf(`\n${selector} {`)
@@ -135,7 +133,6 @@ test('the geometry and fonts match PetStatusLine.css and the tokens', () => {
   has('.status-line', `gap: ${g.gap}px;`)
   has('.status-line', `max-width: calc(var(--pet-w, 250px) - ${g.petInsetX}px);`)
   has('.multi-pet-status-line', `width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - ${g.multiPetInsetX}px), ${MULTI_PET_LINE_MIN_W}px);`)
-  // --pet-cell-w 由 App.vue 從圖集規格設定，和這裡用來算寬度的值同源。
   assert.equal(MULTI_PET_SPRITE_W, PET_CELL_WIDTH)
   assert.match(readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8'), /setProperty\('--pet-cell-w', `\$\{PET_CELL_WIDTH\}px`\)/)
   has('.line-dot', `width: ${g.dot}px;`)
@@ -150,7 +147,6 @@ test('the geometry and fonts match PetStatusLine.css and the tokens', () => {
   has('.quota-readout', `min-width: ${g.readoutMin}px;`)
 
   const { label, state, badge, readout } = STATUS_TEXT_FONTS
-  // 狀態與名稱繼承 .status-line 的字體與字級；名稱另設字重，狀態維持預設 400。
   has('.status-line', `font-family: var(${state.familyVar});`)
   has('.status-line', `font-size: var(${state.sizeVar});`)
   assert.doesNotMatch(rule('.status-line'), /font-weight/)
@@ -164,7 +160,6 @@ test('the geometry and fonts match PetStatusLine.css and the tokens', () => {
   has('.quota-readout', `font-size: var(${readout.sizeVar});`)
   has('.quota-readout', `font-weight: ${readout.weight};`)
   for (const font of Object.values(STATUS_TEXT_FONTS)) {
-    // 主題化的 organic token 經由 --builtin-* 取得內建值；兩種寫法都要對得上 sizeFallback。
     const builtin = `--builtin-${font.sizeVar.slice(2)}`
     const direct = tokens.includes(`${font.sizeVar}: ${font.sizeFallback};`)
     const viaBuiltin = tokens.includes(`${font.sizeVar}: var(${builtin});`) && tokens.includes(`${builtin}: ${font.sizeFallback};`)
@@ -180,11 +175,9 @@ test('quota colours are chosen in CSS by data-quota-tier, not built as strings i
     low: '--organic-quota-error', warning: '--organic-quota-warning', claude: '--organic-quota-accent', normal: '--organic-quota-sage',
   }
   for (const [tier, token] of Object.entries(tiers)) {
-    // 一般與低額度可由插件主題的 --pet-status-* 覆寫；危急（low）一律用內建 token。
     const themed = { warning: '--pet-status-quota-warn', claude: '--pet-status-quota-fill', normal: '--pet-status-quota-fill' }[tier]
     const value = themed ? `var\\(${themed}, var\\(${token}\\)\\)` : `var\\(${token}\\)`
     assert.match(css, new RegExp(`\\.status-line\\[data-quota-tier='${tier}'\\] \\{\\n  --quota-color: ${value};`), tier)
-    // low／warning 依門檻回傳；額度充足時依家族查 QUOTA_FAMILY_TIER（Claude 用品牌 accent）。
     const returned = new RegExp(`return [^\\n]*'${tier}'`).test(vue) || new RegExp(`^  \\w+: '${tier}',$`, 'm').test(vue)
     assert.ok(returned, `quotaTier returns ${tier}`)
   }

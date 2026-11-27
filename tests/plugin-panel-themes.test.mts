@@ -78,7 +78,6 @@ test('derived tokens follow the documented formulas', () => {
   assert.equal(colors.sageTrack.a, 0.16)
   assert.equal(colors.borderSoft.a, Math.round(0.18 * 0.625 * 1000) / 1000)
   assert.equal('borderOnAccent' in colors, false)
-  // "B" token 會退回該模式的內建值。
   assert.deepEqual(colors.dangerText, color('#a62f1e'))
   assert.deepEqual(derivePanelThemeColors(declared, 'dark').dangerText, color('#ff9a8a'))
 })
@@ -89,7 +88,6 @@ test('accentHover picks the first mix step that keeps onAccent readable, determi
   const onAccent = color('#fff2eb')
   const hover = deriveAccentHover(accent, text, onAccent)
   assert.ok(contrastRatio(onAccent, hover) >= 4.5)
-  // 只有必填的內建淺色顏色時，固定 0.2 的混色會失敗（4.43:1）；推導則會通過。
   const required = Object.fromEntries(PANEL_THEME_COLOR_TOKENS.filter(token => token.kind === 'required').map(token => [token.key, token.light]))
   assert.doesNotThrow(() => parsePanelThemes([theme({ modes: { light: { colors: required } } })]))
   assert.deepEqual(deriveAccentHover(accent, text, onAccent), hover)
@@ -117,7 +115,6 @@ test('each contrast pair fails on its own with an actionable diagnostic', () => 
 test('mode direction: light needs a light bg and darker text, dark the opposite', () => {
   rejects([theme({ modes: { light: { colors: DARK_COLORS } } })], /light\.colors\.bg: light mode needs/)
   rejects([theme({ modes: { dark: { colors: LIGHT_COLORS } } })], /dark\.colors\.bg: dark mode needs/)
-  // 中灰色 bg 與黑色文字的對比通過，但對淺色模式而言太暗（L < 0.45）。
   rejects([lightTheme({ colors: { ...LIGHT_COLORS, bg: '#9a9a9a', surface: '#ffffff', surface2: '#f4f4f4', text: '#000000', textSecondary: '#111111', textMuted: '#151515', accentText: '#0a2a2c', accent: '#0d3436' } })], /luminance >= 0\.45/)
 })
 
@@ -145,10 +142,8 @@ test('image overlays: minimum computed per mode, 0.50 floor, declared below mini
   rejects([image(0.9, { opacity: 0.1 })], /opacity: must be a number 0\.2-1/)
   rejects([image(0.9, { blur: 25 })], /blur: must be an integer 0-24/)
   rejects([image(0.9, { blur: 2.5 })], /blur/)
-  // 重用內建的淺色文字顏色：textMuted 在 bg 上為 4.96:1，因此任何覆蓋層疊在黑色上都無法通過。
   const builtinLight = theme({ modes: { light: { colors: builtin('light'), background: { type: 'image', src: 'a.png', overlay: { color: '#f5ead8', opacity: 0.95 } } } } })
   rejects([builtinLight], /no overlay up to 0\.95 passes \(textMuted [\d.]+:1 < 4\.5:1 on black image pixel at 0\.95\)/)
-  // 即使對比允許更低，0.50 的下限仍然成立。
   const colors = derivePanelThemeColors(Object.fromEntries(Object.entries(LIGHT_COLORS).map(([key, value]) => [key, color(value)])), 'light')
   const minimum = minimumPanelThemeOverlay(colors, colors.bg, 0.2)
   assert.ok(minimum !== null && minimum >= 0.5)
@@ -233,7 +228,6 @@ test('structure: ids, counts, bilingual text, unknown keys and duplicates', () =
   rejects([lightTheme({ background: { type: 'image', src: 'a.jpg', overlay: { color: '#eef6f6', opacity: 0.9 } } })], /src/)
   rejects([lightTheme({ background: { type: 'solid', color: '#fff' } })], /unknown key/)
   rejects([lightTheme({ background: { type: 'video' } })], /type/)
-  // 診斷訊息絕不回顯插件控制的字串。
   const diagnostic = rejects([lightTheme({ colors: { ...LIGHT_COLORS, text: '<img src=x onerror=alert(1)>' } })])
   assert.doesNotMatch(diagnostic, /onerror|</)
 })
@@ -275,7 +269,6 @@ test('catalog builder: slot status, unavailable reasons and user image dims', ()
   assert.deepEqual(state.slots.light, { ref, status: 'active' })
   assert.deepEqual(state.slots.dark, { ref: { pluginId: 'theme-pack', themeId: 'gone' }, status: 'unavailable', reason: 'theme_removed' })
   const user = state.themes[0]!.modes.light!.userImage!
-  // 儲存的 dim 低於目前最小值時，會退回預設 dim。
   assert.equal(user.current!.dim, user.minDim > 0.5 ? user.defaultDim : 0.5)
   const disabled = buildPanelThemeState([source(themes, false)], store, resolver())
   assert.equal(disabled.themes.length, 0)
@@ -317,32 +310,26 @@ test('the module stays free of Electron and Node imports so the catalog validato
 
 test('state colours keep their meaning: OKLCH hue bands, minimum chroma and OKLab distance', () => {
   const withState = (overrides: Record<string, string>) => [lightTheme({ colors: { ...LIGHT_COLORS, ...overrides } })]
-  // 綠色的「危險」、紅色的「成功」、灰色的「警告」都必須被拒絕。
   rejects(withState({ dangerText: '#2f6b2f' }), /colors\.dangerText: OKLCH hue \d+° is outside 0–50° or 340–360°/)
   rejects(withState({ successText: '#a62f1e' }), /colors\.successText: OKLCH hue/)
   rejects(withState({ warnText: '#5a5a5a' }), /colors\.warnText: chroma 0\.000 < 0\.05/)
   rejects(withState({ dangerText: '#8a2a2a', warnText: '#8a3a1a' }), /colors\.warnText: OKLCH hue|ΔE/)
-  // 危險色若與強調按鈕色幾乎相同（例如紅色強調）也會被拒絕。
   rejects(withState({ accent: '#a62f1e', accentText: '#8a2618', dangerText: '#a62f1e', onAccent: '#ffffff' }), /dangerText: OKLab ΔE 0\.000 to accent\b/)
   assert.doesNotThrow(() => parsePanelThemes(withState({ dangerText: '#a62f1e', successText: '#3f5a1c', warnText: '#7a5200' })))
 })
 
 test('host invariants: every text token on every surface it appears on, bubbles and the pill over black and white desktops', () => {
   for (const mode of ['light', 'dark'] as const) assert.equal(panelThemeInvariantFailure(builtinPanelThemeColors(mode)), null, mode)
-  // 泡泡與膠囊是 surface 疊在桌面上；太透明的組合會在其中一種桌面上失敗。
   const light = builtinPanelThemeColors('light')
   const failure = panelThemeInvariantFailure({ ...light, surface: { r: 120, g: 120, b: 120, a: 1 } })
   assert.ok(failure && failure.minimum >= 3, JSON.stringify(failure))
-  // 資訊色和其他文字色一樣要在主題表面上可讀；失敗時指向 infoText（省略時是內建值，作者可以自行宣告）。
   const black = { r: 0, g: 0, b: 0, a: 1 }
   const inked = { ...light, text: black, textSecondary: black, textMuted: black, accentText: black, dangerText: black, successText: black, warnText: black }
   const infoFailure = panelThemeInvariantFailure({ ...inked, surface: { r: 150, g: 170, b: 200, a: 1 } })
   assert.equal(infoFailure?.foreground, 'infoText')
-  // 懸停底（accentOnHover）疊在表面上後，文字仍要 >= 4.5:1；失敗時指向 accentOnHover。
   const washed = panelThemeInvariantFailure({ ...light, accentOnHover: { ...light.text, a: 0.6 } })
   assert.equal(washed?.blame, 'accentOnHover')
   assert.match(washed!.background, /^accentOnHover over surface/)
-  // 主要按鈕懸停（往 text 混 12%）的標籤也要 >= 4.5:1。
   assert.equal(PANEL_THEME_PRESSED_MIX, 0.12)
   for (const file of ['src/components/ui/Button.vue', 'src/components/ui/InlinePermissionCard.vue']) {
     assert.match(readFileSync(file, 'utf8'), new RegExp(`var\\(--accent-hover(?:, var\\(--accent\\))?\\) ${100 - PANEL_THEME_PRESSED_MIX * 100}%, var\\(--text-primary\\)`), file)
@@ -374,7 +361,6 @@ test('extended keys: infoText keeps its hue and distance, shadow stays dark and 
   assert.deepEqual(declared!.modes.light!.colors.infoText, color('#1f5f99'))
   assert.deepEqual(declared!.modes.light!.colors.shadow, color('#10202a'))
   assert.deepEqual(declared!.modes.light!.colors.highlight, color('#f4fbff'))
-  // 省略時取該模式的內建值。
   const [omitted] = parsePanelThemes([theme()]).themes
   assert.deepEqual(omitted!.modes.dark!.colors.infoText, color('#9cc3f0'))
   assert.deepEqual(omitted!.modes.dark!.colors.shadow, color('#000000'))
@@ -394,7 +380,6 @@ test('deprecated borderOnAccent is accepted, checked like before and never emitt
   assert.equal('borderOnAccent' in themes[0]!.modes.light!.colors, false)
   rejects([lightTheme({ colors: { ...LIGHT_COLORS, borderOnAccent: 'red' } })], /colors\.borderOnAccent: not an allowed colour/)
   rejects([lightTheme({ colors: { ...LIGHT_COLORS, borderOnAccent: '#ffffff' } })], /colors\.borderOnAccent: alpha must be 0\.02-0\.95/)
-  // 它的屬性已從允許清單移除。
   // 清單是字面值聯集，直接問被移除的名稱會被型別擋下；寬化成 string 陣列是安全的上轉。
   assert.equal((PANEL_THEME_COLOR_PROPERTIES as readonly string[]).includes('--organic-border-on-accent'), false)
 })
@@ -417,7 +402,6 @@ test('state chips tint at the validated alpha and the components that host sage 
       assert.equal(Number(match[1]) / 100, PANEL_THEME_STATE_TINT_ALPHA, file)
     }
   }
-  // 狀態晶片的底愈濃對比愈低：在 12% 的同色底上不足 4.5:1 的狀態色會被拒絕。
   const light = builtinPanelThemeColors('light')
   const failure = panelThemeInvariantFailure({ ...light, warnText: color('#8a6100') })
   assert.match(failure?.background ?? '', /^warnText at 0\.12 over surface \(state chip\)$/)
@@ -428,7 +412,6 @@ test('danger buttons: danger text on the pet overlay and on its 12% danger hover
   assert.equal(PANEL_THEME_STATE_TINT_ALPHA, 0.12)
   for (const mode of ['light', 'dark'] as const) assert.equal(panelThemeInvariantFailure(builtinPanelThemeColors(mode)), null, mode)
   const light = builtinPanelThemeColors('light')
-  // 夠在不透明表面上通過、但在 12% 危險色底上不夠的危險色。
   const failures = [...panelThemeInvariantFailures({ ...light, dangerText: { r: 205, g: 80, b: 70, a: 1 } })]
   const backgrounds = failures.filter(failure => failure.foreground === 'dangerText').map(failure => failure.background)
   assert.ok(backgrounds.some(background => /^dangerText at 0\.12 over the pet overlay over a (black|white) desktop \(danger button hover\)$/.test(background)), backgrounds.join('\n'))

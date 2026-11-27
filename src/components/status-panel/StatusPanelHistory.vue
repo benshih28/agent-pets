@@ -50,7 +50,6 @@ let cleanupHistoryUpdated: (() => void) | null = null
 let actionTimer: ReturnType<typeof setTimeout> | null = null
 let dayWatchTimer: ReturnType<typeof setInterval> | null = null
 
-// --- remembered per-viewer view state (all optional conveniences) -----------
 const historyRange = ref<HistoryRangeDays>(readStored(STORAGE_KEYS.historyRange))
 const collapsed = ref<Record<string, boolean>>(readStored(STORAGE_KEYS.historyCollapsed))
 const historyView = ref<HistoryView>(readStored(STORAGE_KEYS.historyView))
@@ -86,7 +85,6 @@ function dismissIntro(): void {
   writeStored(STORAGE_KEYS.historyIntroDismissed, true)
 }
 
-// --- derived data ------------------------------------------------------------
 const historyIsEmpty = computed(() => {
   const summary = historySummary.value
   if (!summary) return false
@@ -139,7 +137,6 @@ function agentHeadline(agent: HistoryAgentStat): string {
     : duration(agent.activeMs)
 }
 
-// 每列的占比與標題一次算好，模板不再為同一列重複呼叫兩次 agentShare。
 const agentRows = computed(() => (historySummary.value?.agents ?? []).map(agent => ({
   agent,
   share: agentShare(agent),
@@ -166,7 +163,6 @@ const deferredLine = computed(() => {
   return deferred > 0 ? tPlural('growth.scanDeferred', deferred) : ''
 })
 
-// --- loading -------------------------------------------------------------------
 async function refreshHistory(): Promise<void> {
   if (historyLoading.value) return
   historyLoading.value = true
@@ -188,12 +184,10 @@ function onProjectChange(value: string): void {
   void refreshHistory()
 }
 
-// --- actions -------------------------------------------------------------------
 function announce(message: string, path = ''): void {
   historyAction.value = message
   lastExportPath.value = path
   if (actionTimer) clearTimeout(actionTimer)
-  // Status text fades away after a few seconds so a stale result never lingers.
   actionTimer = setTimeout(() => { historyAction.value = ''; lastExportPath.value = '' }, 8_000)
 }
 
@@ -244,7 +238,6 @@ async function performClearHistory(): Promise<void> {
   }
 }
 
-// --- lifecycle -------------------------------------------------------------------
 watch(() => props.active, active => {
   if (active && !historySummary.value) void refreshHistory()
 })
@@ -265,7 +258,6 @@ onMounted(() => {
   dayWatchTimer = setInterval(refreshWhenDayChanges, 60_000)
   cleanupHistoryUpdated = window.electronAPI?.onHistoryUpdated(() => {
     if (!props.active) return
-    // Trailing debounce: a burst of updates triggers one refetch.
     if (historyRefreshTimer) clearTimeout(historyRefreshTimer)
     historyRefreshTimer = setTimeout(() => { historyRefreshTimer = null; void refreshHistory() }, HISTORY_REFRESH_DEBOUNCE_MS)
   }) ?? null

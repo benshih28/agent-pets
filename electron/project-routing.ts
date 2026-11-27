@@ -45,12 +45,9 @@ const MAX_PROJECT_PATH_LENGTH = 4_096
 const MAX_TRACKED_PROJECTS = 1000
 const MAX_PROJECTS = 256
 const MAX_DISPLAY_NAME_LENGTH = 96
-// Every tool-call/state event on a session re-resolves the same raw path.
-// Without this cache, each one would pay a synchronous lstat/realpath round
-// trip on Electron's main thread just to recompute an already-known identity.
+// Every event re-resolves the same raw path; the cache avoids a synchronous lstat/realpath on the main thread.
 const MAX_PATH_CACHE = 512
-// Same reasoning for the SQLite write side: last_seen_at only needs to move
-// often enough for the project list to feel current, not on every event.
+// last_seen_at only needs to move often enough for the project list to feel current.
 const TRACK_THROTTLE_MS = 30_000
 
 function databaseConstructor(): DatabaseSyncConstructor {
@@ -88,12 +85,8 @@ function safePetId(value: unknown): string | null {
 
 interface CanonicalizedPath {
   path: string
-  // False when the filesystem couldn't be consulted (missing/unreadable at
-  // this moment) and the identity falls back to a normalized-but-unverified
-  // form. Callers must not cache an unverified result: the same raw path can
-  // resolve differently once the directory becomes reachable (e.g. through a
-  // symlink/junction that didn't exist yet), and a cached miss would keep
-  // returning the stale identity forever instead of self-healing.
+  // False when the filesystem couldn't be consulted. Callers must not cache an unverified result:
+  // the same raw path can resolve differently once reachable, and a cached miss would never self-heal.
   verified: boolean
 }
 
@@ -116,8 +109,7 @@ function canonicalizeProjectPathVerbose(value: unknown): CanonicalizedPath | nul
       verified = true
     }
   } catch {
-    // A hook can arrive just after a workspace is removed. Keep the normalized
-    // identity, but never attempt to read or write that path here.
+    // A hook can arrive just after a workspace is removed: keep the normalized identity, never read or write that path.
   }
 
   candidate = normalize(candidate)
@@ -128,12 +120,7 @@ function canonicalizeProjectPathVerbose(value: unknown): CanonicalizedPath | nul
   return { path: process.platform === 'win32' ? candidate.toLowerCase() : candidate, verified }
 }
 
-/**
- * Resolve a project directory without persisting or returning its absolute
- * path. Existing junctions/symlinks are collapsed through realpath; missing
- * paths still receive a stable normalized identity so a stopped workspace can
- * be repaired later from the project picker.
- */
+// Missing paths still get a stable normalized identity so a stopped workspace can be repaired later from the project picker.
 export function canonicalizeProjectPath(value: unknown): string | null {
   return canonicalizeProjectPathVerbose(value)?.path ?? null
 }
@@ -197,8 +184,7 @@ export class ProjectRoutingStore {
 
     const cached = this.pathCache.get(value)
     if (cached !== undefined) {
-      // 命中時移到 Map 尾端，讓插入順序等同最近使用順序（LRU），常用的
-      // 工作區路徑不會因為偶發的新路徑而被擠出快取、重新觸發 fs 呼叫。
+      // 移到 Map 尾端，讓插入順序等同最近使用順序（LRU）。
       this.pathCache.delete(value)
       this.pathCache.set(value, cached)
       return cached
@@ -206,11 +192,8 @@ export class ProjectRoutingStore {
 
     const canonical = canonicalizeProjectPathVerbose(value)
     const identity = canonical ? identityForPath(canonical.path, this.salt) : null
-    // Only a verified (filesystem-confirmed) resolution is stable enough to
-    // cache. An unverified miss (directory not reachable right now) must be
-    // retried on every call so it can self-heal once the path exists again.
+    // An unverified miss must be retried on every call so it can self-heal once the path exists again.
     if (canonical?.verified || identity === null) {
-      // 插入順序即最近使用順序，淘汰 Map 第一個 key 即為 O(1) LRU。
       if (this.pathCache.size >= MAX_PATH_CACHE) {
         const oldest = this.pathCache.keys().next().value
         if (oldest !== undefined) this.pathCache.delete(oldest)
@@ -236,14 +219,8 @@ export class ProjectRoutingStore {
     return this.getProject(identity.projectId, availablePetIds)
   }
 
-  /**
-   * Cheap per-event alternative to registerPath: resolves the identity (from
-   * cache, no filesystem call on repeat paths) for routing purposes, and only
-   * pays for the SQLite upsert when this project hasn't been written recently.
-   * Live event ingestion and local-log usage scanning should call this
-   * instead of registerPath, so both paths feed the same project list through
-   * the exact same resolution logic and can never disagree on a project's id.
-   */
+  // Per-event alternative to registerPath: upserts only when not written recently. Event ingestion and
+  // log scanning share this resolution so they can never disagree on a project's id.
   trackSeen(value: unknown, seenAt = this.now()): ProjectIdentity | null {
     const identity = this.resolvePath(value)
     if (!identity || !Number.isSafeInteger(seenAt)) return null
@@ -265,7 +242,6 @@ export class ProjectRoutingStore {
           archived_at = NULL
       `).run(identity.projectId, identity.displayName, seenAt, seenAt)
     })
-    // Map keeps insertion order: refresh the entry and evict the oldest past the cap.
     this.lastTrackedAt.delete(identity.projectId)
     this.lastTrackedAt.set(identity.projectId, seenAt)
     while (this.lastTrackedAt.size > MAX_TRACKED_PROJECTS) {

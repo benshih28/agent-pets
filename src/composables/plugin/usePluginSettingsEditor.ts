@@ -1,12 +1,4 @@
-// 插件設定編輯：設定草稿、secret 草稿、secret consent、移除 secret 與未儲存離開確認。
-//
-// 契約：
-// - 讀：目前選取的插件 id 與插件（控制器擁有），不寫入它們；換插件時由控制器呼叫 refreshPluginSettings。
-// - 離開確認：guardUnsavedSettings(action) 只暫存「要執行的動作」，確認放棄後才執行；
-//   動作本身（改詳情頁狀態）屬於呼叫者。
-// - 競態：每次載入設定都作廢先前的載入與儲存結果，較舊的回應不會寫進目前插件的表單。
-// - Secret：值只存在 secretDrafts 並原樣交給主程序；儲存成功後立即清空。錯誤只帶錯誤碼，
-//   不進 log、toast 或其他 state。是否同意、能否寫入仍由主程序判定。
+// Secret 值只存在 secretDrafts，儲存成功後立即清空，不進 log、toast 或其他 state。
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { locale, t } from '@/i18n'
 import type { PluginLocalizedText, PluginPanelPlugin, PluginPanelSettingsSnapshot, PluginSettingScalar } from '@/types/plugin'
@@ -34,7 +26,6 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
   const settingsDraft = ref<Record<string, PluginSettingScalar>>({})
   const secretDrafts = ref<Record<string, string>>({})
   const settingsErrors = ref<Record<string, SettingErrorCode>>({})
-  // 有未儲存變更時要離開詳情頁，先暫存要執行的動作，等使用者在對話框確認放棄。
   const pendingLeave = ref<(() => void) | null>(null)
   const pendingSecretRemoveKey = ref('')
   const pendingSecretConsentKey = ref('')
@@ -48,8 +39,6 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
   function emptySecretDrafts(secrets: Record<string, boolean>): Record<string, string> {
     return Object.fromEntries(Object.keys(secrets).map(key => [key, '']))
   }
-
-  // --- 未儲存離開確認 ------------------------------------------------------------
 
   function guardUnsavedSettings(action: () => void): void {
     if (settingsDirty.value) pendingLeave.value = action
@@ -73,8 +62,6 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
     settingsDraft.value = defaultSettingsDraft(settingsProperties.value)
     settingsErrors.value = {}
   }
-
-  // --- 載入與一般設定 ------------------------------------------------------------
 
   async function refreshPluginSettings(pluginId = selectedPluginId.value): Promise<void> {
     const request = settingsLoad.next()
@@ -125,7 +112,7 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
     const loaded = settingsLoad.current()
     setBusy(scope, true)
     try {
-      // IPC 以 structured clone 傳遞，Vue 的 reactive Proxy 無法被 clone；值都是純量，淺拷貝即為純物件。
+      // reactive Proxy 無法 structured clone，需淺拷貝成純物件。
       const result = await window.electronAPI?.setPluginSettings(pluginId, { ...settingsDraft.value })
       if (!result?.ok) {
         if (result && !result.ok) setError(result.error)
@@ -143,8 +130,6 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
       setBusy(scope, false)
     }
   }
-
-  // --- Secret 與 consent -------------------------------------------------------
 
   function applySecretResult(loaded: number, key: string, configured: boolean): void {
     if (!settingsLoad.isCurrent(loaded)) return
@@ -189,7 +174,6 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
     }
   }
 
-  // 移除密鑰是獨立動作（不是「儲存空值」），先由對話框確認再清除。
   async function removePluginSecret(key: string): Promise<void> {
     const pluginId = selectedPluginId.value
     const scope = pluginScope(pluginId)
@@ -229,7 +213,7 @@ export function usePluginSettingsEditor(deps: PluginSettingsEditorDeps) {
     } finally {
       setBusy(scope, false)
     }
-    // 同意期間草稿被清空（例如設定重新載入）時不繼續：空值送出等同移除既有的密鑰。
+    // 草稿已被清空時不能繼續：空值送出等同移除既有的密鑰。
     if (!pendingSecretConsentKey.value && (secretDrafts.value[key] ?? '').length > 0) await savePluginSecret(key)
   }
 

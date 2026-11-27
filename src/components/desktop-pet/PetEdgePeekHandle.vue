@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 貼邊（edge-peek）迷你模式：只露出一個小把手，內含縮小的寵物頭像與未讀徽章。
-// 拖曳交給父層（沿用同一條拖曳路徑，讓滑鼠與鍵盤入口一致），這裡只回報按下與展開。
 import { tPlural, t } from '@/i18n'
 import { useAgentStore } from '@/stores/agentStore'
 import PetAnimation from '@/components/PetAnimation.vue'

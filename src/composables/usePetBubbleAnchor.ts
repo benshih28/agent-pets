@@ -1,9 +1,6 @@
 import { computed, shallowReactive, type ComputedRef, type Ref } from 'vue'
 
-// Keyed element/instance registries for the multi-pet row. Array refs inside a
-// v-for do not guarantee source order, so everything is looked up by the
-// family line key instead of by index.
-
+// v-for array refs do not guarantee source order, so look up by key, not index.
 export function useKeyedRefs<T>() {
   const items = shallowReactive(new Map<string, T>())
   function setRef(key: string, value: unknown): void {
@@ -13,7 +10,6 @@ export function useKeyedRefs<T>() {
   return { items, setRef }
 }
 
-/** Horizontal anchor (px from the click area's left) centred on a target element. */
 export function anchorLeftFor(clickArea: HTMLElement | null, target: HTMLElement | undefined): Record<string, string> {
   if (!clickArea || !target) return {}
   const targetBounds = target.getBoundingClientRect()

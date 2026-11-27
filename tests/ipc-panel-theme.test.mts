@@ -82,7 +82,6 @@ test('every panel theme channel rejects senders other than the panel main frame'
       }
     }
     assert.deepEqual(context.calls, [])
-    // 膠囊顏色只有寵物視窗能讀取。
     for (const sender of ['panel', 'plugin-view', 'plugin-host']) {
       assert.throws(() => context.handlers.get(IPC_CHANNELS.panelThemePetStatusGet)!(sender), /Unauthorized/)
     }
@@ -113,7 +112,6 @@ test('slot set validates mode, ref shape and the live catalog; one slot per mode
     assert.deepEqual(await context.invoke(IPC_CHANNELS.panelThemeSlotSet, 'light', { pluginId: 'theme-pack', themeId: 'missing' }), { ok: false, error: 'theme_unavailable' })
     assert.equal((await context.invoke(IPC_CHANNELS.panelThemeSlotSet, 'light', REF) as { ok: boolean }).ok, true)
     assert.deepEqual(context.store.get().slots.light, REF)
-    // 設定另一個主題會取代插槽；null 會還原為內建。
     context.setSources([{ ...{ pluginId: 'other-pack', version: '1.0.0', pluginName: { 'zh-TW': '另一', 'en-US': 'Other' }, available: true }, themes: resolvePanelThemes([theme({ id: 'night' })])! }])
     assert.equal((await context.invoke(IPC_CHANNELS.panelThemeSlotSet, 'light', { pluginId: 'other-pack', themeId: 'night' }) as { ok: boolean }).ok, true)
     assert.deepEqual(context.store.get().slots.light, { pluginId: 'other-pack', themeId: 'night' })
@@ -149,11 +147,9 @@ test('import: image_not_allowed, cancel, invalid bytes, then a JPEG with EXIF ro
     assert.equal(stored.dim, 0.9)
     assert.ok(context.calls.includes(`store:theme-pack/${stored.file}`))
     assert.ok(context.calls.includes('picker:png,jpg,jpeg,webp'))
-    // 取代時會刪除先前那個已不再被引用的檔案。
     context.files.set('/photos/d.jpg', jpeg(800, 600))
     assert.equal((await context.invoke(IPC_CHANNELS.panelThemeUserImageImport, REF, 'light') as { ok: boolean }).ok, true)
     assert.ok(context.calls.includes(`delete:theme-pack/${stored.file}`))
-    // 對話框被取消。
     assert.deepEqual(await context.invoke(IPC_CHANNELS.panelThemeUserImageImport, REF, 'light'), { ok: false, error: 'cancelled', cancelled: true })
     assert.equal(context.calls.filter(call => call === 'dialog:false').length, context.calls.filter(call => call === 'dialog:true').length)
   } finally { context.cleanup() }

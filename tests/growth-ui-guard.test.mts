@@ -21,7 +21,6 @@ test('growth views follow the design-system and i18n rules', () => {
     assert.doesNotMatch(source, /font-size:\s*(?:[0-9]|10)(?:\.\d+)?px/, `${name}: font-size below 11px`)
     assert.doesNotMatch(source, /window\.(confirm|alert|prompt)\(/, `${name}: native dialog`)
     assert.doesNotMatch(source, /[✓✗✔✕⚠🔥🏆✨]/u, `${name}: glyph used as an icon`)
-    // Template text must go through t(); a CJK literal in markup is a missed key.
     const template = source.slice(source.indexOf('<template>'), source.indexOf('</template>', source.lastIndexOf('<template>')))
     assert.doesNotMatch(template, />[^<{]*[一-鿿][^<{]*</, `${name}: hard-coded CJK text in template`)
   }

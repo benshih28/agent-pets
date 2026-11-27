@@ -30,8 +30,6 @@ type UsageProvider = NonNullable<typeof store.quotaUsage>['providers'][number]
 
 const providers = computed(() => store.quotaUsage?.providers ?? [])
 
-// --- 本機 5 小時區塊（來自本機紀錄，與服務商額度並列） ------------------------
-// 服務商額度的 provider id 就是家族 key，由家族 registry 對到 History 的 adapter id；沒有對應卡片的區塊另外列出。
 function providerAdapter(providerId: string): string | undefined {
   return isQuotaFamilyKey(providerId) ? AGENT_FAMILY_REGISTRY[providerId].adapterId : undefined
 }
@@ -42,8 +40,7 @@ let cleanupHistoryUpdated: (() => void) | null = null
 
 let blocksInFlight = false
 
-// Dedicated read-only IPC: never triggers a log scan, so the historyUpdated
-// broadcast a scan sends cannot loop back into another scan.
+// Read-only IPC (no log scan), so the historyUpdated broadcast cannot loop back into a scan.
 async function refreshBlocks(): Promise<void> {
   if (blocksInFlight) return
   blocksInFlight = true
@@ -60,7 +57,6 @@ function blockFor(provider: UsageProvider) {
   return adapterId ? usageBlocks.value.find(block => block.adapterId === adapterId) : undefined
 }
 
-// Only blocks still running at this tick are shown.
 const activeBlocks = computed(() => usageBlocks.value.filter(block => usageBlockView(block, props.nowTick).active))
 const unmatchedBlocks = computed(() => {
   const shown = new Set(providers.value.map(provider => providerAdapter(provider.id)).filter(Boolean))
@@ -83,7 +79,6 @@ function errorText(provider: UsageProvider): string {
   }
 }
 
-// 以 computed 一次算好每個視窗的預測文字，template 只查表；nowTick 與額度更新都會觸發重算。
 const forecastTexts = computed(() => {
   const result: Record<string, string> = {}
   for (const provider of providers.value) {
@@ -138,8 +133,6 @@ function syncPolling(): void {
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = null
   if (!props.active) return
-  // Opening the tab refreshes when the reading is older than the poll period;
-  // while it stays open the panel keeps its own cadence.
   void store.refreshQuota()
   void refreshBlocks()
   pollTimer = setInterval(() => {

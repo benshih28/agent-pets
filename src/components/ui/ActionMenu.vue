@@ -3,24 +3,16 @@ import { nextTick, onUnmounted, ref, useId } from 'vue'
 import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
 
-// A small popup of actions anchored to a trigger button. It is rendered inside
-// the page (not a native menu) so it keeps the panel's focus: a native menu
-// would blur the window, which the main process reads as "hide the panel".
-// id 是泛型：呼叫端用 `as const` 定義選單時能推導出 id 聯集，handler map 漏一項就在編譯期報錯。
+// Not a native menu: a native menu blurs the window, which the main process reads as "hide the panel".
 export interface ActionMenuItem<Id extends string = string> {
   id: Id
   label: string
   disabled?: boolean
   danger?: boolean
-  /** Optional leading icon (Icon name). */
   icon?: string
-  /** Optional current-state text shown at the end of the row. */
   state?: string
-  /** Optional shortcut hint shown after the state. */
   shortcut?: string
-  /** ARIA role; defaults to a plain menuitem. */
   role?: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio'
-  /** aria-checked for the checkbox / radio roles. */
   checked?: boolean
 }
 

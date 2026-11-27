@@ -16,7 +16,6 @@ test('relaunch uses the portable launcher on windows, default exec path elsewher
     resolveRelaunchOptions('win32', true, ['C:\\Temp\\x.exe'], portable, 'C:\\Temp\\x.exe'),
     { execPath: portable, args: [RELAUNCH_FLAG] },
   )
-  // Missing/invalid launcher falls back to the default exec path.
   const missing = resolveRelaunchOptions('win32', true, ['x.exe'], path.join(directory, 'gone.exe'), 'x.exe')
   assert.equal(missing.execPath, undefined)
   assert.deepEqual(resolveRelaunchOptions('win32', false, ['x.exe'], portable, 'x.exe').execPath, undefined)

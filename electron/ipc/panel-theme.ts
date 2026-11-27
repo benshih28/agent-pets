@@ -20,16 +20,13 @@ type PreparedImage = Extract<UserImagePrepared, { ok: true }>
 export interface PanelThemeIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle' | 'on'>
   assertPluginPanelSender(event: IpcMainInvokeEvent | IpcMainEvent): void
-  /** 面板實際生效的淺色／深色與 forced-colors，供插件主題 API 使用。 */
   setPanelAppearance(appearance: { mode: PanelThemeMode; forcedColors: boolean }): void
-  /** 只限寵物視窗的主框架（狀態膠囊是寵物唯一可套主題的介面）。 */
+  /** 只限寵物視窗的主框架。 */
   assertPetSender(event: IpcMainInvokeEvent): void
   getPetStatus(): PetThemeState
   getStore(): PanelThemeStore | null
-  /** 目前提供主題的插件（已安裝；`available` = 已啟用且全域開關開啟）。 */
   getSources(): readonly PanelThemeSourcePlugin[]
   getState(): PanelThemeState
-  /** 重建 token 對應表，狀態有變動時才送出 `panel-theme-changed`。 */
   publish(): void
   getPanelWindow(): BrowserWindow | null
   isDialogOpen(): boolean
@@ -50,7 +47,6 @@ function availableMode(sources: readonly PanelThemeSourcePlugin[], ref: PanelThe
   return source.themes.find(theme => theme.id === ref.themeId)?.modes[mode] ?? null
 }
 
-/** 只接受 `{ mode, forcedColors }` 兩個鍵，型別完全正確才採用。 */
 function readPanelAppearance(value: unknown): { mode: PanelThemeMode; forcedColors: boolean } | null {
   const record = asRecord(value)
   if (!record) return null
@@ -67,13 +63,12 @@ export function registerPanelThemeIpc(deps: PanelThemeIpcDependencies): void {
 
   handleWithSenderGuard(deps.ipcMain, IPC_CHANNELS.panelThemeStateGet, deps.assertPluginPanelSender, () => stateResult())
 
-  // 單向通知：設定面板 main frame 才能回報，格式不符就忽略。
+  // 只有設定面板 main frame 能回報。
   onWithSenderGuard(deps.ipcMain, IPC_CHANNELS.panelThemeAppearanceSet, deps.assertPluginPanelSender, (_event, payload: unknown) => {
     const appearance = readPanelAppearance(payload)
     if (appearance) deps.setPanelAppearance(appearance)
   })
 
-  // 不帶 payload：寵物視窗只讀取解析後的膠囊顏色。
   handleWithSenderGuard(deps.ipcMain, IPC_CHANNELS.panelThemePetStatusGet, deps.assertPetSender, () => deps.getPetStatus())
 
   handleWithSenderGuard(deps.ipcMain, IPC_CHANNELS.panelThemeSlotSet, deps.assertPluginPanelSender, (_event, mode: unknown, ref: unknown) => {
@@ -119,7 +114,6 @@ export function registerPanelThemeIpc(deps: PanelThemeIpcDependencies): void {
     if (!read.ok) return { ok: false, error: read.error }
     const prepared = deps.prepareUserImage(read.bytes)
     if (!prepared.ok) return { ok: false, error: prepared.error, ...(prepared.reason ? { reason: prepared.reason } : {}) }
-    // 對話框開著的期間，主題可能已經變動。
     const current = availableMode(deps.getSources(), ref, mode)
     if (!current?.userImage) return { ok: false, error: 'theme_unavailable' }
     const previous = store.getUserImage(ref, mode)

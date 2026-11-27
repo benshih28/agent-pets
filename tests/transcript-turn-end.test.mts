@@ -12,8 +12,6 @@ import {
 } from '../electron/transcript-turn-end.ts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 紀錄的形狀取自真實的 Claude Code／Codex 紀錄檔（只留判斷用得到的欄位）。
-
 const jsonl = (...records: unknown[]) => records.map(record => JSON.stringify(record)).join('\n') + '\n'
 const at = (iso: string) => Date.parse(iso)
 
@@ -37,7 +35,6 @@ test('claude: an interrupt message at the end means the turn was interrupted', (
     const tail = jsonl(claudeAssistant('2026-11-10T08:07:00.000Z'), claudeInterrupt('2026-11-10T08:07:08.199Z', text))
     assert.deepEqual(turnEndFromTail('claude', tail, false), { endedAt: at('2026-11-10T08:07:08.199Z'), reason: 'interrupted' }, text)
   }
-  // 舊版把內容寫成字串。
   const legacy = jsonl(claudeUser('2026-11-10T08:07:08.199Z', '[Request interrupted by user for tool use]'))
   assert.equal(turnEndFromTail('claude', legacy, false)?.reason, 'interrupted')
 })
@@ -69,10 +66,8 @@ test('claude: a turn that is still going is never reported as ended', () => {
 })
 
 test('claude: subagent records are ignored on both sides', () => {
-  // 子代理被中斷不代表主回合結束。
   const subagentInterrupted = jsonl(claudeAssistant('2026-11-10T08:00:00.000Z'), { ...claudeInterrupt('2026-11-10T08:00:05.000Z'), isSidechain: true })
   assert.equal(turnEndFromTail('claude', subagentInterrupted, false), null)
-  // 主回合已中斷，之後的子代理紀錄不會把它變回進行中。
   const mainInterrupted = jsonl(claudeInterrupt('2026-11-10T08:00:05.000Z'), claudeAssistant('2026-11-10T08:00:06.000Z', { isSidechain: true }))
   assert.equal(turnEndFromTail('claude', mainInterrupted, false)?.reason, 'interrupted')
 })
@@ -101,11 +96,9 @@ test('unreadable input is treated as still running', () => {
   assert.equal(turnEndFromTail('codex', jsonl({ timestamp: 5, type: 'event_msg', payload: { type: 'turn_aborted' } }), false), null)
   assert.equal(turnEndFromTail('codex', jsonl({ timestamp: '2026-11-04T03:23:52.669Z', type: 'event_msg', payload: null }), false), null)
   assert.equal(turnEndFromTail('codex', jsonl({ timestamp: '2026-11-04T03:23:52.669Z', type: 'event_msg', payload: ['turn_aborted'] }), false), null)
-  // 從檔案中間開始讀時第一行可能是半行；就算剛好是合法 JSON 也不採信。
   assert.equal(turnEndFromTail('claude', marker, true), null)
   assert.equal(turnEndFromTail('claude', `${marker}\n`, true), null)
   assert.equal(turnEndFromTail('claude', `garbage\n${marker}\n`, true)?.reason, 'interrupted')
-  // 一種格式的紀錄不會被另一種格式採信；沒有紀錄檔的家族一律沒有結論。
   assert.equal(turnEndFromTail('codex', `${marker}\n`, false), null)
   assert.equal(turnEndFromTail('opencode', `${marker}\n`, false), null)
   assert.equal(familyHasTranscript('claude'), true)
@@ -170,7 +163,6 @@ test('probe reads only the tail, reports unchanged files, and fails closed', asy
     assert.deepEqual(second?.turnEnd, { endedAt: at('2026-11-10T08:00:05.000Z'), reason: 'interrupted' })
     assert.ok(second!.fingerprint.size > first!.fingerprint.size)
 
-    // 檔案比讀取上限大：結尾的結束紀錄仍然看得到，前面被截斷的半行不會造成誤判。
     const big = path.join(dir, 'big.jsonl')
     const filler = jsonl(claudeUser('2026-11-10T07:00:00.000Z', 'x'.repeat(1024)))
     fs.writeFileSync(big, filler.repeat(Math.ceil((TRANSCRIPT_TAIL_BYTES * 2) / filler.length)) + jsonl(codexEvent('2026-11-04T03:23:52.669Z', 'turn_aborted')))

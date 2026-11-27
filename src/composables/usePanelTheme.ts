@@ -11,11 +11,6 @@ import {
   type PanelThemeMediaFlags,
 } from '@/utils/panel-theme-css'
 
-// 依解析後的淺色/深色模式，把插件主題套用到面板視窗的 <html>（spec §7.3、§16）：
-// tokens.css 的語意層在 :root 由色盤衍生，所以面板、對話框、通知、精靈與
-// Project MCP 面板都讀同一組色盤。每個值都由主程序建構，並在此重新驗證；
-// 寫入會先做差異比對，並在同一個 frame 內批次完成（每次切換只有一次樣式重算）。
-
 export interface PanelThemeBackdropView {
   url: string
   fit: PanelThemeFit
@@ -28,7 +23,6 @@ export interface PanelThemeBackdropView {
 
 const FONT_LOAD_TIMEOUT_MS = 1500
 
-/** 與 Settings 卡片共用，讓兩者看到相同狀態。 */
 export const panelThemeState = shallowRef<PanelThemeState | null>(null)
 
 export function setPanelThemeState(next: PanelThemeState | null): void {
@@ -37,7 +31,6 @@ export function setPanelThemeState(next: PanelThemeState | null): void {
 
 let refreshInFlight: Promise<void> | null = null
 
-/** 多個元件會同時掛載；它們共用同一個進行中的請求。 */
 export function refreshPanelThemeState(): Promise<void> {
   refreshInFlight ??= (async () => {
     try {
@@ -71,7 +64,7 @@ function readMedia(): void {
   }
 }
 
-/** 以封閉的主機格式重新檢查每個背景值。 */
+// 主程序建構的值在 renderer 端重新驗證。
 export function validBackdrop(view: PanelThemeBackdropView | null): PanelThemeBackdropView | null {
   if (!view || !isPanelThemeAssetUrl(view.url) || !isPanelThemePropertyValue('--organic-bg', view.overlayColor)) return null
   if (!isPanelThemeFit(view.fit) || !isPanelThemePosition(view.position)) return null
@@ -80,7 +73,6 @@ export function validBackdrop(view: PanelThemeBackdropView | null): PanelThemeBa
   return view
 }
 
-/** 預覽用的背景圖：使用者圖片優先（遮罩取使用者選的值），否則為主題套件內的圖片。 */
 export function panelThemePreviewBackdrop(entry: PanelThemeCatalogEntry | null, mode: PanelThemeMode, forcedColors: boolean): PanelThemeBackdropView | null {
   const modeState = entry?.modes[mode]
   if (!modeState || forcedColors) return null
@@ -136,7 +128,6 @@ export function usePanelTheme() {
     return null
   }
 
-  /** 載入所有已指派到插槽之主題的字型 face；丟棄沒有插槽使用的 face。 */
   async function syncFonts(): Promise<void> {
     if (typeof FontFace === 'undefined' || typeof document === 'undefined') return
     const wanted = new Map<string, { alias: string; url: string; weight: number; style: string }>()
@@ -195,7 +186,6 @@ export function usePanelTheme() {
 
   watch([panelThemeState, mode, panelThemeMedia], () => { void apply() }, { deep: false })
 
-  // 主程序據此決定插件主題 API 的 `mode` 與色盤；只在實際生效的值改變時送出。
   watch(
     [mode, () => panelThemeMedia.value.forcedColors],
     ([currentMode, forcedColors]) => {

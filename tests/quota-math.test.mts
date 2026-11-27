@@ -20,7 +20,6 @@ test('reset countdown rounds up and never reports "now" while seconds remain', (
   assert.deepEqual(resetCountdown(at(29_000), NOW), { kind: 'soon' })
   assert.deepEqual(resetCountdown(at(-5_000), NOW), { kind: 'soon' })
   assert.deepEqual(resetCountdown(at(61_000), NOW), { kind: 'minutes', minutes: 2 })
-  // 59.6 minutes must not become "1 hour 0 minutes".
   assert.deepEqual(resetCountdown(at(59.6 * 60_000), NOW), { kind: 'hours', hours: 1, minutes: 0 })
   assert.deepEqual(resetCountdown(at(59.2 * 60_000), NOW), { kind: 'hours', hours: 1, minutes: 0 })
   assert.deepEqual(resetCountdown(at(58.2 * 60_000), NOW), { kind: 'minutes', minutes: 59 })

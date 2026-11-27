@@ -54,7 +54,7 @@ export function miniWindowBounds(normalBounds: WindowBounds, workArea: WorkArea)
   }, workArea)
 }
 
-/** The bottom is where the pet naturally stands (on the Dock/taskbar), so it never docks there. */
+// The bottom is where the pet naturally stands (on the Dock/taskbar), so it never docks there.
 export const DOCKABLE_EDGES: readonly PetEdge[] = ['left', 'right', 'top']
 export const EDGE_HOVER_EXPAND_MS = 200
 export const EDGE_REDOCK_AFTER_MS = 1_500

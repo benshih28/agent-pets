@@ -17,7 +17,6 @@ export interface CrashGuardProcess {
 }
 
 export interface CrashEscalationPolicy {
-  /** Sliding window in which occurrences are counted. */
   windowMs: number
   /** This many distinct errors inside the window escalate. */
   distinctThreshold: number
@@ -36,10 +35,6 @@ export interface CrashOccurrence {
   at: number
 }
 
-/**
- * Pure escalation policy: given the recorded occurrences (including the newest),
- * decide whether the process is crashing repeatedly enough to ask the user to restart.
- */
 export function shouldEscalateCrashes(
   occurrences: readonly CrashOccurrence[],
   now: number,
@@ -57,16 +52,14 @@ export function shouldEscalateCrashes(
 
 export interface CrashGuardOptions {
   proc?: CrashGuardProcess
-  /** Sink for log lines. Callers are expected to redact before persisting. */
+  /** Callers are expected to redact before persisting. */
   log: (level: CrashLevel, message: string, detail?: unknown) => void
-  /** Called at most once per `toastIntervalMs` so users are told, never spammed. */
   onUserVisibleError?: (record: CrashRecord) => void
-  /** Called at most once per run when uncaught errors keep repeating (see shouldEscalateCrashes). */
   onEscalate?: (record: CrashRecord) => void
   escalation?: CrashEscalationPolicy
   now?: () => number
   toastIntervalMs?: number
-  /** Maximum distinct log writes per window; a crash loop must not fill the disk. */
+  /** A crash loop must not fill the disk. */
   maxLogsPerWindow?: number
   windowMs?: number
 }
@@ -92,11 +85,7 @@ function describe(value: unknown): { message: string; stack?: string } {
   }
 }
 
-/**
- * Installs process-level error boundaries for the Electron main process.
- * Registering an `uncaughtException` listener also stops Electron from showing
- * its native crash dialog; failures go to the log sink and a throttled notice.
- */
+// Registering an `uncaughtException` listener also stops Electron from showing its native crash dialog.
 export function installCrashGuard(options: CrashGuardOptions): CrashGuard {
   const proc: CrashGuardProcess = options.proc ?? process
   const now = options.now ?? Date.now
@@ -159,7 +148,6 @@ export function installCrashGuard(options: CrashGuardOptions): CrashGuard {
       try {
         options.onUserVisibleError?.({ kind, message, stack, count })
       } catch {
-        // Notification failures are non-fatal.
       }
     }
   }
@@ -184,10 +172,6 @@ export interface StartupStepResult {
   error?: unknown
 }
 
-/**
- * Runs one startup step in isolation: a failure is logged and reported but
- * never prevents later, independent services from starting.
- */
 export async function runStartupStep(
   name: string,
   step: () => void | Promise<void>,

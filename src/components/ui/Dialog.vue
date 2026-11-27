@@ -6,22 +6,14 @@ import Button from '@/components/ui/Button.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { DIALOG_HOST_KEY, DIALOG_NESTED_KEY, dialogTeleportTarget } from '@/components/ui/dialog-host'
 
-// The one modal shell: scrim, titled surface, optional description and
-// footer, with Esc / Tab trap / initial focus / focus restore / inert
-// background provided by useDialogA11y. ConfirmDialog is built on it;
-// SetupWizard and ProjectMcpPanel should adopt it too.
 const props = withDefaults(defineProps<{
   open: boolean
   title: string
-  /** Short description; referenced by aria-describedby. */
   description?: string
-  /** "alertdialog" for interruptions that need an explicit answer. */
   role?: 'dialog' | 'alertdialog'
-  /** Selector (inside the dialog) focused on open; defaults to the first control. */
   initialFocus?: string
   showClose?: boolean
   dismissOnScrim?: boolean
-  /** `full` fills the panel (theme editor); the others cap the width. */
   size?: 'sm' | 'md' | 'lg' | 'full'
 }>(), {
   role: 'dialog',
@@ -49,7 +41,7 @@ useDialogA11y({
 
 const describedBy = computed(() => (props.description ? descriptionId : undefined))
 
-// 遮罩掛到面板根元素（見 dialog-host.ts），不受所在卡片或捲動區的範圍限制。
+// 遮罩掛到面板根元素，才不會被所在卡片或捲動區裁切。
 const host = inject(DIALOG_HOST_KEY, null)
 const nested = inject(DIALOG_NESTED_KEY, false)
 provide(DIALOG_NESTED_KEY, true)
@@ -89,8 +81,6 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
           </div>
           <footer v-if="$slots.footer" class="footer"><slot name="footer" /></footer>
         </div>
-        <!-- A dialog opened from inside this one: inside the scope (so its siblings go inert and this
-             dialog's key handling steps aside) but outside the trapped surface. -->
         <slot name="overlay" />
       </div>
     </Transition>
@@ -117,7 +107,6 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
   max-height: 100%;
   flex-direction: column;
   gap: var(--space-2);
-  /* 捲動的是 .body，標題列（含關閉鈕）與頁尾固定在原位。 */
   overflow: hidden;
   padding: var(--space-4);
   border: 1px solid var(--border-strong);
@@ -126,7 +115,7 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
   box-shadow: var(--shadow-panel);
 }
 
-/* 對話框容器是程式聚焦（tabindex=-1）的備援目標；滑鼠點到時不畫環，鍵盤導覽（:focus-visible）仍走全域焦點環。 */
+/* tabindex=-1 的程式聚焦目標，滑鼠點到時不畫環。 */
 .dialog:focus:not(:focus-visible) {
   outline: none;
 }
@@ -134,8 +123,7 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
 .size-sm { max-width: 300px; }
 .size-md { max-width: 420px; }
 .size-lg { max-width: 560px; }
-/* 全面板的工具（主題編輯器）：撐滿面板高度，.body 不捲動，內容自己是捲動區
-   （min-height: 0; flex: 1 1 auto; overflow-y: auto），所以不會出現兩層捲軸。 */
+/* .body 不捲動，由內容自己捲，避免兩層捲軸。 */
 .size-full {
   max-width: none;
   height: 100%;
@@ -152,8 +140,7 @@ const teleportTarget = computed(() => dialogTeleportTarget(host?.value, nested))
   gap: var(--space-2);
 }
 
-/* 說明與內容的捲動區：標題列、頁尾固定，內容過長時只有這裡捲動。
-   負外距加等量內距，讓捲動容器不會裁掉子元素的焦點框。 */
+/* 負外距加等量內距，讓捲動容器不裁掉子元素的焦點框。 */
 .body {
   display: flex;
   min-height: 0;

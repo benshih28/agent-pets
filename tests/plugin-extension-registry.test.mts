@@ -83,7 +83,6 @@ test('plugin contribution and error registries match their public docs', () => {
 })
 
 test('remaining production double assertions document narrow external API seams', () => {
-  // plugin 組裝搬進 plugin-runtime.ts 後，這些轉型分散在兩個檔案；總數仍固定為 6。
   let total = 0
   for (const file of ['electron/main/runtime.ts', 'electron/main/plugin-runtime.ts']) {
     const lines = read(file).split('\n')

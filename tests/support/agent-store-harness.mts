@@ -1,6 +1,3 @@
-// 在 Node 直接跑真的 `useAgentStore()`：假的 localStorage、可記錄呼叫的 electronAPI、
-// node:test 的假計時器（setTimeout／Date），並追蹤還沒觸發也沒被清掉的計時器。
-// 每個測試呼叫 `createAgentStoreHarness()` 拿一個新的 Pinia 與 store，結束時呼叫 `dispose()`。
 import './src-alias.mts'
 import { mock } from 'node:test'
 import { createPinia, setActivePinia } from 'pinia'
@@ -43,7 +40,6 @@ export interface AgentStoreHarness {
   store: AgentStore
   storage: FakeStorage
   calls: ApiCall[]
-  /** 還沒觸發、也沒被 clearTimeout 的計時器數量。 */
   liveTimers(): number
   tick(ms: number): void
   flush(): Promise<void>
@@ -88,7 +84,6 @@ export function createAgentStoreHarness(options: {
         return (...args: unknown[]) => {
           calls.push({ name, args })
           const override = overrides[name] as ((...values: unknown[]) => unknown) | undefined
-          // 沒有指定回應的 IPC 一律回傳已完成的 Promise，跟 preload 的 invoke 形狀一致。
           return override ? override(...args) : Promise.resolve(undefined)
         }
       },

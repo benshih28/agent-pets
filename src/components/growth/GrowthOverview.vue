@@ -57,8 +57,6 @@ function entryTime(timestamp: number): string {
     : formatDateParts(date, { month: 'numeric', day: 'numeric' }, locale.value)
 }
 
-// The ledger lives in main; re-read it whenever main reports new XP or the
-// selected pet's snapshot changes so the list survives restarts and stays live.
 watch(() => [progression.value?.petId, progression.value?.totalXp], () => { void loadInsights() })
 onMounted(() => { void loadInsights() })
 </script>

@@ -531,7 +531,6 @@ test('hiding the settings panel suspends an acknowledged view and restores it on
   assert.deepEqual(fake.closedEvents, [])
   assert.equal(fake.views[0]?.visibility.at(-1), false)
 
-  // 隱藏期間的 resize／bounds 回報不可把暫停中的畫面關閉或重新顯示。
   fake.controller.relayout({ width: 496, height: 432 })
   assert.equal(fake.controller.activePluginId(), 'sample-plugin')
   assert.equal(fake.views[0]?.visibility.at(-1), false)

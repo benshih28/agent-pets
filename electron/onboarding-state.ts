@@ -3,7 +3,6 @@ import { readConfigText, writeTextAtomic } from './safe-config-write.ts'
 import type { OnboardingAction, OnboardingState } from '../src/types/onboarding.ts'
 import { ONBOARDING_VERSION } from '../src/types/onboarding.ts'
 
-// Main-owned first-run state. Stores only timestamps and a flow version: no paths or user data.
 export class OnboardingStore {
   private readonly filePath: string
   private readonly now: () => number
@@ -39,7 +38,6 @@ export class OnboardingStore {
       next.skippedAt = this.now()
       if (current.completedAt !== undefined) next.completedAt = current.completedAt
     }
-    // 'reset' clears both so the intro shows again.
     fs.mkdirSync(this.filePath.replace(/[\\/][^\\/]*$/, ''), { recursive: true })
     writeTextAtomic(this.filePath, `${JSON.stringify(next)}\n`, { mode: 0o600 })
     return next

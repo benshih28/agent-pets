@@ -15,8 +15,6 @@ import { AGENT_STATES } from '../src/types/agent.ts'
 import { AGENT_STATE_PRESENTATION } from '../src/utils/agent-state-presentation.ts'
 import { shouldPlaySuccessSound } from '../src/utils/sound-policy.ts'
 
-// --- 假的 Web Audio：記下每個呼叫，用來比對實際排程出去的聲音 -------------------------
-
 const CURRENT_TIME = 12.5
 type Call = readonly unknown[]
 const calls: Call[] = []
@@ -99,7 +97,6 @@ const LEGACY_OUTPUT: Record<string, unknown[][]> = {
   '35:waiting-permission': [['triangle', 988, 12.5, 0.055999999999999994, 12.51, 12.59, 12.61], ['triangle', 740, 12.62, 0.055999999999999994, 12.629999999999999, 12.709999999999999, 12.729999999999999], ['triangle', 988, 12.74, 0.055999999999999994, 12.75, 12.88, 12.9]],
 }
 
-// 狀態 → cue 只由 AGENT_STATE_PRESENTATION 決定；這裡是重構前 store 與 App.vue 的實際對應。
 const LEGACY_STATE_CUES = {
   offline: null, idle: null, thinking: null, 'tool-running': null,
   'waiting-permission': 'waiting-permission', 'waiting-input': 'waiting-input', success: 'success', error: 'error',

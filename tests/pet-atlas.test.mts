@@ -30,7 +30,6 @@ test('the atlas contract matches the bundled Codex fixtures', () => {
   assert.equal(PET_CELL_HEIGHT, 208)
   assert.deepEqual(petAtlasGridFromSize(1536, 2288), V2)
   assert.equal(PET_ATLAS_ROW_NAMES.length, PET_ATLAS_V2_ROWS)
-  // 每個固定動作的列都在 v1 必備的範圍內，格數也放得進 8 欄。
   for (const motion of Object.values(PET_ATLAS_MOTIONS)) {
     assert.ok(motion.row < V1.rows, motion.name)
     assert.ok(motion.frameDurations.length <= V1.columns, motion.name)
@@ -112,9 +111,7 @@ test('a known grid drops overrides that do not fit the atlas', () => {
 
 test('resolvePetMotion keeps the built-in cadence and never returns a short timing list', () => {
   assert.equal(resolvePetMotion('waving', undefined, V2), PET_ATLAS_MOTIONS.waving)
-  // 只改列號：沿用內建格數與時長。
   assert.deepEqual(resolvePetMotion('failed', { failed: { row: 2 } }, V2), { ...PET_ATLAS_MOTIONS.failed, row: 2 })
-  // 給了格數但時長不足：補預設值，長度永遠等於格數。
   assert.deepEqual(resolvePetMotion('idle', { idle: { row: 9, frames: 4, frameDurations: [300] } }, V2).frameDurations, [300, 150, 150, 260])
   assert.deepEqual(resolvePetMotion('idle', { idle: { row: 9, frames: 2, frameDurations: [300, 200, 100] } }, V2).frameDurations, [300, 200])
 })
@@ -123,10 +120,8 @@ test('walk and sleep fall back to idle (including an idle override) when undecla
   assert.equal(resolvePetMotion('walk', undefined, V2), PET_ATLAS_MOTIONS.idle)
   const idleOverride = { idle: { row: 9 } }
   assert.deepEqual(resolvePetMotion('sleep', idleOverride, V2), { ...PET_ATLAS_MOTIONS.idle, row: 9 })
-  // v1 圖集沒有第 9 列：idle 覆蓋值也放不下，回到內建 idle。
   assert.equal(resolvePetMotion('sleep', idleOverride, V1), PET_ATLAS_MOTIONS.idle)
   assert.equal(resolvePetMotion('walk', { walk: { row: 20 } }, V2), PET_ATLAS_MOTIONS.idle)
-  // 圖未載入前格線未知：只靠解析器的上下限，先接受。
   assert.equal(resolvePetMotion('walk', { walk: { row: 20 } }, null).row, 20)
 })
 
@@ -149,7 +144,6 @@ test('the shared motion table is frozen and reused when nothing is overridden', 
     assert.ok(Object.isFrozen(motion) && Object.isFrozen(motion.frameDurations), motion.name)
   }
   assert.throws(() => { (PET_ATLAS_MOTIONS.idle.frameDurations as number[])[0] = 1 }, TypeError)
-  // 常見情況不配置新物件：同一個表，呼叫端用 === 就知道不必重排。
   assert.equal(resolvePetMotionTable(undefined, null), PET_DEFAULT_MOTION_TABLE)
   assert.equal(resolvePetMotionTable(undefined, V2), PET_DEFAULT_MOTION_TABLE)
   assert.equal(resolvePetMotionTable({}, V2), PET_DEFAULT_MOTION_TABLE)
@@ -164,10 +158,8 @@ test('a motion table resolves every motion once and stays frozen', () => {
   assert.equal(table.idle.row, 9)
   assert.equal(table.idle.frameDurations.length, 4)
   assert.equal(table.walk.row, 1)
-  // 沒宣告 sleep：回退到（被覆蓋的）idle。
   assert.equal(table.sleep.row, 9)
   assert.equal(table.waving, PET_ATLAS_MOTIONS.waving)
-  // 窄圖集即使沒有 manifest 也要另外算，內建動作才不會踩進不存在的格。
   assert.notEqual(resolvePetMotionTable(undefined, { columns: 4, rows: 9 }), PET_DEFAULT_MOTION_TABLE)
 })
 

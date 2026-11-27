@@ -1,8 +1,5 @@
 import { nextTick, onBeforeUnmount, watch, type Ref } from 'vue'
 
-// Shared modal behaviour: Esc to close, Tab focus trap, initial focus,
-// focus restoration, and `inert` on everything behind the dialog.
-
 export const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
@@ -12,10 +9,7 @@ export const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-/**
- * Where Tab/Shift+Tab should move focus to keep it inside the dialog, or
- * `null` when the browser's default movement already stays inside.
- */
+// null: the browser's default movement already stays inside.
 export function nextTrapIndex(count: number, activeIndex: number, shift: boolean): number | null {
   if (count <= 0) return null
   if (activeIndex < 0) return shift ? count - 1 : 0
@@ -26,12 +20,9 @@ export function nextTrapIndex(count: number, activeIndex: number, shift: boolean
 
 export interface DialogA11yOptions {
   open: Ref<boolean>
-  /** The dialog surface (role="dialog"); focus is trapped inside it. */
   container: Ref<HTMLElement | null>
-  /** Outer overlay element; its siblings are made inert while open. */
   scope?: Ref<HTMLElement | null>
   onClose: () => void
-  /** CSS selector (inside the dialog) for the element to focus on open. */
   initialFocus?: () => string | undefined
   closeOnEscape?: boolean
 }

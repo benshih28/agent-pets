@@ -16,14 +16,11 @@ export interface LoggerOptions {
   flushIntervalMs?: number
   now?: () => number
   redact?: RedactOptions
-  /** Per-source line budgets so one noisy source (plugin, renderer) cannot evict the rest. */
   sourceQuotas?: SourceQuota[]
-  /** Size cap of the separate crash-evidence file that normal rotation can never evict. */
   evidenceMaxBytes?: number
 }
 
 export interface SourceQuota {
-  /** Matches the log channel, e.g. `plugin:` prefix. */
   prefix: string
   perMinute: number
 }
@@ -36,15 +33,12 @@ export const DEFAULT_SOURCE_QUOTAS: SourceQuota[] = [
 export interface Logger {
   log(level: LogLevel, channel: string, message: string, detail?: unknown): void
   flush(): void
-  /** Last `lines` log lines across rotated files, newest last. Already redacted when written. */
+  /** Already redacted when written. */
   readRecent(lines?: number): string[]
   close(): void
 }
 
-/**
- * Minimal rotating file logger. Lines are redacted before they are buffered
- * and are written only to the local userData directory; nothing is uploaded.
- */
+// Lines are redacted before they are buffered and written only to the local userData directory.
 export function createLogger(options: LoggerOptions): Logger {
   const fileName = options.fileName ?? 'main.log'
   const maxBytes = options.maxBytes ?? 1024 * 1024
@@ -64,8 +58,7 @@ export function createLogger(options: LoggerOptions): Logger {
 
   const quotaFor = (channel: string): SourceQuota | undefined => quotas.find(quota => channel.startsWith(quota.prefix))
 
-  // Returns false when the source is over budget. A single summary line is written once the
-  // window rolls over so the drop itself is visible.
+  // A single summary line is written once the window rolls over so the drop itself is visible.
   const admit = (channel: string, quota: SourceQuota): { ok: boolean, summary?: string } => {
     const current = now()
     let entry = usage.get(channel)
@@ -95,7 +88,6 @@ export function createLogger(options: LoggerOptions): Logger {
       try { existing = fs.readFileSync(evidencePath, 'utf8') } catch {}
       let next = existing + chunk
       if (Buffer.byteLength(next) > evidenceMax) {
-        // Keep the newest half; whole lines only.
         const tail = next.slice(-Math.floor(evidenceMax / 2))
         next = tail.slice(tail.indexOf('\n') + 1)
       }
@@ -150,7 +142,6 @@ export function createLogger(options: LoggerOptions): Logger {
       }
       line = `${line.replace(/\r?\n/g, '\\n').slice(0, MAX_LINE_CHARS)}\n`
       buffer.push(line)
-      // Crash evidence from trusted sources is mirrored to its own bounded file.
       if (!quota && (level === 'error' || channel === 'startup')) evidenceBuffer.push(line)
       if (level === 'error' || buffer.length >= 50) flush()
       else if (!timer) {
@@ -166,7 +157,6 @@ export function createLogger(options: LoggerOptions): Logger {
         const file = index === 0 ? filePath : `${filePath}.${index}`
         try { collected.push(...fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)) } catch {}
       }
-      // Evidence lines that rotation already evicted from the main files are merged back in.
       const seen = new Set(collected)
       try {
         for (const line of fs.readFileSync(evidencePath, 'utf8').split('\n')) {

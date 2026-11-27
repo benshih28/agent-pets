@@ -16,7 +16,7 @@ import { SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 import { builtinDefinition, png } from './support/panel-theme-fixtures.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// H1／M8：「我的主題」的修剪只能依「磁碟上確定不存在」來刪插槽與背景圖。
+// 「我的主題」的修剪只能依「磁碟上確定不存在」來刪插槽與背景圖。
 
 const STAMP = '2026-11-08T00:00:00.000Z'
 
@@ -44,7 +44,6 @@ function setup() {
   })
   const sync = (runtime: PanelThemeRuntime) => runtime.sync({ registry: [], contexts: new Map(), pluginsEnabled: true })
   const folder = path.join(userData, USER_PANEL_THEMES_DIRECTORY)
-  /** 建一個有背景圖、套用在淺色模式的使用者主題（磁碟上的完整狀態）。 */
   const applied = (definition: UserPanelThemeDefinition = withImage()) => {
     const runtime = runtimeIn()
     const record = runtime.userThemes.create('Mine', definition)
@@ -90,13 +89,11 @@ test('a truncated scan keeps slots for themes it did not reach; unrelated entrie
   const context = setup()
   try {
     const { record, image } = context.applied()
-    // 不相干的項目（.DS_Store、其他檔案、損毀備份）不佔掃描名額。
     fs.writeFileSync(path.join(context.folder, '.DS_Store'), '')
     for (let index = 0; index < USER_PANEL_THEME_SCAN_LIMIT + 20; index += 1) fs.writeFileSync(path.join(context.folder, `note-${index}.txt`), '')
     const runtime = context.kept(image, record.id)
     assert.deepEqual(runtime.userThemes.list().map(theme => theme.id), [record.id])
 
-    // 主題檔多到超過掃描上限：沒看到的檔案可能存在，所以什麼都不修剪。
     for (let index = 0; index <= USER_PANEL_THEME_SCAN_LIMIT; index += 1) {
       const id = `u-${(index + 1).toString(16).padStart(12, 'f')}`
       fs.writeFileSync(path.join(context.folder, `${id}.json`), recordFile(id, builtinDefinition(), 2))
@@ -110,7 +107,6 @@ test('a record that a tightened validator rejects keeps its slot and image; expl
   const context = setup()
   try {
     const { record, image, file } = context.applied()
-    // 結構合法、但語意驗證失敗的記錄（模擬日後變嚴格的規則）。
     const unreadable = withImage()
     unreadable.modes.light.colors.text = unreadable.modes.light.colors.bg
     fs.writeFileSync(file, recordFile(record.id, unreadable))
@@ -147,7 +143,6 @@ test('a record from a newer schemaVersion is left untouched, hidden, never prune
     assert.deepEqual(runtime.userThemes.list(), [])
     assert.equal(fs.readFileSync(file, 'utf8'), future)
     assert.ok(!fs.readdirSync(context.folder).some(name => name.includes('.corrupt-')))
-    // 唯讀：不能修改或刪除，新主題也不會拿到同一個 id。
     assert.equal(runtime.userThemes.delete(record.id), false)
     const store = new UserPanelThemeStore(context.userData, { randomHex: () => record.id.slice(2) })
     const created = store.create('Other', builtinDefinition())

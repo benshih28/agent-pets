@@ -12,15 +12,12 @@ import type { PluginManifest, PluginPanelThemeContribution, PluginPanelThemeFont
 import { removeTempTree } from './support/temp-dir.mts'
 import { invalid } from './support/invalid.mts'
 
-// 這些期望值是 1.12.5 的主行程 permissionUnits() 與畫面 permissionUnitsOfPlan() 的實際輸出，
-// 在抽取共用產生器之前先執行通過。主行程的結果會寫進 registry.json 的 grantedPermissions.units，
-// 並決定更新時是否需要重新同意，所以任何字串、排序或去重的變化都是授權變更。
+// 主行程的結果寫進 registry.json 的 grantedPermissions.units 並決定更新是否需重新同意，所以任何字串、排序或去重的變化都是授權變更。
 
 type Source = Pick<PluginManifest, 'permissions' | 'contributes'>
 
 const title = { 'zh-TW': 'x', 'en-US': 'x' }
 
-// 權限單位只數貢獻的個數與字型，其餘欄位用最小的合法值補齊，讓 tsc 檢查形狀。
 const skin: PluginSkinContribution = { id: 's', displayName: title, spritesheet: 'skin.png', kind: 'animal' }
 const fontFace: PluginPanelThemeFontFace = { id: 'f', src: 'font.woff2', weight: 400, style: 'normal' }
 function theme(fonts: PluginPanelThemeFontFace[]): PluginPanelThemeContribution {
@@ -123,7 +120,6 @@ test('the registry turns any other true permission key into its own unit', () =>
   // 未來新增的權限鍵不在 manifest 型別內，這是刻意的非法形狀。
   const source = invalid<Source>({ permissions: { teleport: true, network: true, quiet: false }, contributes: {} })
   assert.deepEqual(permissionUnits(source), ['network', 'teleport'])
-  // 畫面跟著列出同一批單位：未知的鍵顯示成高風險的「未知權限」，不會被略過。
   const shown = groupPermissionUnits(permissionUnitsOfPlan(source)).flatMap(group => group.entries)
   assert.deepEqual(shown.map(entry => [entry.unit, entry.risk, entry.known]), [['network', 'high', true], ['teleport', 'high', false]])
 })
@@ -179,7 +175,6 @@ test('install grants, update diffs and reconsent follow the registry units', () 
   })
 })
 
-// 安裝畫面的分組與風險（依 1.12.5 輸出固定）。共用產生器只產生單位字串，分級仍是畫面自己的規則。
 test('the install screen groups every unit with its 1.12.5 risk', () => {
   const groups = groupPermissionUnits(permissionUnitsOfPlan(FULL)).map(group => ({
     id: group.id, risk: group.risk, entries: group.entries.map(entry => `${entry.unit}|${entry.risk}|${entry.known}`),

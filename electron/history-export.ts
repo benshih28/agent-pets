@@ -27,7 +27,6 @@ export function historyDaysToCsv(days: readonly HistoryDailyStat[]): string {
   return `${[CSV_HEADER.join(','), ...rows].join('\n')}\n`
 }
 
-/** Local-date based, safe-characters-only file name including range and project. */
 export function historyExportFileName(
   format: HistoryExportFormat,
   rangeDays: number,

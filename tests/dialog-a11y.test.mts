@@ -48,7 +48,6 @@ test('the panel provides its root as the dialog host and Dialog teleports its sc
   assert.match(read('StatusPanel.vue'), /<div ref="panelRoot" class="status-panel"/)
 })
 
-// 對話框內容過長時，只有 .body 捲動；標題列（含關閉鈕）與頁尾不能跟著捲走。
 
 test('Dialog keeps the header and footer outside the scrolling body', () => {
   const dialog = readFileSync(new URL('../src/components/ui/Dialog.vue', import.meta.url), 'utf8')

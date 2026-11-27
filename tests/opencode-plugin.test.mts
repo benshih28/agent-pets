@@ -22,15 +22,12 @@ test('generated OpenCode plugins are valid modules with permission hooks', async
     assert.equal(code.includes("'tool.execute.before', projectPath"), true)
     assert.equal(code.includes("reply = decision === 'allow_once' ? 'once' : 'reject'"), true)
     assert.equal(code.includes("'always'"), false)
-    // Host hints: a few capped env values, sent with every status event.
     assert.equal(code.includes('host: HOST_HINTS'), true)
     assert.equal(code.includes("shortEnv('TERM_PROGRAM'"), true)
     assert.equal(/process\.env\)|\.\.\.process\.env/.test(code), false)
   }
 })
 
-// 執行產生出來的 plugin，鎖住 `event` hook 對每種 event.type 送出的請求（路徑、狀態、originalEvent、順序），
-// 讓範本裡分派寫法的改寫可以證明語意不變。token 與 HTTP 都在行程內攔截，不會碰到真的檔案或連線。
 type CapturedRequest = { path: string; body: Record<string, unknown> }
 
 async function runPluginEvent(event: unknown, statusFor: (path: string) => number): Promise<CapturedRequest[]> {

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 寵物上方的泡泡：依 feed-arbiter 選出的種類顯示權限請求、通知、pet_say、工作 toast／活動、
-// 插件訊息或首次引導；同一時間只有一個。選擇邏輯留在 DesktopPet（coach mark 也要看它），這裡只渲染。
 // data-pet-hit-target 是點擊穿透命中測試的依據，每個可點擊泡泡都要保留。
 import { computed } from 'vue'
 import { locale, t, type TranslationKey } from '@/i18n'

@@ -1,34 +1,23 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-/**
- * 「app 正在啟動、還沒開始收事件」的標記，放在 hook 讀 token 的同一個資料夾（~/.desktop-pet）。
- * hook 只有在連線被拒時才看這個檔：有新的標記就短暫重試，沒有就立刻結束，所以寵物沒開時不會拖慢 agent。
- * 檔名帶事件埠，開發版或 e2e 改用別的埠時，不會影響送到正式版埠的 hook。
- * 檔名格式與 hook 的判斷（integrations/agent-hook.mjs 的 appIsStarting）必須一致，見 docs/dev/hook-delivery.md。
- */
+// hook 只有在連線被拒時才看這個檔：有新標記就短暫重試，沒有就立刻結束，所以寵物沒開時不會拖慢 agent。
+// 檔名帶事件埠，開發版或 e2e 改用別的埠時不影響正式版的 hook；格式必須與 integrations/agent-hook.mjs 的 appIsStarting 一致。
 export function hookStartupMarkerName(eventPort: number): string {
   return `event-port-${eventPort}.starting`
 }
 
-/** 埠開始監聽之後再留這麼久才移除，蓋過「hook 剛被拒、還沒來得及看標記」的空檔。 */
+// 埠開始監聽之後再留這麼久才移除，蓋過 hook 剛被拒、還沒來得及看標記的空檔。
 export const HOOK_STARTUP_MARKER_LINGER_MS = 2_000
 
-/**
- * 與 integrations/agent-hook.mjs 的 STARTUP_MARKER_MAX_AGE_MS 相同（契約，兩邊要一起改）：
- * hook 會忽略比這更舊的標記，所以更舊的標記就算 pid 還活著（例如 pid 被別的程序重用）也不值得保留。
- */
+// 與 integrations/agent-hook.mjs 的 STARTUP_MARKER_MAX_AGE_MS 相同（契約，兩邊要一起改）：hook 會忽略更舊的標記。
 export const HOOK_STARTUP_MARKER_MAX_AGE_MS = 20_000
 
 export interface HookStartupMarker {
-  /** 埠已開始監聽：稍後移除標記。 */
   listening(): void
-  /** 啟動失敗、埠綁不上或 app 結束：立刻移除（只會移除本程序擁有的標記）。 */
+  /** 只會移除本程序擁有的標記。 */
   clear(): void
-  /**
-   * 取得單一實例鎖之後呼叫：此時只剩本程序，所以可以接手別人留下的標記。
-   * 需要它是因為 `--relaunch` 的新實例啟動時舊實例可能還活著而沒寫標記，舊實例結束時只會清掉自己的。
-   */
+  /** `--relaunch` 的新實例啟動時舊實例可能還活著而沒寫標記，舊實例結束時只會清掉自己的，所以取得鎖之後要接手。 */
   claim(): void
 }
 
@@ -42,7 +31,6 @@ function pidIsAlive(pid: number): boolean {
   }
 }
 
-/** 讀現有標記的 pid；不是一般小檔、內容不是正整數時回傳 null（symlink 一律不讀）。 */
 function readMarker(file: string): { pid: number; ageMs: number } | null {
   try {
     const stat = fs.lstatSync(file)
@@ -54,13 +42,9 @@ function readMarker(file: string): { pid: number; ageMs: number } | null {
   }
 }
 
-/**
- * 寫入啟動標記。內容是本程序的 pid，移除時先核對，所以第二個實例（拿不到單一實例鎖）
- * 或已被新實例接手的舊實例，不會刪掉別人的標記。
- * 寫入發生在單一實例鎖之前，所以若已有「夠新而且擁有者還活著」的標記就不動它：
- * 否則第二個啟動的程序會蓋掉第一個實例（仍在啟動中）的標記，再因拿不到鎖而把它清掉。
- * 所有檔案錯誤都吞掉：標記只是加速，不能擋住啟動。
- */
+// 移除時先核對 pid，第二個實例或被接手的舊實例才不會刪掉別人的標記。
+// 寫入發生在單一實例鎖之前：已有夠新且擁有者還活著的標記就不動它，否則第二個啟動的程序會蓋掉第一個實例的標記，再因拿不到鎖而清掉它。
+// 所有檔案錯誤都吞掉：標記只是加速，不能擋住啟動。
 export function writeHookStartupMarker(
   directory: string,
   eventPort: number,
@@ -106,7 +90,6 @@ export function writeHookStartupMarker(
     },
     clear,
     claim() {
-      // 埠已在監聽就不必再寫：標記只負責涵蓋「還沒開始收事件」的空檔。
       if (lingering || ownsMarker()) return
       create()
     },

@@ -1,20 +1,16 @@
 import type { PluginInstallPlan } from '../types/plugin'
 import { permissionUnitsInDisplayOrder } from './plugin-permission-units.ts'
 
-// 授權畫面用的權限分級。單位字串由 plugin-permission-units.ts 產生，與主行程授權用的是同一份，
-// 例如 `network:api.example.com`、`secrets:token`、`contributes:panelView`。
 export type PermissionGroupId = 'network' | 'data' | 'display'
 export type PermissionRisk = 'high' | 'medium' | 'low'
 
 export interface PermissionEntry {
   unit: string
-  /** 單位類別，例如 network / links / secrets / contributes。 */
   kind: string
-  /** 類別之後的細節，例如主機名稱。 */
   detail: string
   group: PermissionGroupId
   risk: PermissionRisk
-  /** 本程式認得的權限；false 時畫面要顯示「未知權限」而不是內部代碼。 */
+  /** false 時畫面要顯示「未知權限」而不是內部代碼。 */
   known: boolean
 }
 
@@ -73,7 +69,6 @@ export type InstallAcknowledgementReason =
   | 'added-network'
   | 'added-secrets'
 
-// 高風險變更需要使用者明確勾選「我已了解」才能按下確認，且預設焦點落在取消。
 // 只會讓流程更嚴格：主行程仍照原本的 requiresReconsent / requiresSignatureConfirmation 驗證。
 export function installAcknowledgementReasons(
   plan: Pick<PluginInstallPlan, 'kind' | 'signatureChange' | 'requiresSignatureConfirmation' | 'addedPermissions' | 'requiresReconsent'> | null,

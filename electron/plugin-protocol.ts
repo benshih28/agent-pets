@@ -147,7 +147,6 @@ function decodePluginPanelPath(pathname: string): string[] | null {
 
 const PLUGIN_PANEL_ALLOWED_EXTENSIONS = new Set(['.html', '.js', '.css', '.json', '.png', '.webp'])
 
-/** Creates a panel-only handler scoped to a random plugin token plus one read-only shared stylesheet. */
 export function createPluginPanelProtocolHandler(options: PluginPanelProtocolOptions): (request: PluginProtocolRequestLike) => Promise<Response> {
   return async request => {
     if (request.method && request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
@@ -210,7 +209,6 @@ async function handlePluginHostProtocolRequest(requestUrl: string, options: Plug
   }
 }
 
-/** Creates the isolated partition handler; it can only serve plugin-host resources. */
 export function createPluginHostProtocolHandler(options: PluginHostProtocolOptions): (request: PluginProtocolRequestLike) => Promise<Response> {
   return async request => {
     if (request.method && request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
@@ -218,7 +216,6 @@ export function createPluginHostProtocolHandler(options: PluginHostProtocolOptio
   }
 }
 
-/** Serves only embedded host resources and explicitly supplied current-version plugin roots. */
 export async function handlePluginProtocolRequest(requestUrl: string, options: PluginProtocolOptions): Promise<Response> {
   try {
     const url = new URL(requestUrl)

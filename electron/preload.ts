@@ -51,7 +51,6 @@ import type { LocalServerHealthSnapshot, LocalServerId } from '../src/types/reli
 
 const electronAPI: ElectronAPI = {
   onAgentStatusEvent: (callback: (event: AgentStatusEvent) => void) => {
-    // main 端（event-server）只送 event-normalizer 正規化過的事件，且以批次陣列送出；
     // 執行期驗證在 main 做，這裡只負責把批次攤平。
     const handler = (_event: unknown, data: AgentStatusEvent | AgentStatusEvent[]) => {
       if (Array.isArray(data)) {
@@ -235,9 +234,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.send(IPC_CHANNELS.panelToggle)
   },
 
-  // Asks for a transient minimum size (wizard / MCP) or releases it ({ release: true });
-  // the user's own panel size is owned by the main process. The positional
-  // (height, width) form is kept for existing callers.
+  // The user's own panel size is owned by the main process; the positional (height, width) form is kept for existing callers.
   resizePanel: (size: { height?: number; width?: number; release?: boolean } | number, legacyWidth?: number) => {
     const data = typeof size === 'number' ? { height: size, width: legacyWidth } : size
     ipcRenderer.send(IPC_CHANNELS.panelResize, {

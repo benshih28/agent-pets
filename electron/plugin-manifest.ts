@@ -38,7 +38,6 @@ export type PluginManifestError =
 
 export type PluginManifestParseResult =
   | { ok: true; manifest: PluginManifest }
-  /** `diagnostic` 是經過清理、最多 200 字元的作者提示（僅限面板主題）。 */
   | { ok: false; error: string; diagnostic?: string }
 
 class ManifestValidationError extends Error {
@@ -107,7 +106,6 @@ function normalizeRelativePath(value: unknown, extension: readonly string[]): st
   return normalized
 }
 
-/** Validate a DNS hostname or a manifest wildcard host (for example *.example.com). */
 export function isValidPluginNetworkHost(value: unknown, allowWildcard = true): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 253) return false
   const host = value.toLowerCase()
@@ -403,8 +401,7 @@ function parseManifest(value: unknown): PluginManifest {
     }
   }
   if (!entry) {
-    // 無 Worker：沒有權限，且宣告的每項貢獻都是
-    // 無 Worker 類型（skins、panelThemes）並至少含一個項目。
+    // 無 Worker 的插件不能有權限，且每項貢獻都必須是無 Worker 類型並至少含一個項目。
     const workerlessContributionIds = new Set(Object.entries(PLUGIN_CONTRIBUTION_REGISTRY)
       .filter(([, definition]) => 'allowsWorkerlessPlugin' in definition && definition.allowsWorkerlessPlugin === true)
       .map(([id]) => id))

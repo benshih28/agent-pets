@@ -51,13 +51,10 @@ export class DesktopTrayController {
       )
       if (this.attentionIcon.isEmpty()) this.attentionIcon = null
     } catch (error) {
-      // Without the badge icon the count still reaches the user through the
-      // tooltip (and the menu-bar title on macOS), so say why it is missing.
       console.warn('Tray attention icon could not be created', error instanceof Error ? error.message : error)
       this.attentionIcon = null
     }
     this.tray = new Tray(this.baseIcon)
-    // Same as the first menu item: toggle, instead of only ever showing.
     this.tray.on('click', () => (this.actions.isPetVisible() ? this.actions.hidePet() : this.actions.showPet()))
     this.rebuild()
   }

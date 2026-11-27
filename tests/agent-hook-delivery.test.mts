@@ -11,11 +11,6 @@ import { hookStartupMarkerName } from '../electron/main/hook-startup-marker.ts'
 import { withStartupBaseline } from './support/node-startup.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 測試真正的 integrations/agent-hook.mjs 送出狀態事件的行為。執行的是只改了事件網址的副本，
-// HOME 是暫時目錄，不會讀到使用者的 token 或設定。
-// 背景：hook 程序起步慢的時候（機器忙、同時很多 hook、app 剛啟動），舊版常在請求送出前就放棄
-// （見 docs/dev/hook-delivery.md）。
-
 const HOOK_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'integrations', 'agent-hook.mjs')
 const EVENT_TOKEN = 'e'.repeat(64)
 
@@ -28,7 +23,6 @@ async function eventServer(answerAfterMs = 0): Promise<{ server: Server; receive
     request.on('data', chunk => chunks.push(Buffer.from(chunk)))
     request.on('end', () => {
       received.push({ method: request.method ?? '', url: request.url ?? '', headers: request.headers, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
-      // unref：hook 早已離開時，這個延遲回答不該讓測試行程多撐到計時器觸發。
       setTimeout(() => { response.writeHead(204); response.end() }, answerAfterMs).unref()
     })
   })
@@ -54,7 +48,6 @@ function hookHome(server: Server): { home: string; hookPath: string } {
   return { home, hookPath }
 }
 
-// hook 讀完 payload 後把它的 event loop 卡住一次，模擬機器忙時 CPU 被搶走；只改時序，不替換 hook 的任何程式。
 // 回傳 file:// URL：--import 在 Windows 不接受 C:\\ 開頭的絕對路徑（會被當成 c: 協定）。
 function stallPreload(home: string, ms: number): string {
   const file = path.join(home, 'stall.mjs')
@@ -115,8 +108,7 @@ test('a busy app still gets the event, and the hook does not wait for its answer
     const { baseline } = result
     assert.equal(result.code, 0)
     assert.equal(received.length, 1)
-    // 送出後只等回應寬限 0.25 秒：agent 不會被 app 的延遲拖住。上限與下一個測試相同；
-    // app 延遲 8 秒，基準在 5.5 秒內時上限都小於 8 秒，若回到「等 app 回答」仍會失敗。
+    // app 延遲 8 秒；基準在 5.5 秒內時上限都小於 8 秒，若回到「等 app 回答」仍會失敗。
     const bound = baseline * 2 + 2_500
     t.diagnostic(`hook ${result.ms} ms, node startup ${baseline} ms, bound ${bound} ms`)
     assert.ok(result.ms < bound, `hook took ${result.ms} ms (node startup ${baseline} ms)`)
@@ -141,13 +133,11 @@ test('an answer that is cut off or never finishes does not crash or hold the hoo
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const { home, hookPath } = hookHome(server)
     try {
-      // stderr 有任何輸出 runHook 就會 reject，所以崩潰會在這裡失敗。
       const result = await runHookWithBaseline(hookPath, home, STOP)
       const { baseline } = result
       assert.equal(result.code, 0, mode)
       assert.equal(reached, 1, mode)
-      // 答案永遠不完整時 hook 仍在送出時限 + 寬限內結束，不會一直等。hook 載入的模組比空程序多，
-      // 高負載時多出的時間會跟著基準放大（F2 實測：基準 879 ms 時 hook 3229 ms），所以上限取兩倍基準加 2.5 秒。
+      // 高負載時 hook 載入模組的耗時會跟著基準放大，所以上限取兩倍基準加 2.5 秒。
       const bound = baseline * 2 + 2_500
       t.diagnostic(`${mode}: hook ${result.ms} ms, node startup ${baseline} ms, bound ${bound} ms`)
       assert.ok(result.ms < bound, `${mode}: hook took ${result.ms} ms (node startup ${baseline} ms)`)
@@ -187,10 +177,6 @@ test('the status request keeps its method, path, headers and body (external cont
     removeTempTree(home)
   }
 })
-
-// --- app 冷啟動：埠還沒開始監聽時送出的事件 -------------------------------------
-// app 一啟動就寫 ~/.desktop-pet/event-port-<埠>.starting（electron/main/hook-startup-marker.ts，檔名用同一個函式產生）。
-// hook 連線被拒時，只有這個標記夠新才短暫重試；寵物沒開（沒有標記或標記過期）就立刻結束。
 
 function freePort(): Promise<number> {
   return new Promise(resolve => {
@@ -236,7 +222,6 @@ test('an event sent while the app is still starting arrives once its port opens'
   let server: Server | null = null
   try {
     const run = runHook(hookPath, home, STOP)
-    // 埠在 hook 啟動之後才開，hook 第一次連線一定被拒。
     await new Promise(resolve => setTimeout(resolve, 700))
     server = await listenOn(port, received)
     const result = await run
@@ -262,9 +247,7 @@ test('with the pet closed the hook does not wait, even if a crash left an old ma
       const result = await runHookWithBaseline(hookPath, home, STOP)
       const { baseline } = result
       assert.equal(result.code, 0, marker)
-      // 只多一次 lstat；誤把重試打開會多等 STARTUP_WAIT_MS（5 秒）。hook 載入的模組比空程序多，
-      // 機器高負載時耗時會跟著基準放大，所以上限取兩倍基準加 1.5 秒：基準在 3.5 秒內都仍小於重試的 5 秒。
-      // 耗時量測見 docs/dev/hook-delivery.md。
+      // 誤把重試打開會多等 STARTUP_WAIT_MS（5 秒）；耗時隨負載放大，上限取兩倍基準加 1.5 秒。
       t.diagnostic(`${marker}: hook ${result.ms} ms, node startup ${baseline} ms, bound ${baseline * 2 + 1_500} ms`)
       assert.ok(result.ms < baseline * 2 + 1_500, `${marker}: hook took ${result.ms} ms (node startup ${baseline} ms)`)
     } finally {
@@ -281,7 +264,7 @@ test('a starting app that never opens its port holds the hook for a bounded time
     const result = await runHookWithBaseline(hookPath, home, STOP)
     const { baseline } = result
     assert.equal(result.code, 0)
-    // 重試上限是 STARTUP_WAIT_MS（5 秒）；和其他案例一樣，啟動與模組載入的耗時隨負載放大，取兩倍基準再加 6.5 秒。
+    // 重試上限是 STARTUP_WAIT_MS（5 秒）；耗時隨負載放大，取兩倍基準再加 6.5 秒。
     const bound = baseline * 2 + 6_500
     t.diagnostic(`hook ${result.ms} ms, node startup ${baseline} ms, bound ${bound} ms`)
     assert.ok(result.ms < bound, `hook took ${result.ms} ms (node startup ${baseline} ms)`)
@@ -289,8 +272,6 @@ test('a starting app that never opens its port holds the hook for a bounded time
     removeTempTree(home)
   }
 })
-
-// --- 權限回覆：機器很忙時也要把請求送到寵物 ----------------------------------------
 
 test('a permission request still reaches the pet when the hook is stalled right after sending starts', async () => {
   const { server: events } = await eventServer()
@@ -326,7 +307,6 @@ test('a permission request still reaches the pet when the hook is stalled right 
       child.on('close', () => err.trim() ? reject(new Error(`hook wrote to stderr: ${err}`)) : resolve(out))
       child.stdin.end(JSON.stringify({ ...STOP, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'ls' } }))
     })
-    // 回覆格式不變：拒絕時帶固定的 DENY_MESSAGE。
     assert.deepEqual(JSON.parse(stdout), {
       hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied in Agent Pets. (已在 Agent Pets 拒絕)' } },
     })

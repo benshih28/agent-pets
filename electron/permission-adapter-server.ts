@@ -23,7 +23,6 @@ import {
   isNetworkPermission,
 } from './permission-risk.ts'
 
-// 與請求的 `${method} ${pathname}` 比對的路由 key；在載入時從契約組好一次。
 const ROUTE_REQUEST = `POST ${LOCAL_WIRE_PATHS.permissionRequest}`
 const ROUTE_DECISION = `POST ${LOCAL_WIRE_PATHS.permissionDecision}`
 const ROUTE_RESULT = `POST ${LOCAL_WIRE_PATHS.permissionResult}`
@@ -31,17 +30,15 @@ const ROUTE_RESOLVED = `POST ${LOCAL_WIRE_PATHS.permissionResolved}`
 const ROUTE_RESOLVED_SESSION = `POST ${LOCAL_WIRE_PATHS.permissionResolvedSession}`
 
 const MAX_BODY_BYTES = 16 * 1024
-// Per plugin instance (source + instanceId), so one noisy instance cannot use up
-// another's budget; the per-host cap is a looser backstop for unparsed bodies.
+// Per plugin instance, so one noisy instance cannot use up another's budget;
+// the per-host cap is a looser backstop for unparsed bodies.
 const MAX_CREATE_REQUESTS_PER_MINUTE = 60
 const MAX_CREATE_REQUESTS_PER_MINUTE_PER_HOST = 240
 const MAX_BUDGET_WINDOWS = 256
 const MAX_EXTERNAL_RECORDS = 400
-// The broker applies the final display limits (and counts what it cuts); the
-// adapter only bounds how much it accepts so memory use stays predictable.
+// The broker applies the final display limits; these only bound what the adapter accepts.
 const MAX_PATTERNS = 20
 const MAX_PATTERN_LENGTH = 1_000
-// 只有 OpenCode（插件回覆）與 Claude Code（hook 回覆）能從寵物回答權限；來源清單由來源 registry 推導。
 export type PermissionAdapterSource = SourceOfFamily<'opencode' | 'claude'>
 export const PERMISSION_ADAPTER_SOURCES: readonly PermissionAdapterSource[] = Object.freeze([
   ...FAMILY_SOURCES.opencode,
@@ -54,8 +51,7 @@ const MIN_CLAUDE_TTL_SECONDS = 15
 const MAX_CLAUDE_TTL_SECONDS = 120
 const MAX_CLAUDE_DETAIL_LENGTH = 1_000
 const MAX_CLAUDE_PATH_LENGTH = 4_096
-// One hook invocation owns a Claude request; its random nonce is required to read
-// or acknowledge the decision, so one click can never answer two tool calls.
+// The nonce is required to read or acknowledge a decision, so one click can never answer two tool calls.
 const NONCE_PATTERN = /^[a-f0-9]{32,64}$/
 
 interface RelayHandle {
@@ -72,9 +68,8 @@ interface PendingDelivery {
 interface ExternalRequestRecord {
   brokerRequestId: string
   relayKey: string
-  /** Claude only: the hook invocation that owns this request. */
   nonce?: string
-  /** Claude only: main agent (`main`) or subagent id, for superseding older requests. */
+  /** Main agent (`main`) or subagent id, for superseding older requests. */
   scope?: string
 }
 
@@ -87,15 +82,11 @@ interface CreatePayload {
   permission: string
   title?: string
   patterns?: string[]
-  /** Claude only: the command / path / URL being approved (sent by our hook). */
   detail?: string
-  /** Claude only: how long the hook will wait for an answer. */
   ttlSeconds?: number
-  /** Claude only (required): per-invocation random nonce. */
   nonce?: string
-  /** Claude only: agent scope inside the session. */
   scope?: string
-  /** Claude only: the edited file, classified against `cwd`; never shown as an absolute path. */
+  /** Classified against `cwd`; never shown as an absolute path. */
   filePath?: string
   cwd?: string
 }
@@ -178,10 +169,7 @@ export interface PermissionAdapterServerOptions {
   relay: PermissionAdapterRelay
   now?: () => number
   randomId?: () => string
-  /**
-   * Main-process off switch per source. A disabled source cannot create new
-   * requests (503, so the agent falls back to its own prompt). Defaults to on.
-   */
+  // A disabled source gets 503 so the agent falls back to its own prompt.
   isSourceEnabled?: (source: PermissionAdapterSource) => boolean
 }
 
@@ -235,15 +223,12 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
 
       const externalKey = toExternalKey(payload.source, payload.instanceId, payload.permissionId)
       const existing = records.get(externalKey)
-      // A Claude ID is derived from the request content, so the same command
-      // asked again after the first one finished maps to the same key. Only a
-      // still-active record is reused; a finished one is replaced by a fresh
-      // request instead of handing back a request that can never be answered.
+      // A Claude ID is derived from the request content, so the same command asked again maps to
+      // the same key. Only a still-active record is reused; a finished one is replaced.
       const isClaude = CLAUDE_SOURCES.has(payload.source)
       if (existing && (!isClaude || options.broker.isRequestActive(existing.brokerRequestId))) {
-        // Another invocation asking the same thing at the same time (parallel subagents running
-        // the same command) does not share this request: it stays silent and Claude Code asks
-        // in the terminal, so a single click answers exactly one tool call.
+        // Parallel subagents running the same command do not share this request: Claude Code asks
+        // in the terminal instead, so a single click answers exactly one tool call.
         if (isClaude && existing.nonce !== payload.nonce) {
           sendJson(response, 409, { error: 'in_use' })
           return
@@ -277,8 +262,6 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
         sendJson(response, status, { error: created.error })
         return
       }
-      // Drop index entries whose broker request has been forgotten, so the
-      // external index cannot grow for the lifetime of the app.
       if (records.size >= MAX_EXTERNAL_RECORDS) {
         for (const [key, record] of records) {
           if (!options.broker.hasRecord(record.brokerRequestId)) records.delete(key)
@@ -361,8 +344,7 @@ export function createPermissionAdapterServer(options: PermissionAdapterServerOp
       return
     }
 
-    // Claude has no per-request "answered in the terminal" event; when a turn
-    // or session ends, everything still pending for that session is settled.
+    // Claude has no per-request "answered in the terminal" event, so a turn or session end settles everything pending.
     if (route === ROUTE_RESOLVED_SESSION) {
       const lookup = normalizeSessionLookupPayload(await readJsonBody(request))
       if (!lookup) {
@@ -439,7 +421,6 @@ function normalizeSessionLookupPayload(data: unknown): (Pick<CreatePayload, 'sou
   }
 }
 
-/** Settles pending requests of one Claude session, or only one agent scope inside it. */
 function resolveScope(
   records: Map<string, ExternalRequestRecord>,
   broker: PermissionBroker,
@@ -547,16 +528,13 @@ function isLoopback(address: string | undefined): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
-/**
- * 這個 server 的 client 不區分 body 失敗的原因：過大、空 body、錯誤 JSON 與中斷都回 null，
- * 由各路由的 normalize 函式轉成 400 `invalid_request`（沒有 413）。
- */
+// 過大、空 body、錯誤 JSON 與中斷一律回 null，由各路由轉成 400 `invalid_request`（沒有 413）。
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const body = await readBoundedJson(request, MAX_BODY_BYTES)
   return body.ok ? body.value : null
 }
 
-/** 先設好，讓沒有 body 的 204 回應也帶同一組 header。 */
+// 先設好，讓沒有 body 的 204 回應也帶同一組 header。
 function setSecurityHeaders(response: ServerResponse): void {
   for (const [name, value] of Object.entries(JSON_RESPONSE_HEADERS)) response.setHeader(name, value)
 }

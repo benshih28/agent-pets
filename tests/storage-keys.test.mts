@@ -8,7 +8,6 @@ import { isSettingsGroupId } from '../src/utils/settingsRegistry.ts'
 import { parseStoredDashboardTab } from '../src/utils/plugin-tabs.ts'
 
 // key 字串是使用者既有偏好的位置：任何一格變了，所有人的設定都會悄悄回到預設值。
-// 新增 key 時在這裡補一列；改名或刪除要先在 phase report 記錄遷移方式。
 const EXPECTED_KEYS: Record<StorageKeyName, string> = {
   petId: 'agent-pet-id',
   petScale: 'agent-pet-scale',
@@ -38,7 +37,6 @@ const EXPECTED_KEYS: Record<StorageKeyName, string> = {
   settingsGroup: 'agent-pets-settings-group',
 }
 
-// 940a00b 時 App.vue（12 個）與 useTheme.ts（2 個）監聽的 key。
 const EXPECTED_SYNCED = [
   'agent-pet-scale', 'agent-pet-id', 'agent-pet-family-map', 'agent-pet-sound', 'agent-pet-multi',
   'agent-pet-fx', 'agent-pet-bubble', 'agent-pet-ambient', 'agent-pet-activity', 'agent-pet-mood',
@@ -65,9 +63,7 @@ test('the registry is frozen', () => {
   for (const name of names) assert.ok(Object.isFrozen(STORAGE_KEYS[name]), name)
 })
 
-// 每個 key 在 940a00b 呼叫點的解析運算式，逐字照抄，作為對照的 oracle。
-// startup／sync 分開的 key（fx、bubble、ambient、activity、mood、id、scale、locale）以 sync 規則對照；
-// 啟動規則由下方的專門測試覆蓋。
+// 各 key 舊呼叫點的解析運算式，逐字照抄作為對照 oracle；startup／sync 分開的 key 以 sync 規則對照。
 const LEGACY_PARSE: Record<StorageKeyName, (raw: string | null) => unknown> = {
   petId: raw => raw || 'aang-airbender',
   petScale: raw => parseFloat(raw || '1'),
@@ -115,8 +111,6 @@ const LEGACY_PARSE: Record<StorageKeyName, (raw: string | null) => unknown> = {
   settingsGroup: raw => (isSettingsGroupId(raw) ? raw : 'general'),
 }
 
-// 舊呼叫點在 storage 丟例外時的值；agentStore 的 key 原本沒有 try/catch（會讓 store 初始化失敗），
-// 現在回退到缺值時的結果。
 const LEGACY_UNAVAILABLE: Partial<Record<StorageKeyName, unknown>> = {
   coachSeen: true,
   historyIntroDismissed: false,
@@ -169,15 +163,12 @@ test('serialize writes the same strings the old call sites wrote', () => {
   assert.equal(STORAGE_KEYS.historyCollapsed.serialize({ agents: true }), '{"agents":true}')
   assert.equal(STORAGE_KEYS.achievementsSeenAt.serialize(1_700_000_000_000), '1700000000000')
   for (const name of names) {
-    // 能寫回的值寫出去再讀回來不變（只讀的 null 例外）。
     const value = STORAGE_KEYS[name].fallback
     if (value === null) continue
     const entry = STORAGE_KEYS[name] as { parse(raw: string | null): unknown, serialize(value: unknown): string }
     assert.deepEqual(entry.parse(entry.serialize(value)), value, name)
   }
 })
-
-// --- helper -------------------------------------------------------------------
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial))

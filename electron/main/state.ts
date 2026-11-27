@@ -89,10 +89,8 @@ export const mainState = {
   pluginPanelViewController: null as PluginPanelViewController | null,
   pluginPanelViewOpenSequence: 0,
   pluginUiMessageGuard: new PluginUiMessageGuard() as PluginUiMessageGuard,
-  // Resize bookkeeping: programmatic setBounds window end, and the last native 'will-resize' (user drag).
   programmaticPluginPanelUntil: 0,
   lastUserPanelResizeAt: 0,
-  // The user's own panel size (persisted), a transient wizard / MCP minimum, and the settle timer.
   panelUserSize: null as { width: number; height: number } | null,
   panelMinimumSize: null as { width: number; height: number } | null,
   panelSizeStore: null as PanelSizeStore | null,
@@ -132,7 +130,6 @@ export const mainState = {
   windowsFullscreenAutoHiddenPet: false,
   windowsFullscreenAutoHiddenPanel: false,
   panelBlurHideHandle: null as ReturnType<typeof setTimeout> | null,
-  // Renderer-reported locks that suspend hide-on-blur: user pin and open modal flows.
   panelPinned: false,
   panelModalOpen: false,
   petCaptureProtectionApplied: null as boolean | null,

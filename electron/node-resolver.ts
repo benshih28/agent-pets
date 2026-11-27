@@ -4,11 +4,8 @@ import * as path from 'node:path'
 const pathWin32 = path.win32
 import { execFile, execFileSync } from 'node:child_process'
 
-// Finds an absolute Node.js executable for hook commands. GUI apps launched from Finder/Dock get a
-// minimal PATH, so a bare "node" silently fails; we ask a login shell (non-interactive first, so
-// rc-file prompts cannot hang us) and fall back to well-known install locations. The result is
-// cached but re-validated on every read, so a removed nvm version is noticed.
-
+// GUI apps launched from Finder/Dock get a minimal PATH, so a bare "node" silently fails.
+// The non-interactive shell is tried first so rc-file prompts cannot hang us.
 export const MIN_NODE_MAJOR = 18
 const CACHE_TTL_MS = 10 * 60 * 1000
 const SHELL_TIMEOUT_MS = 2_000
@@ -32,7 +29,7 @@ export class NodeUnsupportedError extends Error {
 export interface NodeInfo {
   path: string
   version: string | null
-  /** version >= MIN_NODE_MAJOR (or unknown, which we do not block on). */
+  /** An unknown version counts as supported. */
   supported: boolean
 }
 
@@ -43,7 +40,6 @@ export interface NodeResolverDeps {
   runSync(file: string, args: string[], timeoutMs: number, cwd?: string): string
   run(file: string, args: string[], timeoutMs: number, cwd?: string): Promise<string>
   now(): number
-  /** Process working directory; Windows candidates found there are rejected. Defaults to process.cwd(). */
   cwd?(): string
 }
 
@@ -101,8 +97,7 @@ export function createNodeResolver(deps: NodeResolverDeps = defaultNodeResolverD
     return info
   }
 
-  // where.exe searches the current directory before PATH, so it always runs from the system
-  // directory, and candidates in the process cwd or a downloads folder are rejected below.
+  // where.exe searches the current directory before PATH, so it runs from the system directory.
   const windowsSystemDir = (): string => pathWin32.join(deps.env.SystemRoot || deps.env.windir || 'C:\\Windows', 'System32')
 
   const shellInvocations = (): Array<[string, string[], string | undefined]> => {
@@ -134,12 +129,10 @@ export function createNodeResolver(deps: NodeResolverDeps = defaultNodeResolverD
   }
 
   return {
-    /** Cached, validated value only: never spawns a process. */
     peek(): NodeInfo | null {
       return fresh()
     },
 
-    /** Synchronous fallback for callers that cannot await; prefer resolve(). */
     resolveSync(): NodeInfo | null {
       const hit = fresh()
       if (hit) return hit

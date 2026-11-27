@@ -9,10 +9,7 @@ export interface TimelineRow extends HistorySessionTimelineEntry {
   spanMs: number | null
 }
 
-/**
- * 持續時間一律依時間順序算（每筆到下一筆，最後一筆到 endAt），再決定顯示順序。
- * entries 本來就是由舊到新，所以倒序只要反轉一次，不需要排序；key 取自時間順序的索引，翻轉順序時保持穩定。
- */
+/** 持續時間一律依時間順序算再決定顯示順序；key 取自時間順序的索引，翻轉順序時保持穩定。 */
 export function buildTimelineRows(
   entries: readonly HistorySessionTimelineEntry[],
   endAt: number,

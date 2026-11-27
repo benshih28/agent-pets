@@ -12,11 +12,6 @@ import { resolvedTheme } from '@/composables/useTheme'
 import { USER_PANEL_THEME_OWNER } from '@/types/panel-theme-user'
 import { PANEL_THEME_MODES, type PanelThemeMode } from '@/types/panel-theme'
 
-// Settings -> General -> Appearance：精簡且常駐的各模式插件面板主題
-// 狀態、通往所屬插件 Panel themes 區塊的連結，以及固定的一鍵
-// "Restore built-in"（spec §8）。選擇與自訂主題則在
-// Plugins -> <plugin> -> Panel themes 中進行。
-
 const MODE_LABEL: Record<PanelThemeMode, TranslationKey> = { light: 'design.panelTheme.lightSlot', dark: 'design.panelTheme.darkSlot' }
 const { busy, status, error, restoreBuiltIn } = usePanelThemeActions()
 
@@ -38,10 +33,8 @@ const rows = computed(() => PANEL_THEME_MODES.map(mode => {
   return { mode, text, ref: slot?.status === 'active' ? slot.ref : null }
 }))
 const anySlotSet = computed(() => Boolean(panelThemeState.value?.slots.light.ref || panelThemeState.value?.slots.dark.ref))
-// 「開啟插件設定」只指向插件（我的主題不是插件，在下方的「我的主題」卡片管理）。
 const openTarget = computed(() => panelThemeSettingsTarget(panelThemeState.value))
 
-/** 「自訂…」：正在用的是我的主題就編輯它；是插件主題就以它為起點建立新主題；否則從內建開始。 */
 function customize(): void {
   const active = rows.value.find(row => row.mode === resolvedTheme.value)?.ref ?? null
   if (active?.pluginId === USER_PANEL_THEME_OWNER) openPanelThemeEditor(active.themeId)

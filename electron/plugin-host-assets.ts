@@ -1,8 +1,6 @@
 import type { PluginProtocolAssets } from './plugin-protocol.ts'
 import { PLUGIN_COMMAND_ID_PATTERN, PLUGIN_ID_PATTERN } from '../src/types/id-patterns.ts'
 
-// Worker 宿主的原始碼是字串；插件 id 與命令 id 規則以 RegExp 字面值內插進去，與主程序同一份來源。
-
 export const pluginHostAssets: PluginProtocolAssets = {
   'index.html': '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src agent-pets://plugin; worker-src agent-pets://plugin; connect-src \'none\'; img-src agent-pets://plugin; style-src agent-pets://plugin; frame-src \'none\'; object-src \'none\'; base-uri \'none\'; form-action \'none\'"></head><body><script type="module" src="agent-pets://plugin/_host/host.js"></script></body></html>',
   'host.js': String.raw`

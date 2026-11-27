@@ -1,6 +1,4 @@
-/** 設定頁「重設成長資料」與「資料庫整理」兩個維護操作的共用契約。 */
-
-/** 主程序發出的一次性重設 token 的有效時間；對話框按下確認後才會 arm。 */
+/** 一次性重設 token 的有效時間；對話框按下確認後才會 arm。 */
 export const GROWTH_RESET_TOKEN_TTL_MS = 30_000
 
 export type GrowthResetArmResult =
@@ -17,7 +15,6 @@ export interface DbMaintenanceSuccess {
   beforeBytes: number
   afterBytes: number
   freedBytes: number
-  /** 保留期清理刪掉的歷史／活動／帳本列數。 */
   prunedRows: number
 }
 

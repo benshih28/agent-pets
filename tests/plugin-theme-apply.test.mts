@@ -4,8 +4,6 @@ import { createPluginThemeApplier, type PluginThemeDocument } from '../electron/
 import { buildPluginThemeSnapshot } from '../electron/plugin-theme-tokens.ts'
 import { PLUGIN_THEME_TOKENS } from '../src/types/plugin-theme.ts'
 
-// M5：插件頁面的 `--ap-*` 在頁面的第一個 script 前就生效（preload 執行時 <html> 還不存在）。
-
 function styleTarget() {
   const values = new Map<string, string>()
   return { values, setProperty: (name: string, value: string) => { values.set(name, value) } }

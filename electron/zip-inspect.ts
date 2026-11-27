@@ -1,30 +1,12 @@
 import { inflateSync } from 'fflate'
 
-// Single ZIP reader for untrusted sprite kits. inspectZipArchive() reads only
-// the end-of-central-directory record, the central directory and each local
-// header (O(entries), no inflation); extractZipEntry() then inflates exactly
-// the bytes that inspection described. Using one parser for both steps is the
-// point: a second parser (e.g. fflate's unzipSync) can pick a different EOCD
-// or follow a ZIP64 locator and extract files the pre-scan never saw.
-// Rejected before anything is inflated:
-//   - more than one EOCD signature, a ZIP64 locator, a central directory that
-//     does not end exactly at the EOCD, or trailing bytes after the comment
-//   - multi-disk / ZIP64 / encrypted / unknown-method archives
-//   - local headers that disagree with their central record
-//   - symlink and reparse-point entries
-//   - names that are not valid UTF-8 or contain control characters
-//   - absolute, drive-letter, backslash or ".." names (zip-slip), even though
-//     callers never use entry names as output paths
-//   - duplicate names (case-insensitive, NFC) that different parsers resolve differently
-//   - overlapping or out-of-bounds entries (the "overlapping files" zip bomb)
-//   - per-entry and whole-archive compression ratios typical of zip bombs
+// One parser for both inspection and extraction is the point: a second parser (e.g. fflate's unzipSync)
+// can pick a different EOCD or follow a ZIP64 locator and extract files the pre-scan never saw.
 
 export interface ZipInspectLimits {
-  /** Maximum central-directory records, directories and metadata included. */
   maxEntries: number
-  /** Maximum declared uncompressed bytes across every entry. */
   maxTotalUncompressedBytes: number
-  /** Maximum uncompressed/compressed ratio for an entry above `ratioCheckMinBytes`. */
+  /** Applies to entries above `ratioCheckMinBytes`. */
   maxCompressionRatio: number
   ratioCheckMinBytes: number
 }
@@ -44,14 +26,12 @@ export type ZipInspectError =
   | 'checksum_mismatch'
 
 export interface ZipEntryInfo {
-  /** The name decoded as UTF-8 (validated). */
   name: string
   compressedSize: number
   uncompressedSize: number
   directory: boolean
   method: number
   crc32: number
-  /** Offset of the entry's data in the archive, from its validated local header. */
   dataOffset: number
 }
 
@@ -87,9 +67,8 @@ function u32(bytes: Uint8Array, offset: number): number {
 }
 
 function findEndOfCentralDirectory(bytes: Uint8Array): number {
-  // Take the LAST signature (what fflate and most readers use) and require its
-  // comment to end exactly at EOF. A fake EOCD hidden inside the comment of a
-  // real one is therefore the one we see, and its length check fails.
+  // Take the LAST signature (what fflate and most readers use) and require its comment to end exactly at EOF,
+  // so a fake EOCD hidden inside a real one's comment fails the length check.
   const lowest = Math.max(0, bytes.length - EOCD_MIN_SIZE - MAX_COMMENT_SIZE)
   for (let offset = bytes.length - EOCD_MIN_SIZE; offset >= lowest; offset -= 1) {
     if (u32(bytes, offset) === EOCD_SIGNATURE) {
@@ -109,10 +88,8 @@ function containsSignature(bytes: Uint8Array, start: number, end: number, signat
 const utf8 = new TextDecoder('utf-8', { fatal: true })
 
 function decodeName(bytes: Uint8Array): string | null {
-  // Archivers such as macOS Archive Utility write UTF-8 without setting the
-  // language-encoding flag, so the flag is not required; the bytes must still
-  // be valid UTF-8. Legacy code pages (CP437, Big5, Shift-JIS) are rejected
-  // because their meaning depends on the reader's locale.
+  // macOS Archive Utility writes UTF-8 without the language-encoding flag, so the flag is not required;
+  // legacy code pages are rejected because their meaning depends on the reader's locale.
   try {
     const name = utf8.decode(bytes)
     return name.length > 0 && !CONTROL_CHARACTERS.test(name) ? name : null
@@ -206,14 +183,10 @@ export function inspectZipArchive(bytes: Uint8Array, limits: ZipInspectLimits): 
     totalCompressed += compressedSize
     if (totalUncompressed > limits.maxTotalUncompressedBytes) return { ok: false, error: 'total_size_exceeded' }
 
-    // The local header carries its own name/extra lengths; the data range it
-    // describes must stay inside the archive, before the central directory,
-    // and must not be shared with another entry.
     if (localOffset + LOCAL_HEADER_SIZE > centralOffset || u32(bytes, localOffset) !== LOCAL_SIGNATURE) {
       return { ok: false, error: 'invalid_archive' }
     }
-    // The local header must describe the same entry as the central record:
-    // flags, method, name bytes and (unless a data descriptor follows) sizes and CRC.
+    // The local header must describe the same entry as the central record.
     const crc32 = u32(bytes, cursor + 16)
     const localFlags = u16(bytes, localOffset + 6)
     const localNameLength = u16(bytes, localOffset + 26)
@@ -271,12 +244,7 @@ export type ZipExtractResult =
   | { ok: true; data: Uint8Array }
   | { ok: false; error: 'invalid_archive' | 'checksum_mismatch' }
 
-/**
- * Inflates one entry returned by inspectZipArchive() from the same archive
- * bytes. The output buffer is preallocated from the declared size (+1 byte so
- * an over-long stream is detected rather than silently truncated), then the
- * exact length and CRC-32 are verified.
- */
+// The output buffer is declared size + 1 byte so an over-long stream is detected rather than silently truncated.
 export function extractZipEntry(archive: Uint8Array, entry: ZipEntryInfo): ZipExtractResult {
   if (entry.directory || entry.dataOffset + entry.compressedSize > archive.length) return { ok: false, error: 'invalid_archive' }
   const compressed = archive.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize)

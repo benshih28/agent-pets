@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/Icon.vue'
 
-// A compact on/off chip for global quick switches (notifications, DND, sound).
-// Exposes switch semantics (role=switch + aria-checked) and shows state with an
-// icon and text, not colour alone. When another setting overrides it, pass
-// `overridden` plus a reason so the chip reads as disabled but explained.
 const props = defineProps<{
   label: string
-  /** Visible state text, e.g. "On" / "Off". */
   stateLabel: string
   icon: string
-  /** Icon shown while off (defaults to the on icon). */
   iconOff?: string
   overridden?: boolean
   overriddenLabel?: string

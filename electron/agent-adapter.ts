@@ -34,16 +34,10 @@ export interface AdapterInspection {
 
 export interface AgentAdapterOperations {
   inspect(id: AgentAdapterId): Promise<AdapterInspection>
-  /** Resolves once the agents' config folders are known (login-shell lookup); install and uninstall wait for it. */
   ready?(): Promise<void>
-  /** Async preconditions (e.g. resolving Node.js) that must pass before install writes anything. */
   prepare?(target: AdapterInstallTarget): Promise<void>
   install(target: AdapterInstallTarget): InstallReport | void | Promise<InstallReport | void>
   uninstall(target: AdapterInstallTarget): void | Promise<void>
-  /**
-   * Runtime capability projection. Claude Code answers permissions only while the user has
-   * turned that on, so its reported capability follows the main-process preference.
-   */
   capabilities?(id: AgentAdapterId, base: Readonly<AgentCapabilities>): Readonly<AgentCapabilities>
 }
 
@@ -102,7 +96,6 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
           report = await operations.install(definition.installTarget) ?? report
         }
       } catch (error) {
-        // Keep the failure structured; the IPC layer turns this into a per-adapter result.
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
           installOutcome: failedOutcome(definition.id, error),
         })
@@ -128,7 +121,6 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
     normalize: async (input, _ctx, receivedAt) => {
       const normalized = normalizeAgentStatusEvent(input, receivedAt)
       if (!normalized.ok) return normalized
-      // 有家族的 adapter 只收自己家族的來源（查來源 registry，O(1)）；generic-http 沒有家族，什麼來源都收。
       if (definition.family !== null && familyOfSource(normalized.event.source) !== definition.family) {
         return { ok: false, error: 'source_not_supported' }
       }
@@ -142,7 +134,6 @@ function createAdapter(definition: AgentAdapterDefinition, operations: AgentAdap
 
 const CLAUDE_RESPOND_MODES = Object.freeze(['allow_once', 'deny'] as const)
 
-/** Claude Code's capability while answering from the pet is on; every other adapter is unchanged. */
 export function projectAdapterCapabilities(
   id: AgentAdapterId,
   base: Readonly<AgentCapabilities>,
@@ -211,9 +202,7 @@ export function createAgentAdapterRegistry(operations: AgentAdapterOperations = 
       const requestedId = raw.adapterId
       if (requestedId !== undefined) {
         if (!isAgentAdapterId(requestedId)) return { ok: false, error: 'unknown_adapter' }
-        // `/v1/events` is a generic local ingress. A caller may explicitly
-        // opt into the observe-only adapter, but cannot self-assert a
-        // built-in adapter with stronger capabilities.
+        // `/v1/events` callers may opt into the observe-only adapter but cannot self-assert a stronger built-in adapter.
         if (requestedId !== 'generic-http') return { ok: false, error: 'adapter_claim_not_allowed' }
         return byId.get(requestedId)!.normalize(input, context(), receivedAt)
       }

@@ -6,7 +6,6 @@ export interface PluginSkinAvailabilitySource {
   skinIds: readonly string[]
 }
 
-/** Returns skin pet ids only when both the global switch and plugin are enabled. */
 export function availablePluginSkinPetIds(
   plugins: readonly PluginSkinAvailabilitySource[],
   pluginsEnabled: boolean,

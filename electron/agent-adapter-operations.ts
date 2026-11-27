@@ -24,13 +24,11 @@ import {
   uninstallIntegration,
 } from './setup.ts'
 
-// `code` is `<check id>.<status>`; the renderer localizes it (onboarding.check.*) and the English
-// message is only a fallback for unknown codes.
+// `code` is localized by the renderer; `message` is only a fallback for unknown codes.
 function check(id: string, status: 'pass' | 'warn' | 'fail', message: string) {
   return { id, status, code: `${id}.${status}`, message }
 }
 
-// 讀一次、parse 一次：hook 是否已設定與它指向的 Node 都從同一份內容判斷。
 async function readHookConfig(settingsPath: string, expectedArg: string): Promise<{ configured: boolean, root: Record<string, unknown> | null }> {
   const raw = await readFileAsync(settingsPath)
   if (!raw) return { configured: false, root: null }
@@ -90,7 +88,6 @@ async function inspectOpenCode(): Promise<AdapterInspection> {
   ])
   const outdated = cliOutdated || desktopOutdated
   const [presence, configDir] = await Promise.all([agentPresence(), agentConfigDirStatus('opencode')])
-  // Either side is enough: most people use only the CLI or only the Desktop app.
   const health = !installed ? 'needs_install' : outdated ? 'degraded' : 'ready'
   return {
     installed,
@@ -169,7 +166,6 @@ async function inspectClaudeCode(): Promise<AdapterInspection> {
 }
 
 export interface AgentAdapterOperationsOptions {
-  /** Main-process preference: whether Claude Code permissions may be answered from the pet. */
   claudePermissionRespondEnabled?: () => boolean
 }
 

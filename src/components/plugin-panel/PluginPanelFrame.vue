@@ -20,12 +20,11 @@ const slow = ref(false)
 let slowTimer: ReturnType<typeof setTimeout> | null = null
 
 const name = computed(() => (panelViewPlugin.value ? pluginName(panelViewPlugin.value) : ''))
-// 外框標題優先使用 manifest 的 panelView.title，副標才是插件名稱與版本。
 const title = computed(() => panelViewPlugin.value?.manifest?.contributes.panelView?.title[locale.value] || name.value)
 const maximizeLabel = computed(() => t(panelViewMaximized.value ? 'pluginPanelRestore' : 'pluginPanelMaximize'))
 const maximizeTitle = computed(() => (panelViewMaximized.value ? `${maximizeLabel.value} (Esc)` : maximizeLabel.value))
 
-// 原生面板檢視在內容繪製前是透明的，這裡的載入提示會顯示在它底下；超過 5 秒提示可取消。
+// 原生面板檢視在內容繪製前是透明的，載入提示會顯示在它底下。
 function resetSlowTimer(): void {
   slow.value = false
   if (slowTimer) clearTimeout(slowTimer)

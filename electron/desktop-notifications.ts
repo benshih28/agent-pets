@@ -38,7 +38,6 @@ interface DesktopNotificationServiceOptions {
   logFilePath: string
   getPreferences: () => DesktopPreferences
   isAppFocused: () => boolean
-  /** `target` is set only for a waiting-permission / waiting-input notification about one session. */
   onNotificationClick: (target?: NotificationTarget) => void
   onAttentionChanged: (summary: AttentionSummary) => void
   batchWindowMs?: number
@@ -55,8 +54,6 @@ export class DesktopNotificationService {
   private batchTimer: ReturnType<typeof setTimeout> | null = null
   private readonly attention = new AttentionTracker()
   private lastAttentionKey = ''
-  // Newest notification per key: a repeat for the same session replaces the old
-  // one instead of stacking in the notification centre.
   private readonly shown = new Map<string, Notification>()
   private dndMissed = 0
   private logRecords: NotificationLogRecord[] | null = null
@@ -68,8 +65,7 @@ export class DesktopNotificationService {
   }
 
   handleEvent(event: AgentStatusEvent): void {
-    // Attention is state-based and independent of whether a notification is
-    // shown, so DND / cooldown / focus never change what the tray reports.
+    // Attention is independent of whether a notification is shown: DND / cooldown / focus must not change the tray.
     if (this.attention.observeEvent(event)) this.emitAttention()
     const candidate = classifyNotification(event)
     if (!candidate) return
@@ -108,7 +104,6 @@ export class DesktopNotificationService {
     )
   }
 
-  /** Notifications silenced since DND started; resets the counter. */
   takeDndMissedCount(): number {
     const missed = this.dndMissed
     this.dndMissed = 0
@@ -119,7 +114,6 @@ export class DesktopNotificationService {
     this.deliver(t('permission.dndEndedTitle'), t('permission.dndEndedBody', { count: missed }), 'summary', 1)
   }
 
-  /** Active broker requests; removes the double count with their status events. */
   setPermissionRequests(requests: ReadonlyArray<AttentionRequestLike>): void {
     this.attention.setRequests(requests)
     this.emitAttention()
@@ -219,7 +213,6 @@ export class DesktopNotificationService {
     }
     this.logRecords.push({ at: Date.now(), kind, outcome, count })
     if (this.logRecords.length > MAX_LOG_RECORDS) this.logRecords.splice(0, this.logRecords.length - MAX_LOG_RECORDS)
-    // Debounced: event bursts no longer re-read and rewrite the file each time.
     if (!this.logTimer) {
       this.logTimer = setTimeout(() => this.flushLog(), LOG_FLUSH_DELAY_MS)
       this.logTimer.unref?.()
@@ -233,8 +226,7 @@ export class DesktopNotificationService {
     try {
       writeJsonAtomic(this.options.logFilePath, this.logRecords)
     } catch {
-      // Notification logging is diagnostic only. A read-only/corrupt userData
-      // directory must never break event ingestion or Agent state updates.
+      // Diagnostic only: a bad userData directory must never break event ingestion.
     }
   }
 }

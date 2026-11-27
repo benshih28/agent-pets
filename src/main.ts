@@ -6,7 +6,6 @@ import App from '@/App.vue'
 import RendererErrorBoundary from '@/components/RendererErrorBoundary.vue'
 import { initTheme } from '@/composables/useTheme'
 
-// 面板視窗載入 #panel；其餘（寵物視窗）用寵物外觀（useTheme.ts）。
 initTheme(window.location.hash === '#panel' ? 'panel' : 'pet')
 if (import.meta.env.MODE === 'gpu-safe') document.documentElement.dataset.gpuSafe = ''
 
@@ -16,7 +15,6 @@ function reportError(kind: ErrorKind, error: unknown): void {
   try {
     const message = error instanceof Error ? error.message : String(error)
     const stack = error instanceof Error ? error.stack : undefined
-    // Main redacts and rate-limits before anything is written to disk.
     window.electronAPI?.reportRendererError?.({ kind, message, stack })
   } catch {
     // Reporting must never throw back into the failing code path.

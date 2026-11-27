@@ -5,9 +5,6 @@ import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 import { createPetWindowModeService, type PetWindowModeServiceState } from '../electron/main/pet-window-mode-service.ts'
 import { EDGE_DWELL_MS, EDGE_REDOCK_AFTER_MS, edgeWindowBounds, miniWindowBounds, type WindowBounds } from '../electron/pet-window-mode.ts'
 
-// 階段 11 之前在 electron/main/runtime.ts 內的寵物視窗模式行為，改由抽出的服務搭配
-// 假螢幕、假視窗與 node:test 假計時器驗證。
-
 const workArea = { x: 0, y: 0, width: 1920, height: 1080 }
 const display = fakeDisplay(7, { ...workArea }, { ...workArea })
 const centre: WindowBounds = { x: 800, y: 500, width: 260, height: 350 }
@@ -23,7 +20,6 @@ function fakeWindow(label: string, log: string[], bounds: WindowBounds) {
     setIgnoreMouseEvents: (value: boolean) => log.push(`${label}.ignoreMouse:${value}`),
     isDestroyed: () => destroyed,
     destroy: () => { destroyed = true },
-    /** 模擬使用者拖曳：不經過服務直接改 bounds。 */
     move: (next: WindowBounds) => { current = { ...next } },
     sent,
     webContents: fakeWebContents({
@@ -231,7 +227,6 @@ test('saved window state prefers its display id, then its bounds, then the prima
   assert.equal(service.displayForSavedState(null).id, 7)
 })
 
-// restore()：建立視窗前還原上次模式（原 createPetWindow 內的行為）。
 const restoreOptions = { fallbackSize: { width: 250, height: 232 }, primaryWorkArea: { ...workArea } }
 
 test('restore without a saved state docks the default size at the primary bottom-right', t => {
@@ -246,7 +241,6 @@ test('restore without a saved state docks the default size at the primary bottom
 
 test('restore uses the persisted size and falls back per missing dimension', t => {
   const { service } = setup(t)
-  // 存檔缺寬度：寬度取預設，高度取存檔值（經 clampPetWindowDimension）。
   const bounds = service.restore({ x: 400, y: 300, height: 300 }, restoreOptions)
   assert.equal(bounds.x, 400)
   assert.equal(bounds.y, 300)

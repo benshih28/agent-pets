@@ -96,7 +96,6 @@ test('one active theme per mode and settings navigation targets the owning plugi
   assert.equal(panelThemeSettingsTarget(state({ light: { ref: null, status: 'builtin' }, dark: { ref: null, status: 'builtin' } })), 'theme-pack')
   assert.equal(panelThemeSettingsTarget({ ...current, themes: [] }), null)
   assert.equal(panelThemeSettingsTarget(null), null)
-  // 我的主題不是插件：使用中也不會被當成「開啟插件設定」的目的地。
   const mine = { ...current.themes[0]!, ref: { pluginId: '_user', themeId: 'u-0123456789ab' } }
   const userSlots = { light: { ref: mine.ref, status: 'active' as const }, dark: { ref: null, status: 'builtin' as const } }
   assert.equal(panelThemeSettingsTarget({ ...current, slots: userSlots, themes: [mine, ...current.themes] }), 'theme-pack')
@@ -123,13 +122,10 @@ test('no protected regions: every surface reads the semantic layer derived from 
   const tokens = readFileSync('src/styles/tokens.css', 'utf8')
   assert.doesNotMatch(tokens, /host-protected/)
   for (const property of PANEL_THEME_CSS_PROPERTIES.filter(name => name !== '--panel-theme-background')) {
-    // 插件頁面上先讀對應的 --ap-*（App 視窗沒有 --ap-*，一律退回內建值）。
     assert.match(tokens, new RegExp(`^  ${property}: (?:var\\(--ap-[a-z0-9-]+, )?var\\(--builtin${property.slice(1)}\\)\\)?;`, 'm'), `${property} aliases the frozen copy`)
   }
-  // 語意層在 :root 衍生，並在預覽上重新解析（預覽帶入另一組色盤）。
   assert.match(tokens, /^:root,\n\.panel-theme-preview \{\n {2}--color-bg: var\(--organic-bg\);/m)
   assert.doesNotMatch(readFileSync('src/components/StatusPanel.css', 'utf8'), /--surface-panel:/)
-  // 面板主題套在面板視窗的 <html>；寵物視窗不使用這個 composable。
   assert.match(readFileSync('src/composables/usePanelTheme.ts', 'utf8'), /const element = document\.documentElement/)
   assert.doesNotMatch(readFileSync('src/components/DesktopPet.vue', 'utf8'), /usePanelTheme/)
 })
@@ -154,7 +150,6 @@ test('previews resolve shadow and sheen strengths from the previewed mode, and t
   const dark = strengths(block(":root[data-theme='dark'],\n.panel-theme-preview[data-mode='dark']"))
   assert.deepEqual(Object.keys(light).sort(), Object.keys(dark).sort())
   assert.equal(Object.keys(light).length, 14)
-  // 1.11.5：深色泡泡高光 10%、膠囊陰影 25%；淺色泡泡高光 70%、膠囊陰影 16%。
   assert.deepEqual([light['--pet-sheen-strength'], dark['--pet-sheen-strength']], ['70%', '10%'])
   assert.deepEqual([light['--pet-status-shadow-strength'], dark['--pet-status-shadow-strength']], ['16%', '25%'])
   assert.match(block(":root[data-theme='dark'],\n.panel-theme-preview[data-mode='dark']"), /--text-shadow-panel: 0 1px 2px color-mix\(in srgb, var\(--color-shadow\) 55%, transparent\);/)

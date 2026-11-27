@@ -95,7 +95,6 @@ test('quota errors are classified, failures keep the last good reading, and fail
   assert.ok(codexFirst.fetchedAt && !codexFirst.stale)
   assert.equal(first.providers.find(p => p.id === 'claude')!.fetchedAt, undefined)
 
-  // A forced refresh inside the cooldown is answered from cache and says so.
   const throttled = await quota.getQuotaUsage(true, ok)
   assert.ok(throttled.throttled && throttled.throttled.retryInSec >= 1 && throttled.throttled.retryInSec <= 10)
   assert.equal(throttled.updatedAt, first.updatedAt)
@@ -110,7 +109,7 @@ test('a failing provider keeps its previous windows marked stale and failures ex
   ])
   assert.equal(good.providers[0].stale, undefined)
 
-  t.mock.timers.tick(100_000) // past the 90s success TTL
+  t.mock.timers.tick(100_000)
   const failed = await quota.getQuotaUsage(false, async () => [
     { id: 'codex', name: 'Codex', windows: [], error: 'Expired', errorKind: 'expired' },
   ])
@@ -121,7 +120,6 @@ test('a failing provider keeps its previous windows marked stale and failures ex
   assert.deepEqual(provider.windows.map(w => w.remainingPercent), [64])
   assert.equal(provider.fetchedAt, good.providers[0].fetchedAt)
 
-  // An auth failure is cached for 60s (not 10s, not the 90s success TTL).
   t.mock.timers.tick(30_000)
   const stillCached = await quota.getQuotaUsage(false, async () => { throw new Error('should not refetch') })
   assert.equal(stillCached.providers[0].errorKind, 'expired')

@@ -54,10 +54,6 @@ import {
 } from '@/types/panel-theme-user'
 import type { PluginPanelThemeColorKey } from '@/types/plugin'
 
-// 主機繪製的主題編輯器（spec R24）。沒有任何插件程式碼：草稿是一份資料結構，預覽以與面板
-// 相同的已驗證屬性畫出，驗證在主程序（debounce 150 ms，以內容雜湊快取）。存檔與套用只在
-// 「目前的草稿已驗證且全部通過」時可用；關閉前若有未存變更會先確認。
-
 const props = defineProps<{ request: PanelThemeEditorRequest }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -72,14 +68,12 @@ const GROUP_LABEL: Record<string, ThemeEditorKey> = {
   status: 'themeEditor.group.status',
   effects: 'themeEditor.group.effects',
 }
-/** 灰色種子：「空白」起點是中性灰的完整色盤。 */
 const NEUTRAL_SEED = { r: 128, g: 128, b: 128, a: 1 }
 
 const themeActions = usePanelThemeActions()
 const userActions = useUserThemeActions()
 const busy = computed(() => themeActions.busy.value || userActions.busy.value || generating.value)
 
-// --- 草稿 ------------------------------------------------------------------
 function initialDraft(): EditorDraft {
   const record = props.request.id ? userPanelThemes.value.find(theme => theme.id === props.request.id) : undefined
   if (record) return createDraft(record.id, record.name, record.definition)
@@ -89,7 +83,6 @@ function initialDraft(): EditorDraft {
   return createDraft(null, te('themeEditor.defaultName'), definitionFromCatalog({ builtin: builtinPalettes() }, null))
 }
 
-/** 目錄還沒載入時（例如面板剛重新載入）用主機的內建色盤。 */
 function builtinPalettes() {
   return panelThemeState.value?.builtin ?? { light: builtinPanelThemeProperties('light'), dark: builtinPanelThemeProperties('dark') }
 }
@@ -100,7 +93,6 @@ const mode = ref<PanelThemeMode>(resolvedTheme.value)
 const status = ref('')
 const generating = ref(false)
 const confirmingDiscard = ref(false)
-// 種子色從草稿目前的淺色強調色開始，產生的色盤與現況最接近。
 const seed = ref(colorToHex(draft.value.definition.modes.light.colors.accent))
 const startChoice = ref('')
 
@@ -118,13 +110,11 @@ const nameValid = computed(() => {
   return length > 0 && length <= USER_PANEL_THEME_NAME_MAX
 })
 
-// --- 驗證（debounce）---------------------------------------------------------
 const validation = shallowRef<PanelThemeValidation | null>(null)
 const validatedKey = ref('')
-/** 目前草稿的驗證請求失敗（IPC 拒絕或回傳 ok:false）；顯示錯誤與「重試」，而不是一直「檢查中」。 */
 const validationFailed = ref(false)
 let validateTimer: ReturnType<typeof setTimeout> | undefined
-/** 每次排程遞增；回應回來時序號不是最新的就丟掉（較舊草稿的回應可能比新的晚到）。 */
+/** 回應回來時序號不是最新的就丟掉：較舊草稿的回應可能比新的晚到。 */
 let validateSeq = 0
 
 async function runValidation(seq: number): Promise<void> {
@@ -174,7 +164,6 @@ function keyLabel(key: string): string {
   return te(`themeEditor.key.${key}` as ThemeEditorKey)
 }
 
-/** 驗證器的顏色鍵名換成介面名稱；不是顏色鍵（合成的表面）時回傳 null。 */
 function knownKeyLabel(key: string): string | null {
   if ((USER_PANEL_THEME_COLOR_KEYS as readonly string[]).includes(key)) return keyLabel(key)
   return null
@@ -196,7 +185,6 @@ function applySuggested(path: string, value: string | number): void {
   draft.value = commitChange(draft.value, applyFix(draft.value.definition, mode.value, path, value))
 }
 
-// --- 顏色 ------------------------------------------------------------------
 const modeDefinition = computed(() => draft.value.definition.modes[mode.value])
 
 function setColor(key: PluginPanelThemeColorKey, value: string): void {
@@ -210,7 +198,6 @@ function setPetColor(key: UserPanelThemePetStatusKey, value: string): void {
   })
 }
 
-/** 開啟自訂膠囊時以目前色盤為起點（與寵物視窗由色盤衍生的膠囊一致）。 */
 function togglePetStatus(enabled: boolean): void {
   change(definition => {
     const target = definition.modes[mode.value]
@@ -234,7 +221,6 @@ function togglePetStatus(enabled: boolean): void {
   })
 }
 
-// --- 起點與產生器 --------------------------------------------------------------
 const startOptions = computed(() => {
   const options = [
     { value: 'blank', label: te('themeEditor.startBlank') },
@@ -284,7 +270,7 @@ const savedEntry = computed(() => (draft.value.id
   : null))
 const currentImageUrl = computed(() => savedEntry.value?.modes[mode.value]?.userImage?.current?.url ?? null)
 
-/** 以 crossOrigin 載入（主機只對面板來源回 CORS），縮到 ≤ 128 px 後在記憶體中取色。 */
+/** 主機只對面板來源回 CORS，所以以 crossOrigin 載入。 */
 async function readImagePixels(url: string): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
   if (!isPanelThemeAssetUrl(url)) return null
   const image = new Image()
@@ -322,18 +308,16 @@ async function generateFromImage(): Promise<void> {
   }
 }
 
-// --- 存檔、套用、圖片、匯出 ----------------------------------------------------
 async function save(): Promise<string | null> {
   if (!saveEnabled.value) {
     status.value = te('themeEditor.fixFirst')
     return null
   }
-  // 送出的快照。IPC 往返期間輸入框沒有停用，使用者可能繼續修改；存檔完成後只移動基準，
-  // 不覆寫目前的內容與名稱，那些新的修改仍算未儲存（markSaved）。
+  // IPC 往返期間輸入框沒停用：完成後只移動基準，使用者之後的修改仍算未儲存（markSaved）。
   const typedName = name.value
   const saved = { name: typedName.trim(), definition: structuredClone(draft.value.definition) }
   const id = draft.value.id
-  // 既有主題：名稱與內容由主程序一次寫入（同一個 IPC），不會出現只改了名稱、內容卻存失敗的半套狀態。
+  // 名稱與內容在同一個 IPC 寫入，避免只改了名稱、內容卻存失敗。
   const result = id === null
     ? await userActions.run(() => window.electronAPI?.createUserPanelTheme(saved.name, saved.definition), t('design.themeEditor.saved'))
     : await userActions.run(() => window.electronAPI?.updateUserPanelTheme(id, saved.definition, saved.name !== draft.value.baseline.name ? saved.name : undefined), t('design.themeEditor.saved'))
@@ -341,13 +325,11 @@ async function save(): Promise<string | null> {
   const savedId = result.value.id ?? id
   if (!savedId) return null
   draft.value = markSaved(draft.value, savedId, saved)
-  // 只有在往返期間沒有再改名稱時，才把輸入框換成去空白後的名稱。
   if (name.value === typedName) name.value = saved.name
   status.value = t('design.themeEditor.saved')
   return savedId
 }
 
-/** 存好（需要時）再取得目錄裡的參照；套用與匯入圖片都需要主題已存在於主程序。 */
 async function ensureSaved(): Promise<string | null> {
   if (draft.value.id && !isDirty(draft.value)) return draft.value.id
   return save()
@@ -358,7 +340,6 @@ async function apply(modes: readonly PanelThemeMode[]): Promise<void> {
   if (id) await themeActions.applyTheme({ pluginId: USER_PANEL_THEME_OWNER, themeId: id }, modes)
 }
 
-/** 套用前會先存檔，所以未存的草稿也要通過驗證才能套用。 */
 const applyEnabled = computed(() => !busy.value && (saveEnabled.value || (draft.value.id !== null && !isDirty(draft.value))))
 const APPLY_BUTTONS: ReadonlyArray<{ id: string; label: TranslationKey; modes: readonly PanelThemeMode[] }> = [
   { id: 'light', label: 'design.panelTheme.useLight', modes: ['light'] },
@@ -369,7 +350,6 @@ const APPLY_BUTTONS: ReadonlyArray<{ id: string; label: TranslationKey; modes: r
 async function chooseImage(): Promise<void> {
   status.value = te('themeEditor.imageSaveFirst')
   const id = await ensureSaved()
-  // 匯入結果（成功或錯誤）由 themeActions 的狀態與錯誤文字呈現。
   if (id && await themeActions.importImage({ pluginId: USER_PANEL_THEME_OWNER, themeId: id }, mode.value)) status.value = ''
 }
 
@@ -378,7 +358,6 @@ function exportTheme(): void {
   if (id && !isDirty(draft.value)) void userActions.run(() => window.electronAPI?.exportUserPanelTheme(id), t('design.themeEditor.exported'))
 }
 
-// --- 復原、重設、關閉 -----------------------------------------------------------
 function undo(): void {
   draft.value = undoChange(draft.value)
 }
@@ -399,20 +378,17 @@ function discard(): void {
 }
 
 const modeOptions = computed(() => PANEL_THEME_MODES.map(value => ({ value, label: t(MODE_SHORT[value]) })))
-// 兩個模式的預覽共用同一個目錄項目（previewEntry 本身就含兩個模式），只算一次。
 const previewCatalogEntry = computed(() => previewEntry(draft.value.definition, name.value, savedEntry.value))
 const previews = computed(() => PANEL_THEME_MODES.map(value => ({
   mode: value,
   label: te('themeEditor.previewLabel', { mode: t(MODE_NAME[value]) }),
 })))
-// --- 預覽區：可收合；固定在頂端時把它的高度交給 scroll-padding-top ---------------
 const previewOpen = ref(true)
 const previewsRef = ref<HTMLElement | null>(null)
 const stickyHeight = ref(0)
 const editorStyle = computed(() => ({ '--editor-sticky-height': `${stickyHeight.value}px` }))
 let previewsObserver: ResizeObserver | null = null
 
-/** 窄版（容器查詢）時預覽不固定，捲動時不會擋住任何東西。 */
 function measureSticky(): void {
   const element = previewsRef.value
   stickyHeight.value = element && previewOpen.value && getComputedStyle(element).position === 'sticky' ? Math.ceil(element.getBoundingClientRect().height) : 0
@@ -427,7 +403,6 @@ onMounted(async () => {
   previewsObserver = new ResizeObserver(measureSticky)
   if (previewsRef.value) previewsObserver.observe(previewsRef.value)
   await Promise.all([refreshUserPanelThemes(), refreshPanelThemeState()])
-  // 清單在開啟後才載入完成：要編輯的主題那時才找得到。
   if (props.request.id && draft.value.id !== props.request.id) {
     draft.value = initialDraft()
     name.value = draft.value.name

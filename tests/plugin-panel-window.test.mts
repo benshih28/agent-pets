@@ -9,12 +9,10 @@ import {
 
 test('wizard minimum is never persisted as the user size', () => {
   const base = { visible: true, supportsWillResize: true, lastUserResizeAt: 0, programmaticUntil: 0 }
-  // Several resize events from one setBounds (or a min-size clamp): no will-resize, so none is recorded.
   const now = 10_000
   for (const offset of [0, 5, 40, 300]) {
     assert.equal(shouldRecordUserPanelSize({ ...base, now: now + offset, programmaticUntil: now + 500 }), false)
   }
-  // A real drag emits will-resize shortly before each resize.
   assert.equal(shouldRecordUserPanelSize({ ...base, now: now + 100, lastUserResizeAt: now + 80 }), true)
   assert.equal(shouldRecordUserPanelSize({ ...base, now: now + 100, lastUserResizeAt: now + 80, visible: false }), false)
   // Without will-resize (Linux) a resize inside the programmatic window is ours.

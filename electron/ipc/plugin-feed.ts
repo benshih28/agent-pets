@@ -38,7 +38,6 @@ export function registerPluginFeedIpc(deps: PluginFeedIpcDependencies): void {
     return deps.getPluginFeedController()?.unreadCount() ?? 0
   })
   deps.ipcMain.handle(IPC_CHANNELS.pluginBadgesGet, event => {
-    // Read-only: the pet shows badges and the panel's plugin tabs show them too.
     const panel = deps.getPanelWindow()
     deps.assertTrustedIpcSender(event, panel?.webContents && event.sender === panel.webContents ? panel : deps.getPetWindow())
     return deps.getPluginBadgeController()?.list() ?? []

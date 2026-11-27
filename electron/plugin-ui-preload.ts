@@ -26,8 +26,7 @@ function consumeUserActivation(): boolean {
   return userActivation.consume()
 }
 
-// 宿主把 `--ap-*` 放在頁面上（見 plugin-theme-apply.ts）。第一份快照以同步 IPC 取得，所以在頁面的
-// 第一個 script 執行前就生效；之後的變動由推送更新。監聽先註冊，同步取值之後的推送一定比它新。
+// 第一份快照以同步 IPC 取得，才能在頁面第一個 script 前生效；監聽先註冊，所以同步取值之後的推送一定比它新。
 const applyThemeTokens = createPluginThemeApplier(document as unknown as PluginThemeDocument, constructRootThemeSheet)
 ipcRenderer.on(IPC_CHANNELS.pluginPanelThemeChanged, (_event, snapshot: unknown) => applyThemeTokens(snapshot))
 try {

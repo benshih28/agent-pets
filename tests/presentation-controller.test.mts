@@ -65,7 +65,6 @@ test('presentation queue has a bounded depth and status projection is sanitized'
   for (let i = 0; i < PRESENTATION_MAX_CLIENT_REQUESTS; i += 1) {
     assert.equal(controller.submit(`${client}${i}`, { kind: 'say', message: `message-${i}`, ttlMs: 15_000 }).accepted, true)
   }
-  // The global queue cap is exercised with distinct clients to avoid the per-client cap.
   for (let i = PRESENTATION_MAX_CLIENT_REQUESTS; i < PRESENTATION_MAX_QUEUE_DEPTH + 1; i += 1) {
     controller.submit(`${client}${i}`, { kind: 'say', message: `message-${i}`, ttlMs: 15_000 })
   }

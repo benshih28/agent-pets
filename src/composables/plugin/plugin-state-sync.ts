@@ -4,10 +4,7 @@ export type PluginPreferencePatch = Partial<Pick<PluginInstancePreferences, 'ena
 
 type SnapshotLike = Pick<PluginPanelSnapshot, 'plugins'> & { preferences: Pick<PluginPreferences, 'plugins'> }
 
-/**
- * 樂觀更新：先把 patch 套到快照（卡片與偏好表兩處），回傳被覆蓋的舊值，失敗時用來回滾。
- * 只記錄 patch 碰到的欄位，所以排隊中的其他變更不會被整份快照覆寫。
- */
+// 只記錄 patch 碰到的欄位，回滾時才不會覆寫排隊中的其他變更。
 export function applyPreferencePatch(snapshot: SnapshotLike, pluginId: string, patch: PluginPreferencePatch): PluginPreferencePatch {
   const previous: Record<string, unknown> = {}
   const plugin = snapshot.plugins.find(item => item.id === pluginId)
@@ -24,7 +21,6 @@ export function rollbackPreferencePatch(snapshot: SnapshotLike, pluginId: string
   applyPreferencePatch(snapshot, pluginId, previous)
 }
 
-/** 以主行程回傳的完整偏好為準，同步到快照，不必整頁重新抓取。 */
 export function mergePreferencesResult(snapshot: SnapshotLike & { preferences: PluginPreferences }, preferences: PluginPreferences): void {
   snapshot.preferences = preferences
   for (const plugin of snapshot.plugins) {
@@ -33,7 +29,7 @@ export function mergePreferencesResult(snapshot: SnapshotLike & { preferences: P
   }
 }
 
-/** 依 key 串行執行：同一個 key 的工作一次一個、依序完成，不同 key 互不等待；前一個失敗不會卡住後面。 */
+// 前一個任務失敗不會卡住同 key 後面的任務。
 export function createSerialQueue() {
   const tails = new Map<string, Promise<unknown>>()
   return function enqueue<T>(key: string, task: () => Promise<T>): Promise<T> {

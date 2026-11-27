@@ -1,26 +1,19 @@
-// Plugin 面板各 composable 共用的依賴：忙碌範圍、refresh 協調、競態守衛與錯誤／成功通知。
-// 控制器建立一份後以參數傳給各 composable；composable 之間不互相直接改對方的 ref，
-// 需要跨功能的動作一律經過這裡的介面或控制器傳入的回呼。
 import { computed, ref, type ComputedRef } from 'vue'
 import { t, type TranslationKey } from '@/i18n'
 import { lookupOwn } from '@/utils/own-lookup'
 import type { PluginNotifyInput, PluginToastAction } from '@/composables/plugin/usePluginNotify'
-
-// --- 忙碌範圍 -----------------------------------------------------------------
 
 export function pluginScope(pluginId: string): string {
   return `plugin:${pluginId}`
 }
 
 export interface PluginBusyScopes {
-  /** 非單一插件範圍（global / catalog / install）是否有工作進行中；各插件卡片請用 pluginBusy(id)。 */
   busy: ComputedRef<boolean>
   isBusy(scope: string): boolean
   pluginBusy(pluginId: string): boolean
   setBusy(scope: string, on: boolean): void
 }
 
-// 忙碌狀態依範圍計數（global / catalog / install / plugin:{id}），UI 只鎖住相關控制項。
 export function createBusyScopes(): PluginBusyScopes {
   const busyCounts = ref(new Map<string, number>())
   const busy = computed(() => [...busyCounts.value.keys()].some(scope => !scope.startsWith('plugin:')))
@@ -44,12 +37,7 @@ export function createBusyScopes(): PluginBusyScopes {
   return { busy, isBusy, pluginBusy, setBusy }
 }
 
-// --- Refresh 協調 --------------------------------------------------------------
-
-/**
- * 進行中又被呼叫時不重複送出，而是排成「結尾再跑一次」（以 trailing 參數）。
- * 被排隊的呼叫立即返回，不等結尾那一次完成（面板快照一直是這個語意）。
- */
+// 排隊中的呼叫立即返回，不等結尾那一次完成。
 export function createQueuedRefresh<Options>(
   run: (options?: Options) => Promise<void>,
   trailing: Options,
@@ -74,11 +62,7 @@ export function createQueuedRefresh<Options>(
   }
 }
 
-/**
- * 同一時間的重複請求合併：進行中再被呼叫時，所有後到的呼叫共用「結尾再跑一次」，
- * 並等到那一次完成才返回，所以呼叫者 await 之後看到的一定是最新結果，
- * 而且較舊的回應不會在較新的之後才寫入（一次只有一個請求在途中）。
- */
+// 後到的呼叫共用同一次結尾請求並等它完成；一次只有一個請求在途，舊回應不會晚於新回應寫入。
 export function createCoalescedRefresh(run: () => Promise<void>): () => Promise<void> {
   let inFlight: Promise<void> | null = null
   let trailing: Promise<void> | null = null
@@ -99,19 +83,14 @@ export function createCoalescedRefresh(run: () => Promise<void>): () => Promise<
   }
 }
 
-// --- 競態守衛 -----------------------------------------------------------------
-
 export interface LatestRequest {
-  /** 開始一個新請求並作廢先前的所有請求，回傳新請求的序號。 */
   next(): number
-  /** 作廢所有進行中的請求（例如關閉或卸載）。 */
   invalidate(): void
-  /** 目前最新的序號；請求開始時記下，回應回來時以 isCurrent 判斷是否仍有效。 */
   current(): number
   isCurrent(sequence: number): boolean
 }
 
-/** 非同步回應只在它仍是最新請求時才寫入狀態，較舊的回應不得覆蓋較新的狀態。 */
+// 較舊的回應不得覆蓋較新的狀態。
 export function createLatestRequest(): LatestRequest {
   let sequence = 0
   return {
@@ -122,9 +101,7 @@ export function createLatestRequest(): LatestRequest {
   }
 }
 
-// --- 錯誤與成功通知 -------------------------------------------------------------
-
-// 主程序回傳的錯誤碼 → 面板文字。以 lookupOwn 查表，`constructor` 之類的原型名稱不會被當成 key。
+// 以 lookupOwn 查表，`constructor` 之類的原型名稱不會被當成 key。
 const PLUGIN_ERROR_COPY = {
   disabled: 'pluginPanelUnavailable',
   host_unavailable: 'pluginCommandHostUnavailable',
@@ -170,7 +147,7 @@ const PLUGIN_ERROR_COPY = {
 export interface PluginPanelFeedback {
   notify(input: PluginNotifyInput): number
   localizedError(code: string): string
-  /** 錯誤一律只帶錯誤碼（與開發者模式安裝的已清理提示），不帶使用者輸入的值。 */
+  /** 只帶錯誤碼與已清理的提示，不帶使用者輸入的值。 */
   setError(code: string, retry?: () => void, diagnostic?: string): void
   setStatus(text: string, action?: PluginToastAction): void
 }
@@ -188,7 +165,6 @@ export function createPluginPanelFeedback(
     notify({
       tone: 'error',
       text: localizedError(code),
-      // 開發者模式安裝會從主程序帶入經清理的作者提示（<= 200 字元）。
       detail: diagnostic ? `${code}: ${diagnostic}` : code,
       action: retry ? { label: t('plugins.retry'), run: retry } : undefined,
     })

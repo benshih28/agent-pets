@@ -1,4 +1,3 @@
-// Pure geometry for a horizontally scrolling tab bar.
 export interface ScrollMetrics {
   scrollLeft: number
   clientWidth: number
@@ -12,7 +11,6 @@ export interface TabRect {
 
 const EPSILON = 1
 
-/** Which edges have hidden content (drives the fade masks and the ‹ › buttons). */
 export function overflowState(metrics: ScrollMetrics): { overflowing: boolean; start: boolean; end: boolean } {
   const max = Math.max(0, metrics.scrollWidth - metrics.clientWidth)
   const overflowing = max > EPSILON
@@ -23,11 +21,7 @@ export function overflowState(metrics: ScrollMetrics): { overflowing: boolean; s
   }
 }
 
-/**
- * The scrollLeft that brings a tab fully into view, keeping `padding` clear of
- * the edges (room for the fade masks). Returns the current scrollLeft when the
- * tab is already visible. `tab.left` is relative to the scroll content origin.
- */
+/** `tab.left` is relative to the scroll content origin. */
 export function scrollLeftToReveal(
   metrics: Pick<ScrollMetrics, 'scrollLeft' | 'clientWidth' | 'scrollWidth'>,
   tab: TabRect,
@@ -42,16 +36,11 @@ export function scrollLeftToReveal(
   return Math.min(max, Math.max(0, Math.round(next)))
 }
 
-/** One ‹ / › press scrolls by most of the visible width. */
 export function pageScrollDelta(clientWidth: number, direction: -1 | 1): number {
   return direction * Math.max(1, Math.round(clientWidth * 0.75))
 }
 
-/**
- * Horizontal delta for a wheel event over the tab bar, or null to leave it alone.
- * Trackpads already send deltaX (native scrolling handles it). A mouse wheel or
- * shift+wheel only sends deltaY, which is redirected when the bar overflows.
- */
+/** Trackpads already send deltaX (native scrolling handles it); a mouse wheel only sends deltaY, which is redirected. */
 export function wheelScrollDelta(
   event: { deltaX: number; deltaY: number; shiftKey?: boolean },
   overflowing: boolean,

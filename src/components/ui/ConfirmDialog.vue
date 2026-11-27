@@ -3,12 +3,7 @@ import { t } from '@/i18n'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 
-// Replaces window.confirm(). The native dialog steals focus from the panel,
-// which the main process reads as a blur and hides the panel out from under
-// the confirmation; it also renders as a Windows message box on one platform
-// and a macOS sheet on the other, so the same flow looked like two different
-// products. Behaviour (Esc, focus trap, focus restore, inert background) is
-// provided by Dialog / useDialogA11y.
+// Not window.confirm(): the native dialog steals focus, which the main process reads as a blur and hides the panel.
 withDefaults(defineProps<{
   open: boolean
   title: string

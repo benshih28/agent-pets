@@ -1,14 +1,10 @@
-// Tracks what currently needs the user — not what has happened. Entries are
-// removed when the underlying state clears, so the tray count can go down on
-// its own and cannot double count one permission wait that is visible both as
-// a broker request and as an agent status event.
+// Entries are removed when the underlying state clears, so one permission wait visible as both a broker request and a status event is never double counted.
 
 export interface AttentionSummary {
   /** Pending broker requests that can be answered in Agent Pets. */
   permission: number
   /** Permission waits that must be answered in the agent's own tool. */
   external: number
-  /** Sessions waiting for the user to type something. */
   input: number
   total: number
 }
@@ -37,7 +33,6 @@ export class AttentionTracker {
   private readonly waiting = new Map<string, { kind: 'input' | 'permission'; at: number }>()
   private requests: AttentionRequestLike[] = []
 
-  /** Returns true when the tracked set changed. */
   observeEvent(event: AttentionEventLike, now = Date.now()): boolean {
     if (event.originalEvent === 'AgentPetsIntegrationTest') return false
     const key = `${event.source}:${event.sessionId}`

@@ -15,8 +15,6 @@ import {
   petWindowWidth,
 } from '../src/utils/pet-window-size.ts'
 
-// 重構前（1.12.5）的公式原樣抄在這裡，當作行為基準：主行程 createPetWindow() 的冷啟動預設值、
-// agentStore 的 scaledW 與 pet-window-height.ts 的 petWindowHeight()。抽成共用模組後必須逐值相同。
 const legacy = {
   coldStartWidth: (scale: number) => Math.max(Math.round(250 * scale), 260),
   coldStartHeight: (scale: number) => Math.round(232 * scale) + 190,
@@ -89,7 +87,6 @@ test('single pet: each extra status line adds one thin row, scaled with the spri
   assert.equal(petWindowHeight(0, false, 1), 422)
   assert.equal(petWindowHeight(1, false, 1), 422)
   assert.equal(petWindowHeight(3, false, 1), 466)
-  // tooltip 留白不隨寵物大小縮放。
   assert.equal(petWindowHeight(1, false, 0.5), 306)
   assert.equal(petWindowHeight(1, false, 0.3), 260)
   assert.equal(petWindowHeight(2, false, 2), 698)

@@ -30,7 +30,6 @@ const CLAUDE_CAPABILITIES = freezeCapabilities({
 interface AgentAdapterRegistryEntry {
   id: string
   displayName: string
-  /** 這個 adapter 對應的工具家族；generic-http 沒有家族。來源清單由家族推導。 */
   family: AgentFamilyKey | null
   sources: ReadonlyArray<AgentSource>
   sourceLabels: ReadonlyArray<string>
@@ -44,7 +43,6 @@ function sourceLabelsFor(sources: ReadonlyArray<AgentSource>): ReadonlyArray<str
   return Object.freeze(sources.map(source => SOURCE_LABELS[source]))
 }
 
-/** Single registration point for built-in adapter ids and their public capabilities. */
 export const AGENT_ADAPTER_REGISTRY = Object.freeze([
   {
     id: 'opencode', displayName: 'OpenCode', family: 'opencode', sources: FAMILY_SOURCES.opencode, sourceLabels: sourceLabelsFor(FAMILY_SOURCES.opencode),
@@ -87,14 +85,12 @@ export interface DiagnosticReport {
   checks: ReadonlyArray<AdapterDiagnosticCheck>
 }
 
-/** 搬移 agent 使用者層設定目錄的環境變數（只在主行程解析，見 electron/agent-config-dirs.ts）。 */
 export type AgentConfigDirVariable = 'CLAUDE_CONFIG_DIR' | 'CODEX_HOME' | 'XDG_CONFIG_HOME'
 /** 變數有設定卻沒採用的原因；只描述值的形狀，不帶值。 */
 export type AgentConfigDirIgnoredReason = 'invalid' | 'not_absolute' | 'missing'
 
 export interface AdapterConfigDirStatus {
   variable: AgentConfigDirVariable
-  /** 實際讀寫的資料夾（本機設定頁才顯示）。 */
   path: string
   source: 'env' | 'default'
   ignored?: AgentConfigDirIgnoredReason
@@ -134,11 +130,6 @@ export type AdapterNormalizeResult =
   | { ok: true; event: AgentStatusEvent }
   | { ok: false; error: string }
 
-/**
- * Main-process contract shared by built-in and fixture-only adapters.
- * Implementations own installation, diagnostics and raw-event normalization;
- * Event Core and product projections consume only the returned AgentStatusEvent.
- */
 export type InstallAction = 'installed' | 'repaired' | 'unchanged' | 'failed'
 
 export type InstallErrorCode =
@@ -154,13 +145,10 @@ export type InstallErrorCode =
   | 'config_dir_unusable'
   | 'unknown'
 
-/** Structured result of one install/repair; the renderer localizes it from these codes. */
 export interface InstallOutcome {
   adapterId: AgentAdapterId
   action: InstallAction
-  /** Files that were created or modified. */
   changedFiles: string[]
-  /** Backups made before modifying user config files. */
   backupPaths: string[]
   errorCode?: InstallErrorCode
   /** File the error is about (config problems only). */

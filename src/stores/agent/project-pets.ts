@@ -1,10 +1,3 @@
-// 專案寵物（把專案資料夾綁到指定寵物）：清單、啟用開關與錯誤訊息，實際的選檔與持久化都在主程序。
-//
-// - 事件輸入：面板呼叫 `refreshProjectPets()`、`addProjectPet()`、`setProjectPetBinding()`、
-//   `removeProjectPet()`、`setProjectPetsEnabled()`；寵物模組在移除寵物後也會重新整理。
-// - 計時器：無。
-// - storage：無（持久化在主程序）。
-// - 跨視窗同步：無；專案寵物的 IPC 只有面板視窗能呼叫，寵物視窗不持有這份清單。
 import { ref } from 'vue'
 import { t, translateBackendError } from '@/i18n'
 import type { ProjectPetView } from '@/types/project-pet'
@@ -15,8 +8,7 @@ export function useProjectPets() {
   const projectPetsError = ref('')
   const projectPetsEnabled = ref(true)
 
-  // Project-pet IPC is panel-only (main.ts rejects other senders), and the pet
-  // window also calls loadPets(), so panel callers refresh this explicitly.
+  // Project-pet IPC is panel-only (main rejects other senders), so panel callers refresh explicitly.
   async function refreshProjectPets(): Promise<ProjectPetView[]> {
     if (window.electronAPI?.getProjectPetsEnabled) {
       try {

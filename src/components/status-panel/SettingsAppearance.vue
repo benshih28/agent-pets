@@ -24,7 +24,6 @@ const scaleOptions = computed(() => SCALES.map(scale => ({
   label: t(scale.label),
   title: `${Math.round(scale.value * 100)}%`,
 })))
-// Pick the closest preset when the stored scale is a custom value.
 const scaleModel = computed({
   get: () => String(SCALES.reduce((best, scale) => Math.abs(scale.value - store.petScale) < Math.abs(best.value - store.petScale) ? scale : best).value),
   set: value => store.setScale(Number(value)),

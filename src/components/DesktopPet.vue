@@ -36,35 +36,24 @@ const {
   onPointerLeave: onPetPointerLeave,
 } = useShimejiBehavior()
 
-// Up to one line per active tool family; when nothing is active, fall back
-// to a single line showing the pet's overall (idle/offline) state.
 const displayLines = computed(() => {
   if (store.familyLines.length > 0) return store.familyLines
   return [{ key: 'overall', label: '', variants: [], state: store.currentState, project: undefined, since: undefined, petId: store.activePetId, sessionKey: '' }]
 })
 
-// With only one active family, one pet reflects it (and the status lines
-// below carry the detail). With more than one — and the opt-in Settings
-// toggle on — showing a single pet forces picking a "winner", so instead
-// show one small pet per family, side by side.
 const isMultiPet = computed(() => store.isMultiPet)
-// Reduced motion degrades the pet instead of freezing it: states that carry
-// information (working, waiting, failed) keep stepping at a very low rate, and
-// only a resting pet is held still.
 const petAnimationFrozen = computed(() => (
   shimejiReducedMotion.value && (store.currentState === 'idle' || store.currentState === 'offline')
 ))
 const petLowFps = computed(() => store.petWindowMode.mode === 'mini' || shimejiReducedMotion.value)
 
 const petAriaLabel = computed(() => t('pet.ariaLabel', { state: stateAriaLabel(store.currentState) }))
-// Spoken when the visible state changes, not on every session update.
 const stateAnnouncement = ref('')
 watch(() => store.currentState, (state, previous) => {
   if (state === previous) return
   stateAnnouncement.value = stateAriaLabel(state)
 })
 
-// Mini mode shrinks the sprite to fit the fixed small window, whatever the pet size.
 const MINI_FIT_PX = 88
 const miniScale = computed(() => Math.min(0.42, MINI_FIT_PX / (PET_CELL_HEIGHT * store.petScale)))
 const miniStatus = computed(() => {
@@ -115,7 +104,6 @@ const pluginFeedTargetStyle = usePetBubbleAnchor(
   () => pluginFeedTargetPetId.value,
 )
 
-// pet_say bubbles follow the pet they were addressed to when several are shown.
 const sayTargetStyle = usePetBubbleAnchor(
   clickAreaRef,
   multiPetItemElements,
@@ -135,7 +123,6 @@ function lineView(key: string) {
   return statusLineViews.value[key] ?? EMPTY_STATUS_LINE_VIEW
 }
 
-// 單寵物只有一個動畫實例，多寵物每個家族一個；表情／注視／獎勵一律對目前顯示的全部實例播放。
 function activeAnimations(): InstanceType<typeof PetAnimation>[] {
   if (isMultiPet.value) return [...multiPetInstances.values()]
   return petAnimRef.value ? [petAnimRef.value] : []
@@ -152,13 +139,7 @@ const { dragLift, onKeydown: onPetKeydown, onMouseMove: onPetMouseMove, onMouseD
   dismissCoach,
 })
 
-// --- 視窗高度回報（ResizeObserver）------------------------------------------
-
-// The sprite is bottom-anchored inside a window that reserves fixed
-// transparent headroom above it for the quota tooltip, so how much of the
-// window is actually painted varies with pet size and status-line count.
-// Main can't derive that, and it's what the status panel anchors to, so
-// measure it here and report every change.
+// Main can't derive the painted height (the status panel anchors to it), so report it from here.
 let contentObserver: ResizeObserver | null = null
 
 onMounted(() => {
@@ -175,11 +156,7 @@ onBeforeUnmount(() => {
   contentObserver = null
 })
 
-// --- Presentation 與成就回饋動畫 ---------------------------------------------
-
 watch(() => store.presentationReaction, (reaction) => {
-  // An explicit MCP request is always shown: with motion effects off the pet
-  // still gets its icon mark, just without the movement.
   if (!reaction) return
   const kind = reaction.reaction
   if (isMultiPet.value) {
@@ -213,7 +190,6 @@ watch(() => store.achievementUnlock, (unlock) => {
   if (unlock) playAchievementReward(unlock)
 })
 
-// Level-up / evolution reuses the reward animation (growth stream).
 watch(() => store.levelUpEvent, (event) => {
   if (event && store.reactionsActive) petAnimRef.value?.playReward()
 })

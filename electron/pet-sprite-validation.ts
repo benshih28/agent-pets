@@ -13,8 +13,6 @@ import {
 } from '../src/types/pet-atlas.ts'
 import { rasterImageTypeIn, sniffRasterImageType, type RasterImageType } from './raster-image.ts'
 
-// 匯入 spritesheet 的結構檢查：畫面端依固定格線（src/types/pet-atlas.ts）切圖，
-// 尺寸不對的圖不會報錯，只會畫成空白或錯亂的格子。這裡只讀圖片檔頭；
 // 格式一律由 raster-image.ts 的完整 signature 判定，各讀取函式不再自己比對前幾個位元組。
 
 export type SpriteValidationError = 'E_TYPE' | 'E_SIZE' | 'E_ROWS' | 'E_ORIENTATION'
@@ -40,7 +38,6 @@ function u24le(bytes: Uint8Array, offset: number): number {
 }
 
 function readPngSize(bytes: Uint8Array): ImageSize | null {
-  // The first chunk must be IHDR; its dimensions are what a decoder allocates.
   if (bytes.length < 24 || bytes[12] !== 0x49 || bytes[13] !== 0x48 || bytes[14] !== 0x44 || bytes[15] !== 0x52) return null
   return { width: u32be(bytes, 16), height: u32be(bytes, 20) }
 }
@@ -80,12 +77,7 @@ interface JpegInfo {
   orientation: number
 }
 
-/**
- * Walks every JPEG segment, including the entropy-coded data after each SOS,
- * so the frame size we cap is the one a decoder uses: 0xFF fill bytes are
- * skipped (not read as a marker), exactly one SOF is allowed and it must come
- * before the first SOS, and a segment running past EOF is invalid. O(bytes).
- */
+// Exactly one SOF is allowed and it must precede the first SOS, so the capped size is the one a decoder uses.
 function readJpegInfo(bytes: Uint8Array): JpegInfo | null {
   let offset = 2
   let size: ImageSize | null = null
@@ -114,8 +106,7 @@ function readJpegInfo(bytes: Uint8Array): JpegInfo | null {
     if (marker === JPEG_SOS) {
       if (!size) return null
       scanned = true
-      // Skip entropy-coded data: FF00 is a stuffed byte, FFD0-FFD7 a restart
-      // marker, FFFF fill; any other FFxx starts the next segment.
+      // FF00 is a stuffed byte, FFD0-FFD7 a restart marker, FFFF fill; any other FFxx starts the next segment.
       while (offset < bytes.length) {
         if (bytes[offset] !== 0xff) { offset += 1; continue }
         const next = bytes[offset + 1]
@@ -132,7 +123,6 @@ function readJpegSize(bytes: Uint8Array): ImageSize | null {
   return readJpegInfo(bytes)?.size ?? null
 }
 
-/** EXIF (TIFF) Orientation tag 0x0112 from IFD0; null when absent or unreadable. */
 export function readTiffOrientation(tiff: Uint8Array): number | null {
   if (tiff.length < 8) return null
   const little = tiff[0] === 0x49 && tiff[1] === 0x49
@@ -154,7 +144,6 @@ export function readTiffOrientation(tiff: Uint8Array): number | null {
 }
 
 function readPngOrientation(bytes: Uint8Array): number {
-  // Chunks before IDAT only; eXIf must precede image data.
   let offset = 8
   while (offset + 12 <= bytes.length) {
     const length = u32be(bytes, offset)
@@ -183,11 +172,7 @@ function readWebpOrientation(bytes: Uint8Array): number {
   return 1
 }
 
-/**
- * EXIF orientation the renderer would apply (Chromium honours it by default,
- * including for detached Image objects drawn to a canvas). Anything other
- * than 1 would swap or mirror the cell grid we validated.
- */
+// Chromium honours EXIF orientation even for detached Image objects drawn to a canvas.
 export function readImageOrientation(bytes: Uint8Array): number {
   switch (sniffRasterImageType(bytes)) {
     case 'image/png': return readPngOrientation(bytes)
@@ -198,7 +183,6 @@ export function readImageOrientation(bytes: Uint8Array): number {
 }
 
 function isPngAnimated(bytes: Uint8Array): boolean {
-  // APNG：acTL chunk 必須出現在第一個 IDAT 之前。
   let offset = 8
   while (offset + 12 <= bytes.length) {
     const length = u32be(bytes, offset)
@@ -224,11 +208,6 @@ function isWebpAnimated(bytes: Uint8Array): boolean {
   return false
 }
 
-/**
- * 動畫的檔頭走訪：PNG 的 `acTL` 在 `IDAT` 之前；WebP 的 VP8X 動畫
- * 旗標（byte 20、bit 0x02）或 ANIM/ANMF chunk。JPEG 永遠不是動畫。
- * O(chunks)；不做任何解碼。
- */
 export function readImageAnimated(bytes: Uint8Array): boolean {
   switch (sniffRasterImageType(bytes)) {
     case 'image/png': return isPngAnimated(bytes)
@@ -247,7 +226,7 @@ export function readImageSize(bytes: Uint8Array): ImageSize | null {
   }
 }
 
-// 從檔頭讀到的上限（不必解碼）；數值定義在 pet-atlas.ts，讓一張高度壓縮的小檔無法讓畫面端配置數 GB。
+// 讓一張高度壓縮的小檔無法讓畫面端配置數 GB。
 export const SPRITE_MAX_WIDTH = PET_CELL_WIDTH * PET_ATLAS_MAX_COLUMNS
 export const SPRITE_MAX_HEIGHT = PET_CELL_HEIGHT * PET_ATLAS_MAX_ROWS
 export const SPRITE_MAX_PIXELS = PET_ATLAS_MAX_PIXELS
@@ -272,9 +251,7 @@ export interface SpriteAtlasInfo extends PetImportAtlas {
   warnings: SpriteAtlasWarning[]
 }
 
-/**
- * 以圖片為準：11 列以上是 v2，9–10 列是 v1。宣告的 `spriteVersionNumber` 不一致只會產生警告。
- */
+// 以圖片為準；宣告的 `spriteVersionNumber` 不一致只會產生警告。
 export function detectSpriteAtlas(size: ImageSize, declaredVersion?: unknown): SpriteAtlasInfo {
   const { columns, rows } = petAtlasGridFromSize(size.width, size.height)
   const version: PetImportAtlas['version'] = rows >= PET_ATLAS_V2_ROWS ? 2 : 1
@@ -288,7 +265,6 @@ export function detectSpriteAtlas(size: ImageSize, declaredVersion?: unknown): S
   }
 }
 
-// 寵物 spritesheet 接受的格式：匯入、自訂寵物、插件 skin 的讀取與 agent-pets:// 回應共用。
 // 插件套件安裝時另有較窄的白名單（plugin-registry.ts）。
 const PET_SPRITE_TYPES: ReadonlySet<RasterImageType> = new Set(['image/png', 'image/jpeg', 'image/webp'])
 

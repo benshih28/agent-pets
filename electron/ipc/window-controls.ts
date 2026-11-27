@@ -14,7 +14,6 @@ export interface WindowControlsIpcDependencies {
   ipcMain: Pick<IpcMain, 'on'>
   isTrustedIpcSender(event: IpcMainEvent, requiredWindow?: BrowserWindow | null): boolean
   assertTrustedIpcSender(event: IpcMainEvent, requiredWindow?: BrowserWindow | null): void
-  /** Defaults to process.platform; injectable for tests. */
   platform?: NodeJS.Platform
   getPetWindow(): BrowserWindow | null
   getPanelWindow(): BrowserWindow | null
@@ -31,9 +30,8 @@ export interface WindowControlsIpcDependencies {
   setPanelFullscreenAutoHidden(value: boolean): void
   setPanelBlurLock(lock: { pinned?: boolean; modal?: boolean }): void
   finiteNumber(value: unknown): number | null
-  /** A transient minimum size (wizard / MCP page), or null to release it. Never changes the user's own size. */
+  /** Never changes the user's own size. */
   requestPanelMinimum(size: { width: number; height: number } | null): void
-  /** Forget the user's panel size and go back to the first-run default. */
   resetPanelSize(): void
   getDisplayWorkArea(bounds: Bounds): Bounds
   animateBounds(bounds: Bounds): void
@@ -56,8 +54,7 @@ export function registerWindowControlsIpc(deps: WindowControlsIpcDependencies): 
     const data = recordOrEmpty(payload)
     const ignore = data.ignore
     if (typeof ignore !== 'boolean') return
-    // Electron cannot forward mouse-move over an ignored window on Linux, so
-    // once click-through is on there is no way to switch it off again.
+    // Electron cannot forward mouse-move over an ignored window on Linux, so click-through could never be switched off again.
     if (ignore && (deps.platform ?? process.platform) === 'linux') return
     if (ignore) petWindow.setIgnoreMouseEvents(true, { forward: true })
     else petWindow.setIgnoreMouseEvents(false)
@@ -73,7 +70,6 @@ export function registerWindowControlsIpc(deps: WindowControlsIpcDependencies): 
   deps.ipcMain.on(IPC_CHANNELS.panelToggle, event => {
     if (!deps.isTrustedIpcSender(event, deps.getPetWindow())) return
     const panelWindow = deps.getPanelWindow()
-    // No panel (not created yet, or its renderer was lost): showPanelWindow recreates it.
     if (panelWindow && panelWindow.isDestroyed?.() !== true && panelWindow.isVisible()) {
       deps.setPanelFullscreenAutoHidden(false)
       panelWindow.hide()

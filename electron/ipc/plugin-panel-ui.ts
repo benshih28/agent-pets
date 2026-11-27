@@ -79,8 +79,7 @@ export function registerPluginPanelUiIpc(deps: PluginPanelUiIpcDependencies): vo
       controller.onPanelWindowHidden()
       return
     }
-    // 以 renderer 量測當下的 viewport 驗證，避免縮放途中與主行程視窗尺寸不同步而誤關插件；
-    // 實際邊界一律由主行程依目前視窗尺寸重新計算，插件內容仍不會超出視窗。
+    // 以 renderer 量測當下的 viewport 驗證，避免縮放途中尺寸不同步而誤關插件；實際邊界仍由主行程重新計算。
     const viewportData = data.viewport && typeof data.viewport === 'object' ? data.viewport as Record<string, unknown> : {}
     const viewportWidth = deps.finiteNumber(viewportData.width)
     const viewportHeight = deps.finiteNumber(viewportData.height)
@@ -104,8 +103,7 @@ export function registerPluginPanelUiIpc(deps: PluginPanelUiIpcDependencies): vo
       deps.getPluginPanelViewController()?.close('closed', openToken)
     }
   })
-  // 插件頁面的 preload 以 sendSync 取第一份 `--ap-*` 快照，頁面的 script 執行前就生效。一定要設定
-  // returnValue（否則頁面會卡住）；只回給開啟中 panelView 的主 frame，其他一律 null。
+  // sendSync 一定要設定 returnValue（否則頁面會卡住）；只回給開啟中 panelView 的主 frame，其他一律 null。
   deps.ipcMain.on(IPC_CHANNELS.pluginPanelThemeInitial, event => {
     if (event.senderFrame !== event.sender.mainFrame) {
       event.returnValue = null

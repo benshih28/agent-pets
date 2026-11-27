@@ -18,7 +18,6 @@ interface Reply {
   body: string
 }
 
-/** 每個請求的 body 交給 readBoundedJson，結果以 200 JSON 回傳，並另外記下給測試檢查。 */
 function startReader(t: test.TestContext, limit = LIMIT) {
   const results: BoundedJsonResult[] = []
   const server: Server = createServer(async (incoming, response) => {
@@ -37,7 +36,6 @@ function startReader(t: test.TestContext, limit = LIMIT) {
   })
 }
 
-/** `chunks` 逐段寫出（每段等寫入完成再送下一段），不帶 content-length 時走 chunked 編碼。 */
 function post(port: number, chunks: readonly string[], declaredLength?: number): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = request({
@@ -70,11 +68,7 @@ function post(port: number, chunks: readonly string[], declaredLength?: number):
   })
 }
 
-/**
- * 給超過上限的請求用：server 回應並結束後，Node 會關閉仍在上傳的連線，負載下 client 可能在讀到
- * 回應前就收到 ECONNRESET／EPIPE。所以收到回應標頭就停止寫入，連線錯誤只記下不 reject；
- * 判定以 server 端 readBoundedJson 的結果為準，收到的回應只做附帶檢查。
- */
+/** server 回應後 Node 會關閉仍在上傳的連線，client 可能先收到 ECONNRESET／EPIPE，所以連線錯誤只記下不 reject；判定以 server 端結果為準。 */
 function postOversize(port: number, chunks: readonly string[], declaredLength?: number): Promise<{ reply?: Reply; error?: string }> {
   return new Promise(resolve => {
     let settled = false
@@ -112,14 +106,12 @@ function postOversize(port: number, chunks: readonly string[], declaredLength?: 
   })
 }
 
-/** server 端結果可能比 client 的連線錯誤晚一點到，短暫等待到第 `count` 筆。 */
 async function waitForResults(results: readonly BoundedJsonResult[], count: number): Promise<void> {
   for (let attempt = 0; attempt < 200 && results.length < count; attempt += 1) await new Promise(r => setTimeout(r, 10))
 }
 
 const TOO_LARGE: BoundedJsonResult = { ok: false, reason: 'too_large' }
 
-/** 收到回應時，它必須就是 server 端的 too_large 結果；連線錯誤只允許重設類。 */
 function assertOversizeOutcome(outcome: { reply?: Reply; error?: string }): void {
   if (outcome.reply) {
     assert.equal(outcome.reply.status, 200)
@@ -135,7 +127,6 @@ test('a JSON body split across many chunks is reassembled and parsed', async t =
   const { port } = await startReader(t)
   const value = { text: '多位元組的中文 ✓', items: [1, 2, 3] }
   const serialized = JSON.stringify(value)
-  // 切在任意位元組位置（包含 UTF-8 字元中間），組合後仍要正確解碼。
   const bytes = Buffer.from(serialized)
   let pieceCount = 0
   const reply = await new Promise<Reply>((resolve, reject) => {
@@ -182,7 +173,6 @@ test('a body of exactly the limit is accepted and one byte more is too large', a
 test('a streamed body over the limit is rejected as soon as it crosses, and the rest is drained', async t => {
   const { port, results } = await startReader(t)
   const chunk = 'x'.repeat(400)
-  // 第三段就超過；後面還有很多段。server 端只結算一次 too_large，之後的資料被丟棄而不是累積。
   assertOversizeOutcome(await postOversize(port, Array.from({ length: 20 }, () => chunk)))
   await waitForResults(results, 1)
   assert.deepEqual(results, [TOO_LARGE])
@@ -229,7 +219,6 @@ test('tokenMatches accepts only the exact token string', () => {
   assert.equal(tokenMatches('', expected), false, 'empty')
   assert.equal(tokenMatches(undefined, expected), false, 'missing')
   assert.equal(tokenMatches(['a'.repeat(64)], expected), false, 'repeated header arrives as an array')
-  // 多位元組字元：字元數相同但位元組數不同，不可因長度比較而誤判或拋錯。
   assert.equal(tokenMatches('é'.repeat(32), expected), false)
 })
 

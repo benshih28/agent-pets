@@ -93,7 +93,6 @@ export type PluginPanelThemeColorKey =
   | 'dangerText' | 'successText' | 'warnText' | 'scrim'
   | 'infoText' | 'shadow' | 'highlight'
 
-/** 正規化後的 manifest 顏色：主機標準的 `rgb(R G B / A)` 字串（spec §3.3）。 */
 export type PluginPanelThemeColors = Partial<Record<PluginPanelThemeColorKey, string>>
 
 export interface PluginPanelThemeOverlay { color: string; opacity: number }
@@ -126,7 +125,6 @@ export interface PluginPanelThemeFontFace {
   style: 'normal' | 'italic'
 }
 
-/** 已驗證並套用預設值的 `contributes.panelThemes[]` 項目（electron/plugin-panel-themes.ts）。 */
 export interface PluginPanelThemeContribution {
   id: string
   displayName: PluginLocalizedText
@@ -137,7 +135,6 @@ export interface PluginPanelThemeContribution {
   modes: Partial<Record<'light' | 'dark', PluginPanelThemeModeDefinition>>
 }
 
-/** One registry row owns the contribution identifier, implementation entry point, and public API mapping. */
 export const PLUGIN_CONTRIBUTION_REGISTRY = Object.freeze({
   feed: { implementationFile: 'electron/plugin-feed.ts', hostApi: 'feed.notify' },
   reaction: { implementationFile: 'electron/plugin-broker.ts', hostApi: 'pet.react' },

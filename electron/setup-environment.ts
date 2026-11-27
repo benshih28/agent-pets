@@ -2,23 +2,18 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import type { AgentConfigEnv } from './agent-config-dirs.ts'
 
-// Everything setup.ts needs from the host (Electron's `app`, the user's home directory) goes through
-// this small, Electron-free seam. The app wires it up in main.ts; the CLI installer and the tests
-// supply their own values, so installs can be exercised against a temporary HOME.
-
 export interface SetupEnvironment {
   homeDir(): string
   appData(): string
   userData(): string
   isPackaged(): boolean
   resourcesPath(): string
-  /** Folder holding agent-hook.mjs / agent-hook.cmd / presentation-mcp.mjs. */
   integrationsDir(): string | null
-  /** Fixed Node.js executable (CLI/tests); bypasses shell lookup. */
+  /** Bypasses shell lookup. */
   nodePath?(): string | null
-  /** CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME 的來源；未提供時讀 process.env。測試與隔離腳本傳 {}。 */
+  /** 未提供時讀 process.env。測試與隔離腳本傳 {}。 */
   agentConfigEnv?(): AgentConfigEnv
-  /** 等待 login shell 查詢（macOS／Linux GUI）；會改寫 agent 設定檔的流程先 await。 */
+  /** 會改寫 agent 設定檔的流程先 await login shell 查詢。 */
   agentConfigEnvReady?(): Promise<void>
 }
 

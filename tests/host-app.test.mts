@@ -30,7 +30,6 @@ test('unknown, malformed or oversized hints never yield a bundle id', () => {
   assert.equal(parseHostHints('iTerm.app'), null)
   assert.equal(parseHostHints(['iTerm.app']), null)
   assert.deepEqual(parseHostHints({}), { host: { kind: 'unknown', app: 'unknown' } })
-  // Valid reverse-DNS but not on the allowlist: dropped, never activated.
   assert.deepEqual(parseHostHints({ bundleId: 'com.evil.Launcher' }), { host: { kind: 'unknown', app: 'unknown' } })
   assert.deepEqual(parseHostHints({ bundleId: 'com.apple.Terminal; rm -rf /' }), { host: { kind: 'unknown', app: 'unknown' } })
   assert.deepEqual(parseHostHints({ termProgram: 'x'.repeat(33) }), { host: { kind: 'unknown', app: 'unknown' } })
@@ -39,7 +38,6 @@ test('unknown, malformed or oversized hints never yield a bundle id', () => {
   for (const termProgram of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
     assert.deepEqual(parseHostHints({ termProgram }), { host: { kind: 'unknown', app: 'unknown' } }, termProgram)
   }
-  // A client cannot set kind or app directly.
   assert.deepEqual(parseHostHints({ kind: 'ide', app: 'vscode' }), { host: { kind: 'unknown', app: 'unknown' } })
 })
 
@@ -55,7 +53,6 @@ test('only allowlisted bundle ids are ever resolved for activation', () => {
   assert.equal(resolveHostBundleId('iterm2'), 'com.googlecode.iterm2')
   assert.equal(resolveHostBundleId('warp', 'dev.warp.Warp-Preview'), 'dev.warp.Warp-Preview')
   assert.equal(resolveHostBundleId('iterm2', 'com.evil.Launcher'), 'com.googlecode.iterm2')
-  // Ambiguous app with no reported bundle, and apps with no macOS bundle at all.
   assert.equal(resolveHostBundleId('jetbrains'), null)
   assert.equal(resolveHostBundleId('jetbrains', 'com.jetbrains.goland'), 'com.jetbrains.goland')
   assert.equal(resolveHostBundleId('windows-terminal'), null)

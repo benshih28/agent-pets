@@ -1,8 +1,6 @@
-// Renderer localStorage 的單一 key 清單：key 字串、值型別、預設值、解析／序列化與是否跨視窗同步。
 // key 字串是使用者既有偏好的位置，改名等於清掉所有人的設定；`tests/storage-keys.test.mts` 固定完整清單。
 // 解析規則逐一照搬自各呼叫點的舊實作（含「無效值回退預設」的細節差異），不是統一後的新規則。
-// 讀寫一律經過 `src/utils/local-storage.ts`，那裡負責 storage 停用或丟例外時的回退。
-// Node 測試會直接載入本檔，所以執行期 import 只用相對路徑（見 agent-pets-conventions §1）。
+// Node 測試會直接載入本檔，所以執行期 import 只用相對路徑。
 import { isAgentFamilyKey } from '../types/agent.ts'
 import { deepFreeze } from '../types/freeze.ts'
 import { HISTORY_RANGE_OPTIONS, type HistoryRangeDays } from '../types/history.ts'
@@ -12,18 +10,13 @@ import { parseStoredDashboardTab } from './plugin-tabs.ts'
 import { DEFAULT_SETTINGS_GROUP, isSettingsGroupId, type SettingsGroupId } from './settingsRegistry.ts'
 import { DEFAULT_PET_ID } from './pet-id.ts'
 
-// 主程序與 renderer 共用同一個預設寵物 id；既有的 renderer 呼叫端仍從這裡取用。
 export { DEFAULT_PET_ID }
 
-/** 心情每天的起始值。 */
 export const MOOD_BASELINE = 10
 /** 心情系統版本；`agent-pet-mood-version` 不等於它時，啟動會把心情重設回起始值（migration）。 */
 export const MOOD_SYSTEM_VERSION = '2'
 
-/**
- * @typeParam T 讀出來的值。
- * @typeParam W 寫入時接受的值；只寫不讀的空值（例如「沒有記住的分頁」）不必能寫回。
- */
+/** `W` 是寫入時接受的值；只寫不讀的空值（例如「沒有記住的分頁」）不必能寫回。 */
 export interface StorageKeyDefinition<T, W = T> {
   readonly key: string
   /** 缺值（`null`）與無效值都在這裡回退；不可丟例外。 */
@@ -31,7 +24,6 @@ export interface StorageKeyDefinition<T, W = T> {
   serialize(value: W): string
   /** storage 不存在或讀取丟例外時的值。沒有特別指定時等於 `parse(null)`。 */
   readonly fallback: T
-  /** 其他視窗寫入這個 key 時，本視窗是否經 `listenStorageSync` 接收。 */
   readonly sync: boolean
 }
 
@@ -110,14 +102,12 @@ function parseHistoryCollapsed(raw: string | null): Record<string, boolean> {
 export type HistoryView = 'overview' | 'sessions'
 
 export const STORAGE_KEYS = deepFreeze({
-  // --- 寵物 ------------------------------------------------------------------
   petId: defineStorageKey({ key: 'agent-pet-id', parse: raw => raw || DEFAULT_PET_ID, serialize: asIs, sync: true }),
   petScale: defineStorageKey({ key: 'agent-pet-scale', parse: raw => parseFloat(raw || '1'), serialize: numberText, sync: true }),
   hiddenBuiltinPets: defineStorageKey({ key: 'agent-pet-hidden', parse: parseHiddenBuiltins, serialize: (ids: readonly string[]) => JSON.stringify(ids), sync: false }),
   familyPetIds: defineStorageKey({ key: 'agent-pet-family-map', parse: parseFamilyPetIds, serialize: (map: Record<string, string>) => JSON.stringify(map), sync: true }),
   multiPet: defineStorageKey({ key: 'agent-pet-multi', parse: onlyOne, serialize: flag, sync: true }),
 
-  // --- 心情 ------------------------------------------------------------------
   // 讀出值未 clamp：啟動時由 store clamp，跨視窗同步時照舊直接套用。
   mood: defineStorageKey({ key: 'agent-pet-mood', parse: raw => parseFloat(raw || String(MOOD_BASELINE)), serialize: numberText, sync: true }),
   moodDate: defineStorageKey({ key: 'agent-pet-mood-date', parse: rawOrNull, serialize: asIs, sync: false }),
@@ -125,7 +115,6 @@ export const STORAGE_KEYS = deepFreeze({
   moodVisuals: defineStorageKey({ key: 'agent-pet-mood-visuals', parse: notZero, serialize: flag, sync: true }),
   patCount: defineStorageKey({ key: 'agent-pet-pat', parse: parsePatCount, serialize: ({ day, count }: PatCount) => `${day}:${count}`, sync: false }),
 
-  // --- 回饋與音效 -------------------------------------------------------------
   // 主程序的偏好送到之前的快取；只有 '1' 算開，與 SOUND_DEFAULTS.soundEnabled 的關一致。
   sound: defineStorageKey({ key: 'agent-pet-sound', parse: onlyOne, serialize: flag, sync: true }),
   reactions: defineStorageKey({ key: 'agent-pet-fx', parse: notZero, serialize: flag, sync: true }),
@@ -135,12 +124,10 @@ export const STORAGE_KEYS = deepFreeze({
   ambient: defineStorageKey({ key: 'agent-pet-ambient', parse: onlyOne, serialize: flag, sync: true }),
   activityBubble: defineStorageKey({ key: 'agent-pet-activity', parse: onlyOne, serialize: flag, sync: true }),
 
-  // --- 語言與外觀 -------------------------------------------------------------
   locale: defineStorageKey({ key: 'agent-pet-locale', parse: (raw): AppLocale => (isAppLocale(raw) ? raw : DEFAULT_LOCALE), serialize: (value: AppLocale) => value, sync: true }),
   theme: defineStorageKey({ key: 'agent-pet-theme', parse: (raw): ThemePreference => (isThemePreference(raw) ? raw : 'system'), serialize: (value: ThemePreference) => value, sync: true }),
   petTheme: defineStorageKey({ key: 'agent-pet-pet-theme', parse: (raw): PetThemePreference => (isPetThemePreference(raw) ? raw : 'dark'), serialize: (value: PetThemePreference) => value, sync: true }),
 
-  // --- 單一視窗的介面記憶 -------------------------------------------------------
   // 讀不到 storage 時當作已看過：寧可不顯示引導，也不要每次啟動都跳出來。
   coachSeen: defineStorageKey({ key: 'agent-pet-coach-v1', parse: onlyOne, serialize: flag, fallback: true, sync: false }),
   achievementsSeenAt: defineStorageKey({ key: 'agent-pet-achievements-seen-at', parse: raw => Number(raw) || 0, serialize: numberText, sync: false }),

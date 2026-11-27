@@ -22,8 +22,6 @@ const store = useAgentStore()
 // 「切換到 App」只在 macOS（LaunchServices）與 Windows（白名單視窗活化）實作；Linux 不提供。
 const canSwitchApp = /Mac|Win/i.test(navigator.platform)
 
-// Product names are proper nouns, not translatable copy. Claude Code moves to
-// the approver list only while answering from the pet is turned on.
 const approverAgents = computed(() => (store.claudePermissionRespondEnabled ? 'OpenCode · Claude Code' : 'OpenCode'))
 const reminderAgents = computed(() => (store.claudePermissionRespondEnabled ? 'Codex' : 'Codex · Claude Code'))
 
@@ -63,8 +61,7 @@ async function clearAudit(): Promise<void> {
 }
 
 function auditResult(entry: PermissionAuditEntry): string {
-  // Claude Code keeps its terminal prompt open, so a decision sent from here may have
-  // arrived after the user had already answered there.
+  // Claude Code keeps its terminal prompt open, so the user may have already answered there.
   const maybeTerminal = alsoAnswerableKey(entry.agentId) ? t('permission.auditMaybeTerminal') : ''
   switch (entry.status) {
     case 'allowed': return t('permission.auditAllowed') + maybeTerminal

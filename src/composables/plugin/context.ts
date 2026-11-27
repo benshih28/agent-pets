@@ -3,8 +3,6 @@ import type { usePluginPanelController } from '@/composables/usePluginPanelContr
 
 export type PluginPanelController = ReturnType<typeof usePluginPanelController>
 
-// PluginPanel provides the controller once; the section components pull what
-// they need instead of threading 100+ props through every level.
 export const PLUGIN_PANEL_CONTROLLER: InjectionKey<PluginPanelController> = Symbol('plugin-panel-controller')
 
 export function usePluginController(): PluginPanelController {

@@ -1,8 +1,5 @@
 <script setup lang="ts">
-// Level-up, evolution, achievement and +XP feedback on the pet window.
-// Informational toasts (level/achievement) show even when the decorative
-// reactions switch is off; only Do Not Disturb defers them, and everything
-// deferred is replayed once as a single merged card when DND ends.
+// Level/achievement toasts ignore the reactions switch; only Do Not Disturb defers them.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { t, type TranslationKey } from '@/i18n'
 import { useProgressionLabels } from '@/composables/useProgressionLabels'
@@ -61,7 +58,6 @@ watch(() => store.dndEnabled, (enabled) => {
   show(batch)
 })
 
-// +XP chip is decorative, so it follows the reactions switch and DND.
 watch(() => store.recentAwards[0]?.id, () => {
   const latest = store.recentAwards[0]
   if (!latest || !store.reactionsActive) return

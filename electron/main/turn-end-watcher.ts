@@ -2,39 +2,23 @@ import { AGENT_STATE_POLICY, familyOfSource, type AgentFamilyKey, type AgentStat
 import type { TranscriptFingerprint, TranscriptProbe } from '../transcript-turn-end.ts'
 import type { SessionSnapshotEntry } from './session-snapshot.ts'
 
-// 補上 agent 沒送的結束事件：session 還停在進行中的狀態、又安靜了一小段時間，就去看它的對話紀錄檔；
-// 紀錄檔說回合已經結束（被中斷或已完成）就送出一個正規的 idle 事件，走跟 hook 事件完全相同的路
-// （寵物、面板、歷史、通知都收到同一個事件），不另開一條狀態管道。
-//
-// 這裡不分 agent、不分狀態：哪些狀態算「進行中」看狀態 registry 的 historyOutcome，
-// 哪個家族有紀錄檔可讀、格式怎麼判斷都在 electron/transcript-turn-end.ts。
-
-/** 多久檢查一次。沒有候選 session 時每次只是掃過一份很小的清單。 */
 export const TURN_END_CHECK_INTERVAL_MS = 5_000
-/** 最後一個事件過了這麼久才去看紀錄檔：正常情況下一個 hook 事件早就到了。 */
+// 正常情況下 hook 事件早就到了，過這麼久沒消息才去讀紀錄檔。
 export const TURN_END_QUIET_MS = 8_000
-/**
- * 結束紀錄的時間可以比最後一個事件早這麼多：hook 是另一個程序，送達時間可能比 agent 寫檔晚一點。
- * 更早的結束紀錄屬於上一個回合，不能拿來結束現在這個。
- */
+// hook 是另一個程序，送達可能比 agent 寫檔晚；更早的結束紀錄屬於上一個回合，不能拿來結束現在這個。
 export const TURN_END_CLOCK_SKEW_MS = 2_000
-/** 找不到紀錄檔時隔這麼久再找一次（agent 可能晚一點才建立檔案）。 */
 const LOCATE_RETRY_MS = 30_000
-/** 送出事件的 originalEvent；不是任何 agent 的 hook 名稱。 */
 export const TURN_END_EVENT = 'AgentPetsTurnEnded'
 
 export interface TurnEndWatcherDeps {
   now(): number
-  /** 主程序的 session 鏡像（最後狀態與最後事件時間）。 */
   sessions(): SessionSnapshotEntry[]
-  /** 單一 session 的最新鏡像；已移除或過期時回傳 undefined。 */
+  /** 已移除或過期時回傳 undefined。 */
   session(source: SessionSnapshotEntry['source'], sessionId: string): SessionSnapshotEntry | undefined
-  /** 這個家族的 agent 設定目錄。 */
   configDir(family: AgentFamilyKey): string
   hasTranscript(family: AgentFamilyKey): boolean
   locate(family: AgentFamilyKey, configDir: string, sessionId: string): Promise<string | null>
   probe(family: AgentFamilyKey, filePath: string, previous?: TranscriptFingerprint): Promise<TranscriptProbe | null>
-  /** 把事件送進跟 hook 事件相同的流程。 */
   dispatch(event: AgentStatusEvent): void
 }
 
@@ -45,7 +29,7 @@ interface Tracked {
 }
 
 export interface TurnEndWatcher {
-  /** 檢查一輪；上一輪還沒跑完時直接略過。回傳這一輪送出了幾個事件。 */
+  /** 上一輪還沒跑完時直接略過。回傳送出的事件數。 */
   check(): Promise<number>
   start(): void
   stop(): void
@@ -86,7 +70,6 @@ export function createTurnEndWatcher(deps: TurnEndWatcherDeps): TurnEndWatcher {
       for (const entry of sessions) {
         if (AGENT_STATE_POLICY[entry.state].historyOutcome !== 'open') continue
         const quietFor = now - entry.lastSeenAt
-        // 太久沒消息的交給狀態期限（轉離線），不再讀檔。
         if (quietFor < TURN_END_QUIET_MS || quietFor > AGENT_STATE_POLICY.idle.quiet.afterMs) continue
         const family = familyOfSource(entry.source)
         if (!family || !deps.hasTranscript(family)) continue
@@ -122,7 +105,6 @@ export function createTurnEndWatcher(deps: TurnEndWatcherDeps): TurnEndWatcher {
     start() {
       if (timer) return
       timer = setInterval(() => { void check().catch(() => undefined) }, TURN_END_CHECK_INTERVAL_MS)
-      // 不要因為這個計時器讓程序無法結束。
       timer.unref?.()
     },
     stop() {

@@ -1,6 +1,3 @@
-/* 面板的顏色、字型與形狀都來自 tokens.css 的語意層（:root 與
-   :root[data-window='panel']），這裡不再重新宣告別名。 */
-
 .status-panel {
   position: relative;
   z-index: var(--z-system);
@@ -11,15 +8,12 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--organic-radius-lg);
-  /* 插件漸層（主機建構、渲染端驗證）或純色 bg。 */
   background: var(--panel-theme-background, var(--surface-panel));
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--font-md);
   box-shadow: var(--shadow-panel);
 }
-
-/* ── Header ───────────────────────────────────────────────────────────── */
 
 .status-panel :deep(.panel-header) {
   display: flex;
@@ -158,25 +152,18 @@
   line-height: 1.45;
 }
 
-/* ── Dashboard tabs ───────────────────────────────────────────────────── */
-
 .status-panel :deep(.dashboard-nav) {
   flex: 0 0 auto;
   padding: 0 var(--organic-space-4) var(--organic-space-3);
 }
 
-/* Dashboard-level tab panels only. The <TabPanel> primitive also uses the
-   `.tab-panel` class (History's overview / sessions sub-views), so a rule on
-   `.tab-panel` here would override its `[hidden]` state and squash both
-   sub-views into the same space. */
+/* Not `.tab-panel`: <TabPanel> also uses it, and a rule there would override its [hidden] state. */
 .status-panel :deep(.dashboard-tab-panel) {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
 }
-
-/* ── Sessions ─────────────────────────────────────────────────────────── */
 
 .status-panel :deep(.session-scroll) {
   min-height: 0;
@@ -416,8 +403,7 @@
   color: var(--organic-accent-contrast);
 }
 
-/* 成功與錯誤用狀態色（受色相限制）放在 surface-2 上，驗證器保證 >= 4.5:1；
-   舊版的錯誤晶片用強調色，看不出是錯誤。 */
+/* 成功與錯誤用狀態色放在 surface-2 上，驗證器保證 >= 4.5:1。 */
 .status-panel :deep(.state-chip.state-success) {
   background: var(--color-surface-2);
   color: var(--color-success);
@@ -516,8 +502,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* ── Usage ────────────────────────────────────────────────────────────── */
 
 .status-panel :deep(.usage-view), .status-panel :deep(.history-view) {
   display: flex;
@@ -657,8 +641,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* ── History ──────────────────────────────────────────────────────────── */
 
 .status-panel :deep(.history-view) {
   container: history-view / inline-size;
@@ -862,8 +844,6 @@
   text-align: center;
 }
 
-/* ── Settings ─────────────────────────────────────────────────────────── */
-
 .status-panel :deep(.settings-layout) {
   display: flex;
   min-height: 0;
@@ -871,7 +851,6 @@
   flex-direction: column;
 }
 
-/* The toolbar (search + group switcher) stays put; only .settings-content scrolls. */
 .status-panel :deep(.settings-toolbar) {
   display: flex;
   flex: 0 0 auto;
@@ -888,7 +867,6 @@
   flex-direction: column;
 }
 
-/* Scroll hints: a soft fade where more content continues. */
 .status-panel :deep(.settings-scroll-frame::before),
 .status-panel :deep(.settings-scroll-frame::after) {
   position: absolute;
@@ -1376,8 +1354,6 @@
   flex: 1;
 }
 
-/* ── Accessibility and responsive fallbacks ──────────────────────────── */
-
 .status-panel :focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -1417,9 +1393,7 @@
   }
 }
 
-/* The panel window is never narrower than the viewport it lives in, so a
-   viewport media query never fired here; size the History layout from the
-   view's own width instead. */
+/* The panel window is never narrower than the viewport, so a viewport media query never fires here. */
 @container history-view (max-width: 520px) {
   .status-panel :deep(.history-stat-grid) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1453,7 +1427,6 @@
   }
 }
 
-/* Short windows (small work areas): compress the header and spacing. */
 @media (max-height: 480px) {
   .status-panel :deep(.panel-header) {
     padding-top: var(--organic-space-2);
@@ -1478,8 +1451,7 @@
   }
 }
 
-/* 高對比（forced colors）會把背景色換成 Canvas，狀態點就消失了；改用系統文字色畫成實心點，
-   狀態本身仍由旁邊的文字標籤表達。 */
+/* forced-colors 會把背景色換成 Canvas，狀態點會消失，故改用 CanvasText 實心點。 */
 @media (forced-colors: active) {
   .status-panel :deep(.session-status-dot) {
     background: CanvasText;

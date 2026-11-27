@@ -32,9 +32,8 @@ export interface AgentStatusEvent {
   source: AgentSource
   sessionId: string
   project?: string
-  /** 主程序算出的標準專案指紋；絕不是原始路徑。 */
+  /** 專案指紋，絕不是原始路徑。 */
   projectId?: string
-  /** 主程序的路由結果；沒有時沿用舊版「用目前選擇的寵物」行為。 */
   routedPetId?: string
   state: AgentState
   originalEvent?: string
@@ -44,7 +43,7 @@ export interface AgentStatusEvent {
   toolName?: string
   tokenUsage?: AgentTokenUsage
   permissionNotice?: PermissionNotice
-  /** session 執行所在的終端機／IDE／桌面 App（只允許白名單 id）。 */
+  /** 只允許白名單 id。 */
   host?: AgentHost
 }
 
@@ -57,33 +56,24 @@ export interface AgentSession {
   routedPetId?: string
   state: AgentState
   lastSeenAt: number
-  /** 第一次看到這個 session 的時間；「誰在找你」排序時穩定的同分判斷。 */
+  /** 排序同分時的穩定 tie-break。 */
   firstSeenAt?: number
-  /** 只在狀態真的改變時更新，心跳不動它，寵物才不會在 session 間來回跳。 */
+  /** 只在狀態真的改變時更新；心跳不動它，寵物才不會在 session 間來回跳。 */
   stateChangedAt?: number
   toolName?: string
   permissionNotice?: PermissionNotice
   host?: AgentHost
 }
 
-// --- 狀態 registry（主程序與 renderer 共用的策略） --------------------------------
-// 每個 AgentState 的策略只寫在這一張表；satisfies 讓新增狀態時漏填任何一格都編譯失敗。
-// 畫面呈現（標籤、顏色、aria、迷你徽章、音效）在 src/utils/agent-state-presentation.ts，
-// 這裡只放主程序也要用的純資料，不能匯入 Vue 或 i18n runtime。
+// 主程序也要用，不能匯入 Vue 或 i18n runtime。
 
-/** sessions.final_state 的目標值；keep 代表沿用上一輪的結果（idle 不改變結局）。 */
+/** keep 代表沿用上一輪的結果（idle 不改變結局）。 */
 export type AgentStateHistoryOutcome = 'success' | 'error' | 'cancelled' | 'open' | 'keep'
 
-/**
- * 一個狀態收不到新事件時最多維持多久。agent 不保證會送結束事件（中斷、被關閉、內部執行緒），
- * 所以每個狀態都要有期限；到期只改顯示，下一個真實事件會直接蓋過。
- * 套用規則的程式在 src/utils/session-lifecycle.ts，門檻的量測依據見
- * docs/phase-reports/fix-agent-state-stuck.md。
- */
+/** agent 不保證送結束事件，每個狀態都要有期限；到期只改顯示，下一個真實事件直接蓋過。 */
 export interface AgentStateQuietRule {
-  /** 從最後一個真實事件算起（不是從進入這個狀態算起），所以連續降級不會重新計時。 */
+  /** 從最後一個真實事件算起，連續降級不會重新計時。 */
   readonly afterMs: number
-  /** 到期後變成的狀態；'remove' 表示從清單移除。 */
   readonly to: AgentState | 'remove'
   /** 權限中介還有未回覆的請求時不到期：是人在處理，不是 agent 不見了。 */
   readonly heldByPendingPermission?: true
@@ -93,49 +83,44 @@ export interface AgentStateQuietRule {
 export type AgentPetFocus = 'attention' | 'recent' | 'background'
 
 export interface AgentStatePolicy {
-  /** 多個 session 同時存在時，誰代表寵物的整體狀態；數字越大越優先。 */
+  /** 數字越大越優先。 */
   readonly priority: number
   readonly petFocus: AgentPetFocus
   readonly quiet: AgentStateQuietRule
-  /**
-   * 桌面通知；null 表示不通知。terminal 是結束類通知：會彙整成一則，點了也不切換 App；
-   * 非 terminal 是在等使用者，通知會帶上 session 讓點擊能跳回去。
-   */
+  /** terminal 會彙整成一則且點了不切換 App；非 terminal 帶上 session 讓點擊跳回去。 */
   readonly notification: { readonly terminal: boolean } | null
   readonly historyOutcome: AgentStateHistoryOutcome
 }
 
 const MINUTE_MS = 60_000
-/** 這麼久沒有任何事件，agent 程序多半已經不在了。 */
 const GONE_AFTER_MS = 15 * MINUTE_MS
 
 export const AGENT_STATE_POLICY = deepFreeze({
   offline: { priority: 0, petFocus: 'background', notification: null, historyOutcome: 'cancelled', quiet: { afterMs: 45 * MINUTE_MS, to: 'remove' } },
   idle: { priority: 20, petFocus: 'background', notification: null, historyOutcome: 'keep', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
-  // 兩次事件之間的思考時間 99.9% 短於 2.3 分鐘；超過 5 分鐘多半是回合結束了卻沒有收到結束事件。
+  // 思考間隔 99.9% 短於 2.3 分鐘；超過 5 分鐘多半是漏了結束事件。
   thinking: { priority: 70, petFocus: 'recent', notification: null, historyOutcome: 'open', quiet: { afterMs: 5 * MINUTE_MS, to: 'idle' } },
-  // 工具（build、測試）合法地跑很久，不能靠時間提早判斷；中斷由主程序讀對話紀錄檔處理。
+  // 工具合法地跑很久，不靠時間提早判斷；中斷由主程序讀對話紀錄檔處理。
   'tool-running': { priority: 80, petFocus: 'recent', notification: null, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
   'waiting-permission': {
     priority: 100, petFocus: 'attention', notification: { terminal: false }, historyOutcome: 'open',
     quiet: { afterMs: GONE_AFTER_MS, to: 'offline', heldByPendingPermission: true },
   },
   'waiting-input': { priority: 85, petFocus: 'attention', notification: { terminal: false }, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
-  // 成功只顯示一下就回到閒置；慶祝動作的長度跟著這個值算（src/utils/pet-motion-plan.ts）。
+  // src/utils/pet-motion-plan.ts 的慶祝動作長度跟著這個值算。
   success: { priority: 60, petFocus: 'recent', notification: { terminal: true }, historyOutcome: 'success', quiet: { afterMs: 4_000, to: 'idle' } },
   error: { priority: 90, petFocus: 'attention', notification: { terminal: true }, historyOutcome: 'error', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
 } as const satisfies Record<AgentState, AgentStatePolicy>)
 
 export const AGENT_STATES: readonly AgentState[] = Object.freeze(Object.keys(AGENT_STATE_POLICY) as AgentState[])
 
-// 用 Set 而不是 `in`：'constructor' 之類原型鏈上的名稱不會被當成狀態；每個事件都會查，建一次重複用。
+// 用 Set 而不是 `in`：避免 'constructor' 等原型鏈名稱被當成狀態。
 const AGENT_STATE_SET: ReadonlySet<string> = new Set(AGENT_STATES)
 
 export function isAgentState(value: unknown): value is AgentState {
   return typeof value === 'string' && AGENT_STATE_SET.has(value)
 }
 
-/** 會發桌面通知的狀態，由上表推導，主程序的通知標題表用它強制窮盡。 */
 export type NotifiableAgentState = {
   [K in AgentState]: (typeof AGENT_STATE_POLICY)[K]['notification'] extends null ? never : K
 }[AgentState]
@@ -144,25 +129,16 @@ export const STATE_PRIORITY: Readonly<Record<AgentState, number>> = Object.freez
   AGENT_STATES.map(state => [state, AGENT_STATE_POLICY[state].priority]),
 ) as Record<AgentState, number>)
 
-// --- 來源 registry（主程序與 renderer 共用） ---------------------------------------
-// 每個 AgentSource 與工具家族的資料只寫在下面兩張表；satisfies 讓新增來源或家族時漏填任何一格都編譯失敗。
-// 表裡的字串都是外部契約：來源 id 存在歷史資料庫、家族 key 存在 localStorage（familyPetIds）
-// 且是 quota 的 provider id、adapterId 是插件 agentFamily 的值，改名會讓舊資料對不上。
+// 表裡的字串是外部契約：來源 id 存在歷史資料庫、家族 key 存在 localStorage 且是 quota 的 provider id、
+// adapterId 是插件 agentFamily 的值，改名會讓舊資料對不上。
 
-/** 同一個工具的 CLI 與 Desktop 版本合併成一個家族：狀態列一行、每家族一隻寵物、一個 quota。 */
 export type AgentFamilyKey = 'codex' | 'claude' | 'opencode'
 
 export interface AgentFamilyDefinition {
-  /** 狀態列、篩選器與桌面通知用的家族名稱。 */
   readonly label: string
-  /** 這個家族的 adapter；也是插件 agentFamily 與歷史 adapter_id 的值。 */
   readonly adapterId: AgentAdapterId
-  /** 服務商有訂閱額度：主程序 quota 的 provider id 就是家族 key。 */
   readonly quotaProvider: boolean
-  /**
-   * 本機紀錄讀取器（electron/local-usage.ts）把 token 記在哪個來源名下；null 表示沒有本機紀錄。
-   * 歷史資料庫的 session 摘要用它組 key，值不能改。
-   */
+  /** 歷史資料庫的 session 摘要用它組 key，值不能改。 */
   readonly localUsageSource: AgentSource | null
 }
 
@@ -174,7 +150,7 @@ export const AGENT_FAMILY_REGISTRY = deepFreeze({
 } as const satisfies Record<AgentFamilyKey, AgentFamilyDefinition>)
 
 export interface AgentSourceDefinition {
-  /** 面板與 toast 上的完整來源名稱；刻意不翻譯，是工具的產品名。 */
+  /** 產品名，刻意不翻譯。 */
   readonly label: string
   readonly family: AgentFamilyKey
   readonly variant: 'cli' | 'desktop'
@@ -192,7 +168,6 @@ export const AGENT_SOURCE_REGISTRY = deepFreeze({
 export const ALL_SOURCES: readonly AgentSource[] = Object.freeze(Object.keys(AGENT_SOURCE_REGISTRY) as AgentSource[])
 export const AGENT_FAMILY_KEYS: readonly AgentFamilyKey[] = Object.freeze(Object.keys(AGENT_FAMILY_REGISTRY) as AgentFamilyKey[])
 
-// 跟 AGENT_STATE_SET 同理：Set 擋掉原型鏈上的名稱，事件與 IPC 的驗證是 O(1)。
 const AGENT_SOURCE_SET: ReadonlySet<string> = new Set(ALL_SOURCES)
 const AGENT_FAMILY_SET: ReadonlySet<string> = new Set(AGENT_FAMILY_KEYS)
 
@@ -208,12 +183,10 @@ export const SOURCE_LABELS: Readonly<Record<AgentSource, string>> = Object.freez
   ALL_SOURCES.map(source => [source, AGENT_SOURCE_REGISTRY[source].label]),
 ) as Record<AgentSource, string>)
 
-/** 屬於某些家族的來源，由上表推導（例如主程序的權限來源白名單）。 */
 export type SourceOfFamily<F extends AgentFamilyKey> = {
   [S in AgentSource]: (typeof AGENT_SOURCE_REGISTRY)[S]['family'] extends F ? S : never
 }[AgentSource]
 
-/** 每個家族的來源，順序同 ALL_SOURCES。 */
 export const FAMILY_SOURCES: { readonly [F in AgentFamilyKey]: readonly SourceOfFamily<F>[] } = Object.freeze(Object.fromEntries(
   AGENT_FAMILY_KEYS.map(family => [
     family,
@@ -227,14 +200,12 @@ export interface SourceFamily {
   readonly sources: readonly AgentSource[]
 }
 
-// 同一個工具的 CLI 與 Desktop 版本合併成狀態列上的同一行；順序同 AGENT_FAMILY_REGISTRY。
 export const SOURCE_FAMILIES: readonly SourceFamily[] = Object.freeze(AGENT_FAMILY_KEYS.map(key => Object.freeze({
   key,
   label: AGENT_FAMILY_REGISTRY[key].label,
   sources: FAMILY_SOURCES[key],
 })))
 
-/** 有訂閱額度的家族，由上表推導；主程序 quota 的 provider id 用它限定。 */
 export type QuotaFamilyKey = {
   [K in AgentFamilyKey]: (typeof AGENT_FAMILY_REGISTRY)[K]['quotaProvider'] extends true ? K : never
 }[AgentFamilyKey]
@@ -248,10 +219,7 @@ export function isQuotaFamilyKey(value: unknown): value is QuotaFamilyKey {
   return typeof value === 'string' && QUOTA_FAMILY_SET.has(value)
 }
 
-/**
- * 來源所屬的家族；不在 registry 裡時是 null。renderer 收到的來源已由主程序驗證，
- * 仍經過這裡查表，讓一筆意外的來源只會被略過，不會讓整個 computed 丟錯。
- */
+/** 不在 registry 時為 null，讓意外的來源只被略過，不會讓 computed 丟錯。 */
 export function familyOfSource(source: string): AgentFamilyKey | null {
   return isAgentSource(source) ? AGENT_SOURCE_REGISTRY[source].family : null
 }
@@ -260,32 +228,28 @@ export function isDesktopSource(source: string): boolean {
   return isAgentSource(source) && AGENT_SOURCE_REGISTRY[source].variant === 'desktop'
 }
 
-/** 這個來源的工具有訂閱額度：只有這些 session 值得輪詢或刷新 quota。 */
 export function isQuotaCapableSource(source: string): boolean {
   const family = familyOfSource(source)
   return family !== null && AGENT_FAMILY_REGISTRY[family].quotaProvider
 }
 
-/** 某些家族所有來源的 Set，給主程序的白名單用（例如 Claude 的權限來源）；建一次重複用。 */
 export function familySourceSet<F extends AgentFamilyKey>(...families: F[]): ReadonlySet<string> {
   return new Set<string>(families.flatMap(family => FAMILY_SOURCES[family]))
 }
 
-/** 有家族的 adapter（插件 agentFamily 的合法值）。 */
 export type AgentFamilyAdapterId = (typeof AGENT_FAMILY_REGISTRY)[AgentFamilyKey]['adapterId']
 
 export const FAMILY_ADAPTER_IDS: readonly AgentFamilyAdapterId[] = Object.freeze(
   AGENT_FAMILY_KEYS.map(family => AGENT_FAMILY_REGISTRY[family].adapterId),
 )
 
-// --- 本機紀錄 token（local-usage）由家族表推導 -------------------------------------
 const LOCAL_USAGE_FAMILIES = AGENT_FAMILY_KEYS.filter(family => AGENT_FAMILY_REGISTRY[family].localUsageSource !== null)
 
-/** adapter id → 本機紀錄讀取器記帳用的來源；歷史 session 摘要的 key 用到，值不能改。 */
+/** 歷史 session 摘要的 key 用到，值不能改。 */
 export const LOCAL_USAGE_SOURCE_BY_ADAPTER: Readonly<Partial<Record<AgentAdapterId, AgentSource>>> = Object.freeze(Object.fromEntries(
   LOCAL_USAGE_FAMILIES.map(family => [AGENT_FAMILY_REGISTRY[family].adapterId, AGENT_FAMILY_REGISTRY[family].localUsageSource]),
 ))
-/** token 以本機紀錄為準的 adapter；它們的即時事件 token 不重複計入。 */
+/** token 以本機紀錄為準；這些 adapter 的即時事件 token 不重複計入。 */
 export const LOCAL_USAGE_ADAPTER_IDS: ReadonlySet<string> = new Set(Object.keys(LOCAL_USAGE_SOURCE_BY_ADAPTER))
-/** 同上，以事件來源判斷（舊事件沒有 adapterId）。 */
+/** 以事件來源判斷，因為舊事件沒有 adapterId。 */
 export const LOCAL_USAGE_SOURCES: ReadonlySet<string> = new Set(LOCAL_USAGE_FAMILIES.flatMap(family => FAMILY_SOURCES[family]))

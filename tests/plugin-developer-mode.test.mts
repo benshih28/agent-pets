@@ -7,8 +7,7 @@ import { PluginDeveloperModeWatcher } from '../electron/plugin-developer-mode.ts
 import { linkDirectory } from './support/fs-capabilities.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 兩次連續寫入的 fs.watch 事件，送達間隔在高負載下會拉長（F2 實測：三個全量同時跑時 200 ms 的 debounce 被拆成兩次 reload）。
-// debounce 取 1 秒，遠大於負載下的送達間隔；合併的判斷不受影響。
+// 高負載下 fs.watch 事件的送達間隔會拉長，debounce 取 1 秒才不會把連續寫入拆成兩次 reload。
 const COALESCE_DEBOUNCE_MS = 1_000
 
 test('developer folder watcher coalesces edits and closes its subscriptions', async () => {

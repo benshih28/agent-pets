@@ -10,7 +10,6 @@ import { PET_THEME_COLOR_PROPERTIES, type PanelThemeState, type PetThemeState } 
 import { DARK_COLORS, LIGHT_COLORS, manifest, png, theme, woff2 } from './support/panel-theme-fixtures.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// readRegularFileWithin 的替身，具有相同的路徑限制契約。
 async function readWithin(root: string, relativePath: string, maxBytes: number): Promise<Uint8Array | null> {
   const target = path.resolve(root, relativePath)
   const relative = path.relative(root, target)
@@ -120,7 +119,6 @@ test('disabling, switching plugins off or removing makes every token 404 and kee
     context.sync()
     context.runtime.store.setSlot('light', { pluginId: 'theme-pack', themeId: 'aurora' })
     context.runtime.publish()
-    // 寵物視窗只收到它用得到的色盤子集，其值與面板相同。
     const pet = context.petSent.at(-1)!
     assert.equal(pet.dark, null)
     assert.deepEqual(Object.keys(pet.light!.colors), [...PET_THEME_COLOR_PROPERTIES])
@@ -166,10 +164,9 @@ test('user images get a session token, and broadcasts happen only when the state
     const response = await context.runtime.handleRequest(current.url, 'GET')
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('content-type'), 'image/png')
-    // 主題編輯器以 crossOrigin 載入使用者圖片取色：只回給受信任的面板來源。
+    // 主題編輯器以 crossOrigin 載入取色，只能回給受信任的面板來源。
     assert.equal(response.headers.get('access-control-allow-origin'), 'agent-pets://app')
     assert.equal(response.headers.get('vary'), 'Origin')
-    // 移除時會刪除圖片目錄與 store 項目。
     context.runtime.removePlugin('theme-pack')
     assert.equal(fs.existsSync(path.join(context.userData, 'panel-theme-images', 'theme-pack')), false)
     assert.deepEqual(context.runtime.store.get().userImages, {})
@@ -202,7 +199,7 @@ test('plugin partitions never get the panel-theme host', () => {
   const protocol = fs.readFileSync('electron/plugin-protocol.ts', 'utf8')
   assert.doesNotMatch(protocol, /panel-theme/)
   const runtime = fs.readFileSync('electron/main/runtime.ts', 'utf8')
-  // 主視窗的 protocol handler 依 url.hostname 分派；panel-theme 必須是其中一個 case。
+  // protocol handler 依 url.hostname 分派，panel-theme 必須是其中一個 case。
   assert.match(runtime, /switch \(url\.hostname\) \{[\s\S]*?case 'panel-theme':/)
   assert.match(fs.readFileSync('index.html', 'utf8'), /font-src 'self' data: agent-pets:\/\/panel-theme;/)
 })

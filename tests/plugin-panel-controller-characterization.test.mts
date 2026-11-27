@@ -1,5 +1,3 @@
-// 階段 10 拆分 usePluginPanelController 前先固定的行為：在 Node 掛載真的控制器（假 IPC、假 DOM、
-// 假計時器），拆分前後同一組斷言都要通過。全部用假計時器，不依賴真實時間。
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { isProxy, isRef } from 'vue'
@@ -41,8 +39,6 @@ async function openDetailWithSettings(harness: PluginPanelHarness, pluginId = 'a
   harness.controller.openPluginDetail(pluginId, 'settings')
   await harness.flush()
 }
-
-// --- 對外 API -----------------------------------------------------------------
 
 const EXPECTED_API: Record<string, string> = {
   busy: 'ref', catalogCheckComplete: 'ref', catalogError: 'ref', catalogItemFor: 'function', catalogItems: 'ref',
@@ -103,8 +99,6 @@ test('the controller exposes exactly the same members with the same kinds', asyn
   ])
 })
 
-// --- 掛載與事件訂閱清理 ---------------------------------------------------------
-
 test('mounting loads the panel once and subscribes; unmounting removes every listener', async () => {
   const harness = await mountPluginPanel()
   assert.equal(harness.callsOf('getPluginPanelSnapshot').length, 1)
@@ -152,8 +146,6 @@ test('pushed badge, event-source and notification changes update the panel', asy
   assert.deepEqual(harness.controller.notifications.value.map(record => record.item.id), ['n1'])
 })
 
-// --- 未儲存設定的離開確認 -------------------------------------------------------
-
 test('leaving a dirty settings form waits for confirmation, then discards the draft', async () => {
   const harness = await mountPluginPanel()
   const { controller } = harness
@@ -170,7 +162,6 @@ test('leaving a dirty settings form waits for confirmation, then discards the dr
   assert.equal(controller.detailPluginId.value, 'alpha')
   assert.equal(controller.selectedPluginId.value, 'alpha')
 
-  // 取消：元件直接把 pendingLeave 設回 null。
   controller.pendingLeave.value = null
   assert.equal(controller.detailPluginId.value, 'alpha')
   assert.equal(controller.settingsDraft.value.city, 'Kaohsiung')
@@ -237,8 +228,6 @@ test('saving validates first, then adopts the values the main process returns', 
   assert.deepEqual(controller.settingsDraft.value, { city: 'Taipei', count: 1 })
 })
 
-// --- Secret 與 secret consent --------------------------------------------------
-
 test('a first secret save asks for consent and sends nothing until it is accepted', async () => {
   let consented = false
   const harness = await mountPluginPanel({
@@ -282,7 +271,6 @@ test('a failed consent keeps the request pending and never sends the secret', as
   assert.equal(harness.callsOf('setPluginSecret').length, 0)
   assert.ok(controller.toasts.value.some(toast => toast.tone === 'error' && toast.text === t('pluginServiceUnavailable')))
   assert.ok(!toastTexts(harness).includes(SECRET))
-  // 元件以 pendingSecretConsentKey = '' 取消對話框。
   controller.pendingSecretConsentKey.value = ''
   await controller.confirmSecretConsent()
   assert.equal(harness.callsOf('acceptPluginSecretConsent').length, 1)
@@ -301,7 +289,6 @@ test('with consent already given the secret is saved directly, and a save error 
   await controller.savePluginSecret('token')
   assert.equal(controller.pendingSecretConsentKey.value, '')
   assert.deepEqual(harness.callsOf('setPluginSecret').map(call => call.args), [['alpha', 'token', SECRET]])
-  // 失敗時保留草稿讓使用者重試，但錯誤訊息只有錯誤碼。
   assert.equal(controller.secretDrafts.value.token, SECRET)
   const error = controller.toasts.value.find(toast => toast.tone === 'error')
   assert.equal(error?.text, t('pluginSecretUnavailable'))
@@ -339,8 +326,6 @@ test('a busy plugin scope drops a second save instead of sending it twice', asyn
   await first
   assert.equal(controller.pluginBusy('alpha'), false)
 })
-
-// --- 非同步回應競態 -------------------------------------------------------------
 
 test('a stale panel-view open result is closed instead of replacing the newer panel', async () => {
   const opens = new Map<string, ReturnType<typeof deferred<ReturnType<typeof ok<{ openToken: number }>>>>>()
@@ -466,8 +451,6 @@ test('a refresh that drops the open detail plugin closes the detail view', async
   assert.equal(controller.detailPluginId.value, '')
   assert.equal(controller.selectedPluginId.value, '')
 })
-
-// --- 原生 panel view 開關、放大與焦點還原 ----------------------------------------
 
 test('opening sends the frame bounds, watches them, and closing restores focus', async () => {
   const harness = await mountPluginPanel({ api: { openPluginPanelView: () => Promise.resolve(ok({ openToken: 11 })) } })
@@ -599,7 +582,6 @@ test('a panel request from props opens once per nonce and an empty request close
     props: { requestedPluginId: 'alpha', requestNonce: 1001 },
     api: { openPluginPanelView: () => Promise.resolve(ok({ openToken: 21 })) },
   })
-  // 掛載時 frame 還沒出現，第一次開啟以 panel_unavailable 結束；同一個序號不會重播。
   assert.equal(harness.callsOf('openPluginPanelView').length, 0)
   frameElements(harness)
   harness.props.requestNonce = 1001
@@ -614,8 +596,6 @@ test('a panel request from props opens once per nonce and an empty request close
   await harness.flush()
   assert.equal(harness.controller.panelViewPluginId.value, '')
 })
-
-// --- 通知 -------------------------------------------------------------------
 
 function notification(id: string, pluginId: string, read = false) {
   return {
@@ -684,8 +664,6 @@ test('mark-all-read sends one request only when something is unread', async () =
   assert.ok(controller.notifications.value.every(record => record.read))
   assert.equal(controller.notificationSource(records[0]), '插件 alpha')
 })
-
-// --- 清單、文字與查表 -----------------------------------------------------------
 
 test('the installed list puts plugins that need attention first and filters by state and text', async () => {
   const crashed = { ...plugin('crashy'), status: 'disabled_crashed' as const }
@@ -761,7 +739,6 @@ const PERMISSION_COPY: Array<[string, TranslationKey | PluralLabelKey, Record<st
 test('permission units map to the same label and hint copy', async () => {
   const harness = await mountPluginPanel()
   for (const [unit, labelKey, params, hintKey] of PERMISSION_COPY) {
-    // 帶數量的貢獻點標籤以 `.one`/`.other` 存放，依 count 走 tPlural。
     const expectedLabel = isPluralLabelKey(labelKey)
       ? tPlural(labelKey, Number(params?.count) || 0, params)
       : t(labelKey, params)
@@ -809,7 +786,6 @@ test('error codes map to localized copy and unknown codes fall back', async () =
   assert.equal(toast?.sticky, true)
 })
 
-// 刻意差異：原本以一般物件查表，`constructor` 之類的原型名稱會拿到函式並讓 t() 拋例外。
 test('error-code lookups ignore prototype names', async () => {
   const harness = await mountPluginPanel()
   assert.equal(harness.controller.localizedError('constructor'), t('pluginActionFailed'))
@@ -818,8 +794,6 @@ test('error-code lookups ignore prototype names', async () => {
   const prototypeName = 'constructor' as unknown as PluginErrorCode
   assert.equal(harness.controller.diagnosticCodeLabel({ at: 1, code: prototypeName }), t('plugins.diagnosticRejectedHuman', { reason: t('plugins.reasonOther') }))
 })
-
-// --- 拆分時新增的守衛（刻意差異，原控制器沒有） ----------------------------------------
 
 test('a settings save that finishes after switching plugins does not fill the new form', async () => {
   const pending = deferred<ReturnType<typeof ok<Record<string, string | number>>>>()
@@ -870,7 +844,6 @@ test('concurrent notification refreshes share one trailing request and keep the 
     },
   })
   const { controller } = harness
-  // 掛載時的那一次還在途中。
   assert.equal(lists.length, 1)
   harness.emit('onPluginNotificationsChanged')
   harness.emit('onPluginNotificationsChanged')
@@ -885,8 +858,7 @@ test('concurrent notification refreshes share one trailing request and keep the 
   assert.equal(lists.length, 2)
 })
 
-// 刻意差異：原本把 reactive 草稿直接交給 IPC，structured clone 會以「An object could not be cloned」失敗
-// （實機的儲存按鈕一律顯示操作失敗）。送出的必須是純物件。
+// reactive 草稿無法通過 IPC 的 structured clone，送出的必須是純物件。
 test('settings are sent to the main process as a plain, cloneable object', async () => {
   const harness = await mountPluginPanel({
     api: { setPluginSettings: (_id: string, values: Record<string, unknown>) => Promise.resolve(ok({ ...values })) },

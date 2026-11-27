@@ -1,9 +1,4 @@
-// 量測本機用量掃描（Codex／Claude JSONL）對主執行緒事件迴圈的影響，並比較
-// 「現行主執行緒掃描」與「worker 解析 + 主執行緒寫入」兩種做法。
-//
-// 用法：node --experimental-strip-types scripts/bench/local-usage-lag.mjs [--rounds=5] [--claude-files=100] [--codex-files=60]
 // 只使用暫存目錄產生的 fixture，絕不讀取真實的 ~/.codex、~/.claude。
-// 兩種模式在獨立子行程中交錯執行（每一輪依序跑完所有組合），各自有乾淨的 JIT 與暫存資料庫。
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -26,7 +21,6 @@ function fixtureHome(root, claudeFiles, codexFiles) {
     const lines = []
     for (let i = 0; i < 300; i += 1) {
       const at = new Date(now - (300 - i) * 1000 - f * 60_000).toISOString()
-      // 約三分之一是 assistant usage，其餘是 user／tool 大行，與真實 transcript 比例相近。
       lines.push(i % 3 === 0
         ? JSON.stringify({ type: 'assistant', timestamp: at, sessionId: `claude-${f}`, cwd: `/work/project-${f % 10}`, message: { id: `m-${f}-${i}`, model: 'claude-sonnet-4', usage: { input_tokens: 100 + i, output_tokens: 20 + i, cache_read_input_tokens: 500, cache_creation_input_tokens: 50 }, content: pad } })
         : JSON.stringify({ type: 'user', timestamp: at, sessionId: `claude-${f}`, message: { content: pad } }))
@@ -78,7 +72,6 @@ async function runChild(modeName, home) {
         ],
       },
     })
-    // 與 importRecords 相同：每批寫入，批次之間讓出事件迴圈。
     let queue = Promise.resolve()
     await new Promise((resolve, reject) => {
       worker.on('error', reject)
@@ -103,8 +96,6 @@ async function runChild(modeName, home) {
   process.stdout.write(`${JSON.stringify({ mode: modeName, imported, totalMs, mean: ms(histogram.mean), p99: ms(histogram.percentile(99)), max: ms(histogram.max) })}\n`)
 }
 
-// 受測組合：main500 是改前（主執行緒掃描、500 筆一批寫入），main100 只改批次大小，
-// worker100 是 worker 解析 + 100 筆一批寫入。
 const MODES = { main500: { kind: 'main', batch: 500 }, main100: { kind: 'main', batch: 100 }, worker100: { kind: 'worker', batch: 100 } }
 const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
 

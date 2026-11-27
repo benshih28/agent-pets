@@ -23,8 +23,6 @@ import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import TextField from '@/components/ui/TextField.vue'
 
-// 歷史分頁的「工作階段」清單：只顯示中繼資料（狀態、工具次數、token、時間），
-// 以 keyset 分頁「載入更多」，篩選條件變動時從第一頁重新查詢。
 const props = defineProps<{ active: boolean; rangeDays: number; projectId: string }>()
 const store = useAgentStore()
 const { tokens, duration } = useHistoryFormat()
@@ -48,7 +46,6 @@ const OUTCOME_TONES: Record<HistorySessionOutcome, 'success' | 'danger' | 'neutr
   incomplete: 'warn',
 }
 
-// --- filters -----------------------------------------------------------------
 const adapterFilter = ref('')
 const outcomeFilter = ref('')
 const search = ref('')
@@ -61,11 +58,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 const adapterOptions = AGENT_ADAPTER_REGISTRY.map(entry => ({ id: entry.id, label: entry.displayName }))
 
-/**
- * Local midnight of a YYYY-MM-DD from <input type="date"> plus `dayOffset`
- * days; NaN when empty or invalid. Day arithmetic goes through Date so a DST
- * day (23 or 25 hours) still ends at the next local midnight.
- */
+/** Day arithmetic goes through Date so a DST day (23 or 25 hours) still ends at the next local midnight. */
 function localDayStart(value: string, dayOffset = 0): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return Number.NaN
@@ -89,8 +82,6 @@ function currentQuery(): HistorySessionQuery {
   return query
 }
 
-// --- loading -----------------------------------------------------------------
-// shallowRef: rows are replaced or appended as whole arrays, never mutated in place.
 const items = shallowRef<HistorySessionListItem[]>([])
 const nextCursor = ref<HistorySessionCursor | null>(null)
 const loading = ref(false)
@@ -99,8 +90,7 @@ const error = ref(false)
 const loaded = ref(false)
 const loadMoreFailed = ref(false)
 let requestSeq = 0
-// The query of the first page, reused (with the cursor) for every later page:
-// recomputing it would move the rolling "last N days" bound between pages.
+// Reused for every later page: recomputing it would move the rolling "last N days" bound.
 let pageQuery: HistorySessionQuery = {}
 
 async function reload(): Promise<void> {
@@ -158,7 +148,6 @@ watch(
   { immediate: true },
 )
 
-// --- labels ------------------------------------------------------------------
 const projectNames = computed(() => new Map(store.projectPets.map(project => [project.projectId, project.displayName])))
 
 function projectName(item: HistorySessionListItem): string {
@@ -182,9 +171,7 @@ function metaLine(item: HistorySessionListItem): string {
   return parts.join(' · ')
 }
 
-// --- detail ------------------------------------------------------------------
 const selected = shallowRef<HistorySessionListItem | null>(null)
-// 彈窗開著時清單不刷新；期間若有更新，關閉後補刷一次。
 let missedRefresh = false
 
 function closeDetail(): void {
@@ -194,12 +181,10 @@ function closeDetail(): void {
   if (props.active && items.value.length <= HISTORY_SESSION_PAGE_DEFAULT) void reload()
 }
 
-// --- lifecycle ---------------------------------------------------------------
 let cleanupHistoryUpdated: (() => void) | null = null
 onMounted(() => {
   cleanupHistoryUpdated = window.electronAPI?.onHistoryUpdated(() => {
-    // Only the first page refreshes on its own; a reader who loaded more
-    // pages keeps their place instead of the list jumping under them.
+    // Only the first page refreshes on its own, so a reader who loaded more keeps their place.
     if (!props.active || items.value.length > HISTORY_SESSION_PAGE_DEFAULT) return
     if (selected.value) { missedRefresh = true; return }
     if (refreshTimer) clearTimeout(refreshTimer)
@@ -333,8 +318,6 @@ onUnmounted(() => {
   list-style: none;
 }
 
-/* Rows are content-layer: flat raised tint, no backdrop blur. Off-screen rows
-   skip layout and paint until scrolled near, which keeps long loaded lists cheap. */
 .sessions-item {
   content-visibility: auto;
   contain-intrinsic-size: auto 56px;
@@ -363,8 +346,7 @@ onUnmounted(() => {
   background: var(--surface-raised-hover);
 }
 
-/* content-visibility on the item clips paint to its box, so the ring is drawn
-   inside; the extra class outranks the panel-wide :focus-visible offset. */
+/* content-visibility clips paint to the item's box, so the ring is drawn inside. */
 .sessions-list .sessions-row:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: calc(var(--focus-ring-width) * -1);

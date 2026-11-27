@@ -82,15 +82,12 @@ test('a flooding plugin is capped per source and cannot evict crash evidence', (
   logger.flush()
   const flood = logger.readRecent(1000).filter(line => line.includes('flood '))
   assert.equal(flood.length, 30, 'quota of 30 lines per minute')
-  // Another plugin has its own budget.
   logger.log('info', 'plugin:other', 'hello')
-  // The next window reports what was dropped.
   clock += 61_000
   logger.log('info', 'plugin:spam', 'back')
   const recent = logger.readRecent(1000)
   assert.ok(recent.some(line => /470 log lines dropped/.test(line)))
   assert.ok(recent.some(line => line.includes('hello')))
-  // Even after heavy rotation by trusted sources the crash line survives via the evidence file.
   for (let i = 0; i < 80; i += 1) logger.log('warn', 'main', `rotation padding padding padding padding ${i}`)
   logger.flush()
   assert.ok(logger.readRecent(1000).some(line => line.includes('FATAL uncaught exception: boom')))

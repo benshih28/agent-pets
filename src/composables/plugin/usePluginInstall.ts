@@ -1,9 +1,3 @@
-// 插件安裝與移除：選檔／資料夾／目錄項目產生安裝計畫、確認 Sheet 的衍生狀態、「全部更新」佇列與移除確認。
-//
-// 契約：
-// - 讀：enabledGlobally、pluginName（成功訊息）、catalogLoadedAt（安裝後是否重新檢查目錄）。
-// - 寫：pendingPlan／updateQueue／pendingRemove／keepData 為此處所有；安裝成功後呼叫 refreshPanel。
-// - 排序：'install' 範圍同時間只允許一個動作；更新佇列在計畫被關閉（確認或取消）後才接續下一個，絕不跳過同意。
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { locale, t, type TranslationKey } from '@/i18n'
 import type { PluginInstallPlan, PluginPanelPlugin } from '@/types/plugin'
@@ -49,7 +43,6 @@ export function usePluginInstall(deps: PluginInstallDeps) {
     return t(PLAN_KIND_LABELS[plan.kind])
   }
 
-  // 更新時：新增權限單獨置頂，既有權限折疊；新安裝時所有權限都是「新增」。
   const pendingPermissionSections = computed(() => {
     const plan = pendingPlan.value
     if (!plan) return { isUpdate: false, added: [] as PermissionGroupView[], existing: [] as PermissionGroupView[], existingCount: 0 }
@@ -67,7 +60,6 @@ export function usePluginInstall(deps: PluginInstallDeps) {
   })
   const installAcknowledgements = computed(() => installAcknowledgementReasons(pendingPlan.value))
 
-  // 三種來源（封存檔、開發者資料夾、目錄項目）共用：忙碌範圍、清空舊計畫與錯誤處理。
   async function planFrom(
     pick: () => Promise<
       | { ok: true; value: PluginInstallPlan }
@@ -109,7 +101,7 @@ export function usePluginInstall(deps: PluginInstallDeps) {
     )
   }
 
-  // 「全部更新」：逐一為每個可更新項目產生安裝計畫並開啟同一個確認 Sheet，絕不跳過同意。
+  // 更新佇列逐一開啟確認 Sheet，絕不跳過同意。
   async function installNextQueuedUpdate(): Promise<void> {
     const next = updateQueue.value[0]
     if (!next) return

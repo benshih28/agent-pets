@@ -3,9 +3,6 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// Main-process user-visible copy goes through src/i18n.ts. Comments may stay
-// in Chinese; string literals may not. Other electron/*.ts files are migrated
-// by their owning streams and are added to this list as they are cleaned up.
 const root = join(import.meta.dirname, '..', 'electron')
 const files = [
   join(root, 'main.ts'),

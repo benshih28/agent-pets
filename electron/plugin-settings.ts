@@ -85,7 +85,6 @@ export function isValidSettingValue(definition: PluginSettingDefinition, value: 
   return typeof value === 'boolean'
 }
 
-/** 只接受一般物件（原型為 Object.prototype 或 null）；設定值不能是類別實例或帶 getter 的代理。 */
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false
   const prototype = Object.getPrototypeOf(value)

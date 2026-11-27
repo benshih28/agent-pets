@@ -11,28 +11,22 @@ const PERMISSION_URL = 'http://127.0.0.1:17374/v1/permission'
 const DEPLOY_DIR = path.join(os.homedir(), '.desktop-pet')
 const EVENT_TOKEN_PATH = path.join(DEPLOY_DIR, 'event-token')
 const PERMISSION_TOKEN_PATH = path.join(DEPLOY_DIR, 'permission-token')
-// Written by the app only while "Answer Claude Code permissions from the pet" is on.
 const RESPOND_OPT_IN_PATH = path.join(DEPLOY_DIR, 'claude-permission-respond')
 const POLL_INTERVAL_MS = 450
 const MIN_WAIT_SECONDS = 15
 const MAX_WAIT_SECONDS = 120
-// 與 src/types/id-patterns.ts 的 OPAQUE_ID_128_PATTERN 相同（hook 由 Node 直接執行，不能匯入 TS；有測試檢查）。
+// 與 src/types/id-patterns.ts 的 OPAQUE_ID_128_PATTERN 相同（hook 由 Node 直接執行，不能匯入 TS）。
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
-// 送到 app 的時限分兩段（量測依據見 docs/dev/hook-delivery.md）。請求一旦交給作業系統，app 晚點才讀也收得到
-// （即使這個程序已結束），所以長的時限只涵蓋把請求送出去，機器很忙時這段可能要將近 1 秒。
+// 請求一旦交給作業系統，app 晚點才讀也收得到，所以長時限只涵蓋送出；機器很忙時這段可能近 1 秒。
 const SEND_DEADLINE_MS = 1500
-// 狀態事件不需要回應內容，送出後只短暫等 204 就離開。
 const STATUS_ANSWER_GRACE_MS = 250
-// 權限回覆要讀回應（請求是否建立、使用者的決定），送出後最多再等這麼久。
 const PERMISSION_ANSWER_DEADLINE_MS = 1000
 const MAX_ANSWER_BYTES = 16 * 1024
-// app 正在啟動（electron/main/hook-startup-marker.ts 寫的標記夠新）時，連線被拒就每隔一段時間重試，總共最多等這麼久。
 const STARTUP_RETRY_INTERVAL_MS = 100
 const STARTUP_WAIT_MS = 5000
-// 比這更舊的標記視為當機留下的，不重試。
+// 比這更舊的啟動標記視為當機留下的，不重試。
 const STARTUP_MARKER_MAX_AGE_MS = 20_000
-// 權限請求（只重試 request 這一個呼叫）在 app 啟動期間被拒時最多等這麼久。必須從權限等待時間扣掉，
-// 讓整個 hook 的最壞耗時不超過原本的上限，見 createPermissionRequest 的算式與 docs/dev/hook-delivery.md。
+// 必須從權限等待時間扣掉，讓整個 hook 的最壞耗時不超過上限。
 const PERMISSION_STARTUP_WAIT_MS = 5000
 // Fixed text: the reason Claude sees must never echo request content back.
 const DENY_MESSAGE = 'Denied in Agent Pets. (已在 Agent Pets 拒絕)'
@@ -40,19 +34,14 @@ const DENY_MESSAGE = 'Denied in Agent Pets. (已在 Agent Pets 拒絕)'
 const validSources = ['codex', 'codex-desktop', 'claude', 'claude-desktop']
 let source = validSources.includes(process.argv[2]) ? process.argv[2] : 'codex'
 
-// Claude Code CLI and Claude Desktop share the same ~/.claude/settings.json
-// hooks config, so the installer can't hardcode which one is firing — the
-// invoked arg is always 'claude'. Claude Code sets CLAUDE_CODE_ENTRYPOINT in
-// the hook's environment to say how it was launched (cli, claude-desktop,
-// claude-vscode, sdk-*, etc.), so resolve the real source from that instead.
+// Claude Code CLI and Desktop share ~/.claude/settings.json, so the invoked arg is always
+// 'claude'; the real source comes from CLAUDE_CODE_ENTRYPOINT.
 if (source === 'claude' && process.env.CLAUDE_CODE_ENTRYPOINT === 'claude-desktop') {
   source = 'claude-desktop'
 }
 
 
-// Which app the agent runs in, so the pet can switch back to it. Only these few environment
-// values are read and sent, each capped and shape-checked again by the app; never an env dump,
-// pid, tty or path. Flags are sent as `true` only, never the variable's value.
+// Only these few env values are read; never an env dump, pid, tty or path. Flags are sent as `true` only.
 function shortEnv(name, pattern) {
   const value = process.env[name]
   return typeof value === 'string' && pattern.test(value) ? value : undefined
@@ -92,8 +81,7 @@ function mapCodexEvent(eventName) {
   }
 }
 
-// Codex Desktop 會在自己的設定目錄底下跑背景執行緒（記憶整理的工作目錄是 <CODEX_HOME>/memories_v2）。
-// 那不是使用者的對話，結束時也不送 Stop／SessionEnd，寵物會停在 thinking 直到逾時，所以整個略過。
+// <CODEX_HOME>/memories_v2 的背景執行緒不是使用者對話，也不送 Stop／SessionEnd，寵物會卡在 thinking。
 const CODEX_INTERNAL_DIR = /^memories(?:_v\d+)?$/i
 
 function isCodexInternalThread(cwd) {
@@ -105,7 +93,7 @@ function isCodexInternalThread(cwd) {
   return CODEX_INTERNAL_DIR.test(relative.split(/[\\/]/)[0])
 }
 
-// Claude Code 的 Notification 事件帶結構化的 notification_type；null 代表有文件記載但不影響寵物狀態。
+// null 代表有文件記載但不影響寵物狀態。
 const CLAUDE_NOTIFICATION_STATES = Object.freeze({
   permission_prompt: 'waiting-permission',
   idle_prompt: 'waiting-input',
@@ -175,10 +163,7 @@ function readStdin() {
   })
 }
 
-// --- Claude Code permission respond mode ------------------------------------
-// Every failure path below returns silently: printing nothing makes Claude Code
-// fall back to its own permission prompt, so the worst case equals no hook.
-
+// Every failure path below returns silently: printing nothing makes Claude Code fall back to its own prompt.
 function readSmallFile(filePath, maxBytes) {
   try {
     const stat = fs.lstatSync(filePath)
@@ -189,7 +174,6 @@ function readSmallFile(filePath, maxBytes) {
   }
 }
 
-/** Wait limit in seconds when respond mode is on, otherwise null. */
 function readRespondOptIn() {
   const raw = readSmallFile(RESPOND_OPT_IN_PATH, 256)
   if (raw === null) return null
@@ -216,7 +200,7 @@ function toIdentifier(prefix, value) {
   return `${prefix}${createHash('sha256').update(String(value ?? '')).digest('hex').slice(0, 48)}`
 }
 
-/** Claude sends no tool_use_id with PermissionRequest; the ID is recomputed from content on PostToolUse. */
+// Claude sends no tool_use_id with PermissionRequest; the ID is recomputed from content on PostToolUse.
 function claudePermissionIds(payload) {
   const sessionId = String(payload?.session_id ?? '')
   const permissionId = createHash('sha256')
@@ -232,9 +216,7 @@ function claudePermissionIds(payload) {
 
 const DETAIL_KEYS = ['command', 'file_path', 'notebook_path', 'url', 'pattern', 'query']
 
-// What the bubble shows. Known argument fields first; otherwise the arguments as compact JSON
-// (MCP tools, Task, ...). `description` is the model's own summary, not what will run, so it is
-// never shown. The app redacts and shortens this further before display.
+// `description` is the model's own summary, not what will run, so it is never shown.
 function permissionDetail(toolInput) {
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return undefined
   for (const key of DETAIL_KEYS) {
@@ -250,17 +232,11 @@ function editedFilePath(toolInput) {
   return typeof value === 'string' && value.length <= 4096 ? value : undefined
 }
 
-// The main agent or the subagent that asked; requests are superseded per scope.
 function agentScope(payload) {
   return typeof payload?.agent_id === 'string' && payload.agent_id ? toIdentifier('', payload.agent_id) : 'main'
 }
 
-/**
- * POST JSON 到本機 app。用 node:http 而不是 fetch：fetch 第一次呼叫的初始化在忙碌的機器上就可能吃掉好幾百毫秒。
- * 時限分兩段：SEND_DEADLINE_MS 內要把請求交給作業系統，之後最多再等 answerMs。
- * 不會 reject。回傳 { status, data, refused }：status 0 代表沒有收到回應標頭；data 只在 readAnswer 且回 200/201 時
- * 解析（超過 MAX_ANSWER_BYTES、格式錯誤或沒讀完就是 null）；refused 代表連線被拒，請求完全沒有送出。
- */
+// 用 node:http 而不是 fetch：fetch 第一次呼叫的初始化在忙碌的機器上就可能吃掉好幾百毫秒。
 function postLocal(url, headers, payload, { answerMs, readAnswer }) {
   const body = JSON.stringify(payload)
   return new Promise((resolve) => {
@@ -277,7 +253,6 @@ function postLocal(url, headers, payload, { answerMs, readAnswer }) {
     }, (response) => {
       status = response.statusCode ?? 0
       const keep = readAnswer && (status === 200 || status === 201)
-      // 回應中途斷線時立刻結束，不必等完時限。
       response.on('error', () => done(false))
       response.once('end', () => done(keep))
       if (!keep) {
@@ -338,27 +313,19 @@ function writeStdout(text) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-/**
- * Creates the pet request; returns what polling needs, or null to stay silent.
- * app 啟動期間（啟動標記還新）連線被拒代表請求完全沒送出，重試不會重複建立請求；
- * 其他結果（逾時、4xx/5xx、409）都不重試。每次重試沿用同一個 nonce 與 lookup。
- */
+// 連線被拒代表請求完全沒送出，重試不會重複建立請求；其他結果（逾時、4xx/5xx、409）都不重試。
 async function createPermissionRequest(payload, waitSeconds) {
   const token = readPermissionToken()
   if (!token) return null
   const ids = claudePermissionIds(payload)
   const toolName = typeof payload?.tool_name === 'string' && payload.tool_name ? payload.tool_name : 'unknown'
-  // Unique to this invocation: only this process can read and acknowledge the decision, so an
-  // identical request running in parallel (409 here) can never consume the same click.
+  // Unique to this invocation, so an identical parallel request (409 here) can never consume the same click.
   const nonce = randomBytes(16).toString('hex')
   const lookup = { source, instanceId: ids.instanceId, permissionId: ids.permissionId, nonce }
   const startedAt = Date.now()
-  // 第一次嘗試不扣：建立 body 的那幾毫秒進位後會變成 1 秒，正常情況的 ttl 就不再等於使用者設定的等待秒數。
   for (let attempt = 0; ; attempt += 1) {
-    // 時限預算：Claude 的 hook 時限是 CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS（135 秒），原本最壞情況
-    // 2.5（建立）+ (waitSeconds + 2)（輪詢）+ 2.5（最後一次輪詢）+ 2.5（回報）= 129.5 秒（waitSeconds = 120）。
-    // 已花在重試的秒數從 ttl 扣掉：已花秒數（無條件進位）+ ttl <= waitSeconds，總和不變；
-    // 重試最多 PERMISSION_STARTUP_WAIT_MS，所以 waitSeconds >= 21 時 MIN_WAIT_SECONDS 下限不會生效。
+    // Claude 的 hook 時限 135 秒，最壞情況 129.5 秒（waitSeconds = 120）；重試已花的秒數從 ttl 扣掉，總和不變。
+    // 第一次嘗試不扣：建立 body 的幾毫秒進位成 1 秒，ttl 就不等於使用者設定的秒數。
     const spentSeconds = attempt === 0 ? 0 : Math.ceil((Date.now() - startedAt) / 1000)
     const ttlSeconds = Math.max(MIN_WAIT_SECONDS, waitSeconds - spentSeconds)
     const body = {
@@ -379,8 +346,7 @@ async function createPermissionRequest(payload, waitSeconds) {
 }
 
 async function pollPermissionDecision({ token, lookup, ttlSeconds }) {
-  // The broker expires the request after the ttl it was sent; the grace covers the
-  // final poll so a click just before expiry is still picked up.
+  // The grace covers the final poll so a click just before the broker's ttl expiry is still picked up.
   const deadline = Date.now() + ttlSeconds * 1000 + 2000
   while (Date.now() < deadline) {
     const polled = await permissionPost(token, 'decision', lookup)
@@ -401,7 +367,6 @@ async function pollPermissionDecision({ token, lookup, ttlSeconds }) {
   }
 }
 
-// Answered in the terminal (or the turn ended): take the bubble down.
 async function resolveClaudePermissions(eventName, payload) {
   const token = readPermissionToken()
   if (!token) return
@@ -421,7 +386,6 @@ async function resolveClaudePermissions(eventName, payload) {
   await permissionPost(token, 'resolved-session', { source, instanceId: ids.instanceId })
 }
 
-/** app 剛啟動、還沒開始收事件。只在連線被拒時才呼叫，所以 app 開著時完全不會多讀檔。 */
 function appIsStarting() {
   try {
     const marker = path.join(DEPLOY_DIR, `event-port-${new URL(PET_URL).port}.starting`)
@@ -433,10 +397,7 @@ function appIsStarting() {
   }
 }
 
-/**
- * 寵物沒開時連線立刻被拒，hook 馬上結束（只多一次 lstat）。app 正在啟動時才重試，
- * 而且同一個 hook 依序重試，同一個 session 的事件順序不會亂。
- */
+// 同一個 hook 依序重試，同一個 session 的事件順序不會亂。
 async function postStatus(eventToken, event) {
   const startedAt = Date.now()
   for (;;) {

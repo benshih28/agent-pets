@@ -25,7 +25,6 @@ export interface LevelUpEvent {
   at: number
 }
 
-/** Validates a main-process award notification before it reaches the store. */
 export function normalizeProgressionAwardEvent(value: unknown): ProgressionAwardEvent | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>

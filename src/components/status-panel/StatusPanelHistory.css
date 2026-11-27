@@ -1,4 +1,3 @@
-/* The overview keeps the view's column rhythm inside its tab panel. */
 .history-overview:not([hidden]) {
   display: flex;
   flex-direction: column;

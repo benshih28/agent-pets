@@ -33,7 +33,6 @@ export const PLUGIN_RESOURCE_BOUNDS = Object.freeze({
   scheduleMinIntervalSeconds: Object.freeze({ default: 60, min: 30, max: 3_600 }),
 } as const satisfies Record<keyof PluginResourceLimits, { default: number; min: number; max: number }>)
 
-// 預算是相對於 host 自身基準的「增長」上限，Chromium 本身的開銷由 PluginHostMemoryMonitor 扣除。
 export function pluginHostMemoryBudgetMb(memoryMbPerPlugin: number, activePluginCount: number): number {
   if (!Number.isFinite(memoryMbPerPlugin) || memoryMbPerPlugin <= 0 || activePluginCount <= 0) return 0
   return memoryMbPerPlugin * activePluginCount

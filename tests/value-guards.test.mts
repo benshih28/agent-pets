@@ -46,10 +46,8 @@ test('recordOrEmpty returns the same object, or a fresh empty object for anythin
     assert.deepEqual(result, {}, String(typeof value))
     assert.equal(Object.getPrototypeOf(result), Object.prototype)
   }
-  // 每次都是新物件：呼叫端寫入不會汙染下一次的預設值。
   const first = recordOrEmpty(null)
   first.polluted = true
   assert.deepEqual(recordOrEmpty(null), {})
-  // 陣列上的欄位不會被讀到：陣列一律當空物件。
   assert.equal(recordOrEmpty(Object.assign([], { height: 40 })).height, undefined)
 })

@@ -18,7 +18,6 @@ test('plugin area styles only use design tokens that exist', () => {
     const source = readFileSync(new URL(file, root), 'utf8')
     for (const match of source.matchAll(/var\((--[a-z0-9-]+)(?:\s*,[^)]*)?\)/g)) {
       const token = match[1]
-      // A token with an explicit fallback in the same var() is allowed to be theme-provided.
       if (match[0].includes(',')) continue
       assert.ok(defined.has(token), `${file} uses undefined token ${token}`)
     }

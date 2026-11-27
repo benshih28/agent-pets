@@ -1,4 +1,3 @@
-// 權限單位 → 畫面文字（標籤與說明）。分組與風險等級仍由 plugin-permissions.ts 決定；
 // 授權與重新同意一律由主程序判定，這裡只負責顯示。
 import { t, tPlural, type TranslationKey, type TranslationParams } from '@/i18n'
 import { groupPermissionUnits, parsePermissionUnit, type PermissionGroupId, type PermissionRisk } from '@/utils/plugin-permissions'
@@ -27,7 +26,6 @@ type PermissionCopy = {
   | { label: string; plural: true }
 )
 
-// 依權限種類（`kind:detail` 的 kind）。
 const KIND_COPY = {
   network: { label: 'pluginPermissionNetwork', hint: 'plugins.hintNetwork', params: host => ({ host }) },
   links: { label: 'pluginPermissionLinks', hint: 'plugins.hintLinks', params: host => ({ host }) },
@@ -39,7 +37,6 @@ const KIND_COPY = {
 
 const NETWORK_USER_GRANTED_COPY: PermissionCopy = { label: 'plugins.permNetworkUserGranted', hint: 'plugins.hintNetworkUserGranted' }
 
-// 其餘依 detail（貢獻點名稱）。
 const CONTRIBUTION_COPY = {
   feed: { label: 'pluginPermissionFeed', hint: 'plugins.hintFeed' },
   reaction: { label: 'pluginPermissionReaction', hint: 'plugins.hintReaction' },
@@ -51,7 +48,6 @@ const CONTRIBUTION_COPY = {
   panelThemeFonts: { label: 'pluginPermissionPanelThemeFonts', hint: 'plugins.hintPanelThemeFonts' },
 } as const satisfies Record<string, PermissionCopy>
 
-// 帶數量的貢獻點（`skins:3`、`panelThemes:2`）。
 const COUNTED_CONTRIBUTION_COPY = [
   ['skins:', { label: 'pluginPermissionSkins', hint: 'plugins.hintSkins', plural: true }],
   ['panelThemes:', { label: 'pluginPermissionPanelThemes', hint: 'plugins.hintPanelThemes', plural: true }],

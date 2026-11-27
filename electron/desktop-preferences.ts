@@ -41,17 +41,15 @@ function supportedVisibilityPreference(
   enabled: boolean | undefined,
   supported: boolean,
 ): boolean {
-  // A preference file can outlive the platform/runtime that wrote it. Never
-  // project a stale `true` into the renderer or native side effects when the
-  // current platform does not expose the capability.
+  // A preference file can outlive the platform that wrote it; never project a stale `true` when the capability is unsupported.
   return supported && enabled === true
 }
 
 export interface LoginItemAdapter {
   supported: boolean
-  /** OS-reported state. Must not throw. */
+  /** Must not throw. */
   getStatus(): LaunchAtStartupStatus
-  /** Applies the request and returns the resulting OS state. Must not throw. */
+  /** Must not throw. */
   setLaunchAtStartup(enabled: boolean): LaunchAtStartupStatus
 }
 
@@ -62,9 +60,7 @@ export function resolveLoginItemExecutable(
   portableExecutableFile?: string,
 ): string | null {
   if (!isPackaged) return null
-  // Windows portable runs from a temporary extraction directory, so it must use the
-  // original launcher (PORTABLE_EXECUTABLE_FILE). The NSIS installer build has no such
-  // variable and its process.execPath is the real installed exe, so fall back to it.
+  // Windows portable runs from a temporary extraction directory, so use PORTABLE_EXECUTABLE_FILE; the NSIS build has none and execPath is the real exe.
   const candidate = platform === 'win32' ? (portableExecutableFile ?? execPath) : execPath
   if (!candidate || !path.isAbsolute(candidate)) return null
   if (platform === 'win32' && path.extname(candidate).toLowerCase() !== '.exe') return null
@@ -77,7 +73,6 @@ export function resolveLoginItemExecutable(
   }
 }
 
-/** OS truth wins when it is definitive; otherwise the stored intent stands. */
 export function resolveLaunchIntent(status: LaunchAtStartupStatus, storedIntent: boolean): boolean {
   if (status === 'enabled') return true
   if (status === 'disabled' || status === 'unsupported') return false
@@ -204,11 +199,6 @@ export class DesktopPreferencesStore {
     this.visibilityCapabilities = visibilityCapabilities
   }
 
-  /**
-   * A native capability can become unavailable after startup (for example if
-   * a platform API rejects an event hook). Update the projection and clear any
-   * persisted toggle that can no longer be honoured.
-   */
   setVisibilityCapabilities(
     visibilityCapabilities: DesktopVisibilityCapabilities,
   ): DesktopPreferences {
@@ -287,14 +277,10 @@ export class DesktopPreferencesStore {
     const patch = parseDesktopPreferencesPatch(value)
     const current = this.get()
     const next: DesktopPreferences = { ...current, ...patch }
-    // A timed DND only makes sense while DND is on; the end time is clamped to
-    // a bounded window so a forged value cannot pin it on indefinitely by accident.
+    // The DND end time is clamped to a bounded window so a forged value cannot pin DND on indefinitely.
     next.dndUntil = normalizeDndUntil(next.dndUntil, next.dndEnabled, Date.now())
 
-    // Keep unsupported values disabled even when an old settings file or a
-    // forged renderer request asks to enable them. The response is the
-    // effective projection, so the renderer cannot display a disabled
-    // capability as enabled and no main-process side effect can observe it.
+    // Unsupported capabilities stay disabled even if an old settings file or a forged renderer request enables them.
     next.captureExclusionEnabled = supportedVisibilityPreference(
       next.captureExclusionEnabled,
       this.visibilityCapabilities.captureExclusion.supported,
@@ -309,8 +295,7 @@ export class DesktopPreferencesStore {
         let status: LaunchAtStartupStatus
         try { status = this.loginItem.setLaunchAtStartup(patch.launchAtStartup) } catch { status = 'error' }
         next.launchAtStartupStatus = status
-        // Keep the user's intent when the OS needs approval or refuses, so the
-        // toggle does not silently snap back.
+        // Keep the user's intent when the OS needs approval or refuses, so the toggle does not snap back.
         next.launchAtStartup = patch.launchAtStartup ? resolveLaunchIntent(status, true) : false
       } else {
         next.launchAtStartup = false

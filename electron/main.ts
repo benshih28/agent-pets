@@ -1,4 +1,4 @@
-// 必須是第一個 import：ES 模組依 import 順序執行，啟動標記要在其他大型模組載入前寫好（見 docs/dev/hook-delivery.md）。
+// 必須是第一個 import：ES 模組依 import 順序執行，啟動標記要在其他大型模組載入前寫好。
 import { hookStartupMarker } from './main/early-hook-startup-marker'
 
 import { app, BrowserWindow, screen, ipcMain, dialog, session, protocol, powerMonitor, Notification, shell, Menu } from 'electron'
@@ -125,8 +125,7 @@ import { MAX_PET_IMAGE_BYTES, MAX_PET_JSON_BYTES, MAX_PET_UNCOMPRESSED_BYTES, MA
 
 
 
-// Height in CSS px of the pet window's actually-painted content, reported by
-// the pet renderer. The rest of the window is transparent tooltip headroom.
+// CSS px height of the painted content reported by the pet renderer; the rest of the window is transparent tooltip headroom.
 
 
 
@@ -199,9 +198,7 @@ import { MAX_PET_IMAGE_BYTES, MAX_PET_JSON_BYTES, MAX_PET_UNCOMPRESSED_BYTES, MA
 
 
 
-// Full-size bounds captured immediately before entering Edge. The native
-// window is replaced by a small edge handle, so hover/click must restore this
-// exact snapshot instead of deriving a new position from the handle bounds.
+// Captured before entering Edge: the window becomes a small handle, so hover/click must restore this exact snapshot.
 
 
 
@@ -210,9 +207,7 @@ import { MAX_PET_IMAGE_BYTES, MAX_PET_JSON_BYTES, MAX_PET_UNCOMPRESSED_BYTES, MA
 
 
 
-// Process-level error boundary: installed before anything else so a failure in
-// any later service can never surface Electron's native crash dialog or kill
-// the tray application silently.
+// Installed first so a failure in any later service cannot surface Electron's native crash dialog or silently kill the tray app.
 teeConsoleToLog()
 // setup.ts reaches Electron only through this seam so the installers can also run from the CLI and tests.
 // macOS／Linux 從 Dock 啟動時看不到 shell 設定檔的 CLAUDE_CONFIG_DIR 等變數，啟動就先在背景問 login shell。
@@ -244,12 +239,9 @@ const crashGuard = installCrashGuard({
 installChildProcessGoneLogger(app, (_level, message) => console.error(message))
 export const mainCrashGuardStats = () => crashGuard.stats()
 
-// Enforce Chromium's renderer sandbox even if a future BrowserWindow option
-// accidentally regresses. This must be called before app readiness.
+// Enforce the renderer sandbox even if a BrowserWindow option regresses; must run before app readiness.
 app.enableSandbox()
-// Chromium's GPU process can access-violate on some Windows desktop drivers
-// while serving the Vite renderer. Safe mode is explicit and development-only;
-// packaged builds and other platforms retain hardware acceleration.
+// Chromium's GPU process can access-violate on some Windows drivers under the Vite renderer; safe mode is explicit and development-only.
 if (shouldDisableDevHardwareAcceleration(
   process.platform,
   app.isPackaged,
@@ -259,16 +251,13 @@ if (shouldDisableDevHardwareAcceleration(
   app.disableHardwareAcceleration()
   console.info('Hardware acceleration disabled for Windows development safe mode')
 }
-// Phase 3 uses Node's built-in SQLite driver. Electron exposes it behind the
-// same experimental switch as the bundled Node runtime; keeping the switch in
-// the main process avoids renderer access to the database or its handles.
+// node:sqlite is behind Electron's experimental switch; keeping it in main avoids renderer access to the database.
 app.commandLine.appendSwitch('experimental-sqlite')
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'agent-pets',
-    // corsEnabled 讓面板能從 agent-pets://panel-theme 載入主題字型
-    // （字型一律是 CORS 請求）。只有這條路由會送出
-    // Access-Control-Allow-Origin 標頭，而且只給受信任的面板來源。
+    // corsEnabled 讓面板能從 agent-pets://panel-theme 載入主題字型（一律是 CORS 請求）；
+    // 只有這條路由送出 Access-Control-Allow-Origin，且只給受信任的面板來源。
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
   },
 ])
@@ -276,8 +265,7 @@ protocol.registerSchemesAsPrivileged([
 // Fixed pane URL; the renderer never supplies a target.
 const MACOS_LOGIN_ITEMS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.LoginItems-Settings.extension'
 
-// Async so a relaunched instance can wait for the old process to release the lock
-// without blocking the main thread. bootstrapApp awaits it before creating windows.
+// Async so a relaunched instance can wait for the old process to release the lock without blocking the main thread.
 const singleInstanceLock: Promise<boolean> = acquireSingleInstanceLock(
   () => app.requestSingleInstanceLock(),
   { argv: process.argv },
@@ -312,7 +300,7 @@ const startupStep = async (name: string, fn: () => void | Promise<void>) => {
   }
 }
 
-// Repeated uncaught errors: offer a restart once per run. Never relaunches on its own.
+// Offered once per run; never relaunches on its own.
 async function showCrashEscalationDialog(): Promise<void> {
   try {
     if (!app.isReady()) return
@@ -391,8 +379,7 @@ async function bootstrapApp(): Promise<void> {
   await startupStep('protocol', configureSecureProtocol)
   await startupStep('windows-fullscreen', createWindowsFullscreenServices)
   await startupStep('desktop', createDesktopServices)
-  // The pet becomes visible before plugins, history or achievements spin up,
-  // so a slow plugin directory or disk never delays the first paint.
+  // The pet becomes visible before plugins, history or achievements so a slow disk never delays the first paint.
   await startupStep('pet-window', createPetWindow)
   await startupStep('plugins', createPluginServices)
   await startupStep('fullscreen-targets', () => {
@@ -423,8 +410,7 @@ async function bootstrapApp(): Promise<void> {
 
   await startupStep('event-server', () => {
   mainState.eventServer = createEventServer(
-    // 視窗關閉後變數可能尚未歸零；對已銷毀的 webContents send 會拋錯，導致
-    // 事件回 400 且 onEvent（通知、XP、歷史）整個被跳過。
+    // 視窗關閉後變數可能尚未歸零；對已銷毀的 webContents send 會拋錯，使 onEvent（通知、XP、歷史）被整個跳過。
     () => [mainState.petWindow, mainState.panelWindow].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed()),
     mainState.eventToken,
     (event) => {
@@ -784,7 +770,6 @@ async function bootstrapApp(): Promise<void> {
       return Array.isArray(raw) ? raw.flatMap(pet => (pet && typeof pet.id === 'string' ? [pet.id] : [])) : []
     },
   })
-  // Crash recovery for interrupted imports; never blocks startup.
   void mainState.petImport.recoverStale().catch(() => undefined)
   registerPetAssetIpc({
     ipcMain,
@@ -820,15 +805,11 @@ async function bootstrapApp(): Promise<void> {
     }
   })
 
-  // The hidden panel is a second Chromium renderer running the whole Vue app.
-  // Creating it last keeps it from competing with the pet's first paint and the
-  // service steps above; ensureDesktopWindows() creates it on demand if the user
-  // opens it earlier. Every panelWindow consumer already tolerates null.
+  // Created last so the second renderer does not compete with the pet's first paint; ensureDesktopWindows() creates it on demand and every consumer tolerates null.
   await startupStep('panel-window', createPanelWindow)
   syncWindowsFullscreenTargets()
   if (startupResults.some(result => !result.ok)) {
-    // Services start independently, so a partial failure still leaves a usable
-    // app. Only offer retry/quit when nothing visible could be created.
+    // Services start independently; only offer retry/quit when nothing visible could be created.
     if (!mainState.petWindow) await showStartupFailureDialog()
   }
 }
@@ -918,5 +899,4 @@ let turnEndWatcher: TurnEndWatcher | null = null
 // Agent Pets is a tray application on every supported desktop platform.
 // Hiding or closing its windows must not stop hooks or background status.
 app.on('window-all-closed', () => {
-  // Intentionally keep the main process alive until the user chooses Quit.
 })

@@ -17,23 +17,16 @@ import {
 import { isOpaqueId64, isProjectId } from '../src/types/id-patterns.ts'
 import { asRecord, recordOrEmpty } from './value-guards.ts'
 
-// 工作階段清單的純函式：輸入驗證、SQL 組裝與資料列轉換。與 HistoryStore 分開，
-// 讓 IPC 驗證與 SQL 形狀可以單獨測試，history.ts 只負責交易與寫入。
-
 type SqliteRow = Record<string, unknown>
 
-/** `sessions.final_state` 的儲存值；`open` 在讀取時才分成進行中／未完成。 */
 export type StoredSessionFinalState = 'success' | 'error' | 'cancelled' | 'open'
 
-/** open 的 session 超過這麼久沒有事件，就顯示為未完成而不是進行中。 */
 export const SESSION_ACTIVE_WINDOW_MS = 15 * 60 * 1000
-/** 每個 session 保留的列數；新的轉換進來時逐筆丟掉最舊的。 */
 export const SESSION_TIMELINE_STORED_MAX = 500
-/** 單次權限等待超過這個長度就截斷（電腦睡眠、App 關閉等）。 */
+/** 電腦睡眠、App 關閉等會讓單次等待變得極長，所以要截斷。 */
 export const MAX_PERMISSION_WAIT_MS = 6 * 60 * 60 * 1000
 
-// session_pk = `${adapterId}:${agentId}:${hash24}`；agent 部分是自由文字，
-// 所以只檢查長度、不含控制字元且以雜湊結尾（它一律以參數綁定）。
+// agent 部分是自由文字，所以只檢查長度、不含控制字元且以雜湊結尾（一律以參數綁定）。
 const SESSION_ID = /^[^\u0000-\u001f\u007f]{1,400}:[a-f0-9]{24}$/
 const TOOL_NAME_UNSAFE = /[^A-Za-z0-9._:/@+ -]/g
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
@@ -43,11 +36,7 @@ const MAX_PROJECT_LABEL_LENGTH = 128
 const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000
 const OUTCOMES = new Set<string>(HISTORY_SESSION_OUTCOMES)
 
-/**
- * 本機紀錄的用量列在 events.session_id 存 `digest(adapter:agent:rawSessionId)`，其中 agent 是
- * 紀錄讀取器記帳用的來源，而不是 hook 實際的來源。對照表來自 AGENT_FAMILY_REGISTRY.localUsageSource，
- * 讓 hook session 不必保留原始 session id 也能對上本機紀錄的 token。
- */
+// events.session_id 存的 agent 是紀錄讀取器記帳用的來源，不是 hook 實際的來源；對照表來自 localUsageSource。
 export function localUsageKeySource(adapterId: string, rawSessionId: string): string | null {
   const agent = Object.hasOwn(LOCAL_USAGE_SOURCE_BY_ADAPTER, adapterId)
     ? LOCAL_USAGE_SOURCE_BY_ADAPTER[adapterId as keyof typeof LOCAL_USAGE_SOURCE_BY_ADAPTER]
@@ -59,25 +48,21 @@ export function isHistorySessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value)
 }
 
-/** 只有工具名稱：參數絕不進歷史紀錄。不安全的字元會被丟掉。 */
+// 工具參數絕不進歷史紀錄。
 export function sanitizeToolName(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.replace(TOOL_NAME_UNSAFE, '').trim().slice(0, MAX_TOOL_NAME_LENGTH)
 }
 
-/** 工作區路徑的最後一段，絕不是完整路徑。 */
+// 只取工作區路徑的最後一段，絕不是完整路徑。
 export function sanitizeProjectLabel(value: unknown): string {
   if (typeof value !== 'string') return ''
   const segment = value.split(/[/\\]/).filter(Boolean).pop() ?? ''
   return segment.replace(CONTROL_CHARS, '').trim().slice(0, MAX_PROJECT_LABEL_LENGTH)
 }
 
-/**
- * 結局描述的是最近一輪而不是第一輪：Claude Code 與 Codex 每一輪結束都會送 success（Stop）
- * 或 error（StopFailure），新的提示又會讓同一個 session 再度進行。所以任何工作中或等待中的狀態
- * 都會重新開啟 session，idle 則保留這一輪的結局。
- */
-// 每個事件都會呼叫 nextFinalState，所以模組載入時把狀態表攤平成一次 Map 查找。
+// 結局描述最近一輪：Claude Code 與 Codex 每輪結束都送 success／error，新提示又讓同一個 session 再度進行，
+// 所以工作中或等待中的狀態會重新開啟 session，idle 則保留這一輪的結局。
 const HISTORY_OUTCOME_BY_STATE: ReadonlyMap<string, AgentStateHistoryOutcome> = new Map(
   AGENT_STATES.map(state => [state, AGENT_STATE_POLICY[state].historyOutcome]),
 )
@@ -86,7 +71,6 @@ export function nextFinalState(
   previous: StoredSessionFinalState | null,
   state: AgentState,
 ): StoredSessionFinalState {
-  // 不認得的狀態跟 idle 一樣沿用上一輪結果。
   const outcome = HISTORY_OUTCOME_BY_STATE.get(state) ?? 'keep'
   return outcome === 'keep' ? previous ?? 'open' : outcome
 }
@@ -96,10 +80,6 @@ function finiteTimestamp(value: unknown, max: number): number | undefined {
   return Math.min(max, Math.max(0, Math.floor(value)))
 }
 
-/**
- * renderer 傳來的查詢的執行期驗證。不認得的 key 一律忽略；
- * 認得的欄位要嘛有效、要嘛丟掉，絕不原樣傳下去。
- */
 export function normalizeSessionQuery(input: unknown, now: number): HistorySessionQuery & { limit: number } {
   const raw = recordOrEmpty(input)
   const maxTime = now + MAX_FUTURE_SKEW_MS
@@ -134,11 +114,7 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, match => `\\${match}`)
 }
 
-/**
- * 選等值前綴涵蓋最有鑑別度條件的索引，讓分頁是照 ORDER BY 順序的範圍掃描（不建暫存 B-tree 排序）：
- * 有 project 用 (pet, project, seen)，否則 (pet, seen)。結局只有四種值，所以留作剩餘條件，
- * 不另建第三個索引，否則每次心跳（會更新 last_seen_at）都要多改寫一個索引。
- */
+// 結局只有四種值，留作剩餘條件、不另建索引，否則每次心跳（更新 last_seen_at）都要多改寫一個索引。
 export function sessionListIndex(query: HistorySessionQuery): string {
   return query.projectId ? 'idx_history_sessions_pet_project_seen' : 'idx_history_sessions_pet_seen'
 }
@@ -149,17 +125,12 @@ export const SESSION_LIST_COLUMNS = `
   permission_wait_ms, token_input, token_output, token_quality, usage_key
 `
 
-/**
- * 組出 keyset 分頁查詢。所有值都是綁定參數，唯一內插的片段是依已驗證欄位選出的固定子句。
- * 開頭的 (pet_id[, project_id]) 等值加上 ORDER BY last_seen_at DESC, session_pk DESC 剛好對上索引，
- * 所以一頁最多只讀游標之後一頁的列，而且不排序。
- */
+// 所有值都是綁定參數，唯一內插的片段是依已驗證欄位選出的固定子句。
 export function buildSessionListQuery(
   petId: string,
   query: HistorySessionQuery & { limit: number },
   now: number,
   limit = query.limit,
-  /** trigram 索引的搜尋結果；取代 LIKE 掃描，改由主鍵帶動查詢。 */
   matchedIds?: readonly string[],
 ): { sql: string; params: unknown[] } {
   // 有搜尋結果時由主鍵帶動查詢（最多幾千列再排序）；一元 + 讓查詢規劃器不走 pet／時間索引。
@@ -240,7 +211,6 @@ export function outcomeFor(finalState: unknown, lastSeenAt: number, now: number)
   }
 }
 
-/** 把 session_model_usage 的列（每個用量 key 與模型一列）彙總成每個 key 的總數。 */
 export function foldSessionUsage(rows: readonly SqliteRow[]): Map<string, SessionUsageTotals> {
   const totals = new Map<string, SessionUsageTotals>()
   for (const row of rows) {

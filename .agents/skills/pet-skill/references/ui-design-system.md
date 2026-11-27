@@ -8,7 +8,7 @@ Full audit and rationale: [UI-Audit-And-Redesign-Plan.zh-TW.md](../../../docs/de
 
 Every colour, font size, spacing, radius, and shadow in a component `<style>` block must be a `var(--token)` from `src/styles/tokens.css`. A literal `#8b9cf7` or `rgba(139, 156, 247, 0.15)` in a new `.vue` file is a bug, not a style choice — it cannot be themed, cannot be audited, and is how the app ended up with 121 unique hex values and 9px body text.
 
-If the colour/size you need does not have a token yet, add one to `tokens.css` (with a comment explaining what it is for) rather than inlining a literal. Keep the token count small — reuse an existing token before adding a near-duplicate.
+If the colour/size you need does not have a token yet, add one to `tokens.css` with a name that says what it is for (comment only when the name cannot) rather than inlining a literal. Keep the token count small — reuse an existing token before adding a near-duplicate.
 
 The floor for any user-facing text is `--font-xs` (11px). CJK glyphs lose stroke definition below that on both Windows and macOS; do not add a smaller size to "make it fit" — that is a symptom of the container being too small, not a font-size problem (see the panel-sizing note below).
 

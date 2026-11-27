@@ -7,7 +7,6 @@ export const AGENT_PETS_SERVER_HEADER = LOCAL_WIRE_HEADERS.server
 
 export interface ServerHealthTrackerOptions {
   onChange?: (snapshot: LocalServerHealthSnapshot) => void
-  /** One-shot user notice for a persistent failure; never called again until the server recovers. */
   onPersistentFailure?: (health: LocalServerHealth) => void
   probe?: (port: number) => Promise<LocalServerHealth['occupant']>
 }

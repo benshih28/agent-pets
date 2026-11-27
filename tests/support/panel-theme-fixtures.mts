@@ -4,9 +4,6 @@ import { builtinPanelThemeColors } from '../../electron/plugin-panel-themes.ts'
 import type { PanelThemeMode } from '../../src/types/panel-theme.ts'
 import { USER_PANEL_THEME_COLOR_KEYS, type UserPanelThemeDefinition } from '../../src/types/panel-theme-user.ts'
 
-// 面板主題測試共用的建構器：一個有效的雙模式主題，以及
-// 檔頭正確的圖片位元組（PNG、APNG、WebP、JPEG），不需要真正的解碼器。
-
 export const LIGHT_COLORS = {
   bg: '#eef6f6', surface: '#f8fcfc', surface2: '#e2eeee',
   text: '#10282c', textSecondary: '#2f4a4f', textMuted: '#3d585c',
@@ -114,7 +111,6 @@ export function webp(width: number, height: number, options: { animated?: boolea
   return riff(chunks)
 }
 
-/** 帶選用 EXIF orientation、一個 SOF0 與最小掃描段的 JPEG。 */
 export function jpeg(width: number, height: number, options: { orientation?: number; secondSof?: boolean } = {}): Uint8Array {
   const parts: Buffer[] = [Buffer.from([0xff, 0xd8])]
   if (options.orientation) {
@@ -136,7 +132,6 @@ export function woff2(size = 64): Uint8Array {
   return bytes
 }
 
-/** 以內建淺色與深色色盤組成的「我的主題」定義（每個鍵都明確宣告）。 */
 export function builtinDefinition(): UserPanelThemeDefinition {
   const mode = (name: PanelThemeMode) => {
     const colors = builtinPanelThemeColors(name)

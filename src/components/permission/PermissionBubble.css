@@ -1,7 +1,4 @@
-/* Sits ABOVE the sprite in the reserved headroom so the pet stays visible and
-   showing/hiding never resizes the pet window. 高度不能超過預留空間：超出的部分會被視窗
-   裁掉，最先消失的就是來源列與風險徽章。所以上限是預留高度，指令細節區在裡面捲動，
-   標題、風險徽章、倒數與按鈕永遠看得到。 */
+/* 高度不能超過預留空間：超出的部分會被視窗裁掉，最先消失的是來源列與風險徽章。 */
 .permission-request {
   position: absolute;
   display: flex;
@@ -30,7 +27,6 @@
   flex: none;
 }
 
-/* 只有指令區會讓出高度：先縮短程式碼框（至少一行），再不夠就在區內捲動。 */
 .permission-request > .permission-details {
   flex: 0 1 auto;
   min-height: 0;

@@ -131,7 +131,6 @@ export function sendIntegrationTestEvent(
   return new Promise((resolvePromise, reject) => {
     const request = httpRequest({
       hostname: LOCAL_WIRE_HOST,
-      // 與事件伺服器實際監聽的埠相同（開發或 e2e 執行可能不是 17373）。
       port: localPorts().event,
       path: LOCAL_WIRE_PATHS.events,
       method: 'POST',
@@ -178,10 +177,7 @@ export function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3)
 }
 
-// Panel open/close animates its own content over 200ms (see StatusPanel.vue's
-// .panel-enter-active transition). Without this, setBounds() would snap the
-// native window to its new size instantly while the content fades in after —
-// a visible, jarring mismatch. Tweening bounds keeps the two in sync.
+// Panel content animates over 200ms; tweening bounds keeps the native window from snapping to its new size ahead of the fade.
 export function animateBounds(target: { x: number; y: number; width: number; height: number }, duration = 200) {
   if (!mainState.petWindow) return
   if (mainState.resizeAnimHandle) {
@@ -189,7 +185,6 @@ export function animateBounds(target: { x: number; y: number; width: number; hei
     mainState.resizeAnimHandle = null
   }
 
-  // A hidden window has nothing to animate; jump straight to the end state.
   if (!mainState.petWindow.isVisible()) {
     mainState.petWindow.setBounds({ x: Math.round(target.x), y: Math.round(target.y), width: Math.round(target.width), height: Math.round(target.height) })
     repositionVisiblePanel()
@@ -377,8 +372,7 @@ export async function readRegularFileWithin(root: string, relativePath: string, 
   }
 }
 
-// Hands the file buffer to the Response as-is. Uint8Array.from() walked the
-// iterator and copied up to 20 MB per sprite or preview request.
+// Not Uint8Array.from(): it copies up to 20 MB per sprite or preview request.
 function responseBody(data: Buffer): Uint8Array<ArrayBuffer> {
   return new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)
 }
@@ -424,8 +418,7 @@ export function configureSecureProtocol(): void {
           })
         }
         case 'import-preview': {
-          // Staged (not yet installed) import, addressed by an unguessable
-          // per-import token; anything else 404s.
+          // Staged import, addressed by an unguessable per-import token; anything else 404s.
           const match = pathname.match(/^\/([0-9a-f]{32})\/spritesheet$/)
           const directory = match ? mainState.petImport?.previewDirectory(match[1]) : null
           const data = directory ? await readRegularFileWithin(directory, 'spritesheet.webp', MAX_PET_IMAGE_BYTES) : null
@@ -495,7 +488,6 @@ export async function refreshPluginRuntimeContexts(): Promise<void> {
         grantedHosts: [...(parsed.manifest.permissions.network?.hosts ?? []), ...preference.grantedHosts],
       })
     } catch {
-      // A malformed manifest remains unavailable to the runtime until reinstalled.
     }
   }
   mainState.pluginRuntimeContexts = next
@@ -619,7 +611,6 @@ export function syncPanelThemes(): void {
   })
 }
 
-/** 受信任的面板渲染端來源（字型會從 agent-pets://panel-theme 跨來源抓取）。 */
 function panelRendererOrigin(): string | null {
   try {
     if (process.env.VITE_DEV_SERVER_URL && !app.isPackaged) return new URL(process.env.VITE_DEV_SERVER_URL).origin
@@ -812,7 +803,6 @@ export function requestPluginNetwork(
   })
 }
 
-// Plugin catalog（閘道與每日自動檢查）由獨立服務負責；保留這些匯出名稱，IPC registrar 與 main.ts 的接線不變。
 export const pluginCatalogRuntime = createPluginCatalogRuntime({
   state: mainState,
   appVersion: () => app.getVersion(),
@@ -823,7 +813,6 @@ export const checkPluginCatalogUpdates = pluginCatalogRuntime.checkUpdates
 export const initializePluginCatalogAutoCheck = pluginCatalogRuntime.initializeAutoCheck
 export { decodeCatalogBase64 }
 
-// App 新版檢查（只提示、不下載安裝）由獨立服務負責；網路沿用 plugin 的 pluginNetworkClient。
 export const appUpdateRuntime = createAppUpdateRuntime({
   state: mainState,
   userDataDirectory: () => appUserDataPaths().root,
@@ -832,8 +821,6 @@ export const appUpdateRuntime = createAppUpdateRuntime({
   openExternal: url => shell.openExternal(url),
 })
 
-// Plugin runtime 組裝由獨立服務負責：`start()` 建立所有 plugin 服務，`dispose()` 依固定順序釋放。
-// 保留 `createPluginServices` 這個匯出名稱，main.ts 的啟動步驟不變。
 export const pluginRuntime = createPluginRuntime({
   state: mainState,
   userDataPaths: appUserDataPaths,
@@ -872,7 +859,6 @@ export const pluginRuntime = createPluginRuntime({
 })
 export const createPluginServices = pluginRuntime.start
 
-// 寵物視窗模式由獨立服務負責；保留這些匯出名稱，IPC registrar、托盤與建立視窗的接線不變。
 export const petWindowModes = createPetWindowModeService({
   state: mainState,
   // 延後綁定：Electron 的 screen 模組要等 app ready 後才能使用。
@@ -916,14 +902,11 @@ export function applyPetCaptureProtection(): void {
   }
   if (typeof mainState.petWindow.setContentProtection !== 'function') return
   const enabled = preferences.captureExclusionEnabled
-  // A newly-created window is unprotected by default. Avoid a redundant
-  // `setContentProtection(false)` call when the preference is already off;
-  // disabling still calls the native API once after an earlier enable.
+  // A new window is unprotected by default: skip a redundant setContentProtection(false), but still disable once after an earlier enable.
   if (mainState.petCaptureProtectionApplied === enabled
     || (mainState.petCaptureProtectionApplied === null && !enabled)) return
   try {
-    // Only the pet window is excluded. The settings/panel window remains
-    // capturable so users can include their configuration or status view.
+    // Only the pet window is excluded; the panel stays capturable.
     mainState.petWindow.setContentProtection(enabled)
     mainState.petCaptureProtectionApplied = enabled
   } catch (error) {
@@ -942,12 +925,7 @@ export function applyMacFullscreenVisibilityPolicy(): void {
   for (const window of [mainState.petWindow, mainState.panelWindow]) {
     if (!window || window.isDestroyed()) continue
     try {
-      // macOS Spaces owns the transition for another app's fullscreen window;
-      // Electron has no trustworthy cross-app fullscreen event to proxy here.
-      // Keep Electron's default process-type handling. skipTransformProcessType
-      // is only safe when the app is already known to be an UIElement app;
-      // Agent Pets is not configured that way, and the original window path
-      // relied on Electron performing the required transform.
+      // Keep Electron's default process-type handling: skipTransformProcessType is only safe for a known UIElement app, which Agent Pets is not.
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen })
     } catch (error) {
       console.error('Failed to apply macOS fullscreen visibility policy', error)
@@ -983,9 +961,7 @@ export function serverHealthTracker(): ServerHealthTracker {
 
 const rendererRecoveries = new Map<'pet' | 'panel', RendererRecovery>()
 
-// Re-pushes main-owned state after a renderer crash/reload. Initial load
-// broadcasts only run once, so a recovered renderer would otherwise sit with
-// stale defaults (power-save, window mode, badges, progression, permissions).
+// Initial load broadcasts only run once, so a recovered renderer would otherwise sit with stale defaults.
 function resyncRendererState(): void {
   broadcastPetWindowMode()
   broadcastPowerSaveState()
@@ -1023,7 +999,6 @@ function attachWindowRecovery(label: 'pet' | 'panel', window: BrowserWindow): vo
   })
 }
 
-/** Tray / error-boundary rescue: reloads pet and panel renderers, rebuilding a window that is gone. */
 export function reloadPetRenderers(): void {
   if (!ensureDesktopWindows()) return
   for (const recovery of rendererRecoveries.values()) recovery.manualReload()
@@ -1035,8 +1010,6 @@ export function createPetWindow() {
   const rawScale = parseFloat(process.env.PET_SCALE || '1')
   const scale = clamp(isNaN(rawScale) ? 1 : rawScale, 0.3, 5)
 
-  // Restore wherever the user last dragged it to, rather than always
-  // snapping back to the bottom-right default on every relaunch.
   const saved = readWindowState()
   const initialBounds = petWindowModes.restore(saved, {
     fallbackSize: initialPetWindowSize(scale),
@@ -1054,11 +1027,7 @@ export function createPetWindow() {
     resizable: false,
     skipTaskbar: true,
     hasShadow: false,
-    // Windows only: a frameless window still gets the WS_THICKFRAME resize
-    // border by default, which makes DWM apply its normal non-client move
-    // animation the instant the window is grabbed — visible as the whole
-    // pet sliding down a few pixels before drag tracking kicks in. Disabling
-    // it removes that OS-level animation so drag tracks the cursor exactly.
+    // Windows only: a frameless window still gets WS_THICKFRAME, so DWM animates the move on grab and the pet slides a few pixels before drag tracking starts.
     thickFrame: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
@@ -1078,10 +1047,7 @@ export function createPetWindow() {
 
   mainState.petWindow.setIgnoreMouseEvents(false)
 
-  // Without this, macOS ties the window to the Space it was created on —
-  // alwaysOnTop alone does not make it follow you across a Space switch.
-  // No Windows equivalent: virtual-desktop pinning there is a per-window
-  // right-click toggle in Task View, not something Electron can set for us.
+  // macOS ties a window to the Space it was created on; alwaysOnTop alone does not follow a Space switch (no Windows equivalent).
   applyPetCaptureProtection()
   applyMacFullscreenVisibilityPolicy()
 
@@ -1136,14 +1102,8 @@ export function createPetWindow() {
   syncWindowsFullscreenTargets()
 }
 
-// The panel is a separate always-on-top window rather than sharing the pet's
-// window, so opening/closing or resizing it (Sessions <-> Settings) never
-// moves or resizes the pet itself.
 export function createPanelWindow() {
-  // Idempotent: the first-run wizard or a pet click can create the panel on demand
-  // before the startup step reaches it. A second window would orphan the first
-  // renderer (its IPC would be rejected as untrusted) and its 'closed' event would
-  // then clear the live reference.
+  // Idempotent: a second window would orphan the first renderer (its IPC would be rejected as untrusted) and its 'closed' event would clear the live reference.
   if (mainState.panelWindow && !mainState.panelWindow.isDestroyed()) return
   const panelWindow = new BrowserWindow({
     ...currentPanelSize(),
@@ -1151,7 +1111,6 @@ export function createPanelWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    // Always user-resizable (every view); limits come from applyPanelWindowLimits.
     resizable: true,
     skipTaskbar: true,
     hasShadow: false,
@@ -1202,11 +1161,7 @@ export function createPanelWindow() {
   panelLoad.catch(error => console.error('Panel renderer load failed', error))
 
   mainState.panelWindow.on('blur', () => {
-    // Clicking the pet focuses petWindow just before the click handler's
-    // 'panel-toggle' IPC arrives — if we hid on blur here too, the toggle
-    // would then see the panel already hidden and reopen it (a flicker,
-    // and clicking the pet could never close the panel). Let the toggle
-    // handler own that case; blur-hide is only for genuine click-outside.
+    // Clicking the pet focuses petWindow just before 'panel-toggle' arrives; hiding on blur here would make the toggle reopen the panel, so a pet click could never close it.
     if (!shouldHidePanelOnBlur(currentPanelBlurState())) return
     schedulePanelBlurHide()
   })
@@ -1227,8 +1182,6 @@ export function createPanelWindow() {
   syncWindowsFullscreenTargets()
 }
 
-// ── Panel size: one user-owned size for every view ───────────────────────────
-// 尺寸與定位邏輯在 panel-geometry.ts；這裡只綁定 Electron 的 screen、尺寸檔與結束時 flush。
 const panelGeometry = createPanelGeometry({
   state: mainState,
   screen: {
@@ -1278,8 +1231,7 @@ export async function openPluginPanelViewForPlugin(
   return mainState.pluginPanelViewController.open({ pluginId, entry: panelView.entry, openToken, bounds })
 }
 
-// Status-line count can flap as agents come and go, so coalesce the writes
-// instead of hitting disk on every resize.
+// Resize events are frequent (status-line count flaps), so writes are coalesced.
 
 export function persistPetBounds(x: number, y: number, width: number, height: number) {
   if (mainState.persistBoundsHandle) clearTimeout(mainState.persistBoundsHandle)
@@ -1326,8 +1278,7 @@ export function hidePetWindow(): void {
 const PANEL_REVEAL_FRAME_TIMEOUT_MS = 400
 let panelRevealSequence = 0
 
-// 隱藏後重新顯示時，宿主與插件子視圖的新 frame 不一定同時送達；插件晚到的那段時間只看得到內容區底色，
-// 看起來就是閃一下。呼叫端先以透明度 0 顯示，這裡等目前可見的畫面都送出第一個 frame（或逾時）才顯示。
+// 宿主與插件子視圖的新 frame 不一定同時送達，插件晚到時只看得到內容區底色（閃一下）；呼叫端先以透明度 0 顯示，這裡等可見的畫面都送出第一個 frame（或逾時）才顯示。
 function revealPanelWindowAfterFirstFrame(panelWindow: BrowserWindow): void {
   const sequence = ++panelRevealSequence
   const contents = [panelWindow.webContents, ...panelWindow.contentView.children
@@ -1359,13 +1310,9 @@ function revealPanelWindowAfterFirstFrame(panelWindow: BrowserWindow): void {
   }
 }
 
-// `restore` 沿用面板上次關閉時的畫面（含暫停中的插件畫面與視窗尺寸），只依寵物位置重新定位；
-// 其他 view 是明確導向，會先關閉暫停中的插件畫面再切換。
 export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'sessions', pluginViewPluginId?: string): void {
   if (!ensureDesktopWindows() || !mainState.panelWindow) return
   if (rendererRecoveries.get('panel')?.state().gaveUp) {
-    // The panel renderer is dead and out of retries; show a fresh window
-    // rather than a broken one.
     const broken = mainState.panelWindow
     mainState.panelWindow = null
     try { broken.destroy() } catch {}
@@ -1379,7 +1326,6 @@ export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'ses
   mainState.windowsFullscreenAutoHiddenPanel = false
   if (mainState.petWindowMode === 'edge') applyNormalPetBounds()
   showPetWindow()
-  // The same user-owned size for every view; only the anchor (the pet) can move it.
   applyCurrentPanelSize()
   const wasHidden = !mainState.panelWindow.isVisible()
   if (wasHidden) {
@@ -1388,10 +1334,7 @@ export function showPanelWindow(view: 'sessions' | 'settings' | 'restore' = 'ses
     panelRevealSequence += 1
     mainState.panelWindow.setOpacity(1)
   }
-  // Opening a panel is an explicit user action (Tray item, notification, or
-  // pet click), so it must remain keyboard-usable even when fullscreen
-  // exclusion is enabled. The macOS Space collection policy still decides
-  // which Space the window may occupy.
+  // An explicit user action must stay keyboard-usable even when fullscreen exclusion is enabled; the macOS Space policy still decides which Space it occupies.
   mainState.panelWindow.show()
   mainState.panelWindow.focus()
   if (wasHidden) revealPanelWindowAfterFirstFrame(mainState.panelWindow)
@@ -1549,11 +1492,8 @@ export function schedulePanelBlurHide(): void {
     if (!mainState.panelWindow || mainState.panelWindow.isDestroyed() || mainState.panelWindow.isFocused() || !mainState.panelWindow.isVisible()) {
       return
     }
-    // A pin / wizard can be engaged during the grace delay.
     if (mainState.panelPinned || mainState.panelModalOpen) return
-    // Give the Win32 detector's event-driven refresh a chance to classify an
-    // external fullscreen transition before treating the blur as a manual
-    // click-away. This preserves the marker needed to restore an open panel.
+    // Let the Win32 detector classify an external fullscreen transition before treating the blur as a click-away; this preserves the marker needed to restore an open panel.
     if (process.platform === 'win32' && mainState.windowsFullscreenState.panelDisplayFullscreen) return
     mainState.windowsFullscreenAutoHiddenPanel = false
     mainState.panelWindow.hide()
@@ -1611,8 +1551,6 @@ export function createWindowsFullscreenServices(): void {
 
 let dndExpiryTimer: ReturnType<typeof setTimeout> | null = null
 
-// A timed Do Not Disturb ends by itself; when it does, summarise what was
-// silenced so the user is not left wondering what they missed.
 function scheduleDndExpiry(preferences: DesktopPreferences): void {
   if (dndExpiryTimer) clearTimeout(dndExpiryTimer)
   dndExpiryTimer = null
@@ -1702,8 +1640,6 @@ function sendHistoryUpdatedTo(window: BrowserWindow): void {
   window.webContents.send(IPC_CHANNELS.historyUpdated)
 }
 
-// Hidden windows skip progression/history pushes; on show they get exactly one
-// resync so a stale pet or panel never stays behind.
 function attachBroadcastResync(window: BrowserWindow): void {
   window.on('show', () => {
     growth.resyncProgression(window)
@@ -1711,7 +1647,6 @@ function attachBroadcastResync(window: BrowserWindow): void {
   })
 }
 
-// 成就、progression store 與其廣播由 growth 服務負責；這裡保留原本的匯出名稱，讓 main.ts 與 IPC 不需改動。
 export const growth = createGrowthService({
   state: mainState,
   getWindows: () => [mainState.petWindow, mainState.panelWindow],
@@ -1758,7 +1693,6 @@ const queueHistoryUpdated = createLatestValueCoalescer<void>(
   callback => { setTimeout(callback, HISTORY_UPDATED_COALESCE_MS).unref?.() },
 )
 
-/** At most one historyUpdated per ~1s regardless of event rate. */
 export function broadcastHistoryUpdated(): void {
   queueHistoryUpdated()
 }
@@ -1809,7 +1743,6 @@ export function createPresentationServices(presentationToken: string): void {
   mainState.presentationMcpServer = server
 }
 
-// 歷史資料庫、本機用量掃描與它們的計時器由獨立服務負責；成就與廣播留在這裡，以回呼傳入。
 export const historyRuntime = createHistoryRuntimeService({
   state: mainState,
   databasePath: () => appUserDataPaths().history,
@@ -1829,7 +1762,6 @@ export const historyRuntime = createHistoryRuntimeService({
   logError: (message, error) => console.error(message, error),
 })
 
-// 使用者觸發的資料庫整理；啟動流程不使用。
 export const dbMaintenance = createDbMaintenanceService({
   getHistoryStore: () => mainState.historyStore,
   getProgressionStore: () => mainState.progressionStore,
@@ -1895,7 +1827,6 @@ export function clearPermissionAuditLog(): void {
   clearPermissionAudit(permissionAuditPath())
 }
 
-// --- Claude Code permission respond (opt-in) --------------------------------
 const CLAUDE_PERMISSION_SOURCES = familySourceSet('claude')
 // Cached so the permission server never reads preferences (or the OS login item) per request.
 let claudePermissionRespondEnabled = false
@@ -1912,8 +1843,7 @@ function applyClaudePermissionRespond(preferences: DesktopPreferences): void {
     logMain('warn', 'permission', `Claude permission opt-in file sync failed: ${(error as NodeJS.ErrnoException)?.code ?? 'unknown'}`)
   }
   if (preferences.claudePermissionRespondEnabled || !mainState.permissionBroker) return
-  // Turning the feature off takes pending Claude requests down; their hooks then get 410
-  // and leave the decision to Claude Code's own prompt.
+  // Turning the feature off takes pending requests down: their hooks get 410 and leave the decision to Claude Code's own prompt.
   for (const request of mainState.permissionBroker.listRequests()) {
     if (CLAUDE_PERMISSION_SOURCES.has(request.adapterId)) {
       mainState.permissionBroker.resolveExternally(request.requestId, 'adapter_disconnected')
@@ -1961,11 +1891,7 @@ export function createPermissionServices(permissionToken: string): void {
   powerMonitor.on('suspend', () => cancelPermissionRequests('system_suspend'))
 }
 
-/**
- * A waiting-permission / waiting-input notification about one session (the only kinds that carry a
- * target) switches to that session's app when allowed (macOS, allowlisted app, both toggles on);
- * anything else opens the Sessions tab. The click itself is the user action.
- */
+// Switching to the session's app happens only when allowed (macOS, allowlisted app, both toggles on); anything else opens the Sessions tab.
 export async function openNotificationTarget(target?: { source: string; sessionId: string }): Promise<void> {
   try {
     if (target && await mainState.sessionJump?.switchFromNotification(target)) return
@@ -2035,8 +1961,7 @@ export function createDesktopServices(): void {
   try {
     mainState.desktopTray.create()
   } catch (error) {
-    // Linux desktops without a StatusNotifier/AppIndicator host (or a missing icon) must not
-    // take the app down; the pet window and panel keep working without the tray.
+    // Linux desktops without a StatusNotifier/AppIndicator host must not take the app down.
     console.error('Tray is unavailable', error instanceof Error ? error.message : error)
   }
 }
@@ -2090,11 +2015,7 @@ export async function availablePetIds(): Promise<Set<string>> {
 export const AVAILABLE_PET_IDS_CACHE_MS = 5_000
 let availablePetIdsLoad: Promise<Set<string>> | null = null
 
-// Live event ingestion calls this on every tool-call/state event; re-reading
-// pets.json plus the whole custom-pets directory that often would add a
-// second batch of synchronous disk I/O to the same hot path project routing
-// already had to be freed of. User-initiated calls (pick/bind/list) skip
-// this and always read fresh.
+// Live event ingestion calls this on every event; user-initiated calls (pick/bind/list) skip it and read fresh.
 export async function availablePetIdsCached(): Promise<Set<string>> {
   const now = Date.now()
   if (mainState.availablePetIdsCache && mainState.availablePetIdsCache.expiresAt > now) return mainState.availablePetIdsCache.ids

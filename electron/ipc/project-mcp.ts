@@ -36,7 +36,6 @@ export interface ProjectMcpIpcDependencies {
   removeProjectMcp: typeof removeProjectMcp
   installOptions(): ProjectMcpInstallOptions
   getRegistry(): ProjectMcpRegistryStore | null
-  /** Current app language, for native dialog text. */
   getLocale?(): AppLocale
 }
 
@@ -72,7 +71,6 @@ export function registerProjectMcpIpc(deps: ProjectMcpIpcDependencies): void {
     if (pickedProjects.length > MAX_REMEMBERED_PICKS) pickedProjects.shift()
   }
 
-  // Step 1: pick a folder and preview. Nothing is written.
   deps.ipcMain.handle(IPC_CHANNELS.projectMcpSetup, async (event): Promise<ProjectMcpPlan> => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     const owner = deps.getPanelWindow() ?? deps.getPetWindow()
@@ -106,7 +104,6 @@ export function registerProjectMcpIpc(deps: ProjectMcpIpcDependencies): void {
     }
   })
 
-  // Step 2: write only the confirmed clients for a folder chosen in step 1.
   deps.ipcMain.handle(IPC_CHANNELS.projectMcpApply, (event, request: unknown): ProjectMcpSetupSummary => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     const parsed = parseApplyRequest(request)
@@ -135,7 +132,6 @@ export function registerProjectMcpIpc(deps: ProjectMcpIpcDependencies): void {
       if (registry && summary.projectPath) {
         if (!configured && !alreadyTracked) registry.forget(parsed.projectPath)
         else if (summary.projectPath !== parsed.projectPath) {
-          // Canonical (symlink-resolved) path differs from the picked one.
           registry.forget(parsed.projectPath)
           registry.register(summary.projectPath)
         } else if (alreadyTracked) registry.register(summary.projectPath)

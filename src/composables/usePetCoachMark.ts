@@ -1,4 +1,3 @@
-// 首次啟動的 coach mark：只在從未看過、且沒有其他泡泡佔用時顯示，20 秒後或第一次按下寵物就收起。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import type { BubbleKind } from '@/utils/feed-arbiter'

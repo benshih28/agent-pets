@@ -144,7 +144,6 @@ test('projects stale visibility toggles to false on an unsupported runtime', (t)
   assert.equal(unsupportedStore.get().visibilityCapabilities.captureExclusion.supported, false)
   assert.equal(unsupportedStore.get().visibilityCapabilities.fullscreenAutoHide.supported, false)
 
-  // A later unrelated write must not carry the stale true values back to disk.
   unsupportedStore.update({ dndEnabled: true })
   const persisted = JSON.parse(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>
   assert.equal(persisted.captureExclusionEnabled, false)
@@ -229,7 +228,6 @@ test('keeps the launch-at-login intent while macOS approval is pending', (t) => 
   assert.equal(pending.launchAtStartup, true)
   assert.equal(pending.launchAtStartupStatus, 'requires-approval')
 
-  // Persisted intent survives a restart and an unrelated update.
   const reloaded = new DesktopPreferencesStore(filePath, adapter, TEST_VISIBILITY_CAPABILITIES)
   assert.equal(reloaded.get().launchAtStartup, true)
   assert.equal(reloaded.update({ soundEnabled: true }).launchAtStartup, true)
@@ -273,7 +271,6 @@ test('answering Claude Code permissions is off by default and the wait is a boun
   }
   assert.throws(() => parseDesktopPreferencesPatch({ claudePermissionRespondEnabled: 'yes' }), TypeError)
 
-  // A tampered file falls back to safe defaults.
   fs.writeFileSync(filePath, JSON.stringify({ claudePermissionRespondEnabled: 'true', claudePermissionWaitSeconds: 9_999 }))
   const tampered = new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES)
   assert.equal(tampered.get().claudePermissionRespondEnabled, false)
@@ -293,7 +290,6 @@ test('completion markers default on, persist, and only accept booleans', (t) => 
   assert.throws(() => parseDesktopPreferencesPatch({ completionMarkersEnabled: 'off' }), /must be boolean/)
   assert.throws(() => parseDesktopPreferencesPatch({ completionMarkersEnabled: 0 }), /must be boolean/)
 
-  // A hand-edited file with a non-boolean value falls back to the default.
   fs.writeFileSync(filePath, JSON.stringify({ completionMarkersEnabled: 'no' }))
   assert.equal(new DesktopPreferencesStore(filePath, loginItem, TEST_VISIBILITY_CAPABILITIES).get().completionMarkersEnabled, true)
 })
@@ -316,7 +312,6 @@ test('results are not counted while completion markers are off', async () => {
   assert.deepEqual(noteUnread({ count: 1, hasError: false }, 'error', true, true), { count: 2, hasError: true })
   assert.equal(noteUnread({ count: UNREAD_RESULTS_MAX, hasError: false }, 'success', true, true).count, UNREAD_RESULTS_MAX)
 
-  // Switching markers off (locally or from another window's broadcast) drops what was counted.
   const storeDir = path.join(import.meta.dirname, '..', 'src', 'stores', 'agent')
   const store = fs.readFileSync(path.join(storeDir, 'desktop-preferences.ts'), 'utf8')
   const unread = fs.readFileSync(path.join(storeDir, 'unread-alerts.ts'), 'utf8')

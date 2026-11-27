@@ -1,5 +1,3 @@
-// Custom pet ids double as folder names under ~/.desktop-pet/custom, so they
-// must be valid, distinct folder names on every platform the app ships for.
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i
 
 export function sanitizePetId(id: string): string | null {

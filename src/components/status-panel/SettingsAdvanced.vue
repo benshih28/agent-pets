@@ -19,7 +19,6 @@ const autoCheck = computed({
   set: value => { void updates.setEnabled(value) },
 })
 
-// 主程序回傳的最後結果；一次性提示（頻率限制、開啟失敗）優先顯示。
 const updateStatus = computed(() => {
   if (updates.notice === 'rate_limited') return { tone: 'warn' as const, icon: 'alert', text: t('update.rateLimited') }
   if (updates.notice === 'open_failed') return { tone: 'warn' as const, icon: 'alert', text: t('update.openFailed') }
@@ -114,7 +113,6 @@ function quitApp(): void {
   margin-top: var(--space-2);
 }
 
-/* Destructive controls sit last and apart from the configuration cards. */
 .app-controls {
   margin-top: var(--space-4);
 }

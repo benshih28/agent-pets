@@ -105,7 +105,6 @@ test('diagnostics list every failing pair with measured, required and a suggesti
   }
   const hue = result.issues.find(issue => issue.mode === 'dark' && issue.path === 'colors.dangerText')
   assert.equal(hue?.kind, 'hue')
-  // 採用每個建議值之後，定義完全通過。
   for (const issue of result.issues) {
     if (typeof issue.suggested !== 'string') continue
     const [, key] = issue.path.split('.') as [string, keyof typeof definition.modes.light.colors]

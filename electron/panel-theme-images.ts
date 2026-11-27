@@ -6,11 +6,6 @@ import { checkPanelThemeUserImage, PANEL_THEME_USER_IMAGE_MAX_BYTES, type PanelT
 import { PANEL_THEME_USER_IMAGE_FILE } from './panel-theme-store.ts'
 import { isPanelThemeOwnerId } from '../src/types/panel-theme-user.ts'
 
-// 使用者匯入的面板背景圖片（spec §4.3）。來源檔案只透過一個已檢查的
-// descriptor 讀取一次；所有檢查都在這份位元組上執行。
-// 儲存的副本位於 `userData/panel-theme-images/<pluginId>/<sha256>.<ext>`
-// （目錄 0o700、檔案 0o600），以暫存檔 + rename 寫入。
-
 export const PANEL_THEME_IMAGES_DIRECTORY = 'panel-theme-images'
 export const PANEL_THEME_SWEEP_LIMIT = 256
 
@@ -30,10 +25,7 @@ function isErrorCode(error: unknown, code: string): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === code)
 }
 
-/**
- * lstat（一般檔案、非 symlink、大小上限），以 O_NOFOLLOW 開啟，fstat
- * （dev/ino/size 相同），再一次讀入記憶體。
- */
+// lstat、O_NOFOLLOW 開啟、fstat 比對 dev/ino/size，防止檢查與讀取之間被換成 symlink。
 export async function readUserImageSource(filePath: string): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: UserImageReadError }> {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return { ok: false, error: 'image_invalid' }
   let handle: fs.promises.FileHandle | null = null
@@ -63,7 +55,7 @@ export async function readUserImageSource(filePath: string): Promise<{ ok: true;
   }
 }
 
-/** 驗證記憶體中的位元組（只看檔頭、絕不解碼），並為儲存的副本命名。 */
+// 只看檔頭、絕不解碼。
 export function prepareUserImage(bytes: Uint8Array): UserImagePrepared {
   const check = checkPanelThemeUserImage(bytes)
   if (!check.ok) {
@@ -96,12 +88,10 @@ export function panelThemeImagesRoot(userDataDirectory: string): string {
   return path.join(userDataDirectory, PANEL_THEME_IMAGES_DIRECTORY)
 }
 
-/** 單一插件的圖片目錄；id 無效時為 null。 */
 export function panelThemePluginImageDirectory(userDataDirectory: string, pluginId: string): string | null {
   return isPanelThemeOwnerId(pluginId) ? path.join(panelThemeImagesRoot(userDataDirectory), pluginId) : null
 }
 
-/** 將驗證過的位元組寫成 `<root>/<pluginId>/<sha256>.<ext>`（暫存檔 + rename）。 */
 export function storeUserImage(userDataDirectory: string, pluginId: string, prepared: Extract<UserImagePrepared, { ok: true }>): void {
   const directory = panelThemePluginImageDirectory(userDataDirectory, pluginId)
   if (!directory || !PANEL_THEME_USER_IMAGE_FILE.test(prepared.file)) throw new TypeError('invalid panel theme image target')
@@ -111,7 +101,6 @@ export function storeUserImage(userDataDirectory: string, pluginId: string, prep
   const target = path.join(directory, prepared.file)
   try {
     const existing = fs.lstatSync(target)
-    // 以內容定址：相同的一般檔案已經存在。
     if (existing.isFile() && !existing.isSymbolicLink() && existing.size === prepared.bytes.byteLength) return
     if (existing.isSymbolicLink() || !existing.isFile()) throw new TypeError('unsafe panel theme image file')
   } catch (error) {
@@ -121,7 +110,6 @@ export function storeUserImage(userDataDirectory: string, pluginId: string, prep
   writeFileAtomicSync(target, prepared.bytes, { temporaryPath, mode: 0o600 })
 }
 
-/** 刪除一個已儲存的圖片檔（絕不跟隨 symlink）。 */
 export function deleteUserImage(userDataDirectory: string, pluginId: string, file: string): void {
   const directory = panelThemePluginImageDirectory(userDataDirectory, pluginId)
   if (!directory || !PANEL_THEME_USER_IMAGE_FILE.test(file)) return
@@ -133,7 +121,6 @@ export function deleteUserImage(userDataDirectory: string, pluginId: string, fil
   } catch {}
 }
 
-/** 確認 `panel-theme-images/<pluginId>` 是真正的目錄後才移除。 */
 export function removePluginImages(userDataDirectory: string, pluginId: string): void {
   const directory = panelThemePluginImageDirectory(userDataDirectory, pluginId)
   if (!directory) return
@@ -148,10 +135,6 @@ export function removePluginImages(userDataDirectory: string, pluginId: string):
   } catch {}
 }
 
-/**
- * 啟動清掃：刪除 store 未引用的檔案（以及殘留的暫存檔）。
- * 有上限：最多檢查 PANEL_THEME_SWEEP_LIMIT 個目錄項目。
- */
 export function sweepOrphanUserImages(userDataDirectory: string, referenced: ReadonlySet<string>, limit = PANEL_THEME_SWEEP_LIMIT): number {
   const root = panelThemeImagesRoot(userDataDirectory)
   let examined = 0

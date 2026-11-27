@@ -1,5 +1,4 @@
-// 設定精靈的文字對照：安裝結果、診斷檢查、健康狀態、能力矩陣與設定目錄提示。
-// 與畫面無關的純函式與 key 表；onboarding-i18n 測試會讀這個檔案確認每個後端錯誤／檢查碼都有在地化文字。
+// onboarding-i18n 測試會讀這個檔案，確認每個後端錯誤／檢查碼都有在地化文字。
 import type { AdapterRuntimeStatus, AgentAdapterId, AgentConfigDirIgnoredReason, DiagnosticReport, InstallErrorCode, InstallOutcome } from '@/types/agent-adapter'
 import type { AgentSource } from '@/types/agent'
 import { t, type TranslationKey } from '@/i18n'
@@ -8,7 +7,6 @@ export interface ToolStatus extends AdapterRuntimeStatus {
   verifiedAt?: number
   testError?: string
   diagnosis?: DiagnosticReport
-  /** Result of the last install/repair, shown inside the card until the next one. */
   outcome?: InstallOutcome
   /** A genuine event from the tool itself (not the built-in receiver test). */
   realEvent?: { source: AgentSource, at: number }
@@ -87,7 +85,6 @@ const FIX_KEYS: Readonly<Record<string, TranslationKey>> = {
   'node': 'onboarding.fix.node',
 }
 
-// --- 設定目錄（CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME）-----------------------------------
 const CONFIG_DIR_IGNORED_KEYS = {
   invalid: 'onboarding.configDir.ignored.invalid',
   not_absolute: 'onboarding.configDir.ignored.not_absolute',
@@ -105,7 +102,6 @@ export function buildConfigDirNotes(tool: ToolStatus): ConfigDirNote[] {
   if (!dir) return []
   const params = { variable: dir.variable, path: dir.path }
   const notes: ConfigDirNote[] = []
-  // 預設位置且沒有殘留時不顯示：絕大多數使用者沒設定這些變數，不需要多一行。
   if (dir.ignored) notes.push({ key: 'ignored', text: t(CONFIG_DIR_IGNORED_KEYS[dir.ignored], params), warn: true })
   else if (dir.source === 'env') notes.push({ key: 'env', text: t('onboarding.configDir.env', params), warn: false })
   if (dir.staleLocation) notes.push({ key: 'stale', text: t('onboarding.configDir.stale', { path: dir.staleLocation }), warn: true })
@@ -152,8 +148,7 @@ export interface CapabilityRow {
   label: string
 }
 
-// Plain-language capability matrix. Permission distinguishes "answer on the pet" from "shown on the
-// pet, answer in the tool" because that is the difference users actually run into.
+// Permission distinguishes "answer on the pet" from "shown on the pet, answer in the tool".
 export function capabilityRows(tool: ToolStatus): CapabilityRow[] {
   const c = tool.capabilities
   const name = tool.displayName

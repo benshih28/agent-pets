@@ -3,33 +3,23 @@ import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 import { renameSyncWithRetry, renameWithRetry } from './fs-rename.ts'
 
-// 「同目錄暫存檔 → 寫入 → rename」的底層步驟。刻意不做任何政策決策：
-// symlink（追隨或拒絕）、目錄驗證、大小上限、備份都由呼叫端先處理，
-// 呼叫端傳進來的 targetPath 就是要被取代的實際路徑。
+// 刻意不做政策決策：symlink、目錄驗證、大小上限、備份都由呼叫端先處理，targetPath 就是被取代的實際路徑。
 
 export interface AtomicFileWriteOptions {
-  /**
-   * 暫存檔完整路徑，必須與 targetPath 同目錄（rename 才是原子的）。名稱格式由呼叫端決定，
-   * 因為啟動清理（例如 `panel-theme-user-store.ts` 的 `TEMPORARY_FILE`）依賴它。
-   */
+  /** 必須與 targetPath 同目錄（rename 才是原子的）；名稱格式由呼叫端決定，因為啟動清理依賴它。 */
   temporaryPath: string
-  /** 建立暫存檔時的權限；省略時沿用 Node 預設（0o666，受 umask 影響）。 */
   mode?: number
-  /** rename 後在 POSIX 上再 chmod 一次 `mode`：umask 只會遮掉建立時的位元，例如 0o644 在 umask 077 下會變 0o600。 */
+  /** umask 會遮掉建立時的權限位元，所以 POSIX 上 rename 後要再 chmod 一次。 */
   enforceMode?: boolean
-  /** rename 前 fsync 暫存檔，讓斷電後不會看到內容為空的新檔。 */
+  /** 斷電後不會看到內容為空的新檔。 */
   fsync?: boolean
 }
 
 export interface AsyncAtomicFileWriteOptions extends AtomicFileWriteOptions {
-  /**
-   * 暫存檔已寫好、rename 之前呼叫；拋出就放棄這次寫入並移除暫存檔。
-   * 給「讀到寫之間檔案被別人改過就不覆蓋」這類檢查用，讓檢查離 rename 越近越好。
-   */
+  /** rename 之前呼叫；拋出就放棄寫入並移除暫存檔。 */
   beforeRename?: () => Promise<void>
 }
 
-/** `.<檔名>.<pid>.<毫秒時間>.tmp`：多數 store 共用的暫存檔名稱。 */
 export function pidTimestampTemporaryPath(targetPath: string): string {
   return path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.tmp`)
 }
@@ -66,7 +56,6 @@ export function writeFileAtomicSync(targetPath: string, data: string | Uint8Arra
   }
 }
 
-/** 與 writeFileAtomicSync 規則完全相同的非同步版，給主程序不能被磁碟 I/O 卡住的路徑使用。 */
 export async function writeFileAtomic(targetPath: string, data: string | Uint8Array, options: AsyncAtomicFileWriteOptions): Promise<void> {
   const { temporaryPath, mode } = options
   assertSameDirectory(targetPath, temporaryPath)

@@ -31,15 +31,12 @@ test('hits reuse the validated result, misses validate once, and a changed theme
   assert.equal(calls(), 1)
   assert.equal(second.themes, first.themes)
   assert.deepEqual(cache.stats, { hits: 1, misses: 1 })
-  // 同樣內容的另一份物件（例如重新讀取 manifest）也命中。
   assert.equal(cache.get(structuredClone(declared)).themes, first.themes)
   assert.equal(calls(), 1)
-  // 內容改變（開發者資料夾重新載入、版本號沒變）一定重新驗證。
   const edited = [theme({ modes: { light: { colors: { ...LIGHT_COLORS, accent: '#1b6d72' } }, dark: { colors: DARK_COLORS } } })]
   const changed = cache.get(edited)
   assert.equal(calls(), 2)
   assert.notEqual(changed.key, first.key)
-  // 無效的宣告也會被快取（結果為 null），不會每次 sync 都重跑驗證。
   assert.equal(cache.get([{ id: 'BAD' }]).themes, null)
   assert.equal(cache.get([{ id: 'BAD' }]).themes, null)
   assert.equal(calls(), 3)

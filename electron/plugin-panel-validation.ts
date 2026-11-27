@@ -3,7 +3,6 @@ import { isPluginErrorCode } from '../src/types/plugin.ts'
 import { isPluginId, isSafeItemId } from '../src/types/id-patterns.ts'
 import { isRecord } from './value-guards.ts'
 
-/** IPC 處理器以依賴注入取得的插件 id 檢查；與 manifest 同一份規則（src/types/id-patterns.ts）。 */
 export const isPluginPanelPluginId = isPluginId
 
 export const isPluginPanelNotificationId = isSafeItemId

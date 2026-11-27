@@ -4,7 +4,6 @@ import { activateMacBundle, SessionJumpService } from '../session-jump.ts'
 import { activateWindowsApp } from '../windows-window-activator.ts'
 import type { DesktopPreferences } from '../../src/types/desktop'
 
-// Electron wiring for the session jump service; the policy lives in electron/session-jump.ts.
 export { takeSessionJumpContext, withSessionJumpContext } from '../session-jump.ts'
 
 export function createSessionJumpService(getPreferences: () => DesktopPreferences): SessionJumpService {

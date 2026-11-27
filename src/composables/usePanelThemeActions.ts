@@ -3,10 +3,6 @@ import { t, type TranslationKey } from '@/i18n'
 import { setPanelThemeState } from '@/composables/usePanelTheme'
 import type { PanelThemeIpcResult, PanelThemeMode, PanelThemeRef, PanelThemeUserImageOptions } from '@/types/panel-theme'
 
-// 面板主題控制項（插件詳細區塊與 Appearance 狀態卡片）共用的指令。
-// 每次呼叫都經過主程序，由它驗證 payload、取代每個模式唯一的插槽，
-// 再廣播新狀態。
-
 const ERROR_KEY: Record<string, TranslationKey> = {
   image_invalid: 'design.panelTheme.error.imageInvalid',
   image_too_large: 'design.panelTheme.error.imageTooLarge',
@@ -46,7 +42,6 @@ export function usePanelThemeActions() {
     }
   }
 
-  /** 將一個主題套用到指定模式；每個模式只有一個插槽，因此會取代該處的其他主題。 */
   function applyTheme(ref: PanelThemeRef, modes: readonly PanelThemeMode[]): Promise<boolean> {
     return run(async () => {
       let last: PanelThemeIpcResult | undefined

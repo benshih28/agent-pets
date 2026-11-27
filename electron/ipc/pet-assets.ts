@@ -108,8 +108,7 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
     try {
       const stat = await deps.fs.lstat(spritePath)
       if (stat.isFile() && !stat.isSymbolicLink()) {
-        // The modification time versions the URL so a re-import of the same id
-        // never serves the previously cached sheet.
+        // The mtime versions the URL so a re-import never serves the cached sheet.
         const version = Number.isFinite(stat.mtimeMs) ? `?v=${Math.floor(stat.mtimeMs)}` : ''
         return `agent-pets://custom/${encodeURIComponent(safeId)}/spritesheet.webp${version}`
       }
@@ -117,12 +116,7 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
     return null
   })
 
-  // Accepts sprite kits from community sites like codex-pets.net: a .zip
-  // containing pet.json + a spritesheet image, laid out on the same
-  // 192x208-per-frame grid our own built-in pets use (see PetAnimation.vue).
-  // Import is two-step: prepare validates and stages the kit and returns a
-  // preview (plus any id conflict); commit installs it atomically once the
-  // user has seen the preview and chosen how to resolve a conflict.
+  // Import is two-step: prepare stages the kit and returns a preview; commit installs it atomically after the user resolves any id conflict.
   deps.ipcMain.handle(IPC_CHANNELS.prepareImportPetZip, async (event) => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     const owner = deps.getPanelWindow() ?? deps.getPetWindow()
@@ -214,7 +208,6 @@ export function registerPetAssetIpc(deps: PetAssetIpcDependencies): void {
       spritesheetPath: 'spritesheet.webp',
       spriteVersionNumber: atlas.version,
       kind: 'person',
-      // 和 zip 匯入同一份圖集規格：v2 圖用 running-right 列走路。
       ...(atlas.version === 2 ? { behaviorManifest: { walk: { row: PET_ATLAS_WALK_ROW } } } : {}),
     }
     await deps.writeFileEnsured(deps.path.join(customDir, 'pet.json'), JSON.stringify(petJson, null, 2))

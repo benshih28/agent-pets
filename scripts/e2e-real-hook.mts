@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// 真實 hook e2e：搭配 scripts/e2e-isolated-electron.mjs 使用，不碰使用者的 ~/.claude、正式版的埠或鑰匙圈。
-// 在隔離 HOME 執行真正的安裝程式（產生隔離的 Claude Code settings 與 agent-hook.mjs），照 Claude Code 的方式
-// 從那份 settings 讀出 hook 指令、以 stdin 送 payload，再經 CDP 讀寵物畫面。可選的寵物包會先經主程序 loadPets 清理。
-// 用法（先 pnpm exec vite build，並用預設隔離埠啟動 node scripts/e2e-isolated-electron.mjs）：
-//   node --experimental-strip-types scripts/e2e-real-hook.mts --home <啟動日誌的 home> [--debug-port 9348]
-//        [--hook-port-base 27373] [--pet-pack] [--rounds 1] [--agent-config-dirs]
-// --agent-config-dirs 對應啟動器的同名旗標：hook 裝到 <home>/moved/claude/settings.json（CLAUDE_CONFIG_DIR）。
-// --rounds N 把整組 14 個事件重複 N 輪（每輪換新 session），用來大量確認每個事件都畫到寵物上。
-// 冷啟動模式（先結束隔離 app，HOME 要是跑過一次這支腳本的）：
-//   node --experimental-strip-types scripts/e2e-real-hook.mts --home <home> --cold-start 150 [--interval 40]
-// 以 --reuse-root 重新啟動隔離 app，從啟動那一刻起每 --interval ms 對一個新 session 送一個 Stop，
-// 最後檢查每個 session 是否都出現在寵物的 store，並列出 hook 耗時。
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -145,8 +133,7 @@ async function runColdStart(): Promise<void> {
     cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'],
   })
   const startedAt = performance.now()
-  // 各階段時間點（相對於啟動器開始）：Electron 程序建立、隔離 bootstrap 跑完（接著載入 main.js）、
-  // 啟動標記出現、事件埠開始監聽。啟動器自己產生測試用插件的時間也算在裡面，正式版沒有這段。
+  // 啟動器自己產生測試用插件的時間也算在各階段時間點裡，正式版沒有這段。
   const marks: Record<string, number | null> = { electronSpawned: null, mainLoading: null, markerWritten: null, listening: null }
   const markerPath = path.join(home!, '.desktop-pet', hookStartupMarkerName(portBase))
   fs.rmSync(markerPath, { force: true })
@@ -195,7 +182,6 @@ async function measureColdStart(startedAt: number, marks: Record<string, number 
   const listeningAt = listeningAtMs()
   assert.ok(listeningAt !== null, 'the isolated app never listened on the event port')
   await new Promise(resolve => setTimeout(resolve, 1500))
-  // main 是主程序的 session 鏡像（app 收到幾個），store 是寵物畫面（renderer 收到幾個），分開算才知道掉在哪一層。
   const { main, store: states } = await cdp(`(async () => {
     const tag = ${JSON.stringify(sessionTag)}
     const store = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('agent')
@@ -259,7 +245,6 @@ if (withPetPack) {
   console.log('manifest from main:', loaded)
 }
 
-// [hook 事件, payload, 預期 session 狀態, 內建寵物畫的列, 寵物包畫的列]
 type Step = [string, Record<string, unknown>, string, string, string]
 const stepsFor = (base: Record<string, unknown>): Step[] => [
   ['SessionStart', base, 'idle', 'idle@0', 'idle@9'],

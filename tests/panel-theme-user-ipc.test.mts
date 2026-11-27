@@ -134,7 +134,6 @@ test('validate returns structured diagnostics, rejects oversized or extra payloa
     assert.equal(issue.path, 'colors.textMuted')
     assert.equal(issue.required, 4.5)
     assert.equal(typeof issue.suggested, 'string')
-    // 相同內容（屬性順序不同）直接命中快取，回傳同一個物件。
     const reordered = { modes: structuredClone(bad.modes), shape: { ...bad.shape }, typography: { ...bad.typography } }
     assert.equal(okValue(context.validate(reordered)), result)
     assert.deepEqual(context.invoke(IPC_CHANNELS.panelThemeValidate, { ...builtinDefinition(), padding: 'x'.repeat(17 * 1024) }), { ok: false, error: 'invalid_request' })
@@ -155,7 +154,6 @@ test('my themes appear in the catalog, apply through the slot channel and fall b
     assert.deepEqual(entry?.ref, ref)
     assert.equal(entry?.displayName['en-US'], 'Sakura')
     assert.equal(entry?.pluginName['en-US'], 'My themes')
-    // 插件全部關閉也照樣可以套用（使用者主題不是插件）。
     const applied = await context.theme(IPC_CHANNELS.panelThemeSlotSet, 'dark', ref)
     assert.equal(applied.ok, true)
     assert.equal(context.runtime.getState().slots.dark.status, 'active')
@@ -192,11 +190,9 @@ test('user background images reuse the host import, are served with panel CORS f
     assert.equal(imported.ok, true, JSON.stringify(imported))
     const current = context.runtime.getState().themes[0]!.modes.light!.userImage!.current!
     const response = await context.runtime.handleRequest(current.url, 'GET')
-    // 測試替身的 readRegularFileWithin 讀不到檔案，所以只檢查 token 存在與目錄位置。
     assert.equal(response.status, 404)
     const directory = path.join(context.userData, 'panel-theme-images', USER_PANEL_THEME_OWNER)
     assert.equal(fs.readdirSync(directory).length, 1)
-    // 啟動清掃不會把「我的主題」的圖片目錄當成孤兒刪掉。
     context.runtime.sweep()
     assert.equal(fs.readdirSync(directory).length, 1)
     assert.equal(context.user(IPC_CHANNELS.panelThemeUserDelete, ref.themeId).ok, true)
@@ -261,7 +257,6 @@ test('names are size-checked before normalisation on every channel that takes on
       [IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition(), 7],
     ]
     for (const [channel, ...args] of calls) assert.deepEqual(context.invoke(channel, ...args), { ok: false, error: 'invalid_request' }, channel)
-    // 上限內但清理後仍太長的名稱，由 store 的規則拒絕。
     assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserRename, id, 'x'.repeat(USER_PANEL_THEME_NAME_MAX + 1))).error, 'invalid_request')
     assert.deepEqual(context.runtime.userThemes.list().map(theme => theme.name), ['Mine'])
   } finally { context.cleanup() }
@@ -279,7 +274,6 @@ test('update can rename in the same atomic write; a bad name or definition leave
     const onDisk = JSON.parse(fs.readFileSync(file, 'utf8'))
     assert.equal(onDisk.name, 'Renamed')
     assert.equal(onDisk.definition.shape.radiusLg, 6)
-    // 只改定義時名稱不變；三個以上的引數一律拒絕。
     assert.equal(okValue(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition())).themes[0].name, 'Renamed')
     assert.equal(failure(context.user(IPC_CHANNELS.panelThemeUserUpdate, id, builtinDefinition(), 'A', 'extra')).error, 'invalid_request')
     const before = fs.readFileSync(file, 'utf8')

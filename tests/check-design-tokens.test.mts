@@ -66,7 +66,6 @@ test('raw-color inventories literal colours by surface outside the theme palette
     'shared-glass-layer|src/styles/tokens.css|rgba(0, 0, 0, 0.5)',
   ])
   assert.equal(summarize(result).rawColors, 6)
-  // 基準模式：--strict 不因 raw-color 失敗，--raw-colors=fail 才會。
   assert.equal(shouldFail(result, { strict: true }), result.findings.length > 0)
   assert.equal(shouldFail(result, { rawColorsFail: true }), true)
   const clean = analyze(fixture({ 'src/styles/tokens.css': ':root {\n  --builtin-organic-bg: #f5ead8;\n}', 'src/a.css': '.a { color: var(--builtin-organic-bg); }' }))

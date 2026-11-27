@@ -11,7 +11,7 @@ function effective(definition: PluginSettingDefinition, value: PluginSettingScal
   return definition.type === 'boolean' ? false : definition.type === 'number' ? 0 : ''
 }
 
-/** 草稿與已儲存值（缺值時以預設值計）是否不同；密鑰欄位有輸入也算有未儲存的變更。 */
+/** 密鑰欄位有輸入也算有未儲存的變更。 */
 export function isSettingsDirty(
   properties: Properties,
   saved: Values,
@@ -28,7 +28,6 @@ export function isSettingsDirty(
   return false
 }
 
-/** 以 schema 預設值組成的草稿（略過密鑰欄位）。 */
 export function defaultSettingsDraft(properties: Properties): Values {
   const draft: Values = {}
   for (const [key, definition] of Object.entries(properties)) {

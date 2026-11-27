@@ -1,4 +1,3 @@
-// Tab 焦點陷阱的純函式：給 ConfirmDialog 與安裝 Sheet 共用。
 export const FOCUSABLE_SELECTOR = [
   'button:not(:disabled)',
   'input:not(:disabled):not([type="hidden"])',

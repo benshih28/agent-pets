@@ -15,7 +15,6 @@ export interface DesktopPreferences {
   dndUntil: number | null
   notificationsEnabled: boolean
   permissionBubbleEnabled: boolean
-  /** Answer Claude Code permission prompts from the pet (off by default). */
   claudePermissionRespondEnabled: boolean
   /** How long Claude Code's hook waits for a pet answer before leaving it to the terminal. */
   claudePermissionWaitSeconds: number
@@ -26,14 +25,12 @@ export interface DesktopPreferences {
   captureExclusionEnabled: boolean
   fullscreenAutoHideEnabled: boolean
   rightClickHideEnabled: boolean
-  /** The "N ✓" badge next to the pet counting results that finished while you were away. */
   completionMarkersEnabled: boolean
-  /** Per-session "open project folder" / "copy project path" actions. */
   sessionJumpEnabled: boolean
-  /** Per-session "switch to app" (macOS only; brings the app forward, not a specific window). */
+  /** macOS only; brings the app forward, not a specific window. */
   sessionJumpSwitchAppEnabled: boolean
   soundEnabled: boolean
-  /** 0-100 master volume for the pet's synthesized cues. */
+  /** 0-100. */
   soundVolume: number
   soundOnPermission: boolean
   soundOnError: boolean

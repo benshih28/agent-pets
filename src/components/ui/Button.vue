@@ -1,14 +1,4 @@
 <script setup lang="ts">
-// Replaces twelve hand-rolled button styles (.setup-btn, .import-btn,
-// .usage-refresh, .history-action, .clear-offline-btn, .mood-reset-btn,
-// .restart-btn, .quit-btn, .header-btn, .pet-edit, .pet-remove, .scale-option)
-// that shared no declarations, so identical roles looked different.
-//
-// Pick the variant by ROLE, not by appearance:
-//   primary   — the main action of a section
-//   secondary — supporting actions (refresh, reset, export)
-//   danger    — destructive or irreversible (quit, remove, clear)
-//   ghost     — icon-only chrome (header controls, inline row actions)
 withDefaults(defineProps<{
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   size?: 'sm' | 'md'
@@ -17,7 +7,6 @@ withDefaults(defineProps<{
   active?: boolean
   iconOnly?: boolean
   block?: boolean
-  /** Shows a spinner, sets aria-busy and ignores clicks until it clears. */
   loading?: boolean
 }>(), {
   variant: 'secondary',
@@ -57,8 +46,7 @@ withDefaults(defineProps<{
   border-radius: var(--radius-sm);
   background: transparent;
   font: inherit;
-  /* 內文字體，不用標題字體：內建的標題字體是 'Lining Digits' + Georgia，只有數字走介面字體，
-     所以「使用建議值 rgb(…)」這種中英混合的標籤會變成三種字體。按鈕標籤是介面文字。 */
+  /* 不用標題字體：它對中英混合標籤會變成三種字體。 */
   font-family: var(--font-body);
   font-weight: var(--weight-medium);
   line-height: 1;
@@ -75,8 +63,7 @@ withDefaults(defineProps<{
   width: 100%;
 }
 
-/* Invisible hit-area extension: small buttons stay visually compact but are
-   always at least --hit-min tall/wide to the pointer (WCAG 2.5.8). */
+/* Invisible hit-area extension so small buttons still reach --hit-min (WCAG 2.5.8). */
 .btn::after {
   content: '';
   position: absolute;
@@ -138,22 +125,19 @@ withDefaults(defineProps<{
   }
 }
 
-/* ── primary ─────────────────────────────────────────────────────────── */
 .variant-primary {
   border-color: var(--accent-hover, var(--accent));
   background: var(--accent-hover, var(--accent));
   color: var(--accent-on);
 }
 
-/* 懸停往文字色混 12%（淺色模式變深、深色模式變亮），讓按鈕上的 onAccent 對比只增不減；
-   驗證器以同一個比例檢查（PANEL_THEME_PRESSED_MIX）。 */
+/* 12% 混色比例與驗證器 PANEL_THEME_PRESSED_MIX 一致。 */
 .variant-primary:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent-hover, var(--accent)) 88%, var(--text-primary));
   background: color-mix(in srgb, var(--accent-hover, var(--accent)) 88%, var(--text-primary));
   color: var(--accent-on);
 }
 
-/* ── secondary ───────────────────────────────────────────────────────── */
 .variant-secondary {
   border-color: var(--border-strong);
   background: transparent;
@@ -166,10 +150,7 @@ withDefaults(defineProps<{
   color: var(--text-primary);
 }
 
-/* ── danger ──────────────────────────────────────────────────────────── */
-/* 破壞性動作一律用危險色（不是主題的強調色），外框讓它在任何表面上都看得出是按鈕。
-   懸停底是 12% 的危險色，與驗證器檢查的狀態晶片同一個比例（PANEL_THEME_STATE_TINT_ALPHA），
-   所以插件主題的危險文字在這個底上也保證可讀；內建色盤由 check-contrast.mjs 檢查。 */
+/* 懸停底 12% 與驗證器 PANEL_THEME_STATE_TINT_ALPHA 一致，插件主題的危險文字才保證可讀。 */
 .variant-danger {
   border-color: color-mix(in srgb, var(--text-danger) 45%, transparent);
   background: transparent;
@@ -182,7 +163,6 @@ withDefaults(defineProps<{
   color: var(--text-danger);
 }
 
-/* ── ghost ───────────────────────────────────────────────────────────── */
 .variant-ghost {
   color: var(--text-secondary);
 }
@@ -193,7 +173,6 @@ withDefaults(defineProps<{
   color: var(--text-primary);
 }
 
-/* Selected state for segmented controls (pet size, tabs). */
 .btn.active {
   border-color: var(--accent-hover, var(--accent));
   background: var(--accent-hover, var(--accent));

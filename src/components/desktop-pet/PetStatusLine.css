@@ -1,17 +1,12 @@
-/* 單條狀態列（含多寵物變體）：額度分級、徽章、提示框與額度條。 */
 .multi-pet-status-line {
-  /* Keep the same status-pill treatment as single-pet mode, but constrain
-     each pill to its own sprite column instead of the full pet window. */
-  /* 小尺寸時保留 112px 的下限（仍在 0.6 倍、約 115px 的寵物欄內），讓「點 + 最長的狀態詞」放得下。 */
+  /* 112px 下限：放得下「點 + 最長的狀態詞」。 */
   width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - 12px), 112px);
   max-width: max(calc(var(--pet-cell-w) * var(--pet-scale, 1) - 12px), 112px);
   margin-top: -8px;
 }
 
 .status-line {
-  /* Always rendered at the "L" pet-scale (1x) regardless of the chosen pet
-     size — the status bar's dimensions and text size stay constant so it
-     doesn't shrink/grow with the pet sprite. */
+  /* Always rendered at the 1x pet scale so the bar doesn't resize with the sprite. */
   position: relative;
   z-index: calc(var(--z-base) + 1);
   overflow: visible;
@@ -19,10 +14,7 @@
   align-items: center;
   gap: 5px;
   max-width: calc(var(--pet-w, 250px) - 14px);
-  /* A solid dark layer under the sheen keeps text legible over any
-     wallpaper/video behind the transparent pet window — the glass read
-     comes from the blur + highlight line, not from true see-through. */
-  /* --pet-status-*：選用的插件主題顏色（僅限膠囊；spec §3.7）。 */
+  /* A solid dark layer under the sheen keeps text legible over any wallpaper behind the transparent window. */
   background:
     linear-gradient(160deg, var(--pet-gloss) 0%, transparent 55%),
     var(--pet-status-background, var(--organic-status-surface));
@@ -41,8 +33,6 @@
   border-radius: var(--organic-status-radius);
 }
 
-/* Quota 顏色依剩餘比例分級（DesktopPet.vue 的 quotaTier）；沒有 Quota 時維持透明。
-   徽章文字用 --color-bg：狀態色在 bg 上 >= 4.5:1（對比對稱），所以反過來也成立。 */
 .status-line {
   --quota-color: transparent;
 }
@@ -73,8 +63,7 @@
   outline-offset: var(--focus-ring-offset);
 }
 
-/* 套用主題的膠囊在檢查對比時不含深色文字陰影，且次要文字
-   為完全不透明。插件徽章維持內建外觀。 */
+/* 套用主題的膠囊檢查對比時不含深色文字陰影，且次要文字完全不透明。 */
 :root[data-pet-status-theme] .desktop-pet .status-line {
   text-shadow: none;
 }
@@ -97,18 +86,16 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  /* 若量測有誤差，徽章比名稱先縮。 */
   flex: 0 1000 auto;
   min-width: 0;
   max-width: 132px;
 }
 
-/* 沒有插件徽章時不佔位，省下一個 gap 給名稱與狀態。 */
 .plugin-status-badges:not(:has(*)) {
   display: none;
 }
 
-/* 寬度隨文字、最寬 42px（status-line-fit.ts 的 badgeMax 以同樣方式計算）。 */
+/* 最寬 42px，須與 status-line-fit.ts 的 badgeMax 一致。 */
 .plugin-badge-anchor {
   position: relative;
   display: inline-flex;
@@ -130,7 +117,7 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  /* 不加上下 padding：徽章（11px × 1.2 + 邊框 = 15.2px）不高於狀態文字的行高，狀態列維持同一高度。 */
+  /* 不加上下 padding：徽章不高於狀態文字的行高，狀態列才維持同一高度。 */
   padding: 0 5px;
   border: 1px solid var(--organic-status-border);
   border-radius: 999px;
@@ -143,8 +130,7 @@
   white-space: nowrap;
 }
 
-/* 用寵物外觀（深／淺）各自調過對比的強調色：原本的 --state-info／--organic-quota-warning
-   在淺色寵物底上只有約 1.4–1.8:1。 */
+/* --state-info／--organic-quota-warning 在淺色寵物底上只有約 1.4–1.8:1。 */
 .plugin-badge-pill.tone-info {
   color: var(--pet-bubble-info-accent);
 }
@@ -204,8 +190,6 @@
   line-height: 1;
   text-align: right;
   text-shadow: 0 0 6px color-mix(in srgb, var(--quota-color) 55%, transparent);
-  /* Scaling from the right keeps the number visually anchored to the pill's
-     edge while the critical-state heartbeat runs. */
   transform-origin: 100% 50%;
 }
 
@@ -214,27 +198,16 @@
   bottom: calc(100% + 6px);
   left: 50%;
   z-index: calc(var(--z-sticky) + 30);
-  /* Shrink-to-fit: max-content sizes the box to the widest single-line row
-     (both rows are nowrap), so there is no dead space to the right of the
-     text. The max-width is only a runaway guard for unusually long window
-     labels — hitting it is what would let the label wrap, so it must stay
-     comfortably above the normal "5-hour limit / NN% remaining" width.
-     See QUOTA_TOOLTIP_MIN_W in agentStore.ts, which keeps the pet window
-     itself wide enough that this never gets clipped at the window edge. */
+  /* max-width is only a runaway guard: it must stay above the normal "5-hour limit / NN% remaining" width. */
   width: max-content;
   max-width: 244px;
   padding: 7px 9px;
   border: 1px solid var(--organic-status-tooltip-border);
   border-radius: var(--organic-status-tooltip-radius);
-  /* Solid dark base under the sheen, same rationale as .status-line — the
-     tooltip floats over an unpredictable backdrop, so legibility takes
-     priority over true see-through transparency. */
   background:
     linear-gradient(160deg, var(--pet-gloss) 0%, transparent 50%),
     var(--organic-status-tooltip-surface);
-  /* No backdrop-filter here: the tooltip sits inside the glass status line, and
-     a nested backdrop cannot sample through its parent (glass-on-glass). The
-     solid tint above carries legibility on its own. */
+  /* No backdrop-filter: a nested backdrop cannot sample through its glass parent. */
   box-shadow:
     var(--organic-status-tooltip-shadow),
     0 0 9px color-mix(in srgb, var(--quota-color) 13%, transparent),
@@ -264,8 +237,6 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-/* 完整的名稱、專案與狀態（狀態列本身只剩一行）：允許換行，最多三行，
-   讓長專案名與狀態都看得到，又不會長出 tooltip 預留的高度。 */
 .quota-tooltip-line {
   display: -webkit-box;
   margin-bottom: var(--space-1);
@@ -283,9 +254,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-2-5);
-  /* nowrap is what lets max-content size the tooltip to one tidy line per
-     row; the label truncates rather than wraps if an unknown window label
-     ever runs past the max-width guard. */
+  /* nowrap lets max-content size the tooltip to one line per row; the label truncates instead of wrapping. */
   white-space: nowrap;
 }
 
@@ -342,9 +311,7 @@
   pointer-events: none;
 }
 
-/* Full-width white flash layered over the bar, played once per quota drop
-   (see the .quota-drain class). Lives on the track rather than the fill so
-   it never has to share the fill's `animation` slot with quota-pulse. */
+/* On the track, not the fill, so it never shares the fill's `animation` slot with quota-pulse. */
 .quota-meter::before {
   content: '';
   position: absolute;
@@ -390,10 +357,7 @@
   transition: width var(--transition-slow), background-color var(--transition-base);
 }
 
-/* Sheen that travels along the filled portion. Positioned via
-   background-position (not transform) so the highlight stays inside the
-   fill's own box — the fill can't clip its children, since the glowing head
-   below deliberately overhangs its right edge. */
+/* background-position, not transform: the fill can't clip children because its head overhangs the right edge. */
 .quota-meter-fill::before {
   content: '';
   position: absolute;
@@ -436,9 +400,6 @@
   animation: quota-pulse var(--duration-attention) ease-in-out infinite;
 }
 
-/* Below 10% the whole readout joins in: the bar throws an alarm glow and
-   the percentage beats, so a nearly-empty quota is noticeable from across
-   the desk rather than only on a close look. */
 .quota-critical .quota-meter {
   animation: quota-alarm var(--duration-attention) ease-in-out infinite;
 }
@@ -529,8 +490,7 @@
   box-shadow: 0 0 4px currentColor;
 }
 
-/* 高對比（forced colors）會把背景換成 Canvas，點與它的形狀就看不見了；改用系統文字色，
-   狀態仍由形狀與文字表達（inline 的狀態色需要 !important 才蓋得過）。 */
+/* forced-colors 會把背景換成 Canvas，點會消失；inline 的狀態色需要 !important 才蓋得過。 */
 @media (forced-colors: active) {
   .line-dot {
     background: CanvasText !important;
@@ -539,7 +499,6 @@
   }
 }
 
-/* State is also carried by shape, not colour alone. */
 .line-dot.dot-error {
   border-radius: 1px;
   transform: rotate(45deg) scale(0.9);
@@ -560,8 +519,7 @@
   box-shadow: none;
 }
 
-/* 名稱與分隔點。寬度預算（src/utils/status-line-fit.ts）先拿掉插件徽章，
-   再讓名稱縮短或整個拿掉，所以這裡只有名稱會縮。 */
+/* 寬度預算（status-line-fit.ts）先拿掉徽章再縮名稱，所以只有名稱會縮。 */
 .line-text {
   display: flex;
   flex: 0 1 auto;
@@ -571,7 +529,6 @@
   white-space: nowrap;
 }
 
-/* 單行細條：CLI/Desktop 變體與專案名稱只在 tooltip 與 aria-label。 */
 .line-label {
   flex: 0 100 auto;
   min-width: 2ch;
@@ -591,8 +548,7 @@
   margin-left: -2px;
 }
 
-/* 狀態永遠完整、不縮（即使只縮 0.01px，text-overflow 也會換成省略號）。
-   它吃掉剩餘空間，把徽章與百分比推到右側。 */
+/* 狀態永遠完整、不縮：即使只縮 0.01px，text-overflow 也會換成省略號。 */
 .line-state {
   flex: 1 0 auto;
   white-space: nowrap;

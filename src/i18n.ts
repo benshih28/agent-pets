@@ -26,8 +26,6 @@ import { readStored, writeStored } from './utils/local-storage.ts'
 
 export type TranslationParams = Record<string, string | number>
 
-// 各領域的新文案放在 src/locales/<domain>/{zh-TW,en-US}.json，避免平行開發時同時改一個大檔而衝突。
-// key 必須以領域前綴開頭（例如 pet.xxx），且不得與主檔重複。
 const messages = {
   ...zhTWMessages,
   ...petZhTW,
@@ -43,7 +41,7 @@ const messages = {
 
 export type TranslationKey = keyof typeof messages
 
-// 顯式標註 Record<TranslationKey, string>：若 en-US.json 缺漏或多出 key，這裡會編譯期報錯
+// 顯式標註 Record<TranslationKey, string>：en-US 缺漏或多出 key 會在編譯期報錯
 const englishMessages: Record<TranslationKey, string> = {
   ...enUSMessages,
   ...petEnUS,
@@ -59,8 +57,6 @@ const englishMessages: Record<TranslationKey, string> = {
 
 export const locale = ref<AppLocale>(readStored(STORAGE_KEYS.locale))
 
-// Keep <html lang> in step with the UI language so screen readers pick the
-// right voice and the browser picks CJK-appropriate fonts.
 const HTML_LANG: Record<AppLocale, string> = { 'zh-TW': 'zh-TW', 'en-US': 'en' }
 
 function syncDocumentLang(value: AppLocale): void {
@@ -89,15 +85,10 @@ export function tForLocale(targetLocale: AppLocale, key: TranslationKey, params:
   return fillTemplate(targetLocale === 'en-US' ? englishMessages[key] : messages[key], params)
 }
 
-/** `{name}` 佔位符代換；延後載入的文案領域（例如主題編輯器）共用同一個規則。 */
 export function fillTemplate(template: string, params: TranslationParams = {}): string {
   return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`))
 }
 
-// Plural-aware lookup. Define `<key>.one` / `<key>.other` (and others the
-// language needs) in the catalog; en-US picks by Intl.PluralRules, zh-TW only
-// needs `.other`. Falls back to `.other`, then to the bare key. `{count}` is
-// filled automatically.
 // 一個語系一份 PluralRules；建構成本高，而複數文案常出現在列表裡。
 const pluralRules = new Map<AppLocale, Intl.PluralRules>()
 function pluralCategory(loc: AppLocale, count: number): Intl.LDMLPluralRule {

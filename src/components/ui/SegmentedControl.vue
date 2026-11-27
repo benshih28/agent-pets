@@ -6,45 +6,29 @@ import Badge from '@/components/ui/Badge.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { overflowState, pageScrollDelta, scrollLeftToReveal, wheelScrollDelta } from '@/utils/tab-overflow'
 
-// One pill-shaped selector for both navigation (role=tablist, pairs with a
-// tabpanel) and single-choice settings (role=radiogroup). Replaces the dashboard
-// tab strip, the settings nav pills and the hand-rolled pet size buttons so
-// all three share keyboard handling (arrows, Home/End) and focus styling.
 export interface SegmentedOption {
   value: string
   label: string
   icon?: string
-  /** Small count shown next to the label; hidden when 0 or undefined. */
   badge?: number
-  /** A dot signalling something needs attention. */
   attention?: boolean
   title?: string
-  /** Image shown instead of `icon` (e.g. a plugin icon); the caller vets the URL. */
+  /** The caller vets the URL. */
   iconUrl?: string
-  /** Short text rendered in a ui/Badge next to the label; hidden when empty. */
   badgeText?: string
-  /** Ellipsize a long label. */
   truncate?: boolean
 }
 
 const props = withDefaults(defineProps<{
   options: readonly SegmentedOption[]
   ariaLabel: string
-  /** tabs → role=tablist/tab; radio → role=radiogroup/radio. */
   semantics?: 'tabs' | 'radio'
-  /** DOM id prefix for each segment (`${idPrefix}${value}`). */
   idPrefix?: string
-  /** For tabs: id prefix of the controlled tabpanel (`${panelIdPrefix}${value}`). */
   panelIdPrefix?: string
-  /** For tabs sharing one tabpanel element: its fixed id (overrides panelIdPrefix). */
+  /** Overrides panelIdPrefix when tabs share one tabpanel element. */
   panelId?: string
   size?: 'sm' | 'md'
   fill?: boolean
-  /**
-   * Keep every segment at its natural width and scroll horizontally when they do not
-   * fit: edge fade masks, ‹ › buttons, wheel / trackpad scrolling, and the active or
-   * focused segment is kept in view.
-   */
   scrollable?: boolean
   scrollPrevLabel?: string
   scrollNextLabel?: string
@@ -276,7 +260,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   color: var(--text-primary);
 }
 
-/* 文字放在實心強調色上時用 accentHover：onAccent 在其上保證 >= 4.5:1（在 accent 上只保證 3:1）。 */
+/* 實心強調色底用 accentHover：onAccent 在其上保證 >= 4.5:1（accent 只保證 3:1）。 */
 .segment.active {
   background: var(--accent-hover);
   color: var(--accent-bright);
@@ -308,7 +292,6 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   min-width: 0;
 }
 
-/* Scrollable variant: fade masks hint at hidden segments, ‹ › buttons page the bar. */
 .segmented-scroll {
   position: relative;
   display: flex;
@@ -380,7 +363,6 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
   line-height: var(--leading-normal);
 }
 
-/* 主動分頁上的數字徽章：accentHover 字在 onAccent 底上 >= 4.5:1（accent 只保證 3:1）。 */
 .active .segment-badge {
   background: var(--accent-bright);
   color: var(--accent-hover);

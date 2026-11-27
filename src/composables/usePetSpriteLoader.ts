@@ -1,5 +1,3 @@
-// 載入寵物的 sprite 圖（內建、插件造型、自訂匯入），失敗時退回預設寵物。
-// 圖與光暈色都走快取；載入序號讓較新的請求（舊的還在載入時又換了寵物）優先。
 import { ref } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import { getCachedSprite, getCachedTint, loadPetSprite, setCachedTint } from '@/composables/usePetSpriteCache'
@@ -10,7 +8,6 @@ function getSrc(id: string): string {
   return `${base}pets/${id}/spritesheet.webp`
 }
 
-// 光暈色算不出來時用色盤的高光色（--organic-highlight），不寫死顏色。
 function paletteHighlight(): string {
   if (typeof document === 'undefined') return 'transparent'
   return getComputedStyle(document.documentElement).getPropertyValue('--organic-highlight').trim() || 'transparent'
@@ -44,7 +41,7 @@ export function usePetSpriteLoader(getPetId: () => string, onApplied: () => void
 
     const targetId = pet ? id : store.defaultPetId
     const isCustom = Boolean(pet && !pet.builtIn && !pet.pluginSkin)
-    // 自訂圖的 URL 帶有修改時間，直接拿來當快取鍵：重新匯入同一個 id 不會顯示舊圖。
+    // 自訂圖 URL 帶修改時間，當快取鍵才不會在重新匯入後顯示舊圖。
     const source = await spriteSourceFor(pet, targetId)
     if (sequence !== loadSequence) return
     const cacheKey = pet?.pluginSkin?.cacheKey ?? (isCustom && source ? source : targetId)
@@ -60,7 +57,6 @@ export function usePetSpriteLoader(getPetId: () => string, onApplied: () => void
       return
     }
 
-    // 圖載入失敗：改顯示預設寵物，而不是空白畫布。
     if (targetId !== store.defaultPetId) {
       const fallbackKey = store.defaultPetId
       const fallback = await loadPetSprite(fallbackKey, getSrc(store.defaultPetId))

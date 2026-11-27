@@ -113,14 +113,11 @@ test('wheel redirects vertical and shift wheel only when overflowing', () => {
 
 test('a tab shows only the sections the plugin can use, and a plugin with none gets no tab', () => {
   const manifest = (contributes: PluginContributions) => ({ contributes })
-  // 只提供面板主題：分頁主體是主題清單，沒有通知、命令或設定。
   assert.deepEqual(pluginTabSections(manifest({ panelThemes: [panelTheme] })), { panelView: false, panelThemes: true, feed: false, commands: false, settings: false })
-  // 能送通知的插件才有通知區；空的設定 schema 不算設定。
   assert.deepEqual(pluginTabSections(manifest({ feed: true, settings: { type: 'object', properties: {} } })), { panelView: false, panelThemes: false, feed: true, commands: false, settings: false })
   assert.equal(pluginTabSections(manifest({ settings: { type: 'object', properties: { interval: { type: 'number' } } } })).settings, true)
   assert.equal(pluginTabSections(manifest({ commands: [{ id: 'go', title: text('go') }] })).commands, true)
   assert.equal(pluginTabSections(manifest({ panelView: { entry: 'ui/index.html', title: text('panel') } })).panelView, true)
-  // 只有寵物外觀、只有反應或徽章：沒有分頁。
   for (const contributes of [{ skins: [skin] }, { reaction: true, badge: true }, {}] satisfies PluginContributions[]) {
     assert.equal(hasPluginTabContent(pluginTabSections(manifest(contributes))), false, JSON.stringify(contributes))
   }
@@ -137,10 +134,8 @@ test('the tab content renders each section only for a matching capability and ho
   assert.match(content, /<section v-if="tab\.sections\.commands"/)
   assert.match(content, /<section v-if="tab\.sections\.feed"/)
   assert.match(content, /v-if="tab\.sections\.settings"[^>]*@click="emit\('openSettings'/)
-  // 主題清單與詳情頁共用同一個元件，不複製邏輯。
   assert.match(readFileSync('src/components/status-panel/PluginThemeTab.vue', 'utf8'), /<PluginPanelThemes :plugin-id="pluginId"/)
   assert.match(readFileSync('src/components/plugin-panel/PluginDetail.vue', 'utf8'), /<PluginPanelThemes /)
-  // 「開啟插件設定」與搜尋先找分頁，沒有分頁才開詳情頁。
   const panel = readFileSync('src/components/StatusPanel.vue', 'utf8')
   assert.match(panel, /watch\(panelThemeTargetRequest,[\s\S]*?candidate\.sections\.panelThemes[\s\S]*?openPluginTabSettings\(request\.pluginId, 'themes'\)[\s\S]*?selectDashboardTab\(tab\.value\)/)
 })

@@ -5,15 +5,11 @@ import { t } from '@/i18n'
 import { hostAppLabel } from '@/types/host-app'
 import Button from '@/components/ui/Button.vue'
 
-// Read-only reminder for agents (Codex / Claude) whose permission prompts can
-// only be answered in their own tool. There is deliberately no allow / deny
-// here: the broker has no response channel for these sessions.
+// No allow / deny here: the broker has no response channel for these sessions.
 const store = useAgentStore()
 const helpOpen = ref(false)
 const switchFailed = ref(false)
 
-// The most urgent waiting session (items are already in attention order) can be jumped back to
-// directly: this activates its app, it does not pick a window or tab.
 const switchTarget = computed(() => {
   const first = store.permissionNotice?.items[0]
   if (!first) return null

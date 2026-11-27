@@ -16,8 +16,7 @@ import { isAgentPetsHook } from '../electron/hook-config.ts'
 import { redactText } from '../electron/diagnostics/redact.ts'
 import { openCodePluginContent } from '../electron/setup.ts'
 
-// 已部署的 hook、OpenCode plugin 與 presentation MCP 腳本會一直用這些值連線，所以每個值都寫死在這裡：
-// 改了契約模組卻沒有遷移方案，這個測試就會失敗。
+// 已部署的 hook、OpenCode plugin 與 presentation MCP 腳本會一直用這些值連線；改了契約卻沒有遷移方案，這個測試就會失敗。
 test('the local wire contract keeps the values deployed integrations rely on', () => {
   assert.equal(LOCAL_WIRE_HOST, '127.0.0.1')
   assert.deepEqual(DEFAULT_LOCAL_PORTS, { event: 17373, permission: 17374, presentation: 17375 })
@@ -74,7 +73,6 @@ function lineOf(source: string, pattern: RegExp, label: string): string {
   return match[0]
 }
 
-// integrations/*.mjs 安裝後由 Node 在 app 之外單獨執行，不能 import TS；只能讀原始碼比對它們手寫的字面值。
 test('agent-hook.mjs uses the contract values verbatim', () => {
   const hook = readFileSync(new URL('../integrations/agent-hook.mjs', import.meta.url), 'utf8')
   const origin = `http://${LOCAL_WIRE_HOST}`
@@ -104,14 +102,12 @@ test('agent-hook.mjs uses the contract values verbatim', () => {
   assert.ok(hook.includes(`postLocal(PET_URL, { '${LOCAL_WIRE_HEADERS.eventToken}': eventToken }`))
   assert.ok(hook.includes(`postLocal(\`\${PERMISSION_URL}/\${route}\`, { '${LOCAL_WIRE_HEADERS.permissionToken}': token }`))
 
-  // hook 用 `${PERMISSION_URL}/${route}` 組路徑：每個 route 都要是 server 認得的路徑，而且五個都有用到。
   const routes = [...hook.matchAll(/permissionPost\(token, '([^']+)'/g)].map(match => match[1])
   assert.deepEqual(
     new Set(routes.map(route => `${LOCAL_WIRE_PATHS.permissionPrefix}/${route}`)),
     PERMISSION_PATHS,
   )
 
-  // 啟動標記：hook 以事件埠組檔名，必須與主程序寫的檔名相同。
   assert.ok(hook.includes('path.join(DEPLOY_DIR, `event-port-${new URL(PET_URL).port}.starting`)'))
   assert.equal(hookStartupMarkerName(DEFAULT_LOCAL_PORTS.event), `event-port-${DEFAULT_LOCAL_PORTS.event}.starting`)
 })

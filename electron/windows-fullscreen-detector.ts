@@ -133,12 +133,8 @@ function sameNativePointer(left: unknown, right: unknown): boolean {
   return !isNullPointer(left) && !isNullPointer(right) && left === right
 }
 
-/**
- * Electron exposes a Windows HWND as a little-endian byte buffer, while
- * Koffi represents Win32 pointers as BigInt values. Keep this conversion at
- * the boundary so the detector never passes the address of Electron's buffer
- * to a Win32 API by mistake.
- */
+// Electron exposes an HWND as a little-endian byte buffer while Koffi uses BigInt pointers; convert here so the
+// detector never passes the address of Electron's buffer to a Win32 API.
 export function nativeWindowHandleToPointer(handle: Uint8Array | null): bigint | null {
   if (!handle || handle.byteLength === 0) return null
   const length = Math.min(handle.byteLength, 8)
@@ -164,11 +160,7 @@ function edgesMatch(left: WindowsRect, right: WindowsRect): boolean {
     && Math.abs(left.bottom - right.bottom) <= FULLSCREEN_EDGE_TOLERANCE_PX
 }
 
-/**
- * A conservative, pure Win32 fullscreen rule. A normal maximized window ends
- * at rcWork (usually below the taskbar) and retains caption/frame styles, so
- * it does not qualify. Borderless windows must cover the complete monitor.
- */
+// A normal maximized window ends at rcWork (below the taskbar) and keeps caption/frame styles, so it does not qualify.
 export function isExternalFullscreenWindow(
   snapshot: WindowsFullscreenWindowSnapshot,
 ): boolean {
@@ -212,7 +204,7 @@ function createWin32Binding(koffi: KoffiModule): Win32Binding {
     'void __stdcall AgentPetsWinEventProc(void *hook, uint32_t event, void *hwnd, int32_t objectId, int32_t childId, uint32_t threadId, uint32_t time)',
   )
 
-  // Win32 BOOL 是 4-byte int，不是 1-byte bool：宣告 int 再以 !== 0 轉成 boolean，避免讀到未定義的高位元組。
+  // Win32 BOOL 是 4-byte int，不是 1-byte bool：宣告 int 再以 !== 0 判斷，避免讀到未定義的高位元組。
   const isWindowVisible = user32.func('int IsWindowVisible(void *hwnd)')
   const isIconic = user32.func('int IsIconic(void *hwnd)')
   const getMonitorInfo = user32.func('int GetMonitorInfoW(void *monitor, _Inout_ AgentPetsFullscreenMonitorInfo *info)')

@@ -80,7 +80,6 @@ const GUARD_SENDERS = {
 
 function senderSummary(channel, block) {
   if (channel === 'plugin-panel-api') return 'panelView 主 frame；active WebContents 二次比對'
-  // 共用 sender guard 的第三個參數就是實際的 guard；依名稱標示允許的視窗，未知名稱才退回通用描述。
   const guard = block.match(/(?:handle|on)WithSenderGuard\(\s*deps\.ipcMain,\s*IPC_CHANNELS\.[A-Za-z_$][\w$]*,\s*deps\.([A-Za-z_$][\w$]*)/)?.[1]
   if (guard && GUARD_SENDERS[guard]) return GUARD_SENDERS[guard]
   if (block.includes('handleTrusted(') || block.includes('handleWithSenderGuard(') || block.includes('onWithSenderGuard(')) {
@@ -100,7 +99,7 @@ function senderSummary(channel, block) {
 
 function validationSummary(block) {
   const checks = []
-  // value-guards 的物件守衛（isRecord／asRecord／recordOrEmpty）與手寫的 typeof 檢查同屬型別驗證，不另列成 helper。
+  // isRecord／asRecord／recordOrEmpty 與 typeof 檢查同屬型別驗證，不另列成 helper。
   if (/typeof\s+[\w.]+\s*!==?/.test(block) || /typeof\s+[\w.]+\s*===?/.test(block) || /\b(?:isRecord|asRecord|recordOrEmpty)\s*\(/.test(block)) checks.push('型別')
   if (/\.length\s*[<>!=]=?/.test(block) || /\.length\s*===?/.test(block)) checks.push('長度／數量上限')
   if (/Number\.is(?:Safe)?Integer|Number\.isFinite/.test(block)) checks.push('數值範圍')

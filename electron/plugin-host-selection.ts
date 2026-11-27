@@ -11,7 +11,6 @@ export function canEnablePluginWithinLimit(currentlyEnabled: boolean, enabledCou
     && Number.isSafeInteger(maximum) && maximum > 0 && enabledCount < maximum
 }
 
-/** Keeps the earliest enabled descriptors running if stored state exceeds its configured limit. */
 export function selectEnabledPluginDescriptors(
   candidates: readonly PluginHostDescriptor[],
   maximum: number,

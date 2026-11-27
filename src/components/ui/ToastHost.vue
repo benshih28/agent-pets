@@ -2,7 +2,6 @@
 import { useToast } from '@/composables/useToast'
 import Toast from '@/components/ui/Toast.vue'
 
-// Mount once near the app root. Renders the useToast() queue.
 const { toasts, dismiss } = useToast()
 
 function runAction(id: number, handler?: () => void) {

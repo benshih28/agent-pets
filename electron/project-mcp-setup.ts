@@ -31,11 +31,9 @@ export interface ProjectMcpInstallOptions {
 }
 
 export interface ProjectMcpSelection {
-  /** Rewrite Agent Pets entries whose paths are outdated (App moved, Node upgraded). */
   updateStale?: boolean
-  /** Clients to configure; defaults to every supported client. */
   clients?: ProjectMcpClientId[]
-  /** Add the written files to .git/info/exclude so the local paths they contain are never committed. */
+  /** Adds the written files to .git/info/exclude so the local paths they contain are never committed. */
   localOnly?: boolean
 }
 
@@ -108,7 +106,6 @@ function readBoundedText(filePath: string): string | null {
 function writeTextAtomic(filePath: string, content: string): void {
   ensureSafeDirectory(path.dirname(filePath))
   // Project config files are often shared with teammates: keep an existing file's mode.
-  // 已確認是一般檔案（不是 symlink），lstat 的 mode 就是 stat 的 mode，不必再 stat 一次。
   let mode = 0o644
   if (fs.existsSync(filePath)) {
     const stat = fs.lstatSync(filePath)
@@ -218,8 +215,7 @@ function readJsonRoot(filePath: string, snippet?: string): JsonRecord {
   return parsed
 }
 
-// Re-serialise with the file's own indentation and line endings so an edit only adds our entry
-// instead of reformatting the whole file.
+// Keeps the file's own indentation and line endings so an edit only adds our entry.
 function serializeLike(root: JsonRecord, original: string | null): string {
   let indent: string | number = 2
   let eol = '\n'
@@ -264,7 +260,6 @@ function expectedForClient(
   return null
 }
 
-/** The text a user would paste by hand when Agent Pets will not (or cannot) edit the file. */
 export function manualSnippetFor(client: ProjectMcpClientId, options: ProjectMcpInstallOptions): string {
   if (client === 'codex') return codexBlock(options.nodeExecutable, options.bridgePath)
   const expected = expectedForClient(client, options)!
@@ -331,7 +326,6 @@ function installCodex(
   return installedResult('codex', 'installed', filePath, updated ? 'updated' : 'installed', updated ? 'Codex project MCP paths updated.' : 'Codex project MCP installed.')
 }
 
-// A stale entry of ours runs Node.js by absolute path; any other command is the user's own.
 function nodeCommand(value: unknown): boolean {
   if (typeof value !== 'string') return false
   if (!path.posix.isAbsolute(value) && !path.win32.isAbsolute(value)) return false
@@ -342,8 +336,7 @@ function bridgeName(value: unknown): boolean {
   return typeof value === 'string' && /(^|[\\/])presentation-mcp\.mjs$/.test(value)
 }
 
-// An entry that has the shape Agent Pets writes but with other paths: our own entry gone stale
-// (App moved, Node upgraded) rather than something the user wrote.
+// The shape Agent Pets writes but with other paths: our own entry gone stale, not something the user wrote.
 function looksLikeOurs(client: ProjectMcpClientId, entry: unknown): boolean {
   if (!isRecord(entry)) return false
   // Extra keys (env, headers, ...) mean the user customized the entry: never treat it as ours.
@@ -714,8 +707,7 @@ export function installProjectMcp(
   return summary
 }
 
-// Folders and files that signal which agent clients the user actually uses. The user-level folders
-// follow CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME; the project-level ones are not affected by them.
+// The user-level folders follow CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME; the project-level ones do not.
 function detectClients(projectPath: string, homeDirectory: string): Record<ProjectMcpClientId, boolean> {
   const exists = (target: string) => fs.existsSync(target)
   const userDirs = currentAgentConfigDirs({ homeDir: homeDirectory })
@@ -727,7 +719,6 @@ function detectClients(projectPath: string, homeDirectory: string): Record<Proje
   }
 }
 
-/** Read-only preview of what installProjectMcp would do; nothing is written. */
 export function planProjectMcp(
   projectPath: string,
   options: ProjectMcpInstallOptions,

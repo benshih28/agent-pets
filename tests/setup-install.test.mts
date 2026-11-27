@@ -38,12 +38,9 @@ import { DEPLOY_FILES } from '../src/types/local-wire.ts'
 import { ConfigRefusedError } from '../electron/safe-config-write.ts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// Integration tests for the real installer against a throw-away HOME. Nothing here touches the
-// user's actual home directory or the macOS Keychain.
 const integrations = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'integrations')
 
-// The machine's own CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME must never leak in: tests pass
-// their own variables (default: none), so a developer's real config folder is never written.
+// The machine's own CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME must never leak in, or a developer's real config folder gets written.
 async function withHome<T>(work: (home: string) => T | Promise<T>, env: (home: string) => AgentConfigEnv = () => ({})): Promise<T> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-setup-home-'))
   const agentEnv = env(home)
@@ -76,8 +73,7 @@ test('fresh install writes hooks, the hook script and the Codex feature flag', a
   })
 })
 
-// 寫進使用者 dotfile 的 JSON 是外部契約：逐位元組鎖住新安裝的完整輸出（事件與鍵的順序、只有工具
-// 事件有 matcher、只有 PermissionRequest 有 timeout、Codex 的頂層 description），型別重構不得改變任何字元。
+// 寫進使用者 dotfile 的 JSON 是外部契約：逐位元組鎖住輸出，型別重構不得改變任何字元。
 test('a fresh Claude Code install writes exactly the expected settings.json bytes', async () => {
   await withHome(async () => {
     await installIntegration('claudeCode')
@@ -246,7 +242,6 @@ test('startup upgrade adds the new Claude handlers to an older install and keeps
     const hook = hookScriptPath()
     const ours = (matcher?: string) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command: '/old/node', args: [hook, 'claude'] }] })
     const mine = { type: 'command', command: 'echo mine' }
-    // What 1.10.3 wrote, plus a user handler on the same event.
     const legacy = {
       model: 'opus',
       hooks: {
@@ -265,7 +260,6 @@ test('startup upgrade adds the new Claude handlers to an older install and keeps
     assert.equal(upgraded.model, 'opus')
     assert.equal((await upgradeClaudeCodeHooks())?.status, 'unchanged')
 
-    // Not installed: nothing to upgrade, nothing written.
     await uninstallIntegration('claudeCode')
     const text = fs.readFileSync(claudeCodeSettingsPath(), 'utf8')
     assert.equal(await upgradeClaudeCodeHooks(), null)
@@ -273,7 +267,6 @@ test('startup upgrade adds the new Claude handlers to an older install and keeps
   })
 })
 
-// 1.10.x 之前只裝這七個事件；之後新增的事件都得靠啟動升級補給舊安裝。
 const ORIGINAL_CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionEnd']
 
 test('every installed Claude Code event is either an original one or in the startup upgrade list', () => {
@@ -296,7 +289,6 @@ test('the startup upgrade gives an old install StopFailure, PreCompact and PostC
     const hook = hookScriptPath()
     const ours = (matcher?: string) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command: '/old/node', args: [hook, 'claude'] }] })
     const mine = { type: 'command', command: 'echo mine' }
-    // 只有原始七個事件（含使用者自己的 Stop 與 PreCompact handler），沒有 StopFailure。
     const legacy = {
       model: 'opus',
       hooks: {
@@ -354,10 +346,8 @@ test('overlapping install and uninstall requests are serialized and never interl
       fs.promises.rename = original
       syncBuiltinESMExports()
     }
-    // 每一次 rename 都完整結束才開始下一次。
     assert.deepEqual(order, order.map((_entry, index) => (index % 2 === 0 ? 'rename:start' : 'rename:end')))
     assert.ok(order.length >= 4)
-    // 排隊順序即結果順序：最後一個請求是 install，所以最終是已安裝。
     assert.equal(await fileHasAgentPetsHooksAsync(settings), true)
     const hooks = JSON.parse(fs.readFileSync(settings, 'utf8')).hooks
     for (const event of CLAUDE_CODE_HOOK_EVENTS) assert.equal(hooks[event].length, 1, `${event} has exactly one Agent Pets entry`)
@@ -408,7 +398,6 @@ test('the startup upgrade runs once per app version and never re-adds an entry t
   await withHome(async () => {
     await installIntegration('claudeCode')
     const settings = () => JSON.parse(fs.readFileSync(claudeCodeSettingsPath(), 'utf8'))
-    // The user deliberately drops our PermissionRequest handler.
     const edited = settings()
     delete edited.hooks.PermissionRequest
     fs.writeFileSync(claudeCodeSettingsPath(), `${JSON.stringify(edited, null, 2)}\n`)
@@ -436,8 +425,6 @@ test('the startup upgrade leaves settings without Agent Pets hooks untouched', a
     assert.equal(fs.readFileSync(claudeCodeSettingsPath(), 'utf8'), mine)
   })
 })
-
-// --- CLAUDE_CONFIG_DIR／CODEX_HOME／XDG_CONFIG_HOME ------------------------------------------------
 
 function made(dir: string): string {
   fs.mkdirSync(dir, { recursive: true })

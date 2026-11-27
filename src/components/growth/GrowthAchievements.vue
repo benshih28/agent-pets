@@ -34,13 +34,10 @@ const filterOptions = computed(() => FILTERS.map(option => ({ value: option.id, 
 const sections = computed(() => sectionAchievements(store.achievements?.achievements ?? []))
 const showProgress = computed(() => filter.value !== 'unlocked')
 const showUnlocked = computed(() => filter.value !== 'progress')
-// With nothing unlocked yet, point at the easiest first step.
 const starterId = computed(() => (
   store.achievements && store.achievements.totalUnlocked === 0 ? sections.value.inProgress[0]?.id : undefined
 ))
 
-// Unlocks newer than the last time this view was opened are marked "New".
-// Per-viewer convenience only, so storage failures are simply ignored.
 const seenAt = readStored(STORAGE_KEYS.achievementsSeenAt)
 
 function isNew(unlockedAt?: number): boolean {
@@ -138,7 +135,6 @@ function percent(item: AchievementView): number {
   list-style: none;
 }
 
-/* 外層 flex 讓分段控制縮成內容寬度，不撐滿卡片。 */
 .achievement-filter {
   display: flex;
   margin-top: var(--space-3);

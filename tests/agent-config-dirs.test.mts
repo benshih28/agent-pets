@@ -40,7 +40,6 @@ test('valid absolute values are used and normalized', () => {
   assert.deepEqual(dirs.claude, { path: '/work/claude-cfg', defaultPath: '/home/u/.claude', source: 'env', variable: 'CLAUDE_CONFIG_DIR' })
   assert.equal(dirs.codex.path, '/work/codex')
   assert.equal(dirs.codex.source, 'env')
-  // XDG_CONFIG_HOME 指向上一層，OpenCode 目錄是 <XDG>/opencode。
   assert.equal(dirs.opencode.path, '/xdg/opencode')
 
   const win = resolveAgentConfigDirs(windows(

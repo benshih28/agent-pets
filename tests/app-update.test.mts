@@ -21,7 +21,6 @@ test('isNewerAppVersion compares semver with an optional v prefix', () => {
   assert.equal(isNewerAppVersion('1.13.1', 'v1.13.1'), false)
   assert.equal(isNewerAppVersion('1.14.0', '1.13.9'), false)
   assert.equal(isNewerAppVersion('1.9.0', '1.10.0'), true)
-  // 純數字比對而非字串比對
   assert.equal(isNewerAppVersion('1.10.0', '1.9.0'), false)
 })
 

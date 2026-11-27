@@ -6,8 +6,6 @@ import { PROGRAMMATIC_PANEL_RESIZE_WINDOW_MS } from '../electron/plugin-panel-wi
 import { fakeBrowserWindow, fakeDisplay } from './support/fake-electron.mts'
 import { PANEL_HEIGHT, PANEL_MIN_HEIGHT, PANEL_MIN_WIDTH, PANEL_WIDTH } from '../src/utils/panel-layout.ts'
 
-// 從 electron/main/runtime.ts 抽出的面板尺寸與定位，用假螢幕、假視窗與假尺寸檔驗證。
-
 interface Rect { x: number; y: number; width: number; height: number }
 
 const main = fakeDisplay(1, { x: 0, y: 0, width: 1920, height: 1080 }, { x: 0, y: 25, width: 1920, height: 1055 })
@@ -70,7 +68,6 @@ function setup(t: TestContext, options: { pet?: Rect | null; panel?: Rect | null
 test('without a pet window the panel opens at the primary work area origin, clamped', t => {
   const { geometry } = setup(t, { pet: null })
   assert.deepEqual(geometry.computePanelBounds(720), { x: 0, y: 25, width: PANEL_WIDTH, height: 720 })
-  // 高度超過工作區時被夾進去。
   const tall = geometry.computePanelBounds(5000)
   assert.equal(tall.height < 1055, true)
 })

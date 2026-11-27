@@ -10,17 +10,14 @@ export interface NotificationCandidate {
   title: string
   body: string
   terminal: boolean
-  /** 只有非結束類（等待權限／等待輸入）才有：正在等使用者的那個 session，點通知時可切到它的 App。 */
+  /** 只有非結束類才有。 */
   session?: { source: string; sessionId: string }
 }
 
-// 通知標題用家族名稱（CLI 與 Desktop 同名）；來源不在 registry 裡時退回通用字。
 function sourceName(source: unknown): string {
   return isAgentSource(source) ? AGENT_FAMILY_REGISTRY[AGENT_SOURCE_REGISTRY[source].family].label : 'Agent'
 }
 
-// 哪些狀態要通知、是不是結束類由 AGENT_STATE_POLICY 決定；這裡只補主程序才有的標題文案。
-// 狀態表新增一個會通知的狀態時，這張表少一格就編譯失敗。
 const NOTIFICATION_TITLE_KEYS = {
   'waiting-permission': 'notificationNeedsPermission',
   'waiting-input': 'notificationWaitingInput',

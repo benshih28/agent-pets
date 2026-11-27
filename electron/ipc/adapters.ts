@@ -9,15 +9,13 @@ export interface AdapterIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedIpcSender(event: IpcMainInvokeEvent, requiredWindow?: BrowserWindow | null): void
   getPanelWindow(): BrowserWindow | null
-  /** The pet asks once at first launch whether onboarding is still needed. */
   getPetWindow?(): BrowserWindow | null
   getAgentAdapterRegistry(): AgentAdapterRegistry | null
 }
 
 export function registerAdapterIpc(deps: AdapterIpcDependencies): void {
   deps.ipcMain.handle(IPC_CHANNELS.integrationStatus, async (event): Promise<AdapterIntegrationStatusIpcResult> => {
-    // Read-only status. The pet window reads it on first launch to decide whether to
-    // open the onboarding wizard; every other adapter operation stays panel-only.
+    // Read-only status for the pet window's first-launch check; every other adapter operation stays panel-only.
     const pet = deps.getPetWindow?.() ?? null
     deps.assertTrustedIpcSender(event, pet?.webContents && event.sender === pet.webContents ? pet : deps.getPanelWindow())
     return { adapters: await deps.getAgentAdapterRegistry()?.listStatuses() ?? [] }

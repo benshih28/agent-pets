@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { AGENT_ADAPTER_REGISTRY } from '../src/types/agent-adapter.ts'
 
-// README capability tables must not drift from the adapter registry (single source of truth).
 const NAMES: Record<string, string> = { OpenCode: 'opencode', Codex: 'codex', 'Claude Code': 'claude-code' }
 
 for (const file of ['README.md', 'README.zh-TW.md']) {

@@ -40,7 +40,6 @@ function normalizeBadge(value: unknown): { text: string; tone: PluginBadgeTone }
   return { text, tone: tone as PluginBadgeTone }
 }
 
-/** Holds one bounded, host-sanitized status badge per enabled plugin. */
 export class PluginBadgeController {
   private readonly getContext: PluginBadgeControllerOptions['getContext']
   private readonly onChanged: NonNullable<PluginBadgeControllerOptions['onChanged']>
@@ -85,7 +84,6 @@ export class PluginBadgeController {
     return { ok: true, value: { set: Boolean(badge) } }
   }
 
-  /** Remove stale plugin state without consuming the plugin's set rate limit. */
   syncEnabledPlugins(): void {
     let changed = false
     const trackedPluginIds = new Set([...this.badges.keys(), ...this.lastUpdateAt.keys()])

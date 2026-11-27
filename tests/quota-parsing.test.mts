@@ -118,8 +118,7 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
 
-// 憑證流程只能端到端測：讀取與 refresh 都是私有函式。把家目錄、PATH、設定目錄全導到暫存資料夾，
-// 確保不會讀到或執行本機真正的 Codex／Claude 登入與 CLI。
+// 家目錄、PATH、設定目錄全導到暫存資料夾，確保不會讀到或執行本機真正的 Codex／Claude 登入與 CLI。
 function isolateEnvironment(t: TestContext, responder: (request: RecordedRequest) => Response): {
   root: string
   codexHome: string

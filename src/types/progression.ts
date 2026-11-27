@@ -21,12 +21,10 @@ export interface ProgressionAward {
 export interface ProgressionEventResult {
   snapshot: ProgressionSnapshot
   awards: ProgressionAward[]
-  /** Level and stage before this event's awards, for level-up detection. */
   levelBefore: number
   stageBefore: EvolutionStage
 }
 
-/** Main -> renderer notification that a handled event actually granted XP. */
 export interface ProgressionAwardEvent {
   petId: string
   awards: ProgressionAward[]
@@ -63,7 +61,6 @@ export const EVOLUTION_STAGE_LEVELS: ReadonlyArray<{ stage: EvolutionStage; leve
   { stage: 'master', level: 35 },
 ])
 
-/** Next evolution stage after `level`, or null at the final stage. */
 export function nextEvolution(level: number): { stage: EvolutionStage; level: number } | null {
   return EVOLUTION_STAGE_LEVELS.find(entry => entry.level > Math.max(1, Math.floor(level))) ?? null
 }

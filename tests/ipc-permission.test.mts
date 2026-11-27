@@ -25,7 +25,6 @@ test('permission IPC keeps request decisions bounded and sender-scoped', async (
   const panelWindow = fakeBrowserWindow({ isDestroyed: () => false, webContents: panelContents })
   let audit: PermissionAuditEntry[] = [auditEntry]
   let brokerAvailable = true
-  // PermissionBroker 內有計時器與佇列狀態，IPC 層只呼叫這兩個方法，所以只實作它們。
   const broker = {
     listRequests: () => [requestView],
     decide: async (...args: unknown[]) => { decisions.push(args); return { ok: true as const, status: 'allowed' as const } },
@@ -62,7 +61,6 @@ test('permission IPC keeps request decisions bounded and sender-scoped', async (
   assert.deepEqual(await invokeFromPanel(IPC_CHANNELS.permissionAuditList), [auditEntry])
   assert.deepEqual(await invokeFromPanel(IPC_CHANNELS.permissionAuditClear), { ok: true })
   assert.deepEqual(await invokeFromPanel(IPC_CHANNELS.permissionAuditList), [])
-  // Audit access is panel-only.
   const auditChecks = trusted.filter(entry => entry.window === panelWindow)
   assert.equal(auditChecks.length, 3)
 })

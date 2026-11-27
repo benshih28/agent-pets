@@ -14,8 +14,7 @@ export function shouldResetPluginPanelMaximized(previousPluginId: string, nextPl
 
 export interface PluginPanelWindowSize { width: number; height: number }
 
-// 放大時把控制面板視窗加大到螢幕可用範圍（扣掉四周間距），讓插件區寬到足以切換成雙欄版面；
-// 這只是暫時的最小尺寸，不會覆寫使用者自己調整的面板大小，且不會比目前更小。
+// 暫時的最小尺寸：不會覆寫使用者自己調整的面板大小，且不會比目前更小。
 export const PLUGIN_PANEL_MAXIMIZE_GAP = 6
 
 export function maximizedPluginPanelWindowSize(current: PluginPanelWindowSize, available: PluginPanelWindowSize): PluginPanelWindowSize {

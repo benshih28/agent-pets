@@ -16,11 +16,9 @@ export interface ShortcutPort {
 export interface PermissionHotkeyOptions {
   shortcuts: ShortcutPort
   platform: NodeJS.Platform
-  /** Called with the top request the hotkey was registered for. */
   decide(requestId: string, decision: PermissionDecisionValue): void
 }
 
-/** Platform-correct display labels, computed here so the renderer never guesses. */
 export function permissionHotkeyLabels(platform: NodeJS.Platform): { allow: string; deny: string } {
   return platform === 'darwin'
     ? { allow: '⌘⇧Y', deny: '⌘⇧N' }
@@ -33,16 +31,8 @@ interface Registration {
   info: PermissionHotkeyInfo
 }
 
-/**
- * Owns the two global permission shortcuts. Registration is keyed by the top
- * request, so broadcasts that do not change it leave the shortcuts untouched
- * (no unregister / register gap), and a failed registration is reported
- * instead of leaving the UI advertising a shortcut that does nothing.
- *
- * Only the top pending request that the broker marked hotkeyEligible (low /
- * medium risk, not truncated) ever gets a shortcut; high-risk and unclassified
- * requests have none.
- */
+// Keyed by the top request so unchanged broadcasts leave the shortcuts untouched (no unregister/register gap).
+// Only a hotkeyEligible top request ever gets a shortcut.
 export class PermissionHotkeys {
   private current: Registration | null = null
 
@@ -52,7 +42,6 @@ export class PermissionHotkeys {
     this.options = options
   }
 
-  /** Brings registration in line with `top`; returns the info to show in the UI. */
   sync(top: PermissionRequestView | null | undefined, enabled: boolean): PermissionHotkeyInfo | null {
     const eligible = Boolean(
       enabled && top && top.status === 'pending' && top.hotkeyEligible,
@@ -116,13 +105,10 @@ export class PermissionHotkeys {
   private safeUnregister(accelerator: string): void {
     try {
       this.options.shortcuts.unregister(accelerator)
-    } catch {
-      // Unregistering a shortcut we no longer own is not an error worth surfacing.
-    }
+    } catch {}
   }
 }
 
-/** Returns the views with hotkey info attached to the top request only. */
 export function attachHotkeyInfo(
   requests: PermissionRequestView[],
   info: PermissionHotkeyInfo | null,

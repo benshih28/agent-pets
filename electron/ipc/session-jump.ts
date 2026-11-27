@@ -9,7 +9,6 @@ import { asRecord } from '../value-guards.ts'
 
 export interface SessionJumpIpcDependencies {
   ipcMain: Pick<IpcMain, 'handle'>
-  /** Pet or panel main frame. */
   assertTrustedIpcSender(event: IpcMainInvokeEvent): void
   runSessionJump(action: SessionJumpAction, key: string): Promise<SessionJumpResult>
 }

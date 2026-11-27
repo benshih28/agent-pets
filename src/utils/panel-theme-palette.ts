@@ -3,14 +3,7 @@ import type { PanelThemeMode } from '../types/panel-theme.ts'
 import type { UserPanelThemeDefinition } from '../types/panel-theme-user.ts'
 import type { PluginPanelThemeColorKey } from '../types/plugin.ts'
 
-// 主題編輯器的色盤產生器（spec R23）。純函式、確定性：同樣的輸入一定得到同樣的色盤。
-//
-// 1. 種子色 → 淺色與深色兩套完整色盤：在 OKLCH 中以固定的明度階層排出表面、文字與強調色，
-//    中性色只帶一點種子色相；狀態色固定在各自的色相區間（紅、綠、琥珀、藍）。排好之後交給
-//    與插件主題相同的驗證器，逐輪套用它的建議值（最多 PALETTE_REPAIR_ROUNDS 輪），所以產出的
-//    色盤一定符合所有不變量，或明確回報仍有問題。
-// 2. 背景圖 → 主色：渲染端把圖片縮到 ≤ 128 px 畫在 canvas 上，這裡對像素做固定次數的
-//    k-means（OKLab 空間，O(n·k·迭代)），挑出最常見且夠鮮豔的顏色當種子。
+// 純函式、確定性：同樣的輸入一定得到同樣的色盤。
 
 type ColorRecord = Record<PluginPanelThemeColorKey, string>
 
@@ -18,10 +11,9 @@ export const PALETTE_REPAIR_ROUNDS = 4
 export const IMAGE_SAMPLE_MAX_SIDE = 128
 export const IMAGE_CLUSTER_COUNT = 6
 export const IMAGE_KMEANS_ITERATIONS = 8
-/** k-means 處理的像素上限（≤ 128 × 128）；更大的輸入以固定間隔取樣。 */
 export const IMAGE_MAX_SAMPLES = IMAGE_SAMPLE_MAX_SIDE * IMAGE_SAMPLE_MAX_SIDE
 
-/** 狀態色的色相與色度（OKLCH），在兩個模式都落在驗證器的區間內。 */
+/** 兩個模式都必須落在驗證器的色相區間內。 */
 const STATE_TONES = {
   dangerText: { h: 27, c: 0.15 },
   successText: { h: 140, c: 0.12 },
@@ -40,10 +32,7 @@ function format(color: PanelThemeRgba): string {
   return formatPanelThemeColor(color)
 }
 
-/**
- * 一個模式的初始色盤。`neutralHue` 讓中性色（背景、表面、文字）帶一點顏色；
- * 灰色種子（色度很低）時中性色與強調色都維持灰階附近。
- */
+// 灰色種子（色度很低）時中性色與強調色都維持灰階附近。
 function basePalette(mode: PanelThemeMode, seed: Seed, neutralHue: number): ColorRecord {
   const tint = Math.min(seed.c, 0.12) * 0.25
   const accentChroma = Math.min(Math.max(seed.c, 0.02), 0.16)
@@ -95,10 +84,7 @@ export interface PaletteResult {
   valid: boolean
 }
 
-/**
- * 以驗證器的建議值修正色盤：每輪把每個有建議的顏色鍵（以及背景圖的最小遮罩）換成建議值，
- * 直到通過或達到輪數上限。只改顏色與遮罩，不改背景類型、字型或圓角。
- */
+/** 只改顏色與遮罩，不改背景類型、字型或圓角。 */
 export function repairPalette(definition: UserPanelThemeDefinition): PaletteResult {
   let current = structuredClone(definition)
   for (let round = 0; round < PALETTE_REPAIR_ROUNDS; round += 1) {
@@ -131,11 +117,9 @@ export function repairPalette(definition: UserPanelThemeDefinition): PaletteResu
 }
 
 export interface SeedOptions {
-  /** 中性色的色相；預設與種子相同（背景圖產生時用圖片最常見的顏色）。 */
   neutralHue?: number
 }
 
-/** 種子色 → 兩個模式的完整色盤，套在 `base` 上（保留背景、背景圖、膠囊、字型與圓角設定）。 */
 export function paletteFromSeed(seedColor: PanelThemeRgba, base: UserPanelThemeDefinition, options: SeedOptions = {}): PaletteResult {
   const seed = rgbToOklch({ ...seedColor, a: 1 })
   // 灰色的色相沒有意義（atan2 的雜訊）；固定為 0 讓結果確定。
@@ -151,22 +135,16 @@ export function paletteFromSeed(seedColor: PanelThemeRgba, base: UserPanelThemeD
   return repairPalette(definition)
 }
 
-// ── 背景圖取色 ───────────────────────────────────────────────────────
-
 export interface ImageCluster {
   color: PanelThemeRgba
-  /** 該群占取樣像素的比例（0–1）。 */
+  /** 0–1。 */
   weight: number
   chroma: number
 }
 
 interface Lab { l: number; a: number; b: number }
 
-/**
- * 對 RGBA 像素（canvas getImageData 的格式）做 k-means。忽略 alpha < 128 的像素；超過
- * IMAGE_MAX_SAMPLES 時以固定間隔取樣。初始中心以確定性的「最遠點」挑選（第一個是亮度中位數
- * 附近的像素），迭代次數固定，所以同一張圖一定得到同樣的結果。依權重由大到小排序。
- */
+/** 初始中心以確定性的「最遠點」挑選，迭代次數固定，所以同一張圖一定得到同樣的結果。 */
 export function extractDominantColors(pixels: ArrayLike<number>, width: number, height: number, k = IMAGE_CLUSTER_COUNT): ImageCluster[] {
   const total = Math.max(0, Math.floor(width) * Math.floor(height))
   if (total === 0 || pixels.length < total * 4 || k < 1) return []
@@ -229,10 +207,7 @@ export function extractDominantColors(pixels: ArrayLike<number>, width: number, 
     .sort((x, y) => y.weight - x.weight || y.chroma - x.chroma)
 }
 
-/**
- * 從主色挑種子：權重 × (0.25 + 色度) 最高者，讓「大面積又有顏色」的群勝出；全部都很灰時取最大群。
- * 中性色相取最大群（圖片的整體色調）。
- */
+/** 權重 × (0.25 + 色度) 最高者勝出，讓「大面積又有顏色」的群優先；全部都很灰時取最大群。 */
 export function seedFromClusters(clusters: readonly ImageCluster[]): { seed: PanelThemeRgba; neutralHue: number } | null {
   if (clusters.length === 0) return null
   let best = clusters[0]!
@@ -241,7 +216,6 @@ export function seedFromClusters(clusters: readonly ImageCluster[]): { seed: Pan
   return { seed: best.color, neutralHue: dominant.c < 0.01 ? rgbToOklch(best.color).h : dominant.h }
 }
 
-/** 縮圖後的尺寸：長邊 ≤ IMAGE_SAMPLE_MAX_SIDE，維持比例，至少 1 px。 */
 export function sampleSize(width: number, height: number): { width: number; height: number } {
   const scale = Math.min(1, IMAGE_SAMPLE_MAX_SIDE / Math.max(width, height, 1))
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }

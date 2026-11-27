@@ -11,7 +11,6 @@ export function atlasRowName(row: number): string {
   return PET_ATLAS_ROW_NAMES[row] ?? `row ${row}`
 }
 
-/** 用 inline style 顯示縮放成 `scale` 的一格，不在 script 裡解碼圖片。 */
 export function atlasCellStyle(atlas: PetImportAtlas, url: string, row: number, column: number, scale: number): Record<string, string> {
   const width = Math.round(atlas.frameWidth * scale)
   const height = Math.round(atlas.frameHeight * scale)

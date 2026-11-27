@@ -31,8 +31,7 @@ import { PERMISSION_ADAPTER_SOURCES } from '../electron/permission-adapter-serve
 import { normalizeAgentStatusEvent } from '../electron/event-normalizer.ts'
 import { isIntegrationTarget } from '../electron/ipc/integrations.ts'
 
-// 特性測試：數值是重構成來源 registry 前各處散落常數的實際內容。這些字串存在歷史資料庫、
-// localStorage 與插件契約裡，任何一格變了都算外部契約改變，要先確認遷移方式。
+// 這些字串存在歷史資料庫、localStorage 與插件契約裡，任何一格變了都要先確認遷移方式。
 
 const SOURCES = ['opencode-cli', 'opencode-desktop', 'codex', 'codex-desktop', 'claude', 'claude-desktop'] as const
 const PROTOTYPE_NAMES = ['constructor', '__proto__', 'toString', 'hasOwnProperty']
@@ -40,12 +39,10 @@ const PROTOTYPE_NAMES = ['constructor', '__proto__', 'toString', 'hasOwnProperty
 test('every source and family has a row, in the established order', () => {
   assert.deepEqual(ALL_SOURCES, SOURCES)
   assert.deepEqual(Object.keys(AGENT_SOURCE_REGISTRY), SOURCES)
-  // 狀態列與設定頁的家族順序。
   assert.deepEqual(AGENT_FAMILY_KEYS, ['codex', 'claude', 'opencode'])
   for (const source of SOURCES) {
     assert.ok(isAgentFamilyKey(AGENT_SOURCE_REGISTRY[source].family), source)
   }
-  // 每個家族至少一個來源，且每個家族 adapter 都在 adapter registry 裡。
   const adapterIds = new Set(AGENT_ADAPTER_REGISTRY.map(definition => definition.id))
   for (const family of AGENT_FAMILY_KEYS) {
     assert.ok(FAMILY_SOURCES[family].length > 0, family)
@@ -89,7 +86,6 @@ test('adapter registry sources and quota capability are derived from the family 
     const family = AGENT_FAMILY_REGISTRY[definition.family]
     assert.equal(family.adapterId, definition.id)
     assert.equal(definition.capabilities.quota, family.quotaProvider ? 'provider' : 'none', definition.id)
-    // 有本機紀錄的家族，token 才是 exact。
     assert.equal(definition.capabilities.tokenUsage === 'exact', family.localUsageSource !== null, definition.id)
   }
 })
@@ -170,7 +166,7 @@ test('the registries and every derived table are frozen', () => {
   assert.throws(() => { (FAMILY_SOURCES.claude as string[]).push('codex') }, TypeError)
 })
 
-// hook 是獨立部署的腳本，不能 import registry，所以只能從原始碼讀出它手寫的來源清單比對。
+// hook 是獨立部署的腳本，不能 import registry，只能從原始碼讀出手寫的來源清單比對。
 test('the hook script accepts exactly the registry sources of the families it serves', () => {
   const hook = readFileSync(new URL('../integrations/agent-hook.mjs', import.meta.url), 'utf8')
   const match = hook.match(/^const validSources = \[([^\]]*)\]/m)

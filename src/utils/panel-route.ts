@@ -1,9 +1,5 @@
 import { PANEL_SIZES, type PanelSize, type PanelSizeKey } from './panel-layout.ts'
 
-// The panel's navigation as one small state machine instead of three loose
-// flags. `view` is the page underneath; `overlay` is a wizard / MCP page opened
-// on top of it, so closing it always returns to where the user came from.
-
 export type PanelView = 'sessions' | 'settings'
 export type PanelOverlay = 'wizard' | 'mcp'
 
@@ -39,9 +35,6 @@ export function panelSizeFor(state: PanelRouteState): PanelSize {
   return PANEL_SIZES[panelSizeKey(state)]
 }
 
-// What the window should be told when the route changes. Switching between the
-// dashboard and Settings never resizes (the user's size is the one size); only a
-// wizard / MCP overlay asks for a larger minimum, and closing it releases that.
 export type PanelResizeRequest = { release: true } | (PanelSize & { release?: undefined })
 
 export function panelResizeRequest(previous: PanelRouteState, next: PanelRouteState): PanelResizeRequest | null {

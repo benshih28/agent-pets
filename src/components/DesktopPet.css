@@ -1,6 +1,5 @@
 .desktop-pet {
-  /* Tallest a bubble may grow: stays inside the headroom reserved above the
-     sprite (QUOTA_TOOLTIP_HEADROOM_H in agentStore) with a little slack. */
+  /* Must stay within QUOTA_TOOLTIP_HEADROOM_H (agentStore). */
   --pet-bubble-max-h: 176px;
   position: relative;
   width: 100%;
@@ -26,8 +25,7 @@
   cursor: grabbing;
 }
 
-/* Only the sprite lifts and casts a shadow: a filter on this container would
-   make it a backdrop root and flatten the glass status lines while dragging. */
+/* A filter on this container would become a backdrop root and flatten the glass status lines. */
 .pet-click-area.dragging :deep(.pet-visual) {
   transform: translateY(-6px) scale(1.05);
   filter: var(--pet-drag-shadow);
@@ -51,8 +49,6 @@
   transform: translateX(-50%) translateY(-3px) scale(calc(var(--mini-scale, 0.42) * 1.1));
 }
 
-/* Bubbles would be clipped by the small window; mini shows a ring + corner
-   badge instead (shape and icon as well as colour). */
 .desktop-pet.mode-mini .unread-badge,
 .desktop-pet.mode-mini .status-lines {
   display: none;
@@ -139,8 +135,7 @@
   animation: unread-pop 0.28s ease-out;
 }
 
-/* 20px 的視覺尺寸低於 --hit-min；偽元素把可點區域撐到 --hit-min，不改外觀。
-   點擊穿透以 elementFromPoint 命中，偽元素命中時仍會回傳徽章本身，所以仍帶 data-pet-hit-target。 */
+/* 偽元素把可點區域撐到 --hit-min；elementFromPoint 命中偽元素仍回傳徽章本身，故需 data-pet-hit-target。 */
 .unread-badge::after {
   content: '';
   position: absolute;

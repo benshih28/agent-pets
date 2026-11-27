@@ -1,11 +1,3 @@
-// Agent 工作階段的生命週期：事件進來建立／更新、淘汰過期、重載後還原、成功狀態自動回 idle，並依事件觸發心情、泡泡、提醒與音效。
-//
-// - 事件輸入：`handleEvent(event)`（每個 agent 狀態事件，回傳該播的音效 cue 或 null）、
-//   `cleanupStale()`／`handleSuccessTimeout()`（App.vue 的定期計時器）、`restoreSessionSnapshot()`（renderer 重載後）、
-//   `removeSession()`／`clearOfflineSessions()`（使用者操作）、`settleWaitingPermission()`（權限請求消失）。
-// - 計時器：無；週期性呼叫由 App.vue 驅動。等待輸入的提醒計時器在 unread-alerts.ts。
-// - storage：無。
-// - 跨視窗同步：不同步；兩個視窗各自吃同一串事件，只有 App.vue 指定的視窗會真的出聲。
 import type { AgentSession, AgentSource, AgentState, AgentStatusEvent } from '@/types/agent'
 import { AGENT_STATE_POLICY, isAgentState, isQuotaCapableSource } from '@/types/agent'
 import { isHostAppId, type AgentHost } from '@/types/host-app'
@@ -36,7 +28,6 @@ export interface SessionsDeps {
   showToast: ReturnType<typeof useToastQueue>['showToast']
   unreadAlerts: Pick<ReturnType<typeof useUnreadAlerts>, 'noteUnreadResult' | 'scheduleWaitingInputReminder' | 'cancelWaitingInputReminder'>
   clearPresentation: () => void
-  /** 有 session 在 success／error 且屬於有額度的家族時通知 quota 模組。 */
   markQuotaStale: () => void
   forgetDismissedNotice: (key: string) => void
   /** 權限模組在 session 之後才建立，所以用函式延後解析。 */
@@ -46,15 +37,13 @@ export interface SessionsDeps {
 export function useSessions(deps: SessionsDeps) {
   const { sessionsByKey, petMood, showToast, unreadAlerts } = deps
   const sessionIndex = new AgentSessionIndex(sessionsByKey)
-  /** 被定期清理降級的 session 原本的狀態；下一個真實事件進來或 session 被移除時清掉。 */
   const quietSettledFrom = new Map<string, AgentState>()
 
   function getSessionKey(source: AgentSource, sessionId: string): string {
     return `${source}:${sessionId}`
   }
 
-  // 回傳這個事件值得播的音效（或 null），由呼叫端 App.vue 決定要不要播、在哪裡播：
-  // 寵物與面板兩個視窗都跑同一份 store，音效只能由其中一個發出，否則會播兩次。
+  // 兩個視窗都跑同一份 store，音效只能由其中一個發出，否則會播兩次；所以只回傳 cue，由 App.vue 決定播不播。
   function handleEvent(event: AgentStatusEvent): SoundCue | null {
     const key = getSessionKey(event.source, event.sessionId)
     const existing = sessionIndex.get(key)
@@ -102,7 +91,7 @@ export function useSessions(deps: SessionsDeps) {
     const taskStartedAt = petMood.taskStartedAt(key)
     const taskElapsedMs = taskStartedAt === undefined ? undefined : Date.now() - taskStartedAt
 
-    // 清理把它降到閒置之後才來的事件，代表工作其實沒停：用降級前的狀態算進度，工作計時才不會重來。
+    // 清理降到閒置後才來的事件代表工作沒停：用降級前的狀態算進度，工作計時才不會重來。
     petMood.awardTaskProgress(event, key, quietSettledFrom.get(key) ?? prevState)
     quietSettledFrom.delete(key)
 
@@ -135,8 +124,6 @@ export function useSessions(deps: SessionsDeps) {
     return null
   }
 
-  // 唯一的定期清理：每個狀態安靜太久後該變成什麼，全部由狀態 registry 的 quiet 決定
-  // （成功顯示幾秒後回閒置、思考太久回閒置、整個沒消息轉離線再移除）。
   // 只改顯示：不發通知、不播音效、不動 lastSeenAt，下一個真實事件會直接蓋過。
   function sweepQuietSessions() {
     const now = Date.now()
@@ -155,14 +142,12 @@ export function useSessions(deps: SessionsDeps) {
       session.state = next
       session.permissionNotice = undefined
       sessionIndex.updatePriority(session.key, session.state, session.lastSeenAt)
-      // 降到閒置時工作可能還在跑（只是很久沒事件），保留計時；判定程序不在了才放掉。
+      // 降到閒置時工作可能還在跑，保留計時；判定程序不在了才放掉。
       if (AGENT_STATE_POLICY[next].historyOutcome === 'cancelled') petMood.forgetTask(session.key)
     }
   }
 
-  // After a renderer reload/crash the in-memory list is empty although agents
-  // may still be running. Main keeps a light mirror; merge it in without
-  // replaying events (no toasts, mood or sound) and never over live data.
+  // Merge main's mirror without replaying events (no toasts, mood or sound) and never over live data.
   function restoreSessionSnapshot(entries: unknown): number {
     if (!Array.isArray(entries)) return 0
     const now = Date.now()
@@ -212,20 +197,13 @@ export function useSessions(deps: SessionsDeps) {
       }
     }
   }
-  // The broker's `agentId` is the literal AgentSource string for every
-  // respond-capable adapter (see electron/permission-adapter-server.ts,
-  // which sets `agentId: payload.source` from the same 'opencode-cli' /
-  // 'opencode-desktop' values AgentStatusEvent.source uses), so a request
-  // and the session it blocks share the exact same getSessionKey().
+  // The broker's agentId is the literal AgentSource string, so a request and the session it blocks share getSessionKey().
   function settleWaitingPermission(agentId: string, sessionId: string): void {
     const key = getSessionKey(agentId as AgentSource, sessionId)
     const session = sessionIndex.get(key)
     if (!session || session.state !== 'waiting-permission') return
-    // The user (or the broker's own TTL) has resolved this request, but a
-    // Codex/Claude session may never send a follow-up hook event — without
-    // this, the pet stays stuck showing "Waiting Permission" forever even
-    // though nothing is actually waiting anymore (see GH issue #1). This is
-    // a local, visual-only fallback: any real event still overwrites it.
+    // Codex/Claude may never send a follow-up hook event after the request resolves; without this
+    // the pet stays on "Waiting Permission". Visual-only fallback: any real event overwrites it.
     session.state = 'idle'
     session.permissionNotice = undefined
     sessionIndex.updatePriority(key, session.state, session.lastSeenAt)
@@ -235,7 +213,7 @@ export function useSessions(deps: SessionsDeps) {
     return sessionsByKey.get(key)
   }
 
-  /** Runs a jump-back action for one session; the main process holds the path and app id. */
+  /** The main process holds the path and app id. */
   async function runSessionJump(key: string, action: SessionJumpAction): Promise<SessionJumpResult> {
     const session = sessionIndex.get(key)
     const run = window.electronAPI?.runSessionJump
@@ -251,7 +229,6 @@ export function useSessions(deps: SessionsDeps) {
     sessionIndex,
     getSessionKey,
     handleEvent,
-    // 兩個名字是同一個清理：App.vue 平常每分鐘跑一次，有成功狀態要收掉時每秒跑一次。
     cleanupStale: sweepQuietSessions,
     restoreSessionSnapshot,
     handleSuccessTimeout: sweepQuietSessions,

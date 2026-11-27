@@ -4,7 +4,7 @@ import { EXTERNAL_ONLY_PERMISSION_NOTICE } from '../src/types/capabilities.ts'
 import { parseHostHints } from './host-app.ts'
 import { asRecord, isRecord } from './value-guards.ts'
 
-// 上限是事件入口的契約：history、成就、本機用量與 session-jump 都 import 這裡的值，才不會接受入口已拒收的資料。
+// 上限是事件入口的契約：其他模組都 import 這裡的值，才不會接受入口已拒收的資料。
 export const MAX_SESSION_ID_LENGTH = 256
 const MAX_TEXT_FIELD_LENGTH = 512
 export const MAX_TOKEN_COUNT = 1_000_000_000_000

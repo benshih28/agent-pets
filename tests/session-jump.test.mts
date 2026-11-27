@@ -19,9 +19,6 @@ import {
 } from '../electron/session-jump.ts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// Every side effect (open -b, Finder, clipboard) is injected: these tests never launch an app,
-// open a window or touch the real clipboard, and all paths live in a throw-away temp directory.
-
 const realFs = {
   realpath: (target: string) => fs.promises.realpath(target),
   stat: (target: string) => fs.promises.stat(target),
@@ -124,7 +121,7 @@ test('show folder only reveals an existing, non-bundle directory (resolved throu
     ['missing', path.join(root, 'gone'), false],
   ]
   for (const [id, projectPath, opens] of cases) {
-    advance(10_001) // stay under the per-action rate limit
+    advance(10_001)
     service.record(event({ sessionId: id }), { projectPath })
     const result = await service.run('show-folder', sessionJumpKey('claude', id))
     assert.deepEqual(result, opens ? { ok: true } : { ok: false, error: 'unavailable' }, id)
@@ -134,7 +131,6 @@ test('show folder only reveals an existing, non-bundle directory (resolved throu
 })
 
 test('a document package folder is only revealed, never handed to its app', { skip: process.platform === 'win32' }, async t => {
-  // LaunchServices would open x.xcodeproj in Xcode; the service has no "open" dependency at all.
   const root = tempRoot(t)
   const xcodeproj = path.join(root, 'x.xcodeproj')
   fs.mkdirSync(xcodeproj)
@@ -167,7 +163,6 @@ test('a relative, control-character or UNC path is never used', async () => {
     stat: async () => ({ isDirectory: () => true }),
     exists: async () => false,
   }), null)
-  // A link that resolves to a UNC share is rejected after realpath.
   assert.equal(await verifyProjectDirectory('C:\\work\\link', {
     platform: 'win32',
     realpath: async () => '\\\\server\\share',
@@ -191,7 +186,6 @@ test('copy path copies the reported path of an existing directory and keeps it a
   assert.deepEqual(await service.run('copy-path', KEY), { ok: true })
   assert.deepEqual(calls, [['clipboard', project]])
 
-  // Shell metacharacters never reach the clipboard, even when such a directory really exists.
   const forged = path.join(root, 'a;curl evil|sh')
   fs.mkdirSync(forged)
   service.record(event({ sessionId: 'forged' }), { projectPath: forged })
@@ -204,7 +198,6 @@ test('actions are rate limited per action and unknown, offline or stale sessions
   service.record(event(), { projectPath: os.tmpdir() })
   for (let index = 0; index < 5; index += 1) assert.deepEqual(await service.run('copy-path', KEY), { ok: true })
   assert.deepEqual(await service.run('copy-path', KEY), { ok: false, error: 'rate_limited' })
-  // Another action has its own budget.
   assert.deepEqual(await service.run('switch-app', KEY), { ok: true })
   advance(10_001)
   assert.deepEqual(await service.run('copy-path', KEY), { ok: true })
@@ -270,8 +263,6 @@ test('a notification click switches only when the session app can be activated a
   assert.equal(await service.switchFromNotification({ source: 'claude', sessionId: 'session-1' }), true)
   assert.deepEqual(calls, [['activate', 'com.googlecode.iterm2']])
 })
-
-// ---- Windows：切換到 App（原生層全部注入，不呼叫 Win32）----
 
 function windowsHarness(result: WindowsActivationResult | Error, app: HostAppId = 'windows-terminal') {
   const calls: string[][] = []

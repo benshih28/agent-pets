@@ -1,5 +1,3 @@
-// Shared contract for the two-step custom pet (theme) zip import.
-
 export type SpriteAtlasVersion = 1 | 2
 
 export type PetImportWarning =
@@ -22,7 +20,6 @@ export interface PetImportAtlas {
 }
 
 export interface PetImportConflict {
-  /** The existing pet id (folder name) that the kit collides with. */
   id: string
   /** Built-in pets can only be kept beside, never replaced. */
   builtIn: boolean
@@ -39,7 +36,6 @@ export interface PetImportPreview {
   kind: 'person' | 'animal'
   atlas: PetImportAtlas
   warnings: PetImportWarning[]
-  /** Behaviours filled from the atlas contract rather than declared by the kit. */
   autoBehaviors: Array<'walk'>
   conflict: PetImportConflict | null
   /** agent-pets://import-preview/<token>/spritesheet, served from the staging directory. */

@@ -116,7 +116,6 @@ export async function loadPets(deps: Omit<PetsIpcDependencies, 'ipcMain' | 'asse
         const image = await deps.readRegularFileWithin(root, skin.spritesheet, deps.pluginSkinImageMaxBytes)
         if (!image || !deps.rasterContentType(image)) continue
         const encodedPath = skin.spritesheet.split('/').map(segment => encodeURIComponent(segment)).join('/')
-        // 圖已經讀進來，順便用實際尺寸丟掉放不進圖集的覆蓋值。
         const size = readImageSize(image)
         const behaviorManifest = deps.parseBehaviorManifest(
           skin.behaviorManifest,

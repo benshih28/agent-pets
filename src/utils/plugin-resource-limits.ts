@@ -1,5 +1,4 @@
-// 插件資源上限的顯示單位：每個欄位一列，輸入換算（位元組欄位以 KB 輸入）與範圍文字都從這張表推導。
-// 範圍本身的驗證與套用仍在主程序。
+// 位元組欄位以 KB 輸入；範圍本身的驗證與套用仍在主程序。
 import { locale, t } from '@/i18n'
 import type { PluginResourceLimits } from '@/types/plugin'
 import { formatNumber } from '@/utils/intl-format'
@@ -24,12 +23,10 @@ function inputScale(key: keyof PluginResourceLimits): number {
   return PLUGIN_RESOURCE_UNITS[key] === 'bytes' ? KIB : 1
 }
 
-/** 輸入框的數字 → 要送給主程序的值。 */
 export function resourceValueFromInput(key: keyof PluginResourceLimits, parsed: number): number {
   return parsed * inputScale(key)
 }
 
-/** 目前的值 → 輸入框顯示的數字。 */
 export function resourceInputValue(key: keyof PluginResourceLimits, value: number): string {
   return String(value / inputScale(key))
 }

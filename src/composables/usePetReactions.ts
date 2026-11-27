@@ -1,9 +1,6 @@
-// 一次性的視覺回饋：反應（擠壓彈跳 + 飄起的小圖示）、成就獎勵、游標注視。
-// 用 CSS class 疊在循環動畫上，而不是額外的 sprite 格，所以不管圖集有幾列，每隻寵物都能用。
 import { onUnmounted, ref } from 'vue'
 import type { PresentationReaction } from '@/types/presentation'
 
-// 每種反應有自己的動作（CSS class）和一個往上飄的小圖示；關閉動態效果時圖示仍會顯示。
 const REACTION_MARKS: Record<PresentationReaction, string> = {
   happy: 'sparkle',
   curious: 'question',
@@ -14,7 +11,7 @@ const REACTION_MARKS: Record<PresentationReaction, string> = {
 const REACTION_DURATION_MS: Record<PresentationReaction, number> = {
   happy: 560, curious: 760, thinking: 900, surprised: 420, encouraging: 700,
 }
-// 反應標記的 CSS 動畫長度由這個常數經 --pet-mark-duration 帶進去，計時器與動畫只有一個來源。
+// 經 --pet-mark-duration 帶進 CSS 動畫，計時器與動畫共用這一個來源。
 export const REACTION_MARK_MS = 1400
 
 export function usePetReactions() {
@@ -44,7 +41,6 @@ export function usePetReactions() {
     }
   }
 
-  // 成就解鎖用獨立的視覺掛勾，新規則可以獎勵寵物，但不會改動狀態動畫或給予任何產品能力。
   function playReward() {
     isRewarding.value = false
     requestAnimationFrame(() => {

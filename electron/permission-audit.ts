@@ -3,13 +3,9 @@ import * as path from 'node:path'
 import type { PermissionAuditRecord } from './permission-broker'
 import { renameSyncWithRetry } from './fs-rename.ts'
 
-// Append-only JSON Lines: one small append per decision instead of reading,
-// rewriting and fsyncing the whole file, so a burst of requests cannot block
-// the main thread. The file is trimmed to the newest records now and then.
-// permission-broker 的記憶體稽核清單也用這個上限：兩邊保留的是同一份紀錄，筆數不該各自漂移。
+// permission-broker 的記憶體稽核清單也用這個上限，兩邊筆數不該各自漂移。
 export const MAX_AUDIT_RECORDS = 500
 const TRIM_EVERY = 100
-// Never read more than this from disk; a larger file is read from its tail only.
 const MAX_AUDIT_READ_BYTES = 512 * 1024
 let appendsSinceTrim = 0
 
@@ -42,7 +38,7 @@ export function readPermissionAudit(filePath: string, limit = MAX_AUDIT_RECORDS)
         records.push(sanitizeAuditRecord(value as PermissionAuditRecord))
       }
     } catch {
-      // A torn final line (crash mid-append) is skipped, not fatal.
+      // A torn final line (crash mid-append) is skipped.
     }
   }
   return records.slice(-Math.max(1, limit))
@@ -51,9 +47,7 @@ export function readPermissionAudit(filePath: string, limit = MAX_AUDIT_RECORDS)
 export function clearPermissionAudit(filePath: string): void {
   try {
     fs.rmSync(filePath, { force: true })
-  } catch {
-    // Nothing to clear.
-  }
+  } catch {}
   appendsSinceTrim = 0
 }
 
@@ -72,10 +66,7 @@ function readTail(filePath: string, maxBytes: number): string {
   }
 }
 
-/**
- * Startup housekeeping: trims an oversized audit file left by earlier runs (the append counter
- * only lives in memory) and deletes the legacy `permission-audit.json` once.
- */
+// The append counter only lives in memory, so an oversized file from earlier runs is trimmed here.
 export function trimPermissionAuditOnStartup(filePath: string, legacyJsonPath?: string): void {
   try {
     if (legacyJsonPath) fs.rmSync(legacyJsonPath, { force: true })

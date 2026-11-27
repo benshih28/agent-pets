@@ -21,7 +21,6 @@ export const PRESENTATION_DEFAULT_TTL_MS = 4_000
 export const PRESENTATION_MAX_MESSAGE_LENGTH = 240
 export const PRESENTATION_READ_MS_PER_CHAR = 120
 
-/** Longer messages need longer to read; an explicit ttlMs always wins. */
 export function defaultSayTtlMs(messageLength: number): number {
   const readable = Math.max(0, Math.floor(messageLength)) * PRESENTATION_READ_MS_PER_CHAR
   return Math.min(PRESENTATION_MAX_TTL_MS, Math.max(PRESENTATION_DEFAULT_TTL_MS, readable))
@@ -62,8 +61,7 @@ export type PresentationValidationResult = {
 const SAFE_NAME_LENGTH = 64
 const SAFE_MESSAGE_CONTROL = /[\u0000-\u001f\u007f]/g
 const SAFE_MESSAGE_MARKUP = /[<>]/g
-// agentFamily 是插件看得到的公開契約（PresentationPetStatus／PetStatusChange 的字面型別）；
-// 家族 registry 多出契約沒有的 adapter id 時，這裡的泛型會讓編譯失敗，契約要先更新。
+// agentFamily 是插件看得到的公開契約；registry 多出契約沒有的 adapter id 時這裡會編譯失敗，契約要先更新。
 const PRESENTATION_AGENT_FAMILIES: ReadonlySet<string> = new Set<NonNullable<PresentationPetStatus['agentFamily']>>(FAMILY_ADAPTER_IDS)
 
 function isAgentFamilyAdapterId(value: unknown): value is AgentFamilyAdapterId {

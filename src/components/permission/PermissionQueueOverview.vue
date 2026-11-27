@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// 權限佇列總覽：依動作合併後的待處理清單，以及兩段式「全部拒絕」。
-// 沒有「全部允許」。確認狀態只屬於這個清單，清單收起（元件卸載）時一併重設。
+// 刻意沒有「全部允許」。
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import { t, tPlural } from '@/i18n'
@@ -27,8 +26,7 @@ function resetDenyAll(): void {
   confirmTimer = null
 }
 
-// Two-step: the first press asks, the second (within 4s) denies every pending
-// request one by one through the broker.
+// Two-step: the second press must come within 4s.
 async function denyAll(): Promise<void> {
   if (!confirmDenyAll.value) {
     confirmDenyAll.value = true
@@ -115,6 +113,4 @@ onBeforeUnmount(resetDenyAll)
   color: var(--text-danger);
   font-weight: var(--weight-bold);
 }
-
-/* 按鈕樣式（.permission-button）由 PermissionBubble 以 :deep 提供。 */
 </style>

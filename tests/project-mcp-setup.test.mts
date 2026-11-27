@@ -198,7 +198,6 @@ test('requires absolute executable and bridge paths', () => {
   }
 })
 
-// A minimal Git index (version 2) listing the given paths.
 function writeGitIndex(projectPath: string, tracked: string[]): void {
   const gitDir = path.join(projectPath, '.git')
   fs.mkdirSync(path.join(gitDir, 'info'), { recursive: true })
@@ -335,7 +334,6 @@ test('local-only mode excludes untracked files and warns about tracked ones', ()
     assert.match(exclude, /^\/\.mcp\.json$/m)
     assert.match(exclude, /^\/\.codex\/config\.toml$/m)
     assert.doesNotMatch(exclude, /opencode\.json/)
-    // Idempotent.
     const again = install2(projectPath, options(projectPath), { localOnly: true })
     assert.deepEqual(again.excluded, [])
   } finally { cleanup(projectPath) }
@@ -363,7 +361,6 @@ test('git helpers never follow gitdir or commondir outside the picked folder', (
   try {
     const outside = path.join(base, 'elsewhere')
     fs.mkdirSync(path.join(outside, 'info'), { recursive: true })
-    // gitdir outside
     const project = path.join(base, 'p1')
     fs.mkdirSync(project)
     fs.writeFileSync(path.join(project, '.git'), `gitdir: ${outside}\n`)
@@ -372,12 +369,10 @@ test('git helpers never follow gitdir or commondir outside the picked folder', (
     assert.equal(readTrackedPaths(location!), null)
     assert.throws(() => addLocalExcludes(location!, ['a.json']), /outside/)
     assert.equal(fs.existsSync(path.join(outside, 'info', 'exclude')), false)
-    // relative traversal
     const project2 = path.join(base, 'p2')
     fs.mkdirSync(project2)
     fs.writeFileSync(path.join(project2, '.git'), 'gitdir: ../elsewhere\n')
     assert.equal(findGitLocation(project2)?.outside, true)
-    // in-project gitdir whose commondir escapes
     const project3 = path.join(base, 'p3')
     fs.mkdirSync(path.join(project3, 'g'), { recursive: true })
     fs.writeFileSync(path.join(project3, 'g', 'commondir'), `${outside}\n`)
@@ -386,7 +381,6 @@ test('git helpers never follow gitdir or commondir outside the picked folder', (
     assert.equal(escaped?.outside, true)
     assert.throws(() => addLocalExcludes(escaped!, ['a.json']), /outside/)
     assert.equal(fs.existsSync(path.join(outside, 'info', 'exclude')), false)
-    // symlinked gitdir pointing outside
     const project4 = path.join(base, 'p4')
     fs.mkdirSync(project4)
     linkDirectory(outside, path.join(project4, 'link.git'))
@@ -509,7 +503,6 @@ test('user-level detection follows CODEX_HOME, CLAUDE_CONFIG_DIR and XDG_CONFIG_
   const home = createProject()
   const elsewhere = createProject()
   try {
-    // 預設位置有資料夾，但變數已把 agent 目錄搬走，所以不能據此建議。
     fs.mkdirSync(path.join(home, '.codex'))
     fs.mkdirSync(path.join(elsewhere, 'codex'))
     fs.mkdirSync(path.join(elsewhere, 'claude'))

@@ -24,10 +24,6 @@ function styleSources(): Array<{ file: string; css: string }> {
   return out
 }
 
-// Regression: a panel-wide `.status-panel :deep(.tab-panel) { display: flex }`
-// beat the <TabPanel> primitive's `[hidden]` rule, so History rendered its
-// Sessions and Overview sub-views at once, each squashed to a share of the
-// height with its content spilling over the other.
 test('only the TabPanel primitive styles the shared .tab-panel class', () => {
   const offenders: string[] = []
   for (const { file, css } of styleSources()) {
@@ -77,8 +73,6 @@ test('the chart formats its labels once per data change, not on every hover', ()
   assert.doesNotMatch(chart, /\{\{[^}]*axisLabelParts\(/)
 })
 
-// The panel is its own window, so a viewport media query never saw the
-// panel's real width; the stat tiles must follow the History view's width.
 test('History stat tiles reflow by container width and never ellipsize their notes', () => {
   const css = read('src/components/StatusPanel.css')
   assert.match(css, /:deep\(\.history-view\) \{\s*container: history-view \/ inline-size;/)

@@ -1,5 +1,3 @@
-// 階段 9 拆分 agentStore 前先固定的行為：在 Node 直接跑真的 store（假 localStorage、假 IPC、
-// 假計時器），拆分前後同一組斷言都要通過。不依賴真實時間，所以在完整 test:unit 負載下也穩定。
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import {
@@ -27,7 +25,7 @@ afterEach(() => {
   harness = null
 })
 
-// assert.equal(x, null) 會把 store 屬性窄化成 null，之後計時器推進或事件處理改變的值就變成 never；經由函式讀取才能反映真實狀態。
+// assert.equal(x, null) 會把屬性窄化成 null，之後被改變的值就變成 never；經由函式讀取才能反映真實狀態。
 function peek<T>(read: () => T): T {
   return read()
 }
@@ -100,7 +98,6 @@ function permissionRequest(requestId: string, patch: Partial<PermissionRequestVi
   } as PermissionRequestView
 }
 
-// --- 對元件的 API ---------------------------------------------------------
 
 const EXPECTED_ACTIONS = [
   'addProjectPet', 'applyDesktopPreferences', 'backToSessions', 'canSwitchToSessionApp', 'cleanupStale',
@@ -185,7 +182,6 @@ test('the refs that App.vue writes for cross-window sync stay writable on the st
   assert.equal(storage.writes.length, writesBefore)
 })
 
-// --- 偏好與 localStorage key ----------------------------------------------
 
 test('preferences are read from and written to the existing localStorage keys', () => {
   const { store, storage } = open({
@@ -259,7 +255,6 @@ test('defaults apply when nothing is stored, and the mood reset is persisted at 
   ])
 })
 
-// --- 心情 -----------------------------------------------------------------
 
 function todayKey(): string {
   const d = new Date(START_TIME)
@@ -312,13 +307,11 @@ test('completed tools and sustained work earn capped mood points within one task
   })
   const start = Date.now()
   store.handleEvent(event('t', 'thinking', { timestamp: start, originalEvent: 'UserPromptSubmit' }))
-  // 每完成兩個工具 +1，上限 8。
   for (let index = 0; index < 20; index += 1) {
     store.handleEvent(event('t', 'tool-running', { timestamp: start }))
     store.handleEvent(event('t', 'thinking', { timestamp: start }))
   }
   assert.equal(store.mood, 28)
-  // 每 5 分鐘 +1，上限 4。
   store.handleEvent(event('t', 'thinking', { timestamp: start + 11 * 60_000 }))
   assert.equal(store.mood, 30)
   store.handleEvent(event('t', 'thinking', { timestamp: start + 60 * 60_000 }))
@@ -342,7 +335,6 @@ test('the presentation status reports mood bands and the fallback single pet', (
   assert.equal(store.getPresentationStatus().activePets[0]?.mood, 'neutral')
 })
 
-// --- 工作階段 -------------------------------------------------------------
 
 test('sessions are created, updated in place, ranked and removed by the integration test event', () => {
   const { store } = open()
@@ -422,12 +414,9 @@ test('a turn whose end never arrives settles to idle quietly, and the next real 
   tick(5 * 60_000 + 1)
   store.cleanupStale()
   assert.equal(store.sessionByKey('claude:stuck')?.state, 'idle')
-  // 工具可以合法地跑很久，不會因為安靜就被改掉。
   assert.equal(store.sessionByKey('claude:build')?.state, 'tool-running')
-  // 降級只改顯示：沒有提示框，也不當成工作完成。
   assert.equal(peek(() => store.toast), null)
 
-  // 回合其實還在跑：後續事件照常蓋過，完成時仍然有完成的提示。
   store.handleEvent(event('stuck', 'tool-running'))
   assert.equal(store.sessionByKey('claude:stuck')?.state, 'tool-running')
   assert.equal(store.handleEvent(event('stuck', 'success')), 'success')
@@ -568,7 +557,6 @@ test('the active pet follows a known routed pet, then the family override (visib
   assert.equal(store.activePetId, 'aang-airbender')
 })
 
-// --- Toast 提示 -----------------------------------------------------------
 
 test('a success toast merges with the previous success and closes after its TTL', () => {
   const { store, tick } = open()
@@ -660,7 +648,6 @@ test('results that finish while you are away become unread markers', () => {
   assert.deepEqual(store.unreadResults, { count: 0, hasError: false })
 })
 
-// --- Presentation 與 plugin feed -----------------------------------------
 
 function intent(id: string, patch: Record<string, unknown> = {}) {
   return { id, kind: 'react', reaction: 'happy', createdAt: Date.now(), expiresAt: Date.now() + 1_000, ...patch }
@@ -685,7 +672,6 @@ test('presentation intents play in order, expire, and respect the queue bound', 
   tick(1_000)
   assert.equal(peek(() => store.presentationSay), null)
 
-  // 佇列上限 8：超過時丟最舊的。
   store.handlePresentationIntent(intent('active', { expiresAt: Date.now() + 10_000 }))
   for (let index = 0; index < 9; index += 1) {
     store.handlePresentationIntent(intent(`q${index}`, { expiresAt: Date.now() + 60_000 }))
@@ -770,7 +756,6 @@ test('a plugin feed item is shown until it expires, then reported complete to ma
   assert.equal(store.pluginFeedUnreadCount, 0)
 })
 
-// --- Permission UI --------------------------------------------------------
 
 test('a request that vanishes settles its waiting session and shows a brief outcome', () => {
   const { store, tick } = open()
@@ -819,7 +804,6 @@ test('external-only permission notices list every waiting session until dismisse
   assert.equal(store.permissionNotice?.items.length, 1)
 })
 
-// --- 面板導航 -------------------------------------------------------------
 
 test('panel navigation follows the route machine and drives the blur lock', async () => {
   const { store, calls, flush } = open()
@@ -854,7 +838,6 @@ test('panel navigation follows the route machine and drives the blur lock', asyn
   assert.equal(store.panelOpenCount, 2)
 })
 
-// --- 桌面偏好 -------------------------------------------------------------
 
 test('desktop preferences from main update the mirrored state and the cached sound flag', () => {
   const { store, storage } = open()
@@ -872,7 +855,6 @@ test('desktop preferences from main update the mirrored state and the cached sou
   assert.equal(store.reactionsActive, false)
 })
 
-// --- 階段 9 新增：store 結束時清掉所有計時器 ---------------------------------
 
 test('disposing the store clears pending toast, waiting reminder, feed and permission outcome timers', () => {
   const { store, liveTimers, tick } = open()
@@ -885,7 +867,6 @@ test('disposing the store clears pending toast, waiting reminder, feed and permi
   assert.ok(store.toast)
   assert.ok(store.pluginFeedItem)
   assert.ok(store.permissionOutcome)
-  // toast 到期＋進度、等待輸入提醒、feed、權限結果卡片。
   assert.equal(liveTimers(), 5)
   store.$dispose()
   assert.equal(liveTimers(), 0)

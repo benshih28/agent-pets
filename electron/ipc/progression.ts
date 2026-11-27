@@ -28,8 +28,7 @@ export function registerProgressionIpc(deps: ProgressionIpcDependencies): void {
     return deps.setActiveProgressionPet(petId)
   })
 
-  // Read-only Growth projection (today's XP, recent ledger, pace). It can
-  // never grant XP; awards only originate from main-handled agent events.
+  // Read-only: it can never grant XP; awards only originate from main-handled agent events.
   deps.ipcMain.handle(IPC_CHANNELS.progressionInsights, (event, petId?: unknown): ProgressionInsights | null => {
     deps.assertTrustedIpcSender(event)
     const progressionStore = deps.getProgressionStore()

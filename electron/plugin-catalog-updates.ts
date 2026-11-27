@@ -25,7 +25,6 @@ export function buildPluginCatalogPanelItems(
   for (const plugin of catalog.plugins) {
     const latestVersion = selectLatestCompatiblePluginVersion(plugin, '1', appVersion)
     if (!latestVersion) {
-      // 這個 API 有版本，但全都需要更新的 app：顯示 "requires Agent Pets X"。
       const blocked = selectLatestCompatiblePluginVersion(plugin, '1')
       const required = blocked ? lowestRequiredAppVersion(plugin.versions) : null
       if (blocked && required) {
@@ -75,7 +74,6 @@ function lowestRequiredAppVersion(versions: PluginCatalogDocument['plugins'][num
   return lowest
 }
 
-/** Compares a downloaded manifest's permission units against the persisted user grants. */
 export function comparePluginPermissionUnits(grantedPermissions: unknown, requestedUnits: unknown): boolean | null {
   const grantedUnits = readGrantedPermissionUnits(grantedPermissions)
   if (!grantedUnits || !Array.isArray(requestedUnits) || requestedUnits.some(unit => typeof unit !== 'string')) return null
@@ -99,7 +97,6 @@ export interface PluginCatalogAutoCheckDependencies {
 
 export type PluginCatalogAutoCheckResult = DailyCheckResult
 
-/** Plugin 目錄的每日自動檢查：排程規則由 DailyCheckSchedule 共用，這裡只加上更新數量的合理範圍。 */
 export class PluginCatalogAutoCheckSchedule extends DailyCheckSchedule<number> {
   constructor(dependencies: PluginCatalogAutoCheckDependencies) {
     super({

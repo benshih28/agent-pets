@@ -1,34 +1,20 @@
-/* Design tokens — the single source of truth for every colour, size, and
-   radius in the app. Values here are lifted from the pre-token stylesheets
-   (the most frequently repeated literal won each slot), so adopting a token
-   in place of a literal is a no-op visually.
-
-   Rule: component <style> blocks must not contain bare hex or rgba() values.
-   State colours that JS needs (AGENT_STATE_PRESENTATION in
-   utils/agent-state-presentation.ts) only name the --state-* variables below,
-   so CSS and JS share the same palette. */
+/* Component <style> blocks must not contain bare hex or rgba() values. */
 
 :root {
-  /* 顏色一律來自下方的主題色盤（--builtin-organic-* → --organic-*）與其語意層
-     （--color-* 與舊名稱別名，見「語意層」區塊）；這裡只放與顏色無關的材質參數。 */
   --surface-blur: blur(24px) saturate(165%);
-  /* Three blur strengths app-wide. Components must use these, never a literal
-     blur(). `html[data-gpu-safe]` (dev:safe) and reduced-transparency turn
-     them all off through base.css / the media query below. */
+  /* Components must use these, never a literal blur(); gpu-safe mode and reduced-transparency turn them off. */
   --blur-chip: blur(8px) saturate(140%);
   --blur-bubble: blur(14px) saturate(160%);
   --blur-scrim: blur(4px);
 
-  /* ── Type scale — five steps, floor at 11px ───────────────────────────
-     The old stylesheets ran down to 8px; anything below --font-xs is a bug.
-     CJK glyphs lose stroke definition below 11px on both Windows and macOS. */
+  /* CJK glyphs lose stroke definition below 11px on both Windows and macOS. */
   --font-xs: 11px;
   --font-sm: 12px;
   --font-md: 13px;
   --font-lg: 15px;
   --font-xl: 18px;
-  --font-2xl: 22px; /* dialog / wizard display titles */
-  --font-floor: 11px; /* use in max(var(--font-floor), calc(11px * var(--pet-scale))) so scaled pet text never drops below 11px */
+  --font-2xl: 22px;
+  --font-floor: 11px;
 
   --weight-normal: 400;
   --weight-medium: 600;
@@ -38,38 +24,27 @@
   --font-heading: var(--font-ui);
   --font-body: var(--font-ui);
 
-  /* ── Spacing — 4px base ───────────────────────────────────────────────── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
-  /* 刻度外但多處共用的版面值：集中在這裡，避免同一個魔術數字散在各檔。 */
-  --dialog-shell-gap: 15px; /* 設定精靈與專案 MCP 對話框的區塊間距 */
-  --dialog-shell-padding: 22px; /* 同上兩個對話框的外框內距 */
-  --list-card-padding-y: 15px; /* 精靈工具卡、MCP 專案卡與面板內權限卡的上下內距 */
-  /* 半格：密集的標籤／數值堆疊與膠囊內距。只是常見值的名字，不是新的視覺節奏；
-     margin／padding／gap 若寫死成任何 --space-* 的值會被 check:design 擋下。 */
+  --dialog-shell-gap: 15px;
+  --dialog-shell-padding: 22px;
+  --list-card-padding-y: 15px;
   --space-0-5: 2px;
   --space-1-5: 6px;
   --space-2-5: 10px;
 
-  /* ── Radii — four steps ───────────────────────────────────────────────── */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-pill: 999px;
 
-  /* ── Focus ────────────────────────────────────────────────────────────
-     One ring, applied by the ui/ primitives so it never has to be
-     hand-written per component again. 顏色在語意層（--color-focus）。 */
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
 
-  /* ── Hit target, layering, leading ────────────────────────────────────
-     --hit-min: every clickable element is at least this big (WCAG 2.5.8
-     asks for 24px; 32px is comfortable for mouse and touch).
-     --z-*: the only z-index values components may use. */
+  /* --z-*: the only z-index values components may use. */
   --hit-min: 32px;
   --z-base: 0;
   --z-sticky: 10;
@@ -81,29 +56,19 @@
   --leading-normal: 1.4;
   --leading-relaxed: 1.55;
 
-  /* ── Motion ─────────────────────────────────────────────────────────────
-     --transition-*：介面狀態切換（hover、展開），transition 一律用它們。
-     --duration-*：同一種語意在多處重複的 keyframe 動畫時長；只出現一次的裝飾動畫
-     （寵物 sprite 反應等）留在元件裡。減少動態時全部歸零（見檔尾）。 */
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
   --transition-slow: 0.35s ease;
-  --duration-spin: 0.8s; /* 載入轉圈一圈（Button loading、Spinner） */
-  --duration-attention: 1.8s; /* 寵物視窗提醒使用者注意的循環脈動（迷你徽章、額度警示） */
-  --duration-breathe: 3.8s; /* 寵物待機／離線的呼吸循環（兩種狀態要同步節奏） */
-  --duration-glance: 0.42s; /* 寵物向左／向右看游標的一次性位移（左右要對稱） */
+  --duration-spin: 0.8s;
+  --duration-attention: 1.8s;
+  --duration-breathe: 3.8s; /* 待機與離線兩種狀態要同步節奏 */
+  --duration-glance: 0.42s; /* 左右要對稱 */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-overshoot: cubic-bezier(0.2, 1.4, 0.4, 1); /* 彈出時略衝過頭再回位（驚訝反應、成就徽章） */
+  --ease-overshoot: cubic-bezier(0.2, 1.4, 0.4, 1);
 
-  /* ── 主題色盤（palette layer）─────────────────────────────────────────
-     兩個視窗（面板與寵物）、所有介面的唯一顏色來源。--builtin-organic-* 是
-     凍結的內建值（淺色在此、深色在 :root[data-theme='dark']），也是 src/ 裡
-     唯一允許寫死顏色的地方（check:design:strict --raw-colors=fail）。
-     --organic-* 指向它；插件主題只在 <html> 上以 inline 方式重新指向
-     --organic-*（spec §3.1、§16），所以每個衍生 token 都跟著主題走。
-     沒有「保護區域」：權限與風險介面也跟著主題，安全性改由主機強制的不變量
-     保證（驗證器的對比矩陣與狀態色色相規則，spec R14）。
-     視窗的模式：面板視窗＝面板外觀；寵物視窗＝寵物外觀（useTheme.ts）。 */
+  /* --builtin-organic-* 是 src/ 裡唯一允許寫死顏色的地方（check:design:strict）；
+     插件主題只在 <html> 上以 inline 方式重新指向 --organic-*。
+     權限與風險介面也跟著主題，安全性由驗證器的對比矩陣與狀態色色相規則保證。 */
   --builtin-organic-bg: #f5ead8;
   --builtin-organic-surface: #f9f4ed;
   --builtin-organic-surface-2: #eee7db;
@@ -129,10 +94,7 @@
   --builtin-organic-accent-glow: rgba(198, 113, 57, 0.2);
   --builtin-organic-accent-on-hover: rgba(32, 30, 29, 0.05);
   --builtin-organic-scrim: rgba(46, 43, 37, 0.42);
-  /* 擴充組（manifest 鍵 infoText、shadow、highlight，省略時用這裡的值）：
-     info-text 是資訊色（藍，色相受限並與危險/成功/警告及強調色保持 OKLab 距離）；
-     shadow 是陰影色（必須夠暗）、highlight 是玻璃高光（必須夠亮）。
-     與 electron/plugin-panel-themes.ts PANEL_THEME_COLOR_TOKENS 的內建值相同（有測試比對）。 */
+  /* 與 electron/plugin-panel-themes.ts PANEL_THEME_COLOR_TOKENS 的內建值相同（有測試比對）。 */
   --builtin-organic-info-text: #2e5b8c;
   --builtin-organic-shadow: #2e2b25;
   --builtin-organic-highlight: #ffffff;
@@ -142,10 +104,8 @@
   --builtin-organic-danger-text: #a62f1e;
   --builtin-organic-success-text: #3f5a1c;
   --builtin-organic-warn-text: #7a5200;
-  /* Georgia only ships old-style figures ("0" reads as "o"), and it has no
-     lnum feature, so digits are routed to the UI font via the 'Lining Digits'
-     face defined in base.css. */
-  --builtin-organic-font-heading: 'Lining Digits', Georgia, 'Times New Roman', serif; /* Caprasimo was never bundled */
+  /* Georgia only ships old-style figures and has no lnum feature, so digits use the 'Lining Digits' face from base.css. */
+  --builtin-organic-font-heading: 'Lining Digits', Georgia, 'Times New Roman', serif;
   --builtin-organic-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --organic-space-1: 4px;
@@ -167,12 +127,8 @@
   --builtin-organic-font-display-sm: 22px;
   --builtin-organic-font-display-md: 22px;
 
-  /* 可套主題的色盤：--organic-* 指向上方凍結的內建副本（--builtin-organic-*），
-     插件主題在 <html> 上以 inline 方式重新指向它們（spec §3.6、§16）。
-     這個檔案也以 agent-pets://plugin/_shared/tokens.css 提供給插件頁面：有對應
-     --ap-* 的顏色先讀 --ap-*（主機注入到插件頁面 <html> 的目前主題），所以頁面上的
-     --text-primary、--surface-raised 等舊名稱也跟著使用者看到的主題與模式。App 的
-     視窗不會有 --ap-*，一律退回內建值。 */
+  /* 本檔也以 agent-pets://plugin/_shared/tokens.css 提供給插件頁面：有對應 --ap-*
+     的顏色先讀 --ap-*（主機注入）；App 視窗沒有 --ap-*，退回內建值。 */
   --organic-bg: var(--ap-bg, var(--builtin-organic-bg));
   --organic-surface: var(--ap-surface, var(--builtin-organic-surface));
   --organic-surface-2: var(--ap-surface-2, var(--builtin-organic-surface-2));
@@ -221,17 +177,14 @@
 
 }
 
-/* ── 語意層 ──────────────────────────────────────────────────────────────
-   每個介面讀這一層（或下方的舊名稱別名），不直接讀 --organic-*。全部由色盤
-   衍生，所以主題換色盤時每個表面都跟著換。宣告在 :root 與
-   .panel-theme-preview 上：預覽以 inline 方式帶入另一組色盤，別名必須在該
-   元素重新解析（繼承下來的別名已經被代換，spec §3.6）。 */
+/* 介面讀這一層，不直接讀 --organic-*。也宣告在 .panel-theme-preview 上：
+   預覽以 inline 帶入另一組色盤，別名必須在該元素重新解析。 */
 :root,
 .panel-theme-preview {
   --color-bg: var(--organic-bg);
   --color-surface: var(--organic-surface);
   --color-surface-2: var(--organic-surface-2);
-  --color-overlay: var(--organic-surface); /* 對話框、選單、彈出框、提示、通知 */
+  --color-overlay: var(--organic-surface);
   --color-sunken: var(--organic-surface-2);
   --color-text: var(--organic-text);
   --color-text-2: var(--organic-text-secondary);
@@ -244,7 +197,6 @@
   --color-border: var(--organic-border-soft);
   --color-border-strong: var(--organic-border);
   --color-scrim: var(--organic-scrim);
-  /* 狀態色：危險/成功/警告由驗證器限制色相與色差（spec R12），資訊色由主機固定。 */
   --color-danger: var(--organic-danger-text);
   --color-success: var(--organic-success-text);
   --color-warn: var(--organic-warn-text);
@@ -253,10 +205,8 @@
   --color-focus: var(--organic-accent-text);
   --color-shadow: var(--organic-shadow);
   --color-highlight: var(--organic-highlight);
-  /* 懸停／晶片的淡色底（文字繼承自所在列；驗證器檢查每個文字色疊在 surface、surface2、bg 上的結果）。 */
   --color-hover: var(--organic-accent-on-hover);
 
-  /* 舊名稱：元件與插件頁面（_shared/tokens.css）仍使用這些名稱，一律指向語意層。 */
   --surface-panel: var(--color-bg);
   --surface-raised: var(--color-surface);
   --surface-raised-hover: var(--color-surface-2);
@@ -272,21 +222,15 @@
   --accent: var(--color-accent);
   --accent-hover: var(--color-accent-hover);
   --accent-text: var(--color-accent-text);
-  /* 實心強調色上的文字/圖示。 */
   --accent-on: var(--color-on-accent);
   --accent-bright: var(--color-on-accent);
   --accent-soft: var(--organic-surface-warm);
   --accent-glow: var(--organic-accent-glow);
   --gradient-accent: var(--color-accent);
-  /* 供應商識別色：Claude 用色盤的鼠尾草色系，與 Codex 的強調色區分；
-     一律搭配供應商名稱文字，所以不承載狀態語意，主題可以隨色盤調整。 */
   --accent-claude: var(--organic-sage);
   --gradient-claude: var(--organic-sage);
-  /* 代理狀態（狀態點、迷你環、工作階段列；AGENT_STATE_PRESENTATION 的 color 讀這些名稱）：
-     成功/錯誤/等待取自受色相限制的狀態色，思考/工具＝強調文字色（強調填色在淺色膠囊上不到 3:1），
-     閒置/離線＝弱化文字。
-     主題無法直接設定 --state-*，只能透過受驗證的色盤，所以語意不會被改掉；
-     狀態也一律搭配文字標籤或形狀，不只靠顏色。 */
+  /* AGENT_STATE_PRESENTATION 的 color 讀這些名稱；思考／工具用強調文字色，因為強調填色在淺色膠囊上不到 3:1。
+     主題只能透過受驗證的色盤影響它們，不能直接設定 --state-*。 */
   --state-success: var(--color-success);
   --state-error: var(--color-danger);
   --state-warn: var(--color-warn);
@@ -318,11 +262,7 @@
   --toggle-thumb-shadow: var(--organic-thumb-shadow);
 }
 
-/* ── 陰影與高光強度（依模式）──────────────────────────────────────────────
-   同一個陰影色／高光色，依模式用不同比例（與 1.11.5 的內建外觀相同）：淺色的陰影淡、
-   玻璃高光亮；深色的陰影濃、高光只有一點，且寵物文字下有一道深色文字陰影。
-   宣告在 .panel-theme-preview[data-mode] 上：預覽要用「被預覽的模式」，而不是面板目前的
-   模式（上方與寵物區塊的組合 token 在預覽元素上重新解析）。 */
+/* 宣告在 .panel-theme-preview[data-mode] 上：預覽要用被預覽的模式，而不是面板目前的模式。 */
 :root,
 .panel-theme-preview[data-mode='light'] {
   --elevation-panel: 32%;
@@ -358,13 +298,10 @@
   --pet-tooltip-shadow-strength: 38%;
   --pet-handle-shadow-strength: 28%;
   --pet-handle-highlight-strength: 12%;
-  /* 淺色文字浮在任意桌面上時的深色描邊（套用 petStatus 的膠囊不使用，見 DesktopPet.css）。 */
   --text-shadow-panel: 0 1px 2px color-mix(in srgb, var(--color-shadow) 55%, transparent);
 }
 
-/* ── 面板視窗的字型與形狀 ────────────────────────────────────────────────
-   主題的字族、字級倍率與圓角只用在面板視窗（與預覽）；寵物視窗維持固定的
-   字級與幾何（status-line-fit 依此量測），也不載入主題字型。 */
+/* 主題的字族、字級與圓角只用在面板視窗；寵物視窗維持固定的字級與幾何（status-line-fit 依此量測）。 */
 :root[data-window='panel'],
 .panel-theme-preview {
   --surface-blur: none;
@@ -394,9 +331,7 @@
   --radius-lg: var(--organic-radius-lg);
 }
 
-/* ── 插件頁面的主題掛鉤 ─────────────────────────────────────────────
-   預設不設定（guaranteed-invalid）：App 視窗的色盤退回內建值；插件頁面由主機在
-   <html> 上以 inline 方式注入 --ap-*（docs/plugins/panel-themes.md），inline 值優先。 */
+/* 預設不設定（guaranteed-invalid），App 視窗退回內建值；插件頁面的 inline 值優先。 */
 :root {
   --ap-bg: initial;
   --ap-surface: initial;
@@ -419,10 +354,7 @@
   --ap-highlight: initial;
 }
 
-/* ── 寵物狀態膠囊主題掛鉤 ─────────────────────────────────────────
-   預設不設定（guaranteed-invalid），讓每個 var() 都退回由色盤衍生的
-   --organic-status-*。插件主題的 petStatus 可以在寵物視窗的 <html> 上設定它們；
-   只有 .status-line 會讀取（spec §3.7）。 */
+/* 預設不設定（guaranteed-invalid），讓每個 var() 退回 --organic-status-*。 */
 :root {
   --pet-status-background: initial;
   --pet-status-background-opaque: initial;
@@ -434,19 +366,13 @@
   --pet-status-quota-warn: initial;
 }
 
-/* ── 寵物視窗：泡泡、狀態膠囊與玻璃層 ────────────────────────────────────
-   全部由語意層衍生；寵物視窗的模式是寵物外觀（useTheme.ts 把它寫進 data-theme）。
-   泡泡與膠囊浮在任意桌面上：表面是 surface 以 0.93／0.92 疊上去，驗證器以同樣
-   比例在黑、白桌面上檢查每個文字 token（PET_BUBBLE_SURFACE_ALPHA、
-   PET_PILL_SURFACE_ALPHA）。不透明版本是減少透明度／高對比時的退路。
-   在 .panel-theme-preview 上重新解析，讓主題預覽裡的膠囊用預覽的色盤。 */
+/* 泡泡與膠囊的表面 alpha（0.93／0.92）必須與驗證器的 PET_BUBBLE_SURFACE_ALPHA、PET_PILL_SURFACE_ALPHA 一致。 */
 :root,
 .panel-theme-preview {
   --pet-bubble-surface: color-mix(in srgb, var(--color-surface) 93%, transparent);
   --pet-bubble-surface-opaque: var(--color-surface);
   --pet-bubble-border: var(--color-border-strong);
   --pet-bubble-sheen: linear-gradient(155deg, color-mix(in srgb, var(--color-highlight) var(--pet-sheen-strength), transparent), transparent 54%);
-  /* 膠囊、提示與邊緣把手左上角的玻璃反光。 */
   --pet-gloss: color-mix(in srgb, var(--color-highlight) var(--pet-gloss-strength), transparent);
   --pet-bubble-shadow:
     0 6px 18px color-mix(in srgb, var(--color-shadow) var(--pet-bubble-shadow-strength), transparent),
@@ -480,16 +406,13 @@
   --organic-status-shadow: 0 2px 8px color-mix(in srgb, var(--color-shadow) var(--pet-status-shadow-strength), transparent);
   --organic-status-highlight: inset 0 1px 0 color-mix(in srgb, var(--color-highlight) var(--pet-status-highlight-strength), transparent);
   --organic-status-tooltip-shadow: 0 5px 16px color-mix(in srgb, var(--color-shadow) var(--pet-tooltip-shadow-strength), transparent);
-  /* 額度條：一般＝ sageDeep、Claude ＝ accentText、低額度＝警告色、危急＝危險色；
-     驗證器保證四者在膠囊與軌道上 >= 3:1。 */
   --organic-quota-sage: var(--organic-sage-deep);
   --organic-quota-accent: var(--color-accent-text);
   --organic-quota-warning: var(--color-warn);
   --organic-quota-error: var(--color-danger);
 }
 
-/* 寵物視窗的玻璃層：浮在桌面上的元素（邊緣把手、權限泡泡、選單）用半透明的
-   色盤表面；卡片與列用文字色的淡色調，不疊第二層玻璃（liquid-glass.md）。 */
+/* 卡片與列用文字色的淡色調，不疊第二層玻璃。 */
 .desktop-pet {
   --surface-panel: color-mix(in srgb, var(--color-surface) 92%, transparent);
   --surface-overlay: color-mix(in srgb, var(--color-surface) 98%, transparent);
@@ -506,11 +429,6 @@
   --focus-ring-offset: 1px;
 }
 
-/* ── Dark theme (panel layer) ───────────────────────────────────────────
-   Re-points the organic palette; semantic --color-* aliases and every
-   component follow. Applied by composables/useTheme.ts as
-   <html data-theme="dark"> (the pet/bubble layer is always dark). Each
-   pair is verified by scripts/check-contrast.mjs. */
 :root[data-theme='light'] {
   color-scheme: light;
 }
@@ -549,7 +467,6 @@
   --builtin-organic-warn-text: #f0c866;
 }
 
-/* More contrast: stronger borders in both themes. */
 @media (prefers-contrast: more) {
   :root {
     --builtin-organic-border: rgba(32, 30, 29, 0.6);
@@ -562,7 +479,6 @@
   }
 }
 
-/* Reduced transparency: no blur anywhere; one place instead of per component. */
 @media (prefers-reduced-transparency: reduce) {
   :root {
     --surface-blur: none;
@@ -581,10 +497,7 @@
   }
 }
 
-/* Honour the OS "reduce motion" setting in one place rather than auditing
-   every transition/animation declaration across components. Every motion token
-   above is zeroed here (tests/design-motion-tokens.test.mts checks it); the
-   universal rule also stops the one-off keyframe animations. */
+/* Every motion token must be zeroed here (tests/design-motion-tokens.test.mts checks it). */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --transition-fast: 0s;

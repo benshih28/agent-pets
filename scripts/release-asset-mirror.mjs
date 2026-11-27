@@ -1,11 +1,5 @@
 #!/usr/bin/env node
-// 發版用的本機下載轉接：GitHub 的 releases/download 網址偶爾對特定檔案持續回 504，
-// 但同一個檔案經 GitHub API 下載正常。這個服務只監聽 127.0.0.1，把 electron-builder
-// 與 @electron/get 的下載改走 API；檔案內容不變，checksum 仍由打包工具照原本方式驗證。
-//
-// 路徑：/electron/<tag>/<file> → electron/electron
-//       /builder/<release>/<file> → electron-userland/electron-builder-binaries
-// 啟動後把埠號寫到 stdout 第一行，例如 `port=43123`。
+// GitHub 的 releases/download 網址偶爾對特定檔案持續回 504，但同一個檔案經 GitHub API 下載正常。
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -24,10 +18,8 @@ const apiHeaders = {
   'X-GitHub-Api-Version': '2022-11-28',
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
 }
-// tag → Map<檔名, asset API 網址>；同一次打包會重複查同一個 release。
 const releaseAssets = new Map()
 
-/** 解析並驗證請求路徑；不合規則時回傳 null。 */
 export function parseRequest(url) {
   let pathname
   try {

@@ -2,7 +2,6 @@ import type { PluginManifest } from '../types/plugin'
 
 export type PluginCapability = 'panel' | 'commands' | 'tray' | 'badge' | 'skins' | 'panelThemes' | 'eventSource' | 'schedule' | 'feed' | 'reaction'
 
-/** 卡片上的「提供：…」標籤來源：manifest 的貢獻點與排程權限，順序固定。 */
 export function pluginCapabilities(manifest: Pick<PluginManifest, 'contributes' | 'permissions'> | null | undefined): PluginCapability[] {
   if (!manifest) return []
   const c = manifest.contributes

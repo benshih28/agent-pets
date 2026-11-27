@@ -1,7 +1,3 @@
-// Display form of an Electron accelerator (e.g. "CommandOrControl+Shift+Y")
-// for the current platform: macOS uses modifier symbols, others spell out
-// "Ctrl+Shift+Y". Feed it the accelerator that is actually registered rather
-// than a hard-coded label.
 export type AcceleratorPlatform = 'mac' | 'other'
 
 const MAC: Record<string, string> = {
@@ -34,7 +30,6 @@ export function detectPlatform(platform: string = typeof navigator === 'undefine
   return /mac|iphone|ipad/i.test(platform) ? 'mac' : 'other'
 }
 
-/** Individual key caps, e.g. ["Ctrl", "Shift", "Y"] — render each in a <kbd>. */
 export function acceleratorKeys(accelerator: string, platform: AcceleratorPlatform = detectPlatform()): string[] {
   const table = platform === 'mac' ? MAC : OTHER
   return accelerator

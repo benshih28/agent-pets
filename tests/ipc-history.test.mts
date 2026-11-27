@@ -27,7 +27,6 @@ function createHistoryIpcHarness() {
   const panelWindow = fakeBrowserWindow()
   const records = { trusted: [] as Array<unknown>, broadcasts: 0, refreshes: 0, writes: [] as Array<{ path: string; value: unknown }>, reveals: [] as string[], sessionQueries: [] as Array<{ petId: string; query: unknown }>, detailIds: [] as string[] }
   let dialogResult: { canceled: boolean; filePath?: string } = { canceled: true }
-  // HistoryStore 是 SQLite 實作，IPC 層只呼叫下面這些讀寫方法，完整建構一個資料庫沒有意義。
   const historyStore = {
     clear() {},
     listSessions: (petId: string, query: unknown) => {
@@ -125,7 +124,6 @@ test('export honours format/range, names files by local date and only reveals wh
   assert.deepEqual(saveCall.options.filters[0].extensions, ['csv'])
   assert.equal(await invoke(IPC_CHANNELS.historyRevealExport), true)
   assert.deepEqual(harness.records.reveals, ['out/history.csv'])
-  // A bogus request degrades to a plain 7-day JSON export.
   assert.deepEqual(await invoke(IPC_CHANNELS.historyExport, { format: 'exe', rangeDays: 5, projectId: '../x' }), { ok: true, path: 'out/history.csv' })
 })
 
@@ -171,7 +169,6 @@ test('session detail IPC only forwards well-formed session ids', async () => {
   assert.equal(await detail(fakeIpcMainInvokeEvent(), 'codex:codex:not-a-hash'), null)
   assert.equal(await detail(fakeIpcMainInvokeEvent(), `codex:codex:${'a'.repeat(24)}\n`), null)
   assert.equal(await detail(fakeIpcMainInvokeEvent(), `codex:codex:${'a'.repeat(24)}`), null)
-  // Scoped to the active pet, like the list.
   assert.deepEqual(harness.records.detailIds, [`sample-pet/codex:codex:${'a'.repeat(24)}`])
   assert.equal(harness.records.trusted.length, 4)
 })

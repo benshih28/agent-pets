@@ -28,7 +28,6 @@ test('petStatus: background and text are required, the rest is derived determini
   assert.deepEqual(pill.border, { ...color('#e6f4f5'), a: 0.18 })
   assert.deepEqual(pill.quotaTrack, { ...color('#e6f4f5'), a: 0.18 })
   assert.deepEqual(pill.quotaFill, color(DARK_COLORS.accent))
-  // 推導是輸入的純函式。
   assert.deepEqual(derivePetStatusColors({ background: color('rgb(13 27 34 / 0.9)'), text: color('#e6f4f5') }, { accent: color(DARK_COLORS.accent) }), pill)
   rejects(withPill({ text: '#e6f4f5' }), /petStatus\.background: is required/)
   rejects(withPill({ background: 'rgb(13 27 34 / 0.9)' }), /petStatus\.text: is required/)
@@ -54,7 +53,6 @@ test('petStatus contrast is checked over worst-case black and white desktops', (
   rejects(withPill({ background: 'rgb(248 252 252 / 0.92)', text: '#10282c', quotaFill: '#1f7a80' }, 'light'), /quotaFill: 2\.\d\d:1 < 3:1 on quotaTrack/)
   const [resolved] = parsePanelThemes(withPill({ background: 'rgb(248 252 252 / 0.92)', text: '#10282c', quotaFill: '#0e4f54' }, 'light')).themes
   const pill = resolved!.modes.light!.petStatus!
-  // 推導出的低額度顏色會朝文字色移動，直到在所有情況下都達到 3:1。
   for (const desktop of [color('#000000'), color('#ffffff')]) {
     const surface = compositeColor(pill.background, desktop)
     assert.ok(contrastRatio(pill.quotaWarn, surface) >= 3)
@@ -79,7 +77,6 @@ test('pet renderer accepts each canonical set whole, and suspends under forced c
   assert.equal(petThemeTargetProperties({ light: { colors, status: null }, dark: null }, 'light', plain).size, PET_THEME_COLOR_PROPERTIES.length)
   assert.equal(petThemeTargetProperties({ light: { colors, status }, dark: null }, 'dark', plain).size, 0)
   assert.equal(petThemeTargetProperties({ light: { colors, status }, dark: null }, 'light', { ...plain, forcedColors: true }).size, 0)
-  // 任一值不是主機標準 rgb()、缺一個或多一個名稱：整組拒絕。
   assert.equal(petThemeTargetProperties({ light: { colors: { ...colors, '--organic-text': 'red' }, status }, dark: null }, 'light', plain).size, 0)
   // 多出的名稱要經過一個寬鬆型別的變數，否則物件字面值的多餘屬性檢查在編譯期就擋掉了。
   const extraName: Record<string, string> = { ...colors, '--organic-font-body': rgb }
@@ -90,7 +87,6 @@ test('pet renderer accepts each canonical set whole, and suspends under forced c
 })
 
 test('the pet window receives exactly the palette properties its CSS reaches', () => {
-  // 從寵物視窗用到的 token 出發，沿著 tokens.css 的 var() 找出最終依賴的可套主題屬性。
   const files = ['src/components/DesktopPet.vue', 'src/components/DesktopPet.css', 'src/components/desktop-pet/PetStatusLine.vue', 'src/components/desktop-pet/PetStatusLine.css',
     'src/components/desktop-pet/PetBubbleStack.vue', 'src/components/desktop-pet/PetEdgePeekHandle.vue', 'src/components/desktop-pet/PetEdgePeekHandle.css', 'src/components/DesktopPetBubbles.css', 'src/components/PetAnimation.vue',
     'src/components/PetAnimation.css', 'src/components/permission/PermissionBubble.vue', 'src/components/permission/PermissionBubble.css', 'src/components/permission/PermissionCountdown.vue',
@@ -112,7 +108,6 @@ test('the pet window receives exactly the palette properties its CSS reaches', (
     assert.ok(CONTEXTS[context].includes('.desktop-pet'))
   }
   assert.deepEqual([...reached].sort(), [...PET_THEME_COLOR_PROPERTIES].sort())
-  // 泡泡、膠囊與軌道的比例與驗證器相同。
   const tokens = readFileSync('src/styles/tokens.css', 'utf8')
   assert.match(tokens, new RegExp(`--pet-bubble-surface: color-mix\\(in srgb, var\\(--color-surface\\) ${Math.round(PET_BUBBLE_SURFACE_ALPHA * 100)}%, transparent\\);`))
   assert.match(tokens, new RegExp(`--organic-status-surface: color-mix\\(in srgb, var\\(--color-surface\\) ${Math.round(PET_PILL_SURFACE_ALPHA * 100)}%, transparent\\);`))

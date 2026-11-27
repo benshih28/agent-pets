@@ -112,7 +112,6 @@ export class PluginHostWindowController {
     this.post({ type: 'settings-changed', pluginId, value })
   }
 
-  /** 所有執行中的 Worker 收到同一份快照；host.js 只轉送給已啟動的 Worker。 */
   notifyThemeChanged(snapshot: PluginThemeSnapshot): void {
     if (this.desired.size === 0) return
     this.post({ type: 'theme-changed', value: snapshot })
@@ -454,11 +453,7 @@ export class PluginHostWindowController {
     this.hostWindow = null
   }
 
-  /**
-   * After the machine wakes up, worker pongs from before sleep look hours old.
-   * Treat the wake-up as a fresh start so a nap never kills healthy plugins or
-   * counts towards giving up on them.
-   */
+  // Pongs from before sleep look hours old; a wake-up must not kill healthy plugins or count as failure.
   handleSystemResume(): void {
     const now = this.readNow()
     if (now === null) return

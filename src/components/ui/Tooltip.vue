@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
-// Styled, keyboard-reachable replacement for the native `title=` tooltip
-// (slow, unstyleable, unavailable to touch and keyboard). Shows on hover
-// (after `delay`) and on focus, hides on leave / blur / Esc, and links the
-// text to the first focusable child via aria-describedby.
-//
-// Positioned with `position: fixed` and clamped to the viewport so the
-// panel's `overflow: hidden` cannot clip it.
+// `position: fixed` and clamped to the viewport so the panel's `overflow: hidden` cannot clip it.
 const props = withDefaults(defineProps<{
   text: string
   placement?: 'top' | 'bottom'
@@ -54,7 +48,7 @@ function hide() {
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && open.value) {
-    // Close the tooltip only; do not let Esc also dismiss a parent dialog.
+    // Esc must not also dismiss a parent dialog.
     event.stopPropagation()
     hide()
   }

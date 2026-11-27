@@ -111,7 +111,6 @@ test('resetGrowth clears XP and achievements, keeps pets and the active pet, and
   assert.equal(count(h.progression, 'pets'), pets)
   assert.equal(h.progression.getActivePetId(), 'pet-a')
 
-  // 第二次重設結果相同，不丟錯。
   h.achievements.resetGrowth(BASE + 6000, () => { h.progression.resetGrowth() })
   assert.equal(h.progression.getSnapshot('pet-a').totalXp, 0)
   assert.equal(h.achievements.getGrowthResetAt(), BASE + 6000)
@@ -123,21 +122,18 @@ test('resetGrowth is atomic: a failure in either database restores everything', 
   const xpBefore = h.progression.getSnapshot('pet-a').totalXp
   const unlocksBefore = count(h.achievements, 'achievement_unlocks')
 
-  // 進度端在成就端 COMMIT 之前丟錯：成就端要整個回復。
   assert.throws(() => h.achievements.resetGrowth(BASE + 9000, () => { throw new Error('progression failed') }), /progression failed/)
   assert.equal(h.achievements.getGrowthResetAt(), 0)
   assert.equal(count(h.achievements, 'achievement_unlocks'), unlocksBefore)
   assert.equal(count(h.achievements, 'completed_sessions'), 3)
   assert.equal(h.progression.getSnapshot('pet-a').totalXp, xpBefore)
 
-  // 進度端自己的交易中途失敗（刪完帳本後 UPDATE 失敗）：進度端回復，成就端也回復。
   raw(h.progression).exec('CREATE TRIGGER fail_reset BEFORE UPDATE ON pet_progress BEGIN SELECT RAISE(ABORT, \'boom\'); END')
   assert.throws(() => h.achievements.resetGrowth(BASE + 9000, () => { h.progression.resetGrowth() }), /boom/)
   assert.equal(count(h.progression, 'xp_ledger') > 0, true)
   assert.equal(h.progression.getSnapshot('pet-a').totalXp, xpBefore)
   assert.equal(count(h.achievements, 'achievement_unlocks'), unlocksBefore)
   assert.equal(h.achievements.getGrowthResetAt(), 0)
-  // 失敗之後 store 仍可正常使用（沒有遺留開啟中的交易）。
   raw(h.progression).exec('DROP TRIGGER fail_reset')
   h.achievements.resetGrowth(BASE + 9000, () => { h.progression.resetGrowth() })
   assert.equal(h.progression.getSnapshot('pet-a').totalXp, 0)
@@ -159,11 +155,9 @@ test('growth service reset reports failure, changes nothing, and broadcasts only
   h.progression.resetGrowth = original
   assert.deepEqual(service.resetGrowth(), { ok: true })
   const channels = sent.map(([channel]) => channel)
-  // 兩個視窗各收到進度與成就廣播。
   assert.equal(channels.filter(c => c === IPC_CHANNELS.progressionUpdated).length, 2)
   assert.equal(channels.filter(c => c === IPC_CHANNELS.achievementsUpdated).length, 2)
   assert.equal((sent.find(([c]) => c === IPC_CHANNELS.progressionUpdated)?.[1] as { totalXp: number }).totalXp, 0)
-  // 重設之後再重設仍成功（冪等）。
   assert.deepEqual(service.resetGrowth(), { ok: true })
 })
 
@@ -185,19 +179,16 @@ test('history reconcile and local token sync do not restore data from before the
   h.tick(10 * 60 * 1000)
   assert.deepEqual(service.resetGrowth(), { ok: true })
 
-  // 完整歷史仍在；reconcile 不可補回重設前的 session。
   assert.equal(h.history.getAchievementCompletedSessions(0).length, 3)
   service.reconcileFromHistory()
   assert.equal(count(h.achievements, 'completed_sessions'), 0)
   assert.equal(count(h.achievements, 'achievement_unlocks'), 0)
 
-  // 重設前的本機 token 記錄再次出現也不計；重設後的新記錄正常計入。
   service.syncLocalTokenUsage([{ adapterId: 'codex', agentId: 'codex', sourceEventId: 'old-1', occurredAt: BASE, input: 500, output: 500, quality: 'exact' }], 90)
   assert.equal(count(h.achievements, 'local_token_usage'), 0)
   service.syncLocalTokenUsage([{ adapterId: 'codex', agentId: 'codex', sourceEventId: 'new-1', occurredAt: BASE + 11 * 60 * 1000, input: 5, output: 5, quality: 'exact' }], 90)
   assert.equal(count(h.achievements, 'local_token_usage'), 1)
 
-  // 重設後的新完成 session 仍可被 reconcile 取得。
   h.history.recordEvent({ ...done('after', BASE + 20 * 60 * 1000), routedPetId: 'pet-a' }, 'pet-a', BASE + 20 * 60 * 1000)
   service.reconcileFromHistory()
   assert.equal(count(h.achievements, 'completed_sessions'), 1)
@@ -209,7 +200,7 @@ test('the reset cutoff survives a restart of the achievement store', t => {
   h.achievements.resetGrowth(BASE + 7000)
   h.achievements.close()
   const reopened = new AchievementStore(h.paths.achievements, { now: () => BASE, localDate })
-  // 在測試本體內關閉：t.after 依註冊順序執行，harness 的刪目錄會先跑，Windows 上資料庫還開著就刪會 EPERM。
+  // 在測試本體內關閉：t.after 會先刪目錄，Windows 上資料庫仍開著會 EPERM。
   try {
     assert.equal(reopened.getGrowthResetAt(), BASE + 7000)
     const fact = { petId: 'pet-a', source: 'codex', sessionId: 'x', projectId: '', adapterId: 'codex', completedAt: BASE }
@@ -226,10 +217,8 @@ test('optimizeAndVacuum refuses while a transaction is open', t => {
   assert.throws(() => h.achievements.compact(), SqliteBusyError)
   raw(h.achievements).exec('ROLLBACK')
   assert.doesNotThrow(() => h.achievements.compact())
-  // 呼叫端自己的交易計數（HistoryStore.transactionDepth）也算忙碌。
   assert.throws(() => optimizeAndVacuum({ exec: () => assert.fail('must not run') }, true), SqliteBusyError)
   assert.throws(() => optimizeAndVacuum({ exec: () => assert.fail('must not run'), isTransaction: true }), SqliteBusyError)
-  // VACUUM 之後 store 的快取語句仍可使用。
   assert.equal(h.achievements.getSnapshot('pet-a').totalUnlocked, 0)
 })
 
@@ -258,7 +247,6 @@ function maintenance(h: ReturnType<typeof harness>, extra: { scanning?: () => bo
 
 test('maintenance prunes only expired data, vacuums, and reports sizes', async t => {
   const h = harness(t, { now: () => BASE })
-  // 超過 90 天保留期的舊資料 + 近期資料。
   const old = BASE - 200 * DAY
   h.history.batch(() => {
     for (let i = 0; i < 400; i += 1) {
@@ -280,7 +268,6 @@ test('maintenance prunes only expired data, vacuums, and reports sizes', async t
   const actual = [h.paths.history, h.paths.progression, h.paths.achievements]
     .reduce((sum, path) => sum + sqliteFootprintBytes(path), 0)
   assert.equal(result.afterBytes, actual)
-  // VACUUM 後 WAL 已截斷。
   assert.equal(!existsSync(`${h.paths.history}-wal`) || statSync(`${h.paths.history}-wal`).size === 0, true)
 })
 
@@ -291,20 +278,16 @@ test('maintenance rejects re-entry, a running local scan, and open transactions'
   assert.deepEqual(await service.run(), { ok: false, error: 'scanning' })
 
   scanning = false
-  // 重入：第一個還沒結束（pruneInBatches 讓出事件迴圈）時第二個直接 busy。
   const first = service.run()
   const second = await service.run()
   assert.deepEqual(second, { ok: false, error: 'busy' })
   assert.equal((await first).ok, true)
-  // 結束後可以再跑。
   assert.equal((await service.run()).ok, true)
 
-  // 清理讓出期間掃描啟動：VACUUM 前重查，回報 scanning 而不是硬跑。
   let calls = 0
   const late = maintenance(h, { scanning: () => ++calls > 1 })
   assert.deepEqual(await late.run(), { ok: false, error: 'scanning' })
 
-  // 交易進行中：回報 busy，且之後可恢復。
   raw(h.progression).exec('BEGIN IMMEDIATE')
   assert.deepEqual(await maintenance(h).run(), { ok: false, error: 'busy' })
   raw(h.progression).exec('ROLLBACK')
@@ -345,7 +328,6 @@ test('maintenance stops with insufficient_space before touching any database', a
   assert.equal(result.neededBytes, sqliteFootprintBytes(h.paths.history) * 2)
   assert.deepEqual(compacted, [])
   assert.deepEqual(asked, [h.directory])
-  // 空間足夠剛好兩倍時放行（BigInt 結果也可接受）。
   const exact = sqliteFootprintBytes(h.paths.history) * 2
   assert.equal((await maintenance(h, { statfs: async () => ({ bavail: BigInt(exact + 1_000_000), bsize: 1n }) }).run()).ok, true)
 })
@@ -357,7 +339,6 @@ test('maintenance yields between databases and rechecks scanning before each com
     const original = store.compact.bind(store)
     store.compact = () => { order.push(name); original() }
   }
-  // 在第一個 compact 之後的讓出期間啟動掃描：第二個資料庫不可被整理。
   let scanning = false
   const timer = { fired: false }
   const service = maintenance(h, { scanning: () => scanning })
@@ -367,7 +348,6 @@ test('maintenance yields between databases and rechecks scanning before each com
   assert.equal(timer.fired, true)
   assert.deepEqual(order, ['history', 'history-done'])
 
-  // 讓出期間有交易：compact 回報 busy。
   scanning = false
   raw(h.progression).exec('BEGIN IMMEDIATE')
   assert.deepEqual(await maintenance(h).run(), { ok: false, error: 'busy' })
@@ -420,12 +400,10 @@ test('growth reset IPC only serves the panel window and rejects missing or malfo
   assert.throws(() => h.invoke(IPC_CHANNELS.growthResetArm, { id: 'pet' }), /untrusted/)
   assert.throws(() => h.invoke(IPC_CHANNELS.growthReset, { id: 'pet' }, 'x'), /untrusted/)
   assert.deepEqual(h.counts(), { resets: 0, runs: 0 })
-  // 沒有 arm 過：任何值都拒絕，包含舊版的固定字面值。
   for (const bad of [undefined, null, 'reset-growth', 1]) {
     h.advance(GROWTH_RESET_MIN_INTERVAL_MS)
     assert.deepEqual(await h.invoke(IPC_CHANNELS.growthReset, h.panel, bad), { ok: false, error: 'invalid_request' })
   }
-  // arm 之後，缺少、型別錯誤、長度錯誤、同長度錯誤值都拒絕，且每次嘗試都會讓 token 失效。
   for (const bad of [undefined, null, true, 7, {}, [], '', 'short', 'x'.repeat(64), '0'.repeat(64)]) {
     const token = await arm(h)
     assert.notEqual(token, bad)
@@ -458,7 +436,6 @@ test('growth reset IPC token expires, only the newest token is valid, and a fail
   const newer = await arm(h)
   assert.notEqual(older, newer)
   assert.deepEqual(await h.invoke(IPC_CHANNELS.growthReset, h.panel, older), { ok: false, error: 'invalid_request' })
-  // 舊 token 的嘗試已讓目前 token 一併失效。
   assert.deepEqual(await h.invoke(IPC_CHANNELS.growthReset, h.panel, newer), { ok: false, error: 'invalid_request' })
   assert.equal(h.counts().resets, 0)
 

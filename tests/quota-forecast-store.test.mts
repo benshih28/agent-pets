@@ -25,10 +25,8 @@ test('store builds a forecast from consecutive quota updates and hides it until 
     h.store.setQuotaUsage(usage(at(12), 30))
     const forecast = h.store.quotaForecast('claude', 'session', at(12))
     assert.equal(forecast.kind, 'exhausts')
-    // 用量下降（視窗重置）清空樣本
     h.store.setQuotaUsage(usage(at(14), 2))
     assert.equal(h.store.quotaForecast('claude', 'session', at(14)).kind, 'insufficient')
-    // 錯誤的服務商與不存在的視窗不產生預測
     assert.equal(h.store.quotaForecast('claude', 'nope', at(14)).kind, 'insufficient')
   } finally { h.dispose() }
 })

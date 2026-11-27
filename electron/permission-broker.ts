@@ -20,8 +20,7 @@ const MAX_ACTION_LENGTH = 80
 const MAX_DESCRIPTION_LENGTH = 280
 const MAX_DETAIL_ITEMS = 5
 const MAX_DETAIL_LENGTH = 120
-// Cap on *active* requests. Finished requests are kept only briefly (replay
-// protection + late polls) and then dropped, so a long-running app never fills up.
+// Finished requests are kept only briefly (replay protection + late polls).
 const DEFAULT_MAX_REQUEST_RECORDS = 5_000
 const TERMINAL_RETENTION_MS = 10 * 60_000
 const MAX_TERMINAL_RECORDS = 200
@@ -57,10 +56,8 @@ export interface PermissionRequestInput {
   generation: number
   action: string
   description: string
-  /** Tool arguments (command, path globs). Bounded and redacted here. */
   details?: ReadonlyArray<string>
   risk?: PermissionRisk
-  /** The tool reaches outside the machine (network / external directory). */
   network?: boolean
   ttlMs?: number
   allowedDecisions?: ReadonlyArray<PermissionDecisionValue>
@@ -103,7 +100,7 @@ export interface PermissionAuditRecord {
   decision?: PermissionDecisionValue
   decidedBy?: PermissionDecisionSource
   terminalReason: string
-  /** Tool name and risk only; never the description or arguments. */
+  /** Never the description or arguments. */
   action?: string
   risk?: PermissionRisk
 }
@@ -176,8 +173,7 @@ function isRisk(value: unknown): value is PermissionRisk {
   return value === 'low' || value === 'medium' || value === 'high' || value === 'unknown'
 }
 
-// Fail-closed: a risk level must be listed here to be approvable by hotkey, so
-// a level added later (or `unknown`) is excluded by default.
+// Fail-closed: a level added later (or `unknown`) is excluded from hotkeys by default.
 function isHotkeyRisk(risk: PermissionRisk): boolean {
   return risk === 'low' || risk === 'medium'
 }
@@ -275,7 +271,6 @@ export class PermissionBroker {
       return { ok: false, error: 'invalid_request' }
     }
     if (this.requests.has(candidate.requestId)) return { ok: false, error: 'duplicate_request' }
-    // One agent session cannot flood the queue and bury everyone else's requests.
     if (this.countActiveForSession(adapterId, candidate.sessionId) >= MAX_ACTIVE_PER_SESSION) {
       return { ok: false, error: 'capacity_exceeded' }
     }
@@ -317,7 +312,7 @@ export class PermissionBroker {
     const risk: PermissionRisk = isRisk(candidate.risk) ? candidate.risk : 'unknown'
     const truncated = action.truncated || description.truncated || detailsTruncated
     // A risky request whose arguments were cut off cannot be approved here: the user would be
-    // allowing text they never saw. Deny stays available; allowing happens in the agent itself.
+    // allowing text they never saw.
     const allowedDecisions = Object.freeze(truncated && !isHotkeyRisk(risk)
       ? supportedDecisions.filter((value) => value !== 'allow_once')
       : supportedDecisions)
@@ -350,7 +345,6 @@ export class PermissionBroker {
     this.requests.set(request.requestId, request)
     this.scheduleExpiry(request)
     this.emitChanged()
-    // 新請求的 order 最大，必定排在佇列最後，不需要再線性搜尋一次。
     const queueSize = this.activeRequests().length
     return { ok: true, request: this.toView(request, queueSize, queueSize) }
   }
@@ -361,8 +355,6 @@ export class PermissionBroker {
     return active.map((request, index) => this.toView(request, index + 1, active.length))
   }
 
-  // 只需要布林判斷的呼叫端（例如拖曳輪詢、adapter decision 輪詢）不必為每個
-  // 請求建立 view 物件。
   hasActiveRequests(): boolean {
     this.expireDue()
     for (const request of this.requests.values()) {
@@ -553,7 +545,7 @@ export class PermissionBroker {
     try {
       this.onAudit?.(Object.freeze({ ...auditRecord }))
     } catch {
-      // Audit persistence failure must not alter an already-terminal decision.
+      // Must not alter an already-terminal decision.
     }
   }
 
@@ -561,14 +553,10 @@ export class PermissionBroker {
     try {
       this.onChanged?.()
     } catch {
-      // Observers cannot interrupt the broker state transition.
+      // Observers must not interrupt the state transition.
     }
   }
 
-  /**
-   * Whether this agent session has a request that is still open or finished within `withinMs`.
-   * Lets the main process tell a prompt that can be answered here from one that cannot.
-   */
   hasRecentRequestForSession(adapterId: string, sessionId: string, withinMs: number): boolean {
     const now = this.readNow() ?? 0
     for (const request of this.requests.values()) {
@@ -579,7 +567,6 @@ export class PermissionBroker {
     return false
   }
 
-  /** Whether the broker still remembers this request (active or recently finished). */
   hasRecord(requestId: string): boolean {
     return this.requests.has(requestId)
   }
@@ -591,7 +578,6 @@ export class PermissionBroker {
       if (isTerminal(request.status)) finished.push(request)
     }
     if (finished.length === 0) return
-    // `finished` is in insertion order, so the oldest are first.
     const excess = Math.max(0, finished.length - MAX_TERMINAL_RECORDS)
     finished.forEach((request, index) => {
       const expired = now - (request.finishedAt ?? now) >= TERMINAL_RETENTION_MS
@@ -607,8 +593,7 @@ export class PermissionBroker {
     return count
   }
 
-  // Map 依插入順序迭代，而 order 在插入時單調遞增且紀錄不會重新插入，
-  // 因此迭代順序即為佇列順序，省去 O(n log n) 排序。
+  // 迭代順序即佇列順序：紀錄不會重新插入，所以不必排序。
   private activeRequests(): InternalPermissionRequest[] {
     const active: InternalPermissionRequest[] = []
     for (const request of this.requests.values()) {

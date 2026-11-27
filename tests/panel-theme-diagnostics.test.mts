@@ -15,9 +15,6 @@ import type { PanelThemeMode } from '../src/types/panel-theme.ts'
 import { builtinDefinition } from './support/panel-theme-fixtures.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// M4／L2：建議值搜尋只重跑讀到被換的鍵的檢查，並且在明度上二分搜尋；
-// 不受信任的深層巢狀在雜湊之前就被結構解析擋下。
-
 function lcg(seed: number) {
   let state = seed
   return () => {
@@ -57,7 +54,6 @@ test('changing one key changes only the checks that read it (the invariant the s
   for (let round = 0; round < 40; round += 1) {
     const definition = round % 2 === 0 ? builtinDefinition() : midGrey()
     definition.modes.dark.petStatus = { background: 'rgb(20 20 20 / 0.95)', text: 'rgb(240 240 240 / 1)', textMuted: 'rgb(200 200 200 / 1)', border: 'rgb(255 255 255 / 0.2)', quotaFill: 'rgb(120 200 160 / 1)', quotaTrack: 'rgb(255 255 255 / 0.2)', quotaWarn: 'rgb(230 180 80 / 1)' }
-    // 背景圖的遮罩與漸層也在檢查表裡（遮罩問題的 path 不是色鍵，也必須被讀到它的檢查涵蓋）。
     if (round % 4 < 2) definition.modes.light.image = { fit: 'cover', overlayColor: 'rgb(128 128 128 / 1)', dim: 0.5 }
     if (round % 3 === 0) definition.modes.dark.background = { type: 'gradient', kind: 'linear', angle: 180, stops: [{ color: 'rgb(10 10 30 / 1)', at: 0 }, { color: 'rgb(90 90 120 / 1)', at: 100 }] }
     for (const [mode, input] of inputsFor(definition)) {
@@ -69,11 +65,9 @@ test('changing one key changes only the checks that read it (the invariant the s
         : { ...input, petStatus: { ...input.petStatus!, [key]: colour() } }
       const before = ids(panelThemeModeIssues(input))
       const after = ids(panelThemeModeIssues(replaced))
-      // 每個問題的 path 都在讀到它的檢查裡。
       for (const issue of panelThemeModeIssues(replaced)) {
         assert.ok(ids(panelThemeModeIssuesReading(replaced, issue.path)).includes(JSON.stringify(issue)), `${mode} ${issue.path}`)
       }
-      // 沒讀到這個鍵的檢查，結果與替換前完全相同。
       assert.deepEqual(
         without(after, ids(panelThemeModeIssuesReading(replaced, read))),
         without(before, ids(panelThemeModeIssuesReading(input, read))),
@@ -88,7 +82,6 @@ test('every suggestion fixes its key without adding a new problem', () => {
   const validation = validateUserPanelTheme(definition)
   const suggested = validation.issues.filter(issue => typeof issue.suggested === 'string' && issue.path.startsWith('colors.'))
   assert.ok(suggested.length > 20)
-  // 以完整的問題清單比較（validateUserPanelTheme 的回傳有數量上限）。
   const idOf = (issue: { path: string; kind: string; foreground?: string; background?: string }) => `${issue.path}\u0000${issue.kind}\u0000${issue.foreground ?? ''}\u0000${issue.background ?? ''}`
   const all = new Map(inputsFor(definition).map(([mode, input]) => [mode, new Set([...panelThemeModeIssues(input)].map(idOf))]))
   for (const issue of suggested) {
@@ -102,7 +95,6 @@ test('every suggestion fixes its key without adding a new problem', () => {
   }
 })
 
-/** 改寫前的逐格搜尋（每個候選都跑完整驗證、由近而遠、先亮後暗），當作二分搜尋的參考答案。 */
 function exhaustiveSuggestion(input: PanelThemeModeCheckInput, issue: PanelThemeIssue, current: readonly PanelThemeIssue[]): string | undefined {
   const idOf = (other: PanelThemeIssue) => `${other.path}\u0000${other.kind}\u0000${other.foreground ?? ''}\u0000${other.background ?? ''}`
   const key = issue.path.slice('colors.'.length) as keyof PanelThemeModeCheckInput['colors']
@@ -167,7 +159,6 @@ test('the bisected suggestion equals the exhaustive nearest-first search', () =>
   assert.ok(compared > 100, `compared ${compared} suggestions`)
 })
 
-/** 舊做法的工作量：每個色鍵問題都用逐格搜尋找建議值。 */
 function exhaustiveSuggestions(definition: UserPanelThemeDefinition): number {
   let found = 0
   for (const [, input] of inputsFor(definition)) {
@@ -192,10 +183,7 @@ test('the worst-case draft (every key mid-grey) validates far faster than the ex
   const definition = midGrey()
   validateUserPanelTheme(definition)
   assert.ok(exhaustiveSuggestions(definition) > 20)
-  // 全量測試平行跑所有檔案，CPU 被搶時絕對耗時會放大好幾倍（5 ms 的工作量曾量到 33～49 ms），
-  // 所以不設絕對門檻，改和同一行程裡交錯量測的逐格搜尋比：負載同時拖慢分子分母，比值仍穩定。
-  // 短的一方多取幾次樣本，兩邊各取最快一次。
-  // 同機實測（F2 報告）：現在 0.017～0.028；改寫前的驗證 0.23～0.45。0.1 對兩邊都留兩倍以上餘裕。
+  // 全量測試平行跑時絕對耗時會放大數倍，所以不設絕對門檻，改和同一行程裡交錯量測的逐格搜尋比；0.1 對兩邊都留兩倍以上餘裕。
   let current = Number.POSITIVE_INFINITY
   let reference = Number.POSITIVE_INFINITY
   for (let round = 0; round < 3; round += 1) {
@@ -212,8 +200,7 @@ test('a deeply nested payload is rejected by the structural parse before anythin
   let deep: unknown = 1
   for (let level = 0; level < depth; level += 1) deep = [deep]
   const payload = { typography: deep, shape: {}, modes: {} }
-  // 不用 JSON.stringify 量大小：CI（coverage 模式）的堆疊較小，測試自己就會溢位。
-  // 序列化後是 '['×depth + '1' + ']'×depth 加上外層物件的固定字元。
+  // 不用 JSON.stringify 量大小：CI（coverage 模式）的堆疊較小，測試自己會溢位。
   const encodedBytes = 2 * depth + 1 + '{"typography":,"shape":{},"modes":{}}'.length
   assert.ok(encodedBytes <= USER_PANEL_THEME_MAX_BYTES)
   assert.throws(() => canonicalJson(deep), RangeError)
@@ -237,7 +224,6 @@ test('a deeply nested payload is rejected by the structural parse before anythin
     const validation = runtime.validate(payload)
     assert.equal(validation.valid, false)
     assert.equal(validation.schemaError?.path, 'typography')
-    // 解析失敗的草稿不進快取。
     const cache = (runtime as unknown as { validationCache: ContentHashCache<unknown> }).validationCache
     assert.equal(cache.size, 0)
     runtime.validate(builtinDefinition())

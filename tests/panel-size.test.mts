@@ -51,7 +51,6 @@ test('clampRectToWorkArea pulls a dragged window back in, and handles display ch
   const wa = { x: 0, y: 0, width: 1000, height: 800 }
   assert.deepEqual(clampRectToWorkArea({ x: 900, y: 700, width: 400, height: 500 }, wa), { x: 600, y: 300, width: 400, height: 500 })
   assert.deepEqual(clampRectToWorkArea({ x: -50, y: -50, width: 400, height: 500 }, wa), { x: 0, y: 0, width: 400, height: 500 })
-  // moved to a smaller display: size shrinks to fit, position stays inside
   const small = { x: 0, y: 0, width: 640, height: 480 }
   const fitted = clampRectToWorkArea({ x: 500, y: 300, width: 900, height: 700 }, small)
   assert.deepEqual(fitted, { x: 0, y: 0, width: 640, height: 480 })
@@ -74,11 +73,9 @@ test('switching between dashboard, settings and plugin tabs never requests a res
     assert.equal(panelResizeRequest(state, next), null)
     state = next
   }
-  // Only the overlays talk to the window, and closing one releases the minimum.
   const wizard = reducePanelRoute(state, { type: 'open-overlay', overlay: 'wizard' })
   assert.deepEqual(panelResizeRequest(state, wizard), PANEL_SIZES.wizard)
   assert.deepEqual(panelResizeRequest(wizard, reducePanelRoute(wizard, { type: 'close-overlay' })), { release: true })
-  // The size every non-overlay route lands on is identical.
   const user = { width: 777, height: 555 }
   assert.deepEqual(effectivePanelSize(user, null), effectivePanelSize(user, null))
 })

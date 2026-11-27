@@ -1,10 +1,5 @@
 import type { TranslationKey } from '../i18n.ts'
 
-// Single source of truth for the settings information architecture: which
-// group a section lives in, and the searchable entries inside each section.
-// The settings pages render sections; search matches entries and jumps to the
-// section that owns them.
-
 export type SettingsGroupId = 'general' | 'pets' | 'desktop' | 'integrations' | 'plugins'
 export type SettingsSectionId =
   | 'language' | 'appearance' | 'pets' | 'growth'
@@ -31,7 +26,6 @@ export function isSettingsGroupId(value: unknown): value is SettingsGroupId {
   return SETTINGS_GROUPS.some(group => group.id === value)
 }
 
-// 模組載入時建一次索引，搜尋結果逐列查分組時不必再掃描 SETTINGS_GROUPS。
 export const SETTINGS_GROUP_BY_ID: ReadonlyMap<SettingsGroupId, SettingsGroupDefinition> = new Map(
   SETTINGS_GROUPS.map(group => [group.id, group]),
 )
@@ -48,7 +42,7 @@ export interface SettingsEntry {
   section: SettingsSectionId
   labelKey: TranslationKey
   helpKey?: TranslationKey
-  /** Extra search terms (synonyms in both locales); not user-visible copy. */
+  /** Synonyms in both locales; not user-visible copy. */
   keywords: readonly string[]
 }
 
@@ -99,7 +93,6 @@ export interface SettingsSearchHit {
   help: string
 }
 
-// Every whitespace-separated term must match the label, help text or a keyword.
 export function searchSettings(
   query: string,
   translate: (key: TranslationKey) => string,

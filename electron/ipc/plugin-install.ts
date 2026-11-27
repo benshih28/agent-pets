@@ -44,7 +44,6 @@ export interface PluginInstallIpcDependencies {
   pluginPanelError(error: unknown): string
   syncPluginHost(): void | Promise<void>
   pluginPanelSnapshot(): PluginPanelResult<PluginPanelSnapshot> | Promise<PluginPanelResult<PluginPanelSnapshot>>
-  /** 刪除主機擁有、但不屬於插件資料的各插件狀態（面板主題插槽與圖片）。 */
   onPluginRemoved?(pluginId: string): void
 }
 

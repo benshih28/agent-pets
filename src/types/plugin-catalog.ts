@@ -12,7 +12,6 @@ export function shouldShowCatalogPermissionCheck(
 export interface PluginCatalogVersion {
   version: string
   apiVersion: string
-  /** 能安裝此套件的最低 Agent Pets 版本（例如 `1.12.0`）。 */
   minAppVersion?: string
   url: string
   sha256: string

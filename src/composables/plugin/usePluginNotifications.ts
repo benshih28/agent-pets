@@ -1,10 +1,3 @@
-// 插件通知收件匣：清單、已讀、開啟連結，以及可復原的「延遲提交」清除。
-//
-// 契約：
-// - 讀：插件查找（顯示來源名稱）；錯誤與可復原的 Toast 走控制器傳入的 feedback。
-// - refresh：同一時間的重複刷新合併成一次在途請求加一次結尾刷新，較舊的清單不會蓋過較新的。
-// - 監聽與清理：掛載時訂閱 onPluginNotificationsChanged；卸載時取消訂閱，並先提交尚未提交的清除
-//   （清掉復原計時器，不留下計時器）。
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { locale, t, tPlural } from '@/i18n'
 import type { PluginNotificationRecord, PluginPanelPlugin } from '@/types/plugin'
@@ -16,8 +9,7 @@ export interface PluginNotificationsDeps {
   feedback: Pick<PluginPanelFeedback, 'notify' | 'setError'>
 }
 
-// 清除通知採「延遲提交」：先從畫面隱藏並顯示可復原的 Toast，5 秒後才真正呼叫主行程清除；
-// 復原即取消提交。離開頁面或再次清除時，會先提交前一批。
+// 延遲提交：復原視窗內只隱藏；離開頁面或再次清除時先提交前一批。
 const CLEAR_UNDO_MS = 5000
 
 export function usePluginNotifications(deps: PluginNotificationsDeps) {
@@ -100,7 +92,6 @@ export function usePluginNotifications(deps: PluginNotificationsDeps) {
   }
 
   async function markAllNotificationsRead(pluginId?: string): Promise<void> {
-    // 整批只送一次 IPC（主程序也只廣播一次變更），而不是每筆各送一次。
     const hasUnread = visibleNotifications.value.some(record => !record.read && (!pluginId || record.item.pluginId === pluginId))
     if (!hasUnread) return
     await window.electronAPI?.markAllPluginNotificationsRead(pluginId)

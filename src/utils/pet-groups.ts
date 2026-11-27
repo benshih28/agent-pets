@@ -1,5 +1,3 @@
-// Grouping, filtering and rename validation for the Pets settings list.
-
 export interface PetListItem {
   id: string
   displayName: string

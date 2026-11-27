@@ -19,7 +19,6 @@ import {
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const configured: Record<string, boolean> = packageJson.build.electronFuses
 
-/** 依設定組出一份 V1 線路；override 可以把某個 fuse 改成別的狀態 */
 function wireBytes(config: Record<string, boolean>, override: Record<number, number> = {}): Buffer {
   const states = Array.from({ length: 9 }, () => 0x31)
   for (const [key, enabled] of Object.entries(config)) states[FUSE_V1_INDEX[key as keyof typeof FUSE_V1_INDEX]] = enabled ? 0x31 : 0x30

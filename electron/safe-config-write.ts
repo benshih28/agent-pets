@@ -4,12 +4,7 @@ import * as path from 'node:path'
 import { pidTimestampTemporaryPath, writeFileAtomic, writeFileAtomicSync } from './atomic-file-write.ts'
 import { isRecord } from './value-guards.ts'
 
-// Shared, Electron-free helpers for touching configuration files that belong to
-// the user (~/.claude/settings.json, ~/.codex/hooks.json, ...). The rules:
-//   1. never overwrite a file we cannot parse,
-//   2. back the file up before changing it,
-//   3. write through a temp file + rename so a crash never leaves half a file,
-//   4. report "unchanged" instead of rewriting identical content.
+// 使用者自己的設定檔：解析不了就不覆寫、改前先備份、經暫存檔 rename 寫入、內容相同時回報 unchanged。
 
 export const BACKUP_MARKER = '.agent-pets-bak-'
 export const MAX_BACKUPS = 5
@@ -29,10 +24,7 @@ export class ConfigRefusedError extends Error {
   }
 }
 
-/**
- * 寫入前一刻發現檔案已不是我們讀到的內容（Claude Code / Codex 自己也會寫這些檔）。
- * 只在 writeConfigSafelyAsync 與 withConfigConflictRetry 之間流動；對外一律轉成 ConfigRefusedError。
- */
+// 只在 writeConfigSafelyAsync 與 withConfigConflictRetry 之間流動；對外一律轉成 ConfigRefusedError。
 export class ConfigChangedError extends Error {
   readonly filePath: string
 
@@ -55,8 +47,7 @@ export function isJsonObject(value: unknown): value is JsonObject {
   return isRecord(value)
 }
 
-// Follow a symlinked dotfile (common for dotfile managers) to its real target so
-// the rename replaces the target, not the link.
+// Follow a symlinked dotfile to its real target so the rename replaces the target, not the link.
 function resolveWriteTarget(filePath: string): string {
   try {
     if (fs.lstatSync(filePath).isSymbolicLink()) return fs.realpathSync(filePath)
@@ -84,7 +75,6 @@ export function writeTextAtomic(filePath: string, content: string, options: { mo
   writeFileAtomicSync(target, content, { temporaryPath: pidTimestampTemporaryPath(target), mode, enforceMode: true })
 }
 
-/** 與 writeTextAtomic 規則相同的非同步版（symlink 追隨、沿用既有權限、同目錄暫存檔）。`beforeRename` 收到實際被取代的路徑。 */
 export async function writeTextAtomicAsync(
   filePath: string,
   content: string,
@@ -112,7 +102,6 @@ function backupTimestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-')
 }
 
-// 同步／非同步版共用的純函式，備份命名與保留規則只有這一份。
 function backupPathsFrom(filePath: string, names: readonly string[]): string[] {
   const directory = path.dirname(filePath)
   const prefix = `${path.basename(filePath)}${BACKUP_MARKER}`
@@ -155,7 +144,6 @@ async function pathExists(target: string): Promise<boolean> {
   }
 }
 
-/** Copies the file next to itself and prunes older backups. Returns null when there is nothing to back up. */
 export function backupConfig(filePath: string, keep = MAX_BACKUPS): string | null {
   const source = resolveWriteTarget(filePath)
   if (!fs.existsSync(source)) return null
@@ -164,8 +152,7 @@ export function backupConfig(filePath: string, keep = MAX_BACKUPS): string | nul
   for (let suffix = 1; fs.existsSync(backupPath); suffix += 1) {
     backupPath = `${base}-${suffix}`
   }
-  // Created 0600 from the start (a copy-then-chmod leaves a window where a secret-bearing
-  // config backup is readable by others).
+  // Created 0600 from the start: copy-then-chmod leaves a window where the backup is readable by others.
   fs.writeFileSync(backupPath, fs.readFileSync(source), { flag: 'wx', mode: 0o600 })
   for (const stale of staleBackupPaths(listBackups(source), keep)) {
     try { fs.rmSync(stale, { force: true }) } catch { /* ignore */ }
@@ -173,10 +160,7 @@ export function backupConfig(filePath: string, keep = MAX_BACKUPS): string | nul
   return backupPath
 }
 
-/**
- * `content` 是呼叫端已經讀到、要被取代的原文：備份就是它，而不是備份當下再讀一次檔案
- * （兩次讀取之間檔案可能被別的程式改過，備份就不是我們實際取代的那一版）。
- */
+// 備份用呼叫端已讀到的 `content`，不重讀檔案：兩次讀取之間檔案可能被改過，備份就不是實際被取代的那一版。
 export async function backupConfigAsync(filePath: string, keep = MAX_BACKUPS, content?: string): Promise<string | null> {
   const source = await resolveWriteTargetAsync(filePath)
   if (content === undefined && !(await pathExists(source))) return null
@@ -205,7 +189,6 @@ function assertReadableConfigStat(filePath: string, stat: { isFile(): boolean, s
   }
 }
 
-/** Reads a user config file as bounded text. Returns null when it does not exist. */
 export function readConfigText(filePath: string): string | null {
   let stat: fs.Stats
   try {
@@ -230,11 +213,7 @@ export async function readConfigTextAsync(filePath: string): Promise<string | nu
   return fsp.readFile(filePath, 'utf8')
 }
 
-/**
- * Parses an existing JSON object config strictly. A missing or blank file yields an empty
- * object; anything else that is not a valid JSON object (including JSONC with comments or
- * trailing commas) is refused instead of being replaced.
- */
+// JSONC (comments, trailing commas) is refused instead of being replaced.
 export function readJsonObjectConfig(filePath: string): ParsedJsonConfig {
   return parseJsonObjectConfig(filePath, readConfigText(filePath))
 }
@@ -273,7 +252,6 @@ export function serializeJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
-/** Backup-then-atomic-write; identical content is reported as unchanged and nothing is touched. */
 export function writeConfigSafely(filePath: string, content: string): ConfigWriteResult {
   let existing: string | null = null
   try { existing = fs.readFileSync(resolveWriteTarget(filePath), 'utf8') } catch { /* new file */ }
@@ -283,7 +261,6 @@ export function writeConfigSafely(filePath: string, content: string): ConfigWrit
   return { status: 'written', path: filePath, backupPath }
 }
 
-/** 測試用縫隙：在「最後一次比對」之前執行，讓測試能模擬別的程式剛好在這時改了檔案。 */
 export const configWriteTestSeam: { beforeFinalCheck?: (target: string) => Promise<void> } = {}
 
 async function readTextOrNull(target: string): Promise<string | null> {
@@ -295,16 +272,8 @@ async function readTextOrNull(target: string): Promise<string | null> {
   }
 }
 
-/**
- * Backup-then-atomic-write. `expected` 是呼叫端 parse 時讀到的原文（檔案不存在為 null）：
- * 「內容相同」的判斷、備份內容、rename 前的衝突檢查都用這一份，不再重新讀檔。
- * 省略時才在這裡讀一次（沒有先 parse 的呼叫端）。
- *
- * rename 前一刻再讀一次目標，與 expected 逐字比對（出現／消失也算改變）；不同就丟掉暫存檔並拋
- * ConfigChangedError，由 withConfigConflictRetry 重跑整個讀 → 合併 → 寫。比對到 rename 之間仍有極小的
- * 空窗：rename 是原子的，但不是 compare-and-swap，POSIX 與 Windows 都沒有「內容未變才取代」的原語，
- * 不加跨程序鎖就只能把空窗縮到這個程度。
- */
+// rename 前一刻再讀一次目標並與 expected 逐字比對，不同就拋 ConfigChangedError。比對到 rename 之間仍有極小空窗：
+// rename 是原子的但不是 compare-and-swap，沒有跨程序鎖就只能縮到這個程度。
 export async function writeConfigSafelyAsync(filePath: string, content: string, expected?: string | null): Promise<ConfigWriteResult> {
   const target = await resolveWriteTargetAsync(filePath)
   const original = expected === undefined ? await readTextOrNull(target) : expected
@@ -321,10 +290,7 @@ export async function writeConfigSafelyAsync(filePath: string, content: string, 
   return { status: 'written', path: filePath, backupPath }
 }
 
-/**
- * 所有「讀 → 合併 → 寫」的共用重試：遇到寫入前一刻的檔案變動就整個重跑一次（重新讀到對方的修改再合併，
- * 對方的編輯因此保留）；第二次仍衝突就放棄，明確告知沒有改任何東西。
- */
+// 重跑一次以保留對方（Claude Code / Codex 自己也會寫這些檔）的編輯；第二次仍衝突就放棄，不改任何東西。
 export async function withConfigConflictRetry<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {

@@ -1,8 +1,4 @@
-/**
- * Some Windows display drivers crash Chromium's GPU process while the Vite
- * renderer is active. Limit software rendering to the explicit development
- * safe mode so packaged builds and other platforms retain acceleration.
- */
+// Some Windows display drivers crash Chromium's GPU process under the Vite renderer; software rendering is limited to the explicit dev safe mode.
 export function shouldDisableDevHardwareAcceleration(
   platform: NodeJS.Platform,
   isPackaged: boolean,
@@ -20,7 +16,6 @@ export const GPU_SAFE_DEV_MODE = 'gpu-safe'
 /** 和 `electron .` 相同：vite-plugin-electron 預設會多帶 `--no-sandbox`。 */
 export const electronDevArgv = (): string[] => ['.']
 
-/** safe mode 偏好只經由 child process 環境交給主程序；沒選時清掉繼承來的舊值。 */
 export const electronDevEnvironment = (
   environment: NodeJS.ProcessEnv,
   gpuSafeMode: boolean,

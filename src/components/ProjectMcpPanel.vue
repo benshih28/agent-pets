@@ -51,7 +51,6 @@ async function refreshProjects(): Promise<void> {
   }
 }
 
-// Three steps: pick a folder (nothing is written), review the plan, then apply the chosen clients.
 const phase = ref<'list' | 'review'>('list')
 const plan = ref<ProjectMcpPlan | null>(null)
 const selected = ref<ProjectMcpClientId[]>([])
@@ -71,7 +70,6 @@ async function chooseProject(): Promise<void> {
       return
     }
     plan.value = result
-    // Pre-select clients that look in use and can actually be edited; the user confirms.
     selected.value = result.clients
       .filter(item => item.suggested && isSelectable(item))
       .map(item => item.client)
@@ -170,7 +168,6 @@ const NEXT_STEP_KEYS: Record<ProjectMcpClientId, { hint: TranslationKey, command
   opencode: { hint: 'onboarding.mcpNext.opencode', command: 'opencode mcp list' },
 }
 
-// Two projects can share a folder name; show the parent folder only when needed.
 function displayName(project: ProjectMcpProjectRecord): string {
   const duplicates = projects.value.filter(item => item.projectName === project.projectName).length > 1
   if (!duplicates) return project.projectName
@@ -181,8 +178,7 @@ function displayName(project: ProjectMcpProjectRecord): string {
 
 const repairingClient = ref('')
 
-// Re-points a stale Agent Pets entry (App moved, Node upgraded) at the current paths. Customized
-// entries are never touched; the main process decides what counts as "ours".
+// Customized entries are never touched; the main process decides what counts as "ours".
 async function updateStaleClient(project: ProjectMcpProjectRecord, client: ProjectMcpClientId): Promise<void> {
   if (repairingClient.value) return
   repairingClient.value = `${project.projectPath}:${client}`
@@ -244,9 +240,6 @@ function projectStatusLabel(status: ProjectMcpProjectStatus): string {
   return t(PROJECT_STATUS_LABEL_KEYS[status] ?? 'checkFailed')
 }
 
-// Drives both the status pill colour and each Card's semantic tone, so the
-// same "this connection needs attention" signal reads the same way whether
-// you're scanning pills or cards.
 const PROJECT_STATUS_TONE: Partial<Record<ProjectMcpProjectStatus, 'success' | 'warn' | 'neutral'>> = {
   connected: 'success',
   partial: 'warn',
@@ -264,8 +257,7 @@ function removalSummaryLabel(statuses: ProjectMcpRemovalStatus[]): string {
   return statuses.includes('conflict') ? t('mcpEntryChanged') : t('mcpRemoveFailed')
 }
 
-// Native confirm() steals focus, which the main process reads as a blur and
-// hides the panel mid-confirmation — see components/ui/ConfirmDialog.vue.
+// Native confirm() steals focus; main reads the blur and hides the panel.
 const pendingRemoval = ref<ProjectMcpProjectRecord | null>(null)
 
 function requestRemoveProject(project: ProjectMcpProjectRecord): void {

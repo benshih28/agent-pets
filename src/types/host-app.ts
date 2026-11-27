@@ -1,6 +1,5 @@
-// The app an agent session runs in (terminal, IDE or desktop app), as reported by the hook from a
-// few environment variables. Only the short allowlisted id below ever reaches the renderer; the
-// macOS bundle id stays in the main process and must be one of `bundleIds` to be activated.
+// Only the short allowlisted id below ever reaches the renderer; the macOS bundle id stays in
+// the main process and must be one of `bundleIds` to be activated.
 
 export type HostKind = 'terminal' | 'ide' | 'desktop' | 'unknown'
 
@@ -24,7 +23,6 @@ export type HostAppId =
   | 'claude-desktop'
   | 'unknown'
 
-/** Renderer-facing host projection; `switchable` is computed by the main process. */
 export interface AgentHost {
   kind: HostKind
   app: HostAppId
@@ -40,10 +38,7 @@ interface HostAppDefinition {
   bundleIds: ReadonlyArray<string>
   /** Used when the hook reported the app but no bundle id; absent when the id is ambiguous. */
   defaultBundleId?: string
-  /**
-   * Windows 可被切換的執行檔 basename（小寫、完全相等比對）。沒有把握的 App 不列，
-   * 沒有此欄位就代表 Windows 上不支援切換。
-   */
+  /** Windows 可切換的執行檔 basename（小寫、完全相等比對）；沒有此欄位代表不支援。 */
   windowsExecutables?: ReadonlyArray<string>
 }
 
@@ -84,7 +79,6 @@ export function hostAppLabel(app: HostAppId | undefined): string | null {
   return HOST_APPS[app].label
 }
 
-/** Windows 上該 App 允許切換的執行檔 basename 白名單；空陣列代表不支援。 */
 export function windowsExecutablesFor(app: HostAppId | undefined): ReadonlyArray<string> {
   if (!app || app === 'unknown') return []
   return HOST_APPS[app].windowsExecutables ?? []

@@ -7,10 +7,6 @@ import { panelThemePreviewBackdrop } from '@/composables/usePanelTheme'
 import PanelThemeBackdrop from '@/components/PanelThemeBackdrop.vue'
 import PanelThemePreviewPill from '@/components/panel-theme/PanelThemePreviewPill.vue'
 
-// 面板的靜態模擬，將單一主題模式以 inline 套用到
-// .panel-theme-preview 元素上（與面板使用相同的已驗證屬性對應表）。
-// 內建預覽使用主機該模式的內建色盤。
-
 const props = defineProps<{
   entry: PanelThemeCatalogEntry | null
   mode: PanelThemeMode
@@ -41,7 +37,6 @@ const backdrop = computed(() => panelThemePreviewBackdrop(props.entry, props.mod
         </span>
         <span class="preview-button">{{ t('design.panelTheme.previewButton') }}</span>
       </div>
-      <!-- 寵物的狀態膠囊（寵物唯一可套主題的介面）。 -->
       <PanelThemePreviewPill :themed="themedPill" />
     </div>
   </div>

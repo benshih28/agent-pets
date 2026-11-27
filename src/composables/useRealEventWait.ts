@@ -1,5 +1,4 @@
-// 「等待真實事件」：只聽工具自己送出的事件，這樣壞掉的 hook 或錯誤的 Node 路徑
-// 不會被接收器測試（完全不經過工具）蓋住。30 秒沒收到就標記逾時。
+// 只聽工具自己送出的事件，壞掉的 hook 或錯誤的 Node 路徑才不會被接收器測試蓋住。
 import { onUnmounted, ref } from 'vue'
 import type { AgentAdapterId } from '@/types/agent-adapter'
 import type { AgentSource } from '@/types/agent'

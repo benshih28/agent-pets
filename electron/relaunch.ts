@@ -7,12 +7,8 @@ export interface RelaunchOptions {
   args: string[]
 }
 
-/**
- * Chooses how to relaunch. The Windows portable target runs from a temporary
- * extraction directory that is deleted on exit, so the default
- * `process.execPath` would point at nothing; relaunch the original launcher
- * instead (validated as an absolute, existing, non-symlink .exe).
- */
+// The Windows portable target runs from a temporary extraction directory deleted on exit, so the
+// default `process.execPath` would point at nothing; relaunch the original launcher instead.
 export function resolveRelaunchOptions(
   platform: NodeJS.Platform,
   isPackaged: boolean,
@@ -42,11 +38,7 @@ export function relaunchApp(app: RelaunchApp): void {
   ))
 }
 
-/**
- * Takes the single-instance lock, tolerating a relaunch racing the previous
- * process's exit: a relaunched instance retries for about 2s before giving up.
- * The wait is asynchronous so the main thread is never blocked.
- */
+// A relaunched instance races the previous process's exit, so it retries for about 2s before giving up.
 export async function acquireSingleInstanceLock(
   request: () => boolean,
   options: {

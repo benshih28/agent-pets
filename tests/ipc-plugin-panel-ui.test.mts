@@ -25,7 +25,6 @@ function createFixture() {
     isVisible() { return this.visible },
     getContentBounds: () => ({ x: 0, y: 0, width: 500, height: 400 }),
   }
-  // 桌寵視窗在受測程式裡只比對身分，與面板視窗共用同一組假成員即可。
   const petWindow = fakeBrowserWindow(window)
   const controller = {
     onPanelWindowHidden: () => calls.push('hidden'),
@@ -107,7 +106,6 @@ test('plugin panel view bounds hide, validate, and close through the injected co
 test('stale renderer bounds while shrinking are ignored instead of closing the plugin view', () => {
   const { listeners, calls, panelEvent } = createFixture()
   const bounds = listeners.get('plugin-panel-view-bounds')!
-  // renderer 回報的仍是縮小前的大尺寸，但驗證只對照它自己量到的 viewport。
   bounds(panelEvent, {
     openToken: 7, frame: {}, content: { x: 10, y: 60, width: 700, height: 500 }, viewport: { width: 720, height: 580 },
   })

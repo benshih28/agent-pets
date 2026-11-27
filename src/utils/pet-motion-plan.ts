@@ -4,8 +4,6 @@ import type { PetAutonomousBehavior } from '@/types/pet'
 import { AGENT_STATE_POLICY } from '../types/agent.ts'
 import { PET_ATLAS_MOTIONS, type PetMotionName } from '../types/pet-atlas.ts'
 
-// 狀態 → 動作的純對應，放在元件外面，節奏規則才能做單元測試。
-
 export type PlannedMotion = PetMotionName
 
 export interface PlannedStep {
@@ -18,7 +16,6 @@ export interface PlannedMotionPlan {
   repeat: boolean
 }
 
-/** 工作完成後顯示「成功」多久才回到閒置；值在狀態 registry，這裡只是給動作節奏用的別名。 */
 export const SUCCESS_DISPLAY_MS = AGENT_STATE_POLICY.success.quiet.afterMs
 
 // 慶祝動作用內建節奏跑一輪的長度；寵物包改了時長，揮手次數也只會差一點點。
@@ -31,7 +28,6 @@ export const SUCCESS_WAVE_LOOPS = Math.max(
   1,
   Math.floor((SUCCESS_DISPLAY_MS - SUCCESS_JUMP_LOOPS * JUMP_LOOP_MS) / WAVE_LOOP_MS) - 1,
 )
-/** 失敗那列播這麼多次，之後寵物安靜地閒置。 */
 export const ERROR_FAILED_LOOPS = 2
 
 export interface MotionPlanInput {
@@ -39,7 +35,6 @@ export interface MotionPlanInput {
   urgency: 0 | 1 | 2
   behavior?: PetAutonomousBehavior
   petId: string
-  /** 測試時注入；預設是 Math.random。 */
   random?: () => number
 }
 
@@ -49,9 +44,7 @@ function hashPetId(petId: string): number {
   return sum
 }
 
-/**
- * 揮手前要先閒置幾輪。petId 讓不同寵物錯開、不會同時揮手；隨機部分讓同一隻寵物不會完全可預測。
- */
+// petId 讓不同寵物錯開、不會同時揮手。
 export function idleLoopsFor(petId: string, random: () => number = Math.random): number {
   return 8 + (hashPetId(petId) % 4) + Math.floor(random() * 7)
 }
@@ -98,7 +91,6 @@ export function motionPlanFor(input: MotionPlanInput): PlannedMotionPlan {
         repeat: false,
       }
     case 'error':
-      // 摔倒播兩次後安靜地生悶氣，而不是停在一格直到工作階段過期。
       return {
         steps: [
           { motion: 'failed', loops: ERROR_FAILED_LOOPS },
@@ -112,7 +104,7 @@ export function motionPlanFor(input: MotionPlanInput): PlannedMotionPlan {
   }
 }
 
-/** 各狀態的逐格節奏。離線維持正常速度：變暗是 CSS 做的。 */
+/** 離線維持正常速度：變暗是 CSS 做的。 */
 export function frameDelayMultiplier(input: {
   state: AgentState
   urgency: 0 | 1 | 2
@@ -127,9 +119,7 @@ export function frameDelayMultiplier(input: {
 
 const WAITING_STATES: ReadonlySet<AgentState> = new Set(['waiting-permission', 'waiting-input'])
 
-/**
- * 只有有意義的狀態切換才彈一下；thinking ↔ tool-running、offline ↔ idle 一直在跳，必須保持安靜。
- */
+/** thinking ↔ tool-running、offline ↔ idle 一直在跳，必須保持安靜。 */
 export function isSignificantTransition(from: AgentState | undefined, to: AgentState): boolean {
   if (from === undefined || from === to) return false
   if (to === 'success' || to === 'error' || WAITING_STATES.has(to)) return true

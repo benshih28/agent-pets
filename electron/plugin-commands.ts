@@ -17,7 +17,6 @@ export interface PluginCommandControllerOptions {
 
 const COMMAND_RATE_LIMIT_MS = 1_000
 
-/** Accepts only user-originated command requests that match the current enabled manifest. */
 export class PluginCommandController {
   private readonly getContext: PluginCommandControllerOptions['getContext']
   private readonly dispatch: PluginCommandControllerOptions['dispatch']

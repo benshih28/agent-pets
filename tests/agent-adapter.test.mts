@@ -113,6 +113,5 @@ test('Claude Code reports respond only while answering from the pet is turned on
   assert.equal(statuses.find(status => status.id === 'codex')!.capabilities.permissions, 'observe')
   assert.equal(statuses.find(status => status.id === 'generic-http')!.capabilities.permissions, 'none')
 
-  // The static registry entry (README source of truth) never changes.
   assert.equal(registry.adapters.find(adapter => adapter.id === 'claude-code')!.capabilities.permissions, 'observe')
 })

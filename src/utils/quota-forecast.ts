@@ -1,5 +1,4 @@
-// 額度預測：依近期用量樣本估計「照目前速度何時用完／重置前是否會用完」。
-// 純函式、不碰 i18n 與 Date.now，方便在 node 直接測；被測試載入，所以只用相對 import（此檔目前沒有 import）。
+// 被測試用 Node 載入，所以只用相對 import。
 
 export interface QuotaSample {
   /** 讀數時間（ms epoch）。 */
@@ -10,7 +9,6 @@ export interface QuotaSample {
 
 /** 同一個額度視窗（例如 5 小時區塊）的樣本；重置時整個清空。 */
 export interface QuotaSeries {
-  /** 此視窗目前的重置時間（ms），沒有就是 null。 */
   resetsAtMs: number | null
   samples: QuotaSample[]
 }
@@ -22,8 +20,7 @@ export type QuotaForecast =
   | { kind: 'safe'; projectedAtReset: number }
   | { kind: 'exhausts'; exhaustAtMs: number }
 
-// 每個視窗最多保留的樣本數：輪詢約每 2 分鐘一次，60 筆約 2 小時，
-// 足夠反映「近期」速度，也讓記憶體與每次回歸成本有固定上限。
+// 輪詢約每 2 分鐘一次，60 筆約 2 小時，足夠反映「近期」速度並讓成本有上限。
 export const QUOTA_SAMPLE_CAP = 60
 // 少於這個樣本數或時間跨度，斜率只是雜訊，寧可不顯示。
 export const MIN_FORECAST_SAMPLES = 3
@@ -43,10 +40,7 @@ function validSample(sample: QuotaSample): boolean {
   return Number.isFinite(sample.atMs) && Number.isFinite(sample.usedPercent)
 }
 
-/**
- * 把一筆新讀數放進視窗樣本，必要時先清空：resetsAt 換了、用量下降、時間戳倒退（時鐘回撥）。
- * 同一時間戳的重複讀數直接忽略。回傳 true 表示樣本有新增。
- */
+/** resetsAt 換了、用量下降、時間戳倒退（時鐘回撥）時先清空；同一時間戳的重複讀數忽略。回傳 true 表示樣本有新增。 */
 export function recordQuotaSample(
   series: QuotaSeries,
   sample: QuotaSample,
@@ -66,16 +60,13 @@ export function recordQuotaSample(
     return false
   }
   series.resetsAtMs = nextReset
-  // 有界：滿了就丟最舊的一筆（cap 很小，shift 成本可忽略）。
   if (series.samples.length >= cap) series.samples.shift()
   series.samples.push({ atMs: sample.atMs, usedPercent: sample.usedPercent })
   return true
 }
 
 /**
- * 以最小平方法線性回歸估計消耗速率（百分點／ms）。選它而不是首末差分：
- * 用量讀數是四捨五入的階梯值，首末兩點的誤差會被放大成斜率；回歸用到全部樣本，
- * 單次掃描 O(n)，不需要像 Theil-Sen 那樣 O(n²)。
+ * 用最小平方法而非首末差分：用量讀數是四捨五入的階梯值，首末兩點的誤差會被放大成斜率。
  * 只取最後一段「時間嚴格遞增且用量不下降」的樣本，所以傳入未清理的序列也安全。
  */
 function tailSlope(samples: readonly QuotaSample[]): { slope: number; count: number; spanMs: number } | null {

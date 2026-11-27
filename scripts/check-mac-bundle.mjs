@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-// 檢查打包好的 macOS .app：整個 bundle 的簽章是否完整、fuses 是否等於 package.json 的
-// build.electronFuses、每個 Mach-O（主程式、Framework、Helper、*.node、*.dylib）是否含目標架構。
-// 用法：node scripts/check-mac-bundle.mjs --app "<路徑>/Agent Pets.app" --arch arm64|x64
-//       [--expect-signed developer-id] [--expect-notarized]
-// --expect-signed developer-id：正式簽章路徑，另外檢查 Authority 是 Developer ID Application、
-//   有 TeamIdentifier、codesign flags 含 runtime（hardened runtime），且 spctl 接受。
-// --expect-notarized：公證路徑（需搭配 --expect-signed），再檢查 spctl 的 source 是 Notarized Developer ID，
-//   並以 xcrun stapler validate 確認公證票據已 staple 到 .app。
-// 任何一項不符就以非 0 結束，release.yml 靠這個讓發版失敗。
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -30,7 +21,6 @@ const FUSE_DISABLE = 0x30
 
 export const LIPO_ARCH = Object.freeze({ arm64: 'arm64', x64: 'x86_64' })
 
-/** 讀出 binary 裡每一份 fuse 線路（universal binary 會有兩份） */
 export function readFuseWires(buffer) {
   const sentinel = Buffer.from(FUSE_SENTINEL, 'latin1')
   const wires = []
@@ -43,7 +33,6 @@ export function readFuseWires(buffer) {
   return wires
 }
 
-/** 回傳與設定不符的 fuse 說明；空陣列代表全部一致 */
 export function compareFuses(wires, config) {
   if (wires.length === 0) return ['fuse sentinel not found']
   const problems = []
@@ -64,15 +53,11 @@ export function compareFuses(wires, config) {
   return problems
 }
 
-/** `lipo -archs` 的輸出是以空白分隔的架構名稱 */
 export function parseLipoArchs(output) {
   return output.trim().split(/\s+/).filter(Boolean)
 }
 
-/**
- * 解析 `codesign -dvv` 的輸出（codesign 把它寫到 stderr）。
- * 例：`CodeDirectory v=20500 size=467 flags=0x10002(adhoc,runtime) hashes=4+7 ...`
- */
+// codesign 把 -dvv 的輸出寫到 stderr。
 export function parseCodesignDetails(output) {
   const lines = output.split(/\r?\n/)
   const valueOf = prefix => lines.find(line => line.startsWith(prefix))?.slice(prefix.length)
@@ -86,10 +71,9 @@ export function parseCodesignDetails(output) {
   }
 }
 
-/** Hardened runtime 在 CodeDirectory flags 裡是 0x10000（名稱 runtime） */
+// Hardened runtime 在 CodeDirectory flags 裡是 0x10000（名稱 runtime）。
 export const CS_RUNTIME_FLAG = 0x10000
 
-/** 回傳正式簽章（Developer ID）路徑下與預期不符的說明；空陣列代表一致 */
 export function compareDeveloperIdSignature(details) {
   const problems = []
   // 簽章鏈第一項是葉憑證（簽這個 app 的身分）
@@ -104,10 +88,7 @@ export function compareDeveloperIdSignature(details) {
   return problems
 }
 
-/**
- * 檢查 `spctl -a -t exec -vv` 的輸出（stderr）。公證過的 app 是 `source=Notarized Developer ID`，
- * 只有 Developer ID 簽章但沒公證則是 `source=Developer ID`（Gatekeeper 在有網路時會拒絕）。
- */
+// 公證過的 app 是 `source=Notarized Developer ID`；只有簽章沒公證則是 `source=Developer ID`（有網路時 Gatekeeper 會拒絕）。
 export function compareSpctlOutput(output, notarized) {
   if (!/:\s*accepted\b/.test(output)) return [`spctl did not accept the app: ${output.trim()}`]
   const source = /^source=(.*)$/m.exec(output)?.[1]?.trim() ?? ''
@@ -118,13 +99,11 @@ export function compareSpctlOutput(output, notarized) {
   return []
 }
 
-/** 判斷 bundle 內哪些路徑要檢查架構：MacOS/ 下的執行檔、Framework 主 binary、*.node、*.dylib */
 export function isMachOCandidate(relativePath) {
   const parts = relativePath.split('/')
   const name = parts[parts.length - 1]
   if (name.endsWith('.node') || name.endsWith('.dylib')) return true
   if (parts[parts.length - 2] === 'MacOS' || parts[parts.length - 2] === 'Helpers') return true
-  // Foo.framework/Versions/A/Foo
   const framework = parts.findLast(part => part.endsWith('.framework'))
   return framework !== undefined && name === framework.slice(0, -'.framework'.length) && parts.includes('Versions')
 }
@@ -163,7 +142,7 @@ export function parseArgs(argv) {
   return args
 }
 
-/** 執行外部指令；成功回傳 stdout + stderr，失敗回傳 { error, output }（codesign、spctl 把資訊寫到 stderr） */
+// codesign、spctl 把資訊寫到 stderr，所以輸出合併 stdout 與 stderr。
 function run(file, args) {
   try {
     const result = spawnSync(file, args, { encoding: 'utf8' })

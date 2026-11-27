@@ -23,10 +23,6 @@ import { parseUserPanelThemeDefinition, userPanelThemeContribution } from '../pa
 import { userPanelThemeSchemaFailure, validateUserPanelTheme } from '../panel-theme-diagnostics.ts'
 import { USER_PANEL_THEME_MAX_COUNT, USER_PANEL_THEME_OWNER, USER_PANEL_THEME_SOURCE_NAME, type PanelThemeValidation } from '../../src/types/panel-theme-user.ts'
 
-// 主程序中插件面板主題的擁有者：store、每個工作階段的
-// salt、由 `agent-pets://panel-theme/<token>` 提供的 token -> 資產對應表、
-// 解析後主題的快取，以及狀態廣播（spec §7）。
-
 type AssetKind = 'image' | 'font' | 'user'
 
 interface TokenAsset {
@@ -58,20 +54,14 @@ export interface PanelThemeRuntimeOptions {
   userDataDirectory: string
   pluginRoot(pluginId: string, version: string): string
   readRegularFileWithin(root: string, relativePath: string, maxBytes: number): Promise<Uint8Array | null>
-  /** 只把新狀態送給面板視窗。 */
   send(state: PanelThemeState): void
-  /** 只把寵物狀態膠囊顏色送給寵物視窗。 */
   sendPetStatus(state: PetThemeState): void
   /** 允許跨來源讀取字型的來源（受信任的面板渲染端）。 */
   rendererOrigin(): string | null
-  /** 插件主題快照有變動時送給所有 Worker 與開啟中的 panelView（已合併、去重）。 */
   sendPluginTheme(snapshot: PluginThemeSnapshot): void
-  /** 面板 renderer 回報前使用的模式（系統外觀）。 */
   initialMode?: PanelThemeMode
-  /** 合併短時間內的多次變動；預設延後 PLUGIN_THEME_CHANGE_DELAY_MS 毫秒。 */
   schedulePluginTheme?: (callback: () => void) => void
   salt?: Uint8Array
-  /** 測試用：注入解析快取以觀察命中與上限。 */
   resolveCache?: PanelThemeResolveCache
 }
 
@@ -80,7 +70,6 @@ export interface PanelAppearance {
   forcedColors: boolean
 }
 
-/** 連續切換（例如快速點淺色／深色、同步多個插件）只會送出最後一份快照。 */
 export const PLUGIN_THEME_CHANGE_DELAY_MS = 100
 
 const TOKEN_PATH = /^\/([0-9a-f]{32})$/
@@ -95,14 +84,10 @@ export class PanelThemeRuntime {
   private readonly options: PanelThemeRuntimeOptions
   private readonly salt: Uint8Array
   private readonly resolvedCache: PanelThemeResolveCache
-  /** `id@version` → 最後一次解析的內容鍵；插件暫時沒有 manifest（載入失敗）時沿用。 */
   private lastKeyByVersion = new Map<string, string>()
   private sources: PanelThemeSourcePlugin[] = []
-  /** 最後一次 sync 的插件來源；「我的主題」變動時只重建使用者來源。 */
   private pluginSources: PanelThemeSourcePlugin[] = []
-  /** 每個使用者主題各自解析（一個無效不影響其他），以內容雜湊快取。 */
   private readonly userResolveCache = new PanelThemeResolveCache({ maxEntries: USER_PANEL_THEME_MAX_COUNT })
-  /** 編輯器的驗證請求：同樣的草稿只驗證一次（spec R21，沿用 R17 的 LRU）。 */
   private readonly validationCache = new ContentHashCache<PanelThemeValidation>(validateUserPanelTheme)
   private tokens = new Map<string, TokenAsset>()
   private state: PanelThemeState = emptyPanelThemeState()
@@ -110,7 +95,6 @@ export class PanelThemeRuntime {
   private petStatus: PetThemeState = { light: null, dark: null }
   private petStatusHash = JSON.stringify({ light: null, dark: null })
   private installed = new Set<string>([USER_PANEL_THEME_OWNER])
-  /** 這次 sync 有 manifest 的插件；「我的主題」不在這裡，它另外依磁碟上的記錄判斷。 */
   private knownManifests = new Set<string>()
   private appearance: PanelAppearance
   private pluginTheme: PluginThemeSnapshot
@@ -131,7 +115,6 @@ export class PanelThemeRuntime {
       ?? (callback => { setTimeout(callback, PLUGIN_THEME_CHANGE_DELAY_MS) })
   }
 
-  /** 插件可讀的主題快照（凍結物件，所有插件拿到的內容相同）。 */
   getPluginTheme(): PluginThemeSnapshot {
     return this.pluginTheme
   }
@@ -140,7 +123,6 @@ export class PanelThemeRuntime {
     return { ...this.appearance }
   }
 
-  /** 面板 renderer 回報實際生效的淺色／深色與 forced-colors；沒有變動就不重算。 */
   setPanelAppearance(next: PanelAppearance): void {
     if (next.mode === this.appearance.mode && next.forcedColors === this.appearance.forcedColors) return
     this.appearance = { mode: next.mode, forcedColors: next.forcedColors }
@@ -151,7 +133,6 @@ export class PanelThemeRuntime {
     return this.state
   }
 
-  /** 各模式啟用中主題的膠囊顏色（null = 內建）。 */
   getPetStatus(): PetThemeState {
     return this.petStatus
   }
@@ -160,25 +141,19 @@ export class PanelThemeRuntime {
     return this.sources
   }
 
-  /**
-   * 驗證一份「我的主題」草稿（不安裝、不儲存）。先做有界的結構解析（封閉的鍵集合，深度固定）：
-   * 失敗時直接回傳文法錯誤、不碰快取；只有解析後的標準定義才拿去雜湊與快取，所以任意深的巢狀
-   * payload 不會進到遞迴的序列化。
-   */
+  // 先做有界的結構解析（封閉鍵集合、固定深度）：失敗不碰快取，只有解析後的標準定義才雜湊，所以任意深的巢狀 payload 不會進到遞迴序列化。
   validate(definition: unknown): PanelThemeValidation {
     const parsed = parseUserPanelThemeDefinition(definition)
     if (!parsed.ok) return userPanelThemeSchemaFailure(parsed)
     return this.validationCache.lookup(parsed.value).result
   }
 
-  /** 「我的主題」新增、修改或刪除之後：重建使用者來源、修剪 store（刪掉的主題的插槽與圖片），再發布。 */
   refreshUserThemes(): void {
     this.sources = [...this.pluginSources, this.userSource()]
     this.prune()
     this.publish()
   }
 
-  /** 使用者主題永遠可用（不受插件開關影響）；無效的記錄不會出現在目錄中。 */
   private userSource(): PanelThemeSourcePlugin {
     const themes: ResolvedPanelTheme[] = []
     const live = new Set<string>()
@@ -191,7 +166,6 @@ export class PanelThemeRuntime {
     return { pluginId: USER_PANEL_THEME_OWNER, version: '1', pluginName: { ...USER_PANEL_THEME_SOURCE_NAME }, available: true, themes }
   }
 
-  /** 從插件 runtime 重新推導來源、修剪 store，有變動時才發布。 */
   sync(input: PanelThemeSyncInput): void {
     const sources: PanelThemeSourcePlugin[] = []
     const liveKeys = new Set<string>()
@@ -227,7 +201,6 @@ export class PanelThemeRuntime {
         themes,
       })
     }
-    // 只保留仍安裝中的插件用到的內容：已移除或被不同內容取代的項目會被丟棄。
     this.resolvedCache.retain(liveKeys)
     this.lastKeyByVersion = keyByVersion
     this.pluginSources = sources
@@ -235,7 +208,6 @@ export class PanelThemeRuntime {
     this.refreshUserThemes()
   }
 
-  /** 依目前來源與 store 重建狀態與 token 對應表；狀態有變動時才送出。 */
   publish(): void {
     const tokens = new Map<string, TokenAsset>()
     const imagesRoot = this.options.userDataDirectory
@@ -273,7 +245,6 @@ export class PanelThemeRuntime {
     this.options.send(state)
   }
 
-  /** 寵物視窗只收到它用得到的色盤子集與狀態膠囊顏色（spec §16.5）。 */
   private publishPetStatus(state: PanelThemeState): void {
     const forMode = (mode: PanelThemeMode): PetThemeModeState | null => {
       const slot = state.slots[mode]
@@ -292,7 +263,6 @@ export class PanelThemeRuntime {
     this.options.sendPetStatus(next)
   }
 
-  /** 與設定面板看到的一致：槽位 active 才用插件主題，forced-colors 時面板退回內建，插件也一樣。 */
   private refreshPluginTheme(): void {
     const { mode, forcedColors } = this.appearance
     const slot = this.state.slots[mode]
@@ -304,7 +274,7 @@ export class PanelThemeRuntime {
     this.pluginThemeScheduled = true
     this.schedulePluginTheme(() => {
       this.pluginThemeScheduled = false
-      // 去重放在送出時：A→B→A 在合併期間內來回切換不會送出重複的快照。
+      // 去重放在送出時：A→B→A 在合併期間內來回切換不會送出重複快照。
       const hash = JSON.stringify(this.pluginTheme)
       if (hash === this.pluginThemeSentHash) return
       this.pluginThemeSentHash = hash
@@ -312,13 +282,11 @@ export class PanelThemeRuntime {
     })
   }
 
-  /** 插件被移除：清掉插槽、store 項目與其圖片目錄。 */
   removePlugin(pluginId: string): void {
     try { this.store.removePlugin(pluginId) } catch {}
     removePluginImages(this.options.userDataDirectory, pluginId)
   }
 
-  /** 啟動時清掃未被引用的圖片檔（有上限）。 */
   sweep(): number {
     return sweepOrphanUserImages(this.options.userDataDirectory, this.store.referencedFiles())
   }
@@ -340,10 +308,7 @@ export class PanelThemeRuntime {
     }
   }
 
-  /**
-   * 未知的 manifest（例如因當機而被停用的插件）會保留，絕不修剪。「我的主題」以磁碟上的記錄為準：
-   * 目錄不完整、記錄仍存在（即使驗證規則日後變嚴格而無法套用）都保留；只有明確刪除才會清掉。
-   */
+  // 未知的 manifest（例如因當機而被停用的插件）絕不修剪；「我的主題」以磁碟上的記錄為準，只有明確刪除才會清掉。
   private modeKnown(pluginId: string, themeId: string, mode: PanelThemeMode, needsUserImage: boolean): boolean {
     if (pluginId === USER_PANEL_THEME_OWNER) return this.userThemes.retains(themeId, mode, needsUserImage)
     if (!this.knownManifests.has(pluginId)) return true
@@ -352,7 +317,7 @@ export class PanelThemeRuntime {
     return Boolean(resolved && (!needsUserImage || resolved.userImage))
   }
 
-  /** `agent-pets://panel-theme/<token>`：只接受 token、只接受 GET，並對送出的位元組重新檢查檔頭。 */
+  // 只接受 token 與 GET，並對送出的位元組重新檢查檔頭。
   async handleRequest(rawUrl: string, method: string): Promise<Response> {
     if (method !== 'GET') return new Response('Method not allowed', { status: 405 })
     let url: URL

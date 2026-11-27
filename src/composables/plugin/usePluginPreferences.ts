@@ -1,9 +1,3 @@
-// 插件偏好：全域偏好（串行佇列）、目錄網址、資源上限，以及單一插件的樂觀更新與主機授權撤銷。
-//
-// 契約：
-// - 讀：snapshot（偏好來源，採用主行程回傳的結果就地合併）、enabledGlobally、plugins。
-// - 寫：snapshot 的偏好欄位、catalogUrlDraft；全域偏好使變更目錄網址／關閉線上目錄時呼叫 resetCatalog。
-// - 排序：全域偏好以 'global' 佇列、單一插件以 plugin:{id} 佇列依序送出，不會被「忙碌」丟棄。
 import { ref, type ComputedRef, type Ref } from 'vue'
 import { t, tPlural, type TranslationKey } from '@/i18n'
 import type {
@@ -26,7 +20,7 @@ export interface PluginPreferencesDeps {
   feedback: Pick<PluginPanelFeedback, 'setError'>
   notify(input: PluginNotifyInput): number
   resetCatalog(): void
-  /** 控制器的 refreshPanel；以回呼傳入，避免與快照刷新互相依賴。 */
+  /** 以回呼傳入，避免與快照刷新互相依賴。 */
   refreshPanel(options?: { silent?: boolean }): Promise<void>
 }
 
@@ -57,8 +51,7 @@ export function usePluginPreferences(deps: PluginPreferencesDeps) {
   // 對外維持可變陣列型別（控制器契約），內容固定。
   const resourceFields = RESOURCE_FIELDS as Array<(typeof RESOURCE_FIELDS)[number]>
 
-  // 全域偏好以串行佇列送出：連續修改（例如多個欄位）依序生效，不會被「忙碌」丟棄。
-  // 成功後直接採用主行程回傳的偏好，不再整頁重新抓取。
+  // 串行佇列：連續修改依序生效，不會被「忙碌」丟棄。
   async function updateGlobalPreferences(patch: PluginGlobalPreferencesPatch): Promise<void> {
     await enqueueSerial('global', async () => {
       const previousCatalogUrl = snapshot.value?.preferences.catalogUrl
@@ -117,7 +110,6 @@ export function usePluginPreferences(deps: PluginPreferencesDeps) {
     void updateGlobalPreferences({ resources: { [key]: value } })
   }
 
-  // 單一插件的偏好採樂觀更新：先改畫面，失敗再回滾該欄位並顯示錯誤；同一插件的變更依序送出。
   async function updatePluginPreference(pluginId: string, patch: PluginPreferencePatch): Promise<void> {
     const current = snapshot.value
     if (!current) return
@@ -158,8 +150,7 @@ export function usePluginPreferences(deps: PluginPreferencesDeps) {
     await updatePluginPreference(pluginId, { targetPetId: targetPetId || null })
   }
 
-  // 撤銷主機授權：立即生效，並以 5 秒內可復原的 Toast 取代確認對話框；
-  // 之後插件再要連線時會重新詢問使用者。
+  // 撤銷後插件再連線會重新詢問使用者。
   async function revokeGrantedHost(plugin: PluginPanelPlugin, host: string): Promise<void> {
     const previous = [...plugin.preference.grantedHosts]
     await updatePluginPreference(plugin.id, {
@@ -174,7 +165,6 @@ export function usePluginPreferences(deps: PluginPreferencesDeps) {
     })
   }
 
-  // 安裝成功 Toast 的「立即啟用」：全域關閉時一併開啟全域開關。
   async function enableInstalledPlugin(pluginId: string): Promise<void> {
     if (!enabledGlobally.value) await updateGlobalPreferences({ pluginsEnabled: true })
     await updatePluginPreference(pluginId, { enabled: true })

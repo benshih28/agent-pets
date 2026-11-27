@@ -21,7 +21,6 @@ async function withServer(
     broker: PermissionBroker
     relay: PermissionAdapterRelay
     post: (path: string, body: unknown, token?: string) => Promise<Response>
-    /** Sends `init` as is (raw body, own headers) to this server. */
     raw: (path: string, init: RequestInit) => Promise<Response>
   }) => Promise<void>,
   options: { isSourceEnabled?: (source: PermissionAdapterSource) => boolean, now?: () => number } = {},
@@ -301,7 +300,6 @@ test('a disabled source cannot create requests, and an enabled one still needs t
 test('the same Claude request asked again after it finished becomes a new request', async () => {
   await withServer(async ({ broker, post }) => {
     const first = await (await post('/v1/permission/request', claudePermission())).json() as { requestId: string }
-    // Still active: the hook retrying is idempotent.
     const retry = await post('/v1/permission/request', claudePermission())
     assert.equal(retry.status, 200)
     assert.deepEqual(await retry.json(), first)
@@ -310,7 +308,6 @@ test('the same Claude request asked again after it finished becomes a new reques
     const polled = await (await post('/v1/permission/decision', claudePermission())).json() as { decisionId: string }
     assert.equal((await post('/v1/permission/result', { ...claudePermission(), decisionId: polled.decisionId, result: 'delivered' })).status, 204)
     assert.deepEqual(await deciding, { ok: true, status: 'allowed' })
-    // A finished request can never hand out its decision again.
     assert.equal((await post('/v1/permission/decision', claudePermission())).status, 410)
 
     const again = await post('/v1/permission/request', claudePermission())
@@ -358,11 +355,9 @@ test('one decision reaches exactly one hook invocation; a parallel identical req
     const first = await post('/v1/permission/request', claudePermission())
     assert.equal(first.status, 201)
     const { requestId } = await first.json() as { requestId: string }
-    // A second invocation of the same command (parallel subagent) is refused, not merged.
     const parallel = await post('/v1/permission/request', claudePermission({ nonce: NONCE_B }))
     assert.equal(parallel.status, 409)
     assert.equal(broker.listRequests().length, 1)
-    // The same invocation retrying is still idempotent.
     assert.equal((await post('/v1/permission/request', claudePermission())).status, 200)
 
     const deciding = broker.decide(requestId, 'allow_once', 'bubble')
@@ -384,7 +379,6 @@ test('Claude requests without a valid nonce are rejected', async () => {
     }
     assert.equal((await post('/v1/permission/request', claudePermission({ scope: 'bad scope' }))).status, 400)
     assert.equal(broker.listRequests().length, 0)
-    // OpenCode is unchanged: no nonce needed.
     assert.equal((await post('/v1/permission/request', permission())).status, 201)
   })
 })
@@ -393,12 +387,10 @@ test('a new prompt or PreToolUse in the same agent scope takes older Claude prom
   await withServer(async ({ broker, post }) => {
     await post('/v1/permission/request', claudePermission())
     await post('/v1/permission/request', claudePermission({ permissionId: 'f'.repeat(32), scope: 'subagent-1' }))
-    // Same scope ("main"): the earlier prompt was answered in the terminal.
     await post('/v1/permission/request', claudePermission({ permissionId: 'e'.repeat(32), nonce: NONCE_B }))
     assert.equal(broker.listRequests().length, 2)
     assert.equal((await post('/v1/permission/decision', claudePermission())).status, 410)
 
-    // PreToolUse of the main agent settles only the main scope.
     assert.equal((await post('/v1/permission/resolved-session', { source: 'claude', instanceId: claudePermission().instanceId, scope: 'main' })).status, 204)
     assert.equal(broker.listRequests().length, 1)
     assert.equal((await post('/v1/permission/resolved-session', { source: 'claude', instanceId: claudePermission().instanceId, scope: 'bad scope' })).status, 400)
@@ -442,10 +434,8 @@ test('a file edit is medium only inside the project and never for execution-rele
         const view = broker.listRequests().find(request => request.requestId === requestId)!
         assert.equal(view.risk, risk, `${tool} ${String(filePath)}`)
         assert.equal(view.hotkeyEligible, risk === 'medium', String(filePath))
-        // In-project edits show the project-relative path, never the absolute one.
         if (relative) assert.equal(view.description, relative)
       }
-      // A cwd too long to keep whole is never trusted for "inside the project".
       const long = await post('/v1/permission/request', claudePermission({
         permissionId: 'z'.repeat(32), scope: 'long', permission: 'Write',
         project: `/${'a'.repeat(5000)}`, filePath: `/${'a'.repeat(5000)}/x.ts`,
@@ -458,8 +448,6 @@ test('a file edit is medium only inside the project and never for execution-rele
   }
 })
 
-// 既有 client（agent-hook.mjs、OpenCode plugin）只讀狀態碼與成功時的 body；這裡固定錯誤回應，
-// 讓共用的 body 讀取與 token 比對改動時不會悄悄改變它們看到的東西。
 test('body failures are all 400 invalid_request (no 413), and auth failures keep their codes', async () => {
   await withServer(async ({ raw }) => {
     const headers = { 'content-type': 'application/json', 'x-agent-pets-permission-token': TOKEN }
@@ -484,7 +472,6 @@ test('body failures are all 400 invalid_request (no 413), and auth failures keep
     await expectError(wrongType, 415, 'application_json_required')
     await expectError(await raw('/v1/permission/nope', { method: 'POST', headers, body: '{}' }), 404, 'not_found')
 
-    // 沒有 body 的 204 也帶同一組安全 header。
     const resolved = await raw('/v1/permission/resolved', {
       method: 'POST',
       headers,

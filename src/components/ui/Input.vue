@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 
-// The one text field. Wires label, help and error text to the control
-// (aria-describedby / aria-invalid) so forms stay accessible without each
-// caller re-implementing it. Extra attributes (placeholder, maxlength,
-// autocomplete, @keydown, @blur …) fall through to the <input>.
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<{
@@ -12,7 +8,6 @@ const props = withDefaults(defineProps<{
   help?: string
   error?: string
   type?: 'text' | 'url' | 'search' | 'number' | 'email' | 'password' | 'date'
-  /** Required when there is no visible label. */
   ariaLabel?: string
   disabled?: boolean
   size?: 'sm' | 'md'

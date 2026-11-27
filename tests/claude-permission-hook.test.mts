@@ -12,10 +12,6 @@ import { hookStartupMarkerName } from '../electron/main/hook-startup-marker.ts'
 import { withStartupBaseline } from './support/node-startup.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// Runs the real integrations/agent-hook.mjs against fake local servers. The hook hard-codes the
-// app's ports, so each test runs a copy whose ports point at ephemeral test servers; HOME is a
-// throw-away directory, so the user's real tokens and settings are never read.
-
 const HOOK_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'integrations', 'agent-hook.mjs')
 const EVENT_TOKEN = 'e'.repeat(64)
 const PERMISSION_TOKEN = 'b'.repeat(64)
@@ -60,9 +56,7 @@ async function harness(options: {
   optIn?: Record<string, unknown> | null
   permissionToken?: string | null
   permissionServer?: boolean
-  /** 寫一個新的 app 啟動標記（事件埠）。 */
   startupMarker?: boolean
-  /** 權限埠一開始關著，這麼久之後才開始監聽（模擬 app 啟動中）。 */
   permissionOpensAfterMs?: number
 } = {}): Promise<Harness> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-claude-hook-'))
@@ -109,14 +103,13 @@ async function harness(options: {
   }
   if (options.startupMarker) fs.writeFileSync(path.join(deploy, hookStartupMarkerName(portOf(eventServer))), '1\n')
 
-  // Same script, test ports, a 1 s minimum wait so the timeout case stays fast, and a looser event budget.
   const hookPath = path.join(home, 'agent-hook.mjs')
   const source = fs.readFileSync(HOOK_SOURCE, 'utf8')
   const patched = source
     .replace('127.0.0.1:17373', `127.0.0.1:${portOf(eventServer)}`)
     .replace('127.0.0.1:17374', `127.0.0.1:${permissionPort}`)
     .replace('const MIN_WAIT_SECONDS = 15', 'const MIN_WAIT_SECONDS = 1')
-    // 負載高的 runner 可能錯過較短的時限；這些測試檢查的是內容，不是延遲（時限另見 agent-hook-delivery.test.mts）。
+    // 負載高的 runner 可能錯過較短的時限；這些測試檢查的是內容，不是延遲。
     .replace('const SEND_DEADLINE_MS = 1500', 'const SEND_DEADLINE_MS = 5000')
     .replace('const PERMISSION_ANSWER_DEADLINE_MS = 1000', 'const PERMISSION_ANSWER_DEADLINE_MS = 5000')
   if (!patched.includes('const SEND_DEADLINE_MS = 5000') || !patched.includes('PERMISSION_ANSWER_DEADLINE_MS = 5000')) {
@@ -144,7 +137,6 @@ async function harness(options: {
   }
 }
 
-// Host-detection variables are cleared so the runner's own terminal never leaks into a payload.
 const HOST_ENV_KEYS = ['TERM_PROGRAM', '__CFBundleIdentifier', 'CLAUDE_CODE_ENTRYPOINT', 'WT_SESSION', 'VSCODE_INJECTION', 'VSCODE_GIT_IPC_HANDLE', 'CURSOR_TRACE_ID']
 
 function hookEnv(h: Harness, extraEnv: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -213,11 +205,9 @@ test('allow from the pet prints the PermissionRequest allow decision and reports
     assert.equal(request.body.scope, 'main')
     assert.equal(request.body.filePath, undefined)
     assert.match(String(request.body.permissionId), /^[a-f0-9]{32}$/)
-    // Every call of this invocation carries the same per-invocation nonce.
     const nonce = request.body.nonce
     assert.match(String(nonce), /^[a-f0-9]{32}$/)
     for (const call of h.permissionCalls) assert.equal(call.body.nonce, nonce, call.route)
-    // Only the approved command leaves the hook: no model-written description, suggestions or transcript path.
     const sent = JSON.stringify(request.body)
     for (const leaked of ['Show the working tree status', 'secret-transcript', 'addRules', PROMPT]) {
       assert.ok(!sent.includes(leaked), leaked)
@@ -228,7 +218,6 @@ test('allow from the pet prints the PermissionRequest allow decision and reports
       source: 'claude', instanceId: `claude-${SESSION}`, permissionId: request.body.permissionId,
       nonce, decisionId: 'decision-1', result: 'delivered',
     })
-    // The observe event still reaches the event server, after the pet request exists.
     assert.equal(h.eventCalls[0]?.body.state, 'waiting-permission')
     assert.ok(h.eventCalls[0]!.at > request.at, 'request is created before the status event')
   } finally {
@@ -289,7 +278,6 @@ test('connection refused, server refusal or a missing token fail fast and silent
     { handler: () => ({ status: 503, body: { error: 'source_disabled' } }) },
     { handler: () => ({ status: 401, body: { error: 'unauthorized' } }) },
     { handler: () => ({ status: 429, body: { error: 'rate_limited' } }) },
-    // An identical request from another invocation already owns the bubble.
     { handler: () => ({ status: 409, body: { error: 'in_use' } }) },
     { permissionToken: null },
     { permissionToken: 'not-a-token' },
@@ -299,8 +287,7 @@ test('connection refused, server refusal or a missing token fail fast and silent
       const result = await runHook(h, permissionRequest())
       assert.equal(result.code, 0)
       assert.equal(result.stdout, '', JSON.stringify(setup))
-      // Refusals return at once. The bound is far below the 30 s wait (so the hook clearly did not
-      // wait) yet loose enough for Node start-up on a heavily loaded machine.
+      // 上限遠小於 30 秒的等待，又夠寬鬆容納高負載下的 Node 啟動。
       assert.ok(result.ms < 15_000, `${JSON.stringify(setup)} took ${result.ms} ms`)
       assert.equal(h.permissionCalls.some(call => call.route === 'decision'), false)
     } finally {
@@ -331,7 +318,6 @@ test('PostToolUse and PostToolUseFailure recompute the same permission id; turn 
   try {
     await runHook(h, permissionRequest())
     const permissionId = h.permissionCalls.find(call => call.route === 'request')!.body.permissionId
-    // PostToolUse carries the same prompt/tool fields plus extras that must not change the id.
     const post = { ...permissionRequest(), hook_event_name: 'PostToolUse', tool_use_id: 'toolu_1', tool_response: { stdout: 'ok' }, tool_input: { description: TOOL_INPUT.description, command: TOOL_INPUT.command } }
     for (const eventName of ['PostToolUse', 'PostToolUseFailure']) {
       h.permissionCalls.length = 0
@@ -341,7 +327,6 @@ test('PostToolUse and PostToolUseFailure recompute the same permission id; turn 
       assert.deepEqual(h.permissionCalls[0]!.body, { source: 'claude', instanceId: `claude-${SESSION}`, permissionId })
     }
 
-    // A different prompt or command is a different request.
     h.permissionCalls.length = 0
     await runHook(h, { ...post, prompt_id: 'other-prompt' })
     assert.notEqual(h.permissionCalls[0]!.body.permissionId, permissionId)
@@ -352,7 +337,6 @@ test('PostToolUse and PostToolUseFailure recompute the same permission id; turn 
       assert.deepEqual(h.permissionCalls.map(call => call.route), ['resolved-session'], eventName)
       assert.deepEqual(h.permissionCalls[0]!.body, { source: 'claude', instanceId: `claude-${SESSION}` })
     }
-    // A new tool call or the main turn ending settles only that agent's earlier prompts.
     for (const [eventName, extra, scope] of [
       ['PreToolUse', {}, 'main'], ['Stop', {}, 'main'], ['PreToolUse', { agent_id: 'agent-7' }, 'agent-7'],
     ] as const) {
@@ -362,7 +346,6 @@ test('PostToolUse and PostToolUseFailure recompute the same permission id; turn 
       assert.deepEqual(h.permissionCalls[0]!.body, { source: 'claude', instanceId: `claude-${SESSION}`, scope })
     }
 
-    // A background task may still be waiting for the pet when the main turn stops.
     h.permissionCalls.length = 0
     await runHook(h, { session_id: SESSION, hook_event_name: 'Stop', background_tasks: [{ id: 'bg-1' }] })
     assert.deepEqual(h.permissionCalls, [])
@@ -436,8 +419,6 @@ test('the status event names the host app from a few env values only', async () 
   }
 })
 
-// --- 啟動期間的 request 重試 ---------------------------------------------------
-
 const DENY_OUTPUT = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied in Agent Pets. (已在 Agent Pets 拒絕)' } } })
 
 test('during app start-up the request call waits for the permission port and the decision is still delivered', async () => {
@@ -457,9 +438,7 @@ test('during app start-up the request call waits for the permission port and the
 })
 
 test('without a start-up marker a refused request is not retried', async t => {
-  // 權限埠整段都關著，以耗時判斷：誤把重試打開會一直重試到 PERMISSION_STARTUP_WAIT_MS（5 秒）。
-  // 不用「晚 2.5 秒才開的埠」：高負載下 hook 比開埠還晚啟動，第一次請求就直接成功（F2 實測）。
-  // 上限與 agent-hook-delivery 相同，取兩倍 node 啟動基準加 1.5 秒；基準在 3.5 秒內都小於重試所需的時間。
+  // 以耗時判斷是否誤開重試（會重試到 5 秒）；不用晚開的埠，高負載下 hook 比開埠還晚啟動。
   const h = await harness({ permissionServer: false })
   try {
     const result = await withStartupBaseline(hookEnv(h), () => runHook(h, permissionRequest()))

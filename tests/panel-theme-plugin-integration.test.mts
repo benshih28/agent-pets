@@ -66,10 +66,8 @@ test('registry: .woff2 allowed, fonts must be referenced and magic-checked, imag
     assert.deepEqual(fail({ ...good, 'fonts/body.woff2': woff2(1024 * 1024 + 1) }), { ok: false, error: 'archive_too_large' })
     assert.deepEqual(fail({ ...good, 'a.ttf': new Uint8Array(8) }), { ok: false, error: 'invalid_archive' })
     assert.deepEqual(fail({ ...good, 'a.jpg': new Uint8Array(8) }), { ok: false, error: 'invalid_archive' })
-    // 一般的 Worker 插件不能夾帶字型。
     const plain = { ...manifest([theme()]), entry: 'dist/main.js', contributes: { feed: true } }
     assert.deepEqual(registry.planInstall(archive(plain, { 'dist/main.js': strToU8('1'), 'x.woff2': woff2() })), { ok: false, error: 'invalid_panel_theme' })
-    // 非開發者模式下絕不回傳診斷訊息。
     const invalid = registry.planInstall(archive(manifest([theme({ shape: { radiusSm: 40 } })])))
     assert.deepEqual(invalid, { ok: false, error: 'invalid_panel_theme' })
   })

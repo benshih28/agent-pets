@@ -1,6 +1,3 @@
-// 寵物本體的滑鼠／鍵盤互動：拖曳、單擊開面板、雙擊摸頭、游標注視、右鍵選單。
-// 視窗移動完全由主程序輪詢游標座標驅動（見 electron/ipc/pet-motion.ts），這裡只負責
-// 「按下／放開」的訊號與表情回饋。動畫實例由父層以 getter 提供，單寵物與多寵物共用。
 import { onBeforeUnmount, ref, type Ref } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import type { PresentationReaction } from '@/types/presentation'
@@ -10,11 +7,9 @@ interface PetAnimationHandle {
   playCursorLook: (direction: -1 | 1) => void
 }
 
-// A press only becomes a drag after the pointer travels this far; a shaky
-// click on a trackpad must still open the panel.
+// A shaky trackpad click must still open the panel.
 const DRAG_START_DISTANCE_PX = 4
-// A single click waits briefly so a double click (pat) can cancel it instead of
-// also toggling the panel twice.
+// Lets a double click (pat) cancel the pending panel toggle.
 const SINGLE_CLICK_DELAY_MS = 220
 const CURSOR_LOOK_DEAD_ZONE_PX = 12
 const CURSOR_LOOK_COOLDOWN_MS = 350
@@ -63,21 +58,14 @@ export function usePetPointerInteractions(options: {
     options.dismissCoach()
     store.markPetInteraction()
     hasMoved.value = false
-    // Keeps the window catching events while the button is held, even before a
-    // drag has actually begun.
+    // Keeps the window catching events while held, even before a drag begins.
     store.isDragging = true
     const startX = e.screenX
     const startY = e.screenY
     let dragStarted = false
 
-    // Actual window movement is driven entirely by the main process polling
-    // screen.getCursorScreenPoint() rather than by accumulating deltas between
-    // renderer mousemove events. On Windows, moving a frameless window under the
-    // cursor makes the OS resend a synthetic mousemove for the new window
-    // position; a delta-from-previous approach picks that up as extra "movement"
-    // and re-moves the window again — a feedback loop that reads as the pet
-    // drifting for as long as the button is held. Polling the OS cursor position
-    // directly sidesteps that loop.
+    // Window movement comes from the main process polling the cursor, not from mousemove deltas:
+    // on Windows a moved frameless window triggers a synthetic mousemove, which feeds back as drift.
     const onMove = (moveEvent: MouseEvent) => {
       if (dragStarted) return
       const dx = moveEvent.screenX - startX
@@ -95,12 +83,8 @@ export function usePetPointerInteractions(options: {
       dragLift.value = false
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      // Must fire unconditionally, even on a plain click with no movement: it is
-      // the only signal that stops the main process' cursor-poll loop, and
-      // gating it on hasMoved left that loop running after a plain click so the
-      // pet kept chasing the cursor until the next mousedown replaced it.
+      // Must fire even on a plain click: it is the only signal that stops the main process' cursor-poll loop.
       window.electronAPI?.notifyDragEnd(hasMoved.value)
-      // Landing squash: the pet settles where it was dropped.
       if (dragStarted) options.animations().forEach(anim => anim.playReaction())
     }
 
@@ -112,7 +96,6 @@ export function usePetPointerInteractions(options: {
     if (e.button !== 0 || hasMoved.value) return
     if (singleClickTimer) clearTimeout(singleClickTimer)
     singleClickTimer = null
-    // Rewarded pats show a heart and bump mood; capped pats still react.
     store.patPet()
     options.animations().forEach(anim => anim.playReaction('encouraging'))
   }
@@ -132,11 +115,8 @@ export function usePetPointerInteractions(options: {
   function onContextMenu(e: MouseEvent): void {
     const target = e.target instanceof Element ? e.target : null
     if (!target) return
-    // Only the actual sprite and its compact Edge representation are hide
-    // targets. Permission cards, status lines, toasts, and other controls do not
-    // inherit this shortcut.
+    // Only the sprite and its Edge form are hide targets, not permission cards, toasts or other controls.
     if (!target.closest('[data-pet-context-target="hide"]')) return
-    // "Hide on right-click" is an explicit opt-in; otherwise show the full menu.
     if (store.rightClickHideEnabled) window.electronAPI?.requestPetHide()
     else window.electronAPI?.showPetContextMenu()
   }

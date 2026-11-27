@@ -22,7 +22,6 @@ export interface TrayMenuContext {
   petMode: PetWindowMode
   attention: AttentionSummary
   attentionText: string
-  /** Prebuilt plugin submenu (or null) and how many commands did not fit. */
   pluginMenu: MenuItemConstructorOptions | null
   pluginOmittedCount: number
   now: number
@@ -37,12 +36,7 @@ function dndRemainingLabel(preferences: DesktopPreferences, now: number): string
     : t('permission.trayDndRemainingMinutes', { minutes })
 }
 
-/**
- * Builds the Tray menu as plain data so its structure can be tested without
- * Electron. Order: what needs attention, pet, notifications / DND, advanced,
- * plugins, settings, quit. The plugin submenu is inserted at an explicit slot,
- * never found by comparing labels.
- */
+// The plugin submenu is inserted at an explicit slot, never found by comparing labels.
 export function buildTrayMenuTemplate(context: TrayMenuContext, actions: TrayMenuActions): MenuItemConstructorOptions[] {
   const { preferences, now } = context
   const update = (patch: DesktopPreferencesPatch) => actions.updatePreferences(patch)
@@ -148,7 +142,6 @@ export function buildTrayMenuTemplate(context: TrayMenuContext, actions: TrayMen
     },
   )
 
-  // Plugin slot.
   if (context.pluginMenu) {
     const pluginItem = { ...context.pluginMenu }
     if (context.pluginOmittedCount > 0 && Array.isArray(pluginItem.submenu)) {

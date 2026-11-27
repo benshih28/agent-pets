@@ -3,16 +3,12 @@ import Icon from '@/components/ui/Icon.vue'
 import Button from '@/components/ui/Button.vue'
 import { t } from '@/i18n'
 
-// One transient message: replaces the hand-rolled .pet-toast variants.
-// "danger" toasts are announced assertively (role="alert"); everything else
-// is polite (role="status"). The countdown bar is static under
-// prefers-reduced-motion.
 withDefaults(defineProps<{
   tone?: 'neutral' | 'accent' | 'success' | 'warn' | 'danger'
   title?: string
   message?: string
   actionLabel?: string
-  /** Auto-dismiss time in ms; drives the countdown bar. 0 = persistent. */
+  /** Milliseconds; 0 = persistent. */
   duration?: number
   dismissible?: boolean
 }>(), {

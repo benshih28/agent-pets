@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// A compact status/label pill. Tone is never the only signal: pass an `icon`
-// (or put text in the slot) so the meaning survives colour-blindness and
-// forced-colors mode.
 import Icon from '@/components/ui/Icon.vue'
 
 withDefaults(defineProps<{

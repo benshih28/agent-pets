@@ -306,7 +306,16 @@ jobs:
           fi
           mountpoint=$(mktemp -d)
           hdiutil attach -nobrowse -readonly -mountpoint "$mountpoint" "${dmgs[0]}"
-          trap 'hdiutil detach "$mountpoint" || hdiutil detach -force "$mountpoint"' EXIT
+          # detach 偶爾回 Resource busy，回報失敗時映像也可能其實已經卸載。
+          detach_dmg() {
+            for _ in 1 2 3 4 5; do
+              [ -e "$mountpoint/Agent Pets.app" ] || return 0
+              hdiutil detach "$mountpoint" && return 0
+              sleep 3
+            done
+            hdiutil detach -force "$mountpoint" || [ ! -e "$mountpoint/Agent Pets.app" ]
+          }
+          trap detach_dmg EXIT
           check_args=()
           if [ "$SIGN_MAC" = true ]; then check_args+=(--expect-signed developer-id); fi
           if [ "$NOTARIZE" = true ]; then check_args+=(--expect-notarized); fi

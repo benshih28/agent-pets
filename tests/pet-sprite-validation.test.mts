@@ -73,7 +73,6 @@ const ENTROPY = [0x12, 0xff, 0x00, 0x34, 0xff, 0xd0, 0x56]
 const EOI = [0xff, 0xd9]
 
 function exifApp1(orientation: number): number[] {
-  // "Exif\0\0" + little-endian TIFF with one IFD0 entry: Orientation (SHORT).
   const tiff = [0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, orientation, 0, 0, 0, 0, 0, 0, 0]
   const body = [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff]
   return [0xff, 0xe1, (body.length + 2) >> 8, (body.length + 2) & 255, ...body]
@@ -83,7 +82,6 @@ const jpeg = (...parts: number[][]) => new Uint8Array([0xff, 0xd8, ...parts.flat
 
 test('reads the JPEG frame size from the only SOF before the first scan', () => {
   assert.deepEqual(readImageSize(jpeg(sof(1536, 1872), SOS, ENTROPY, EOI)), { width: 1536, height: 1872 })
-  // Fill bytes before a marker are padding, not a marker with a length.
   assert.deepEqual(readImageSize(jpeg([0xff, 0xff], sof(1536, 1872), SOS, ENTROPY, EOI)), { width: 1536, height: 1872 })
 })
 
@@ -115,7 +113,7 @@ test('EXIF orientation other than 1 is rejected for JPEG, PNG and WebP', () => {
   assert.deepEqual(validateSpriteSheet(rotatedPng), { ok: false, code: 'E_ORIENTATION' })
 
   const webp = webpExtended(1536, 1872)
-  new DataView(webp.buffer).setUint32(16, 10, true) // VP8X chunk size
+  new DataView(webp.buffer).setUint32(16, 10, true)
   const webpExif = new Uint8Array(webp.length - 10 + 8 + tiff.length)
   webpExif.set(webp.subarray(0, 30), 0)
   webpExif.set([0x45, 0x58, 0x49, 0x46, tiff.length, 0, 0, 0], 30)

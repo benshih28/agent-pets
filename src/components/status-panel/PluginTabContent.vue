@@ -15,10 +15,6 @@ import { isCurrentPluginPanelViewClose, pluginPanelViewCloseError } from '@/util
 import type { PluginDashboardTab } from '@/composables/usePluginTabs'
 import type { PluginNotificationRecord, PluginPanelViewClosedEvent } from '@/types/plugin'
 
-// One plugin's dashboard tab. A plugin with a panel view embeds it in the content area
-// through the same open / bounds / close IPC as the Settings plugin page; every other
-// plugin gets a native summary with only the sections it can use (tab.sections): its panel
-// themes, commands, recent notifications (only when it may post them) and a settings link.
 const props = defineProps<{
   tab: PluginDashboardTab
   active: boolean
@@ -221,7 +217,6 @@ onBeforeUnmount(() => {
           <strong>{{ pluginTitle }}</strong>
           <span>{{ tab.label }} · {{ t('pluginVersion', { version: tab.plugin.currentVersion }) }}</span>
         </div>
-        <!-- 原生面板頁佔滿內容區，主題清單放不下；同時提供主題的插件從這裡前往詳情頁的面板主題。 -->
         <Button v-if="tab.sections.panelThemes" variant="ghost" size="sm" @click="emit('openThemes', tab.pluginId)">{{ t('plugins.sectionPanelThemes') }}</Button>
         <Button variant="ghost" icon-only :aria-label="t('plugins.reloadPanel')" :title="t('plugins.reloadPanel')" @click="openView">
           <Icon name="refresh" :size="18" />

@@ -153,10 +153,7 @@ export class ProjectMcpRegistryStore {
     return true
   }
 
-  /**
-   * Read-only check of every tracked project. Nothing is written back (a pure read must not touch
-   * disk). An unreadable registry file is set aside once and the list starts empty with a notice.
-   */
+  // A pure read must not touch disk.
   list(options: ProjectMcpInstallOptions): ProjectMcpRegistrySnapshot {
     let entries: StoredProjectMcpEntry[]
     let recovered = false

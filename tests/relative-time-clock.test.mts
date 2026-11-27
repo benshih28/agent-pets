@@ -1,6 +1,3 @@
-// 插件通知收件匣的相對時間：以前元件在 setup 時捕捉一次 `Date.now()`，開著收件匣時新到的通知會顯示成
-// 「N 分鐘後」，舊通知也停在掛載當下的「現在」。這裡在 Node 以最小 renderer 掛載真的 `useRelativeTime()`，
-// 用 node:test 的假時鐘推進時間，確認標籤跟著更新、不會出現未來時間，且每秒 tick 不會多餘地通知使用端。
 import './support/src-alias.mts'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -60,7 +57,6 @@ test('the inbox label follows the shared clock instead of the mount-time now', (
     mock.timers.tick(5 * MINUTE)
     assert.equal(label.value, '5 minutes ago', 'an open inbox ages its rows')
 
-    // 收件匣開著時新到的通知：時間戳晚於掛載時間，不能顯示成「5 分鐘後」。
     at.value = Date.now()
     assert.equal(label.value, 'now')
 
@@ -75,7 +71,6 @@ test('a timestamp ahead of the clock is clamped to now, never shown in the futur
   locale.value = 'en-US'
   const { at, label, unmount } = mountLabel(Date.now())
   try {
-    // 時鐘在兩次 tick 之間，或來源時鐘稍微超前。
     at.value = Date.now() + 3 * MINUTE
     assert.equal(label.value, 'now')
     assert.doesNotMatch(label.value, /^in /)
@@ -92,7 +87,6 @@ test('per-second ticks only notify readers when the label text changes', () => {
   try {
     assert.equal(label.value, '2 minutes ago')
     for (let second = 0; second < 90; second += 1) mock.timers.tick(1_000)
-    // 90 次 tick 只換了一次字串（2 → 3 分鐘前，四捨五入在 2.5 分鐘）。
     assert.deepEqual(seen, ['3 minutes ago'])
   } finally {
     stop()

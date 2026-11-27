@@ -46,7 +46,6 @@ test('history batch commits nested writes once and rolls back as a unit', (t) =>
     store.recordTokenUsage(usage('c'))
     throw new Error('abort batch')
   }), /abort batch/)
-  // 回滾後 c 未寫入，可再次匯入；a 已存在，不重複計算。
   assert.equal(store.recordTokenUsage(usage('c')), true)
   assert.equal(store.recordTokenUsage(usage('a')), false)
   assert.equal(store.getSummary().totals.tokenInput, 30)

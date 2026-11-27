@@ -83,7 +83,6 @@ test('mix, alpha and WCAG contrast follow the spec formulas', () => {
   assert.deepEqual(withAlpha(white, 0.1234), { r: 255, g: 255, b: 255, a: 0.123 })
   assert.equal(relativeLuminance(white), 1)
   assert.equal(contrastRatio(black, white), 21)
-  // 半透明前景會先合成到背景上。
   assert.equal(contrastRatio({ ...black, a: 0 }, white), 1)
   assert.ok(Math.abs(contrastRatio({ ...black, a: 0.5 }, white) - contrastRatio({ r: 127.5, g: 127.5, b: 127.5, a: 1 }, white)) < 1e-9)
 })

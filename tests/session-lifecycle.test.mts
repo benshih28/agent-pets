@@ -63,7 +63,6 @@ test('a turn that never reported its end settles to idle, then offline, then lea
   assert.equal(after('thinking', 45 * MINUTE + 1), 'remove')
   assert.equal(after('success', 4_001), 'idle')
   assert.equal(after('success', 20 * MINUTE), 'offline')
-  // 工具可以合法地跑很久：期限內不動，到期直接視為程序不在了。
   assert.equal(after('tool-running', 14 * MINUTE), null)
   assert.equal(after('tool-running', 15 * MINUTE + 1), 'offline')
   for (const state of ['idle', 'waiting-input', 'error'] as const) {
@@ -78,7 +77,6 @@ test('a permission prompt someone still has to answer is not timed out, others a
   const pending = { hasPendingPermission: true }
   assert.equal(after('waiting-permission', 60 * MINUTE, pending), null)
   assert.equal(after('waiting-permission', 15 * MINUTE + 1), 'offline')
-  // 只有等權限的 session 受保護，其他狀態不受影響。
   assert.equal(after('thinking', 5 * MINUTE + 1, pending), 'idle')
   assert.equal(after('tool-running', 15 * MINUTE + 1, pending), 'offline')
 })

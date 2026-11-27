@@ -32,9 +32,7 @@ import { readStored, writeStored } from '@/utils/local-storage'
 
 const store = useAgentStore()
 const panelRoot = ref<HTMLElement | null>(null)
-// 面板內的對話框都掛到面板根元素，遮罩才會蓋住整個面板（見 dialog-host.ts）。
 provide(DIALOG_HOST_KEY, panelRoot)
-// 插件面板主題：只在此元素上以 inline 設定 --organic-*（spec §7.3）。
 const { backdrop: panelThemeBackdrop } = usePanelTheme()
 const settingsShortcut = /Mac/i.test(navigator.platform) ? '\u2318,' : 'Ctrl+,'
 
@@ -50,8 +48,6 @@ const THEME_ICON = {
 } as const satisfies Record<ThemePreference, string>
 const themeLabel = (preference: ThemePreference) => t(THEME_LABEL_KEY[preference])
 
-// Toggles close the menu after the click (ActionMenu's single behaviour); the
-// current state stays visible in each row and, for DND, as a dot on the trigger.
 const headerMenuItems = computed(() => [
   { id: 'dnd', icon: 'bell-off', label: t('dnd'), role: 'menuitemcheckbox', checked: store.dndEnabled, state: store.dndEnabled ? t('panel.stateOn') : t('panel.stateOff') },
   { id: 'pin', icon: 'pin', label: t('panel.menuKeepOpen'), role: 'menuitemcheckbox', checked: store.panelPinned, state: store.panelPinned ? t('panel.stateOn') : t('panel.stateOff') },
@@ -76,14 +72,11 @@ function onHeaderMenu(id: HeaderMenuId): void {
 
 type DashboardTab = string
 
-// The last-used group is remembered across panel opens.
 const settingsGroup = ref<SettingsGroupId>(readStored(STORAGE_KEYS.settingsGroup))
 const dashboardTab = ref<DashboardTab>('sessions')
 const pluginTabs = usePluginTabs()
-// Usage and History mount on first visit, then stay mounted so their state survives tab switches.
 const visitedTabs = ref(new Set<DashboardTab>(['sessions']))
 const requestedPluginViewId = ref('')
-// 每次請求遞增，取代「先清空再 nextTick 設定」的時序 hack，讓相同 id 的重複請求也會觸發。
 const pluginViewRequestNonce = ref(0)
 const pluginEventSourceStatuses = ref<PluginEventSourceStatusView[]>([])
 const nowTick = ref(Date.now())
@@ -93,7 +86,6 @@ let removePanelSettingsListener: (() => void) | null = null
 let cleanupPluginEventSourceChanged: (() => void) | null = null
 
 const SettingsPage = defineAsyncComponent(() => import('@/components/status-panel/SettingsPage.vue'))
-// 編輯器連同驗證器與色盤產生器只在第一次開啟時載入（獨立 chunk，不增加面板啟動大小）。
 const PanelThemeEditor = defineAsyncComponent(() => import('@/components/panel-theme/PanelThemeEditor.vue'))
 
 const settingsGroupLabel = computed(() => {
@@ -117,7 +109,6 @@ const activePluginTab = computed(() => pluginTabs.tabs.value.find(tab => tab.val
 const pluginTabIds = computed(() => pluginTabs.tabs.value.map(tab => tab.pluginId))
 const activePetName = computed(() => store.pets.find(pet => pet.id === store.activePetId)?.displayName ?? t('appName'))
 const { evolutionLabel } = useProgressionLabels()
-// Give up on "loading" after a while so the header never spins forever.
 const progressionTimedOut = ref(false)
 let progressionTimeout: ReturnType<typeof setTimeout> | null = null
 const sessionCounts = computed(() => countByBucket(store.sessionList))
@@ -129,9 +120,6 @@ const panelPetSubtitle = computed(() => {
   return `${t('historyLevel', { level: store.progression.level })} · ${evolutionLabel(store.progression.evolutionStage)} · ${t('dayStreak', { days: store.progression.currentStreak })}`
 })
 
-// The shared clock only needs to be precise while the permission card shows
-// its running seconds; Usage reset labels are minute-granular. Sessions have
-// their own per-label clock (useNow), so idle panels barely wake the renderer.
 const TICK_FAST_MS = 1000
 const TICK_SLOW_MS = 30_000
 const tickInterval = computed(() => store.permissionRequest ? TICK_FAST_MS : TICK_SLOW_MS)
@@ -153,8 +141,6 @@ function syncTickTimer(): void {
 
 watch(tickInterval, syncTickTimer)
 
-// Esc steps back one level: wizard / MCP, then settings, then hide the panel.
-// Anything that already handled the key (ConfirmDialog, inputs) wins.
 function onGlobalKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return
   if ((event.metaKey || event.ctrlKey) && event.key === ',') {
@@ -184,8 +170,6 @@ function selectDashboardTab(tab: DashboardTab): void {
   dashboardTab.value = tab
   if (isBuiltInDashboardTab(tab)) visitedTabs.value.add(tab)
   writeStored(STORAGE_KEYS.dashboardTab, tab)
-  // refreshQuota() is TTL-gated, so this only reaches the network when the
-  // reading is stale; a first-ever open still loads.
   if (tab === 'sessions' || tab === 'usage') void store.refreshQuota()
 }
 
@@ -194,7 +178,6 @@ function openPluginTabSettings(pluginId: string, section: PluginDetailRequestSec
   openPluginSettings()
 }
 
-// 主題設定的目的地：有分頁就回到儀表板並切到該插件的分頁，否則開詳情頁的面板主題。
 watch(panelThemeTargetRequest, request => {
   if (!request) return
   const tab = pluginTabs.tabs.value.find(candidate => candidate.pluginId === request.pluginId && candidate.sections.panelThemes)
@@ -206,8 +189,6 @@ watch(panelThemeTargetRequest, request => {
   selectDashboardTab(tab.value)
 })
 
-// Restore the remembered tab once the plugin list is known, but only if it still qualifies;
-// a plugin tab that disappears later (disabled, removed, crashed) falls back to Sessions.
 let restoredTab = false
 watch(() => [pluginTabs.loading.value, pluginTabIds.value.join('|')] as const, () => {
   if (pluginTabs.loading.value) return
@@ -226,12 +207,10 @@ watch(() => [pluginTabs.loading.value, pluginTabIds.value.join('|')] as const, (
   }
 }, { immediate: true })
 
-// Plugins are managed in Settings, so re-read them whenever the dashboard is shown again.
 watch(() => [store.panelView, store.panelOpenCount] as const, ([view]) => {
   if (view === 'sessions') void pluginTabs.refresh()
 })
 
-// Move keyboard focus into the panel whenever it is (re)opened so Tab / arrows work immediately.
 watch(() => store.panelOpenCount, async () => {
   await nextTick()
   const target = store.panelView === 'settings'
@@ -245,8 +224,6 @@ watch(settingsGroup, group => {
 })
 
 onMounted(() => {
-  // Keep the settings panels code-split while warming the default tab off the
-  // render path, so the first settings click does not wait for its chunk.
   void import('@/components/status-panel/SettingsPage.vue').catch(() => {})
   progressionTimeout = setTimeout(() => { progressionTimedOut.value = true }, 8000)
   document.addEventListener('visibilitychange', syncTickTimer)
@@ -372,7 +349,6 @@ onUnmounted(() => {
     </template>
 
     <SettingsPage v-else v-model:group="settingsGroup" :requested-plugin-id="requestedPluginViewId" :requested-plugin-nonce="pluginViewRequestNonce" />
-    <!-- 主題編輯器（全面板對話框）：外觀設定與主題插件分頁共用這一個實例；nonce 讓每次開啟都是新的草稿。 -->
     <PanelThemeEditor v-if="panelThemeEditorRequest" :key="panelThemeEditorRequest.nonce" :request="panelThemeEditorRequest" @close="closePanelThemeEditor()" />
   </div>
 </template>

@@ -2,16 +2,6 @@
 import { nextTick, useId } from 'vue'
 import { nextTabId, panelDomId, tabDomId, type TabOrientation } from '@/utils/tab-navigation'
 
-// The one tablist. Implements the WAI-ARIA tabs pattern: roving tabindex,
-// arrow keys (up/down when vertical), Home/End, aria-controls pointing at the
-// matching <TabPanel>. Replaces the two hand-written tablists in StatusPanel.
-//
-// Usage:
-//   <Tabs v-model="tab" :items="items" id-prefix="dash" :aria-label="…" />
-//   <TabPanel id-prefix="dash" id="sessions" :active="tab === 'sessions'">…</TabPanel>
-//
-// Render a <nav> around <Tabs> if a navigation landmark is wanted; the
-// tablist itself must keep role="tablist".
 export interface TabItem {
   id: string
   label: string
@@ -23,7 +13,6 @@ const props = withDefaults(defineProps<{
   items: TabItem[]
   ariaLabel: string
   orientation?: TabOrientation
-  /** Shared with <TabPanel>; defaults to a unique id. */
   idPrefix?: string
   variant?: 'underline' | 'pill'
 }>(), {
@@ -120,7 +109,6 @@ async function onKeydown(event: KeyboardEvent) {
   opacity: 0.55;
 }
 
-/* One active-indicator treatment per variant, from tokens only. */
 .variant-pill .tab.active {
   background: var(--accent-soft);
   color: var(--accent-text, var(--accent-bright));

@@ -24,7 +24,6 @@ test('every public plugin example manifest passes the runtime validator', () => 
 
 test('example panel pages take every colour, radius and font from the --ap-* theme tokens', () => {
   const examplesDirectory = path.join(docsDirectory, 'examples')
-  // tokens.css 仍提供間距、字級與點擊範圍；顏色、圓角與字族只能來自 --ap-*（ux-guidelines.md）。
   const sharedLayout = /^--(?:space-\d|font-(?:xs|sm|md|lg|xl|2xl)|hit-min|focus-ring-(?:width|offset))$/
   let pages = 0
   for (const example of fs.readdirSync(examplesDirectory, { withFileTypes: true })) {
@@ -177,7 +176,6 @@ test('plugin documentation has bilingual page pairs and all local Markdown links
   }
 })
 
-// JSON Schema 節點是遞迴結構，用單一遞迴型別避免逐層手寫而漏掉深度。
 interface SchemaNode {
   type?: string
   enum?: string[]

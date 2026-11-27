@@ -14,7 +14,6 @@ import { useRealEventWait } from '@/composables/useRealEventWait'
 import { formatNumber } from '@/utils/intl-format'
 
 const props = defineProps<{
-  /** Opened automatically on the first launch: start with the short intro. */
   firstRun?: boolean
 }>()
 
@@ -22,7 +21,6 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-// intro (what the pet does) -> tools (install hooks). Replays from Settings go straight to tools.
 const step = ref<'intro' | 'tools'>(props.firstRun ? 'intro' : 'tools')
 const anyReady = computed(() => tools.value.some(tool => tool.installable && tool.health === 'ready'))
 
@@ -32,8 +30,7 @@ const INTRO_CARDS = [
   { icon: 'growth', title: 'onboarding.introGrowthTitle', body: 'onboarding.introGrowthBody' },
 ] as const satisfies ReadonlyArray<{ icon: string, title: TranslationKey, body: TranslationKey }>
 
-// Finishing with at least one connected tool completes onboarding; leaving earlier is remembered as
-// a skip so the wizard does not reopen on its own. Replays never downgrade a completed state.
+// An early exit is remembered as a skip; replays never downgrade a completed state.
 function finish() {
   const action = anyReady.value ? 'completed' : 'skipped'
   if (props.firstRun || anyReady.value) void window.electronAPI?.updateOnboardingState(action)
@@ -70,8 +67,6 @@ function stopElapsedTimer() {
   }
 }
 
-// Re-detect without throwing away what the user already learned: results of tests, diagnoses and
-// the last install outcome survive a refresh. Only the very first load shows the full loader.
 async function detectTools() {
   const firstLoad = tools.value.length === 0
   if (firstLoad) loading.value = true
@@ -106,7 +101,6 @@ async function detectTools() {
 
 const installSummary = ref('')
 
-// Every selected tool is installed independently; one failure never blocks the others.
 async function install(target?: AgentAdapterId) {
   installing.value = target ?? 'all'
   installError.value = ''
@@ -160,7 +154,6 @@ function requestRemoval(target: AgentAdapterId | 'all') {
   pendingRemoval.value = target
 }
 
-// Removal only strips Agent Pets' own entries in main; the confirm text spells out what is kept.
 async function confirmRemoval() {
   const target = pendingRemoval.value
   pendingRemoval.value = null

@@ -7,10 +7,7 @@ import { panelThemeMedia, panelThemeState, refreshPanelThemeState } from '@/comp
 import { usePanelThemeActions } from '@/composables/usePanelThemeActions'
 import { useElementVisible } from '@/composables/useElementVisible'
 
-// Plugins -> <plugin> -> Panel themes（spec §8）。列出此插件的主題與
-// light/dark 預覽，並可套用到 Light、Dark 或 Both。所有插件每個模式
-// 只有一個插槽，所以在這裡套用會取代原本啟用的主題。
-
+// 每個模式只有一個插槽，所以在這裡套用會取代原本啟用的主題。
 const props = defineProps<{ pluginId: string; pluginEnabled: boolean }>()
 const { busy, status, error, applyTheme, restoreBuiltIn } = usePanelThemeActions()
 

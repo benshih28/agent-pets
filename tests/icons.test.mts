@@ -26,7 +26,6 @@ test('ui primitives contain no text-glyph icons', () => {
 test('the overflow icon is three filled, vertically centred more_vert dots', () => {
   assert.ok(FILLED_ICONS.has('more'))
   for (const name of FILLED_ICONS) assert.ok(ICON_PATHS[name], `filled icon ${name} has no path`)
-  // Only the overflow icon is filled; every other icon keeps the outline style.
   assert.deepEqual([...FILLED_ICONS], ['more'])
   const dots = [...ICON_PATHS.more.matchAll(/M([\d.]+) ([\d.]+)a([\d.]+) [\d.]+ 0 1 1 0 ([\d.]+) [\d.]+ [\d.]+ 0 0 1 0-([\d.]+)Z/g)]
   assert.equal(dots.length, 3)

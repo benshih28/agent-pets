@@ -32,7 +32,6 @@ export interface HistoryIpcDependencies {
   refreshLocalUsage(): Promise<void>
   currentHistorySummary(projectId?: string, rangeDays?: number): HistorySummary | null
   broadcastHistoryUpdated(): void
-  /** Optional hook after the history was cleared (e.g. remove set-aside corrupt copies). */
   onHistoryCleared?(): void
   documentsPath(): string
   joinPath(...parts: string[]): string
@@ -41,7 +40,6 @@ export interface HistoryIpcDependencies {
   activePetId(): string | null
   writeTextFile(filePath: string, text: string): void
   revealPath(filePath: string): void
-  /** XP/level/streak and unlocked achievements to embed in the JSON export. */
   growthExport?(petId: string): unknown
 }
 
@@ -50,8 +48,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
 
   deps.ipcMain.handle(IPC_CHANNELS.historySummary, async (event, projectId: unknown, rangeDays?: unknown) => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
-    // Never block the summary on a log scan: return stored aggregates now and
-    // let the (throttled) background scan push a historyUpdated when it imports.
+    // Never block the summary on a log scan: return stored aggregates; the throttled background scan pushes historyUpdated.
     void deps.refreshLocalUsage().catch(() => undefined)
     return deps.currentHistorySummary(
       typeof projectId === 'string' ? projectId : undefined,
@@ -59,9 +56,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
     )
   })
 
-  // The Usage tab only needs the local 5-hour blocks. Unlike historySummary it
-  // takes no input and never starts a log scan, so a historyUpdated broadcast
-  // that triggers this refetch cannot schedule another scan (no feedback loop).
+  // Takes no input and never starts a log scan, so a historyUpdated refetch cannot schedule another scan (no feedback loop).
   deps.ipcMain.handle(IPC_CHANNELS.historyUsageBlocks, (event): HistoryUsageBlock[] => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     const historyStore = deps.getHistoryStore()
@@ -73,9 +68,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
     }
   })
 
-  // Session browser: read-only and metadata-only. The store re-validates the
-  // query (ids, bounds, enum values, page size) and binds every value, and
-  // neither handler starts a log scan, so a historyUpdated refetch cannot loop.
+  // Session browser: read-only and metadata-only; the store re-validates the query, and neither handler starts a log scan, so a historyUpdated refetch cannot loop.
   deps.ipcMain.handle(IPC_CHANNELS.historySessions, (event, query?: unknown): HistorySessionPage => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     const historyStore = deps.getHistoryStore()
@@ -149,8 +142,7 @@ export function registerHistoryIpc(deps: HistoryIpcDependencies): void {
     }
   })
 
-  // Reveals only the file this session just exported; the renderer never
-  // supplies a path, so this cannot be used to reveal arbitrary files.
+  // Reveals only the file this session just exported; the renderer never supplies a path.
   deps.ipcMain.handle(IPC_CHANNELS.historyRevealExport, (event): boolean => {
     deps.assertTrustedIpcSender(event, deps.getPanelWindow())
     if (!lastExportPath) return false

@@ -59,7 +59,6 @@ export interface PluginBrokerOptions {
   onAgentStatusGet?: (pluginId: string) => unknown | { ok: false; error: PluginErrorCode }
   onAgentEmit?: (pluginId: string, event: unknown) => unknown | { ok: false; error: PluginErrorCode }
   onBadgeSet?: (pluginId: string, badge: unknown) => unknown | { ok: false; error: PluginErrorCode }
-  /** 目前的插件主題快照；所有插件拿到相同內容，不需要權限（見 docs/plugins/panel-themes.md）。 */
   onThemeGet?: () => PluginThemeSnapshot | null
 }
 
@@ -70,10 +69,7 @@ interface PluginStorageState {
   loaded: boolean
   available: boolean
   maxBytes: number
-  /**
-   * `JSON.stringify(values)` 的 UTF-8 位元組數與筆數。第一次寫入時才完整算一次，之後每次寫入只增減
-   * 變動的那一筆：storage 可以到 50 MiB，每次寫入都重新序列化整份會卡住主程序。
-   */
+  // 之後每次寫入只增減變動的那一筆：storage 可到 50 MiB，每次重新序列化整份會卡住主程序。
   size: { bytes: number; entries: number } | null
 }
 
@@ -81,7 +77,6 @@ function utf8Bytes(text: string): number {
   return Buffer.byteLength(text, 'utf8')
 }
 
-/** 一筆 `"key":value` 在序列化結果中的位元組數（不含分隔的逗號）。 */
 function storageEntryBytes(key: string, serializedValue: string): number {
   return utf8Bytes(JSON.stringify(key)) + 1 + utf8Bytes(serializedValue)
 }
@@ -309,7 +304,7 @@ export class PluginBroker {
     return handler ? handler(pluginId, context, args, method) : { ok: false, error: 'invalid_request' }
   }
 
-  // 方法名稱 → 處理函式的查表；同時是 handle() 的方法白名單，新增方法只需要加在這裡。
+  // 同時是 handle() 的方法白名單。
   private readonly handlers: Readonly<Record<string, BrokerMethodHandler>> = Object.freeze({
     'feed.notify': (pluginId, context, args) => {
       if (!context.manifest.contributes.feed || args.length !== 1) return { ok: false, error: 'not_permitted' }
@@ -368,7 +363,7 @@ export class PluginBroker {
       if (!context.manifest.contributes.settings) return { ok: false, error: 'not_permitted' }
       return this.onSettingsGet?.(pluginId) ?? { ok: false, error: 'disabled' }
     },
-    // 顯示用資料，與使用者在畫面上看到的相同；不含任何插件 id、圖片或路徑，所以不需要權限。
+    // 不含任何插件 id、圖片或路徑，所以不需要權限。
     'theme.get': (_pluginId, _context, args) => {
       if (args.length !== 0) return { ok: false, error: 'invalid_request' }
       const snapshot = this.onThemeGet?.()
@@ -392,7 +387,7 @@ export class PluginBroker {
     const state = this.loadStorage(pluginId, context.storageBytesPerPlugin)
     if (!state.available) return { ok: false, error: 'disabled' }
     if (method === 'storage.get') return { found: Object.hasOwn(state.values, key), value: state.values[key] ?? null }
-    // 序列化結果是 `{` + 各筆以逗號分隔 + `}`，所以增減一筆時，總長只差該筆本身與一個逗號。
+    // 增減一筆時，總長只差該筆本身與一個逗號。
     const existed = Object.hasOwn(state.values, key)
     const size = storageSize(state)
     const previousBytes = existed ? storageEntryBytes(key, JSON.stringify(state.values[key])) : 0

@@ -11,19 +11,17 @@ import {
   writeConfigSafelyAsync,
 } from './safe-config-write.ts'
 
-// Electron-free hook-config editing shared by the installers in setup.ts.
 // Every function here only ever touches Agent Pets' own entries.
 
-// 讀使用者檔案用的寬鬆形狀：內容可能被使用者或其他工具改過，欄位一律要先驗證。
+// 讀使用者檔案用的寬鬆形狀：內容可能被改過，欄位一律要先驗證。
 type HookEntry = Record<string, unknown>
 
-// 以下是 Agent Pets「寫出去」的嚴格形狀，屬於使用者 dotfile 的外部契約；和上面的 HookEntry 分開，
-// 才不會讓讀檔時的寬鬆型別滲進產生端。
+// 以下是寫出去的嚴格形狀（使用者 dotfile 的外部契約），與 HookEntry 分開，寬鬆型別才不會滲進產生端。
 export interface HookCommandHandler {
   type: 'command'
   command: string
   args?: string[]
-  /** 秒。只有需要等待寵物回覆的事件才設定，其餘沿用 agent 的預設值。 */
+  /** 秒；只有需要等待寵物回覆的事件才設定。 */
   timeout?: number
   statusMessage?: string
 }
@@ -38,7 +36,6 @@ export type AgentHooks<Event extends string> = Record<Event, HookMatcherEntry[]>
 // 用 type alias 而非 interface：解構掉 hooks 之後的其餘欄位才能直接當成 JsonObject 傳給 merge。
 export type AgentHooksFile<Event extends string> = { hooks: AgentHooks<Event> }
 
-/** 每個事件各放一個 entry，鍵的順序就是事件清單的順序（寫出的 JSON 依此排序）。 */
 export function agentHooksFor<Event extends string>(
   events: readonly Event[],
   entry: (event: Event) => HookMatcherEntry,
@@ -47,9 +44,7 @@ export function agentHooksFor<Event extends string>(
   return Object.fromEntries(events.map(event => [event, [entry(event)]])) as AgentHooks<Event>
 }
 
-// Our hooks always run the deployed script `<home>/.desktop-pet/agent-hook.mjs` (or its Windows
-// `.cmd` wrapper). A hook is ours only when one whole command token / argument is exactly such a
-// path; substring matches (e.g. a user's `~/desktop-pet-project/agent-hook.sh`) never count.
+// A hook is ours only when one whole command token is exactly the deployed `<home>/.desktop-pet/agent-hook.mjs` (or its `.cmd` wrapper); substring matches never count.
 const AGENT_PETS_HOOK_PATH = /(?:^|[\\/])\.desktop-pet[\\/]agent-hook\.(?:mjs|cmd)$/i
 
 function shellTokens(command: string): string[] {
@@ -91,11 +86,7 @@ export function isAgentPetsHook(hook: unknown): boolean {
   return [...shellTokens(command), ...args].some(token => AGENT_PETS_HOOK_PATH.test(token))
 }
 
-/**
- * True only for the known-bad state written by older Windows builds: a hook whose runtime is
- * some executable other than Node.js (Electron's own exe, which recursively launches the app).
- * A hook that merely points at a different Node.js install is NOT legacy and is left alone.
- */
+// Only the known-bad state from older Windows builds (runtime is Electron's own exe, which recursively launches the app); a different Node.js install is not legacy.
 export function isLegacyElectronHook(hook: unknown): boolean {
   if (!isJsonObject(hook)) return false
   const command = typeof hook.command === 'string' ? hook.command.trim() : ''
@@ -149,14 +140,7 @@ function requireEventArray(filePath: string, event: string, value: unknown): unk
   return value
 }
 
-/**
- * Adds (or refreshes) Agent Pets' hook handlers in a hooks-style JSON file while keeping every
- * other key and every user-defined hook. Missing files are created from `defaults`.
- * An existing Agent Pets group is refreshed where it already sits; only a new one is appended.
- * Codex keys hook trust by position (`event:group:handler`), so moving our group would shift
- * every other tool's hooks too and make Codex skip them all until the user reviews them again.
- * Throws ConfigRefusedError when the file exists but is not a parseable JSON object.
- */
+// An existing group is refreshed in place: Codex keys hook trust by position (`event:group:handler`), so moving ours would make Codex skip every other tool's hooks until re-reviewed.
 export async function mergeAgentPetsHooksFile(
   filePath: string,
   desired: Readonly<Record<string, readonly HookMatcherEntry[]>>,
@@ -182,10 +166,6 @@ export interface HookRemovalResult {
   backupPath: string | null
 }
 
-/**
- * Removes only Agent Pets hook handlers. The file is deleted only when nothing but content that
- * Agent Pets itself wrote (`ownedTopLevel` key/value pairs) remains.
- */
 export async function removeAgentPetsHooksFile(
   filePath: string,
   ownedTopLevel: Record<string, unknown> = {},
@@ -218,10 +198,8 @@ async function removeAgentPetsHooksFileOnce(
   }
 
   if (Object.keys(root).length === 0) {
-    // Everything left was written by Agent Pets: keep a backup, then remove the empty shell.
     const write = await writeConfigSafelyAsync(filePath, serializeJson(root), raw)
-    // A symlinked dotfile was rewritten at its real target; deleting only the link would leave
-    // the target as `{}` and break the link, so a symlink is kept as an empty config instead.
+    // Deleting only a symlink would leave the real target as `{}`, so a symlink is kept as an empty config.
     let isLink = false
     try { isLink = (await fsp.lstat(filePath)).isSymbolicLink() } catch { /* already gone */ }
     if (isLink) return { status: 'removed', path: filePath, backupPath: write.backupPath }
@@ -232,7 +210,6 @@ async function removeAgentPetsHooksFileOnce(
   return { status: 'removed', path: filePath, backupPath: write.backupPath }
 }
 
-/** True if the file contains at least one Agent Pets hook. Unreadable or invalid files report false. */
 export async function fileHasAgentPetsHooksAsync(filePath: string): Promise<boolean> {
   try {
     return rootHasAgentPetsHooks((await readJsonObjectConfigAsync(filePath)).root)
@@ -250,10 +227,6 @@ function rootHasAgentPetsHooks(root: JsonObject): boolean {
   ))
 }
 
-/**
- * Rewrites the command of already-installed Agent Pets hooks (Windows repair). Returns whether
- * anything changed. Unparseable files are left alone.
- */
 export async function rewriteAgentPetsHookCommands(
   filePath: string,
   rewrite: (hook: HookEntry) => boolean,
@@ -289,16 +262,11 @@ async function rewriteAgentPetsHookCommandsOnce(
 export interface RequiredHookEntry {
   event: string
   matcher?: string
-  /** Seconds; set (or corrected) on Agent Pets' own handler for this event. */
+  /** Seconds. */
   timeout?: number
 }
 
-/**
- * Upgrade path for an existing install: adds missing Agent Pets handlers and corrects their
- * `timeout`, reusing the command/args the user already has (a changed Node path is never a reason
- * to rewrite). Other handlers are left exactly as they are. Returns null when the file has no
- * Agent Pets hook (not installed) or cannot be parsed; nothing is written when nothing differs.
- */
+// The existing command/args are reused: a changed Node path is never a reason to rewrite.
 export function ensureAgentPetsHookEntries(filePath: string, required: readonly RequiredHookEntry[]): Promise<ConfigWriteResult | null> {
   return withConfigConflictRetry(filePath, () => ensureAgentPetsHookEntriesOnce(filePath, required))
 }
@@ -352,8 +320,6 @@ async function ensureAgentPetsHookEntriesOnce(filePath: string, required: readon
   return writeConfigSafelyAsync(filePath, serializeJson(parsed.root), parsed.raw)
 }
 
-// ---- Claude Desktop config: single top-level key ----
-
 export function setJsonKeyFile(filePath: string, key: string, value: unknown): Promise<ConfigWriteResult> {
   return withConfigConflictRetry(filePath, async () => {
     const { root, raw } = await readJsonObjectConfigAsync(filePath)
@@ -365,7 +331,6 @@ export function setJsonKeyFile(filePath: string, key: string, value: unknown): P
   })
 }
 
-/** Removes `key` only if its current value equals `expected` (i.e. we wrote it). */
 export function removeJsonKeyFile(filePath: string, key: string, expected: unknown): Promise<HookRemovalResult> {
   return withConfigConflictRetry(filePath, async () => {
     const { exists, root, raw } = await readJsonObjectConfigAsync(filePath)
@@ -378,7 +343,6 @@ export function removeJsonKeyFile(filePath: string, key: string, expected: unkno
   })
 }
 
-// ---- Codex config.toml [features].hooks ----
 // TOML has no parser dependency here, so the single key is patched line by line.
 
 export function enableCodexHooksFeatureText(existing: string): { content: string, added: boolean } {
@@ -415,7 +379,6 @@ export function enableCodexHooksFeatureText(existing: string): { content: string
   return { content: lines.join(eol).replace(/(\r?\n)*$/, eol), added }
 }
 
-/** Removes the `hooks = true` line (and an emptied `[features]` table) that enableCodexHooksFeatureText added. */
 export function disableCodexHooksFeatureText(existing: string): string {
   const eol = existing.includes('\r\n') ? '\r\n' : '\n'
   const lines = existing.split(/\r?\n/)
@@ -434,7 +397,6 @@ export function disableCodexHooksFeatureText(existing: string): string {
   return joined.trim() === '' ? '' : joined.replace(/(\r?\n)*$/, eol)
 }
 
-/** First token of a shell-form command, honouring double quotes. */
 export function leadingExecutable(command: string): string {
   // `cmd /d /c "<wrapper>"` 只是啟動器；健康檢查要看的是被啟動的 wrapper。
   const trimmed = command.trim().replace(WINDOWS_CMD_LAUNCHER, '')
@@ -459,7 +421,6 @@ export function leadingExecutable(command: string): string {
   return (marker > 0 ? trimmed.slice(0, marker) : trimmed.split(/\s+/)[0] ?? '').trim()
 }
 
-/** Agent Pets 的 hook 會啟動哪個執行檔（exec 形式的 `command` 或 shell 形式的開頭）；健康檢查傳入已解析的 root，不重複讀檔。 */
 export function configuredHookExecutableFromRoot(root: JsonObject): string | null {
   if (!isJsonObject(root.hooks)) return null
   for (const groups of Object.values(root.hooks)) {
@@ -477,7 +438,6 @@ export function configuredHookExecutableFromRoot(root: JsonObject): string | nul
   return null
 }
 
-/** True only when `[features]` explicitly sets `hooks = true` (a missing key leaves hooks off). */
 export function isCodexHooksFeatureEnabled(config: string | null): boolean {
   if (!config) return false
   const lines = config.split(/\r?\n/)
@@ -491,22 +451,13 @@ export function isCodexHooksFeatureEnabled(config: string | null): boolean {
   return false
 }
 
-// ---- Hook command construction (quoting) ----
-
 // 不需任何引號、在 cmd.exe 與 PowerShell 都會被解析成同一個路徑的字元集。
 const WINDOWS_BARE_PATH = /^[A-Za-z0-9_.:\\-]+$/
 const WINDOWS_CMD_LAUNCHER = /^cmd(?:\.exe)?\s+\/d\s+\/c\s+/i
 
-/**
- * Shell-form command Codex runs. On POSIX every path is single-quoted (`'` becomes `'\''`), so `$`,
- * backticks, `"` and `\` in a user name stay literal. Paths that cannot be quoted safely
- * (newline/NUL everywhere; `"`, `%`, `$` and backtick on Windows) are refused with a ConfigRefusedError.
- *
- * Windows 的 Codex 用 PowerShell 執行 hook：`"C:\...\agent-hook.cmd" codex` 在 PowerShell 是
- * 「字串 + 多餘 token」的語法錯誤，hook 會被靜默略過。因此一般路徑一律不加引號（兩種 shell 都可用，
- * 也與舊版安裝相同，不會讓 Codex 的 hook 信任失效）；含空白或非 ASCII 的路徑才經由
- * `cmd /d /c "..."` 啟動，這個形式在 PowerShell 與 cmd.exe 底下都只把引號內視為單一路徑。
- */
+// Paths that cannot be quoted safely (newline/NUL everywhere; `"`, `%`, `$` and backtick on Windows) are refused with ConfigRefusedError.
+// Windows 的 Codex 用 PowerShell 執行 hook：`"C:\...\agent-hook.cmd" codex` 是語法錯誤，hook 會被靜默略過，
+// 所以一般路徑不加引號（也與舊版安裝相同，不會讓 Codex 的 hook 信任失效）；含空白或非 ASCII 的路徑才經由 `cmd /d /c "..."`。
 export function codexHookCommand(options: { isWindows: boolean, nodeBin: string, hookScript: string, wrapper: string }): string {
   const refuse = (value: string, pattern: RegExp) => {
     if (pattern.test(value)) {
@@ -526,7 +477,6 @@ export function codexHookCommand(options: { isWindows: boolean, nodeBin: string,
   return `${quote(options.nodeBin)} ${quote(options.hookScript)} codex`
 }
 
-/** Escapes a path for use inside a double-quoted string in a .cmd file. */
 export function escapeCmdQuotedPath(value: string): string {
   if (/["\r\n\0]/.test(value)) throw new Error('Path contains characters that cannot be used in a Windows batch file')
   return value.replace(/%/g, '%%')

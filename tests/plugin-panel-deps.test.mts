@@ -1,4 +1,3 @@
-// panel-deps：各 plugin composable 共用的忙碌範圍、refresh 協調與競態守衛。
 import './support/src-alias.mts'
 import assert from 'node:assert/strict'
 import test from 'node:test'

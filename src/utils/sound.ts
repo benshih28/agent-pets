@@ -1,6 +1,4 @@
-// 用 Web Audio 即時合成短音效：不必附帶或授權音檔，聲音也夠小、沒有載入延遲。
-// 音形、節流與音量範圍都在 src/types/sound.ts 的 registry；這裡只負責排程。
-// 測試會直接用 Node 執行這個檔案，執行期 import 必須是相對路徑（見 agent-pets-conventions §1）。
+// 測試會直接用 Node 執行這個檔案，執行期 import 必須是相對路徑。
 import {
   SOUND_CUE_REGISTRY,
   SOUND_DEFAULTS,
@@ -32,14 +30,13 @@ function volumeFraction(percent: number): number {
 
 let masterVolume = volumeFraction(SOUND_DEFAULTS.soundVolume)
 
-/** 桌面偏好設定的 0–100；非有限數值會讓 Web Audio 排程丟出例外，所以直接忽略。 */
+/** 非有限數值會讓 Web Audio 排程丟出例外，所以直接忽略。 */
 export function setSoundVolume(percent: number): void {
   if (!Number.isFinite(percent)) return
   masterVolume = volumeFraction(percent)
 }
 
 // Web Audio 的振盪器只能 start 一次，每個音一定要新建一組節點，不能重用。
-// 播放時間基準由呼叫端傳入：同一個 cue 的每個音都對齊同一個 currentTime。
 function scheduleTone(audio: AudioContext, now: number, tone: SoundTone): void {
   const gain = tone.gain * masterVolume * SOUND_ENVELOPE.gainScale
   const at = now + tone.startAt

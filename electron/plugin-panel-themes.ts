@@ -1,10 +1,5 @@
-// 插件面板主題（`contributes.panelThemes`，spec §2–§7）。純函式：不 import
-// Electron 或 Node，讓目錄驗證器可以原封不動地內嵌這個檔案
-// （連同 panel-theme-color.ts 與 pet-sprite-validation.ts）。
-//
-// 職責：封閉的 manifest 文法、選用 token 的推導、各模式的對比規則、
-// 套件資產規則，以及把驗證過的主題轉成主機建構之 CSS 值的目錄建構器。
-// 任何違規都直接拒絕；不做任何夾限。
+// 不能 import Electron 或 Node：目錄驗證器會原封不動內嵌這個檔案（連同 panel-theme-color.ts 與 pet-sprite-validation.ts）。
+// 任何違規都直接拒絕，不做任何夾限。
 
 import {
   PANEL_THEME_BLACK,
@@ -49,7 +44,6 @@ import type {
   PetStatusProperty,
 } from '../src/types/panel-theme.ts'
 
-// ── 限制（spec §5.3）──────────────────────────────────────────────────
 export const PANEL_THEME_MAX_THEMES = 8
 export const PANEL_THEME_MAX_FACES_PER_THEME = 4
 export const PANEL_THEME_MAX_FONT_FILES = 8
@@ -67,7 +61,6 @@ export const PANEL_THEME_OVERLAY_FLOOR = 0.5
 export const PANEL_THEME_OVERLAY_CEILING = 0.95
 export const PANEL_THEME_DIAGNOSTIC_MAX_LENGTH = 200
 
-// ── Token 表（spec §3.2）──────────────────────────────────────────────
 type TokenKind = 'required' | 'derived' | 'builtin'
 type AlphaClass = 'opaque' | 'translucent' | 'border' | 'scrim'
 
@@ -109,24 +102,18 @@ export const PANEL_THEME_COLOR_TOKENS: readonly ColorToken[] = Object.freeze([
   { key: 'successText', property: '--organic-success-text', kind: 'builtin', alpha: 'opaque', light: '#3f5a1c', dark: '#b6d48a' },
   { key: 'warnText', property: '--organic-warn-text', kind: 'builtin', alpha: 'opaque', light: '#7a5200', dark: '#f0c866' },
   { key: 'scrim', property: '--organic-scrim', kind: 'builtin', alpha: 'scrim', light: 'rgba(46,43,37,.42)', dark: 'rgba(0,0,0,.55)' },
-  // 擴充組（spec §16.2）：省略時取該模式的內建值，與 tokens.css 的 --builtin-organic-* 相同。
+  // 省略時取內建值，與 tokens.css 的 --builtin-organic-* 相同。
   { key: 'infoText', property: '--organic-info-text', kind: 'builtin', alpha: 'opaque', light: '#2e5b8c', dark: '#9cc3f0' },
   { key: 'shadow', property: '--organic-shadow', kind: 'builtin', alpha: 'opaque', light: '#2e2b25', dark: '#000000' },
   { key: 'highlight', property: '--organic-highlight', kind: 'builtin', alpha: 'opaque', light: '#ffffff', dark: '#ffffff' },
 ])
 
-/**
- * 已停用但仍接受的 manifest 鍵：照樣檢查文法與 alpha（原本合法的 manifest 依舊合法），
- * 但不推導、不輸出。`borderOnAccent` 從權限卡離開強調色填色後就沒有任何介面讀取（1.12.0）。
- */
+// 已停用但仍接受：照樣檢查文法與 alpha（原本合法的 manifest 依舊合法），但不推導、不輸出。
 export const PANEL_THEME_DEPRECATED_COLOR_KEYS: Readonly<Record<string, AlphaClass>> = Object.freeze({
   borderOnAccent: 'translucent',
 })
 
-// ── 寵物狀態膠囊 token（spec §3.7）─────────────────────────────────────
-// 「寵物視窗永不套主題」的唯一窄幅例外：寵物下方狀態膠囊的
-// 顏色。對話泡泡、權限/風險 UI、狀態點、完成標記與 sprite
-// 都維持內建。
+// 「寵物視窗永不套主題」的唯一例外：只有狀態膠囊的顏色；泡泡、權限/風險 UI、狀態點與 sprite 維持內建。
 export type PetStatusColorKey = 'background' | 'border' | 'text' | 'textMuted' | 'quotaFill' | 'quotaTrack' | 'quotaWarn'
 
 interface PetStatusToken {
@@ -146,7 +133,6 @@ export const PET_STATUS_TOKENS: readonly PetStatusToken[] = Object.freeze([
   { key: 'quotaWarn', property: '--pet-status-quota-warn', required: false, alpha: [1, 1] },
 ])
 const PET_STATUS_KEYS: readonly string[] = PET_STATUS_TOKENS.map(token => token.key)
-/** 內建的低額度顏色（`--organic-quota-warning`），省略 quotaWarn 時使用。 */
 const BUILTIN_QUOTA_WARNING = '#e3b64f'
 
 const TOKEN_BY_KEY: ReadonlyMap<string, ColorToken> = new Map(PANEL_THEME_COLOR_TOKENS.map(token => [token.key, token]))
@@ -181,10 +167,7 @@ const POSITIONS: ReadonlySet<string> = new Set([
 ])
 const MODES: readonly PanelThemeMode[] = ['light', 'dark']
 
-// ── 診斷訊息 ──────────────────────────────────────────────────────────
-// 診斷訊息中只會放入主機已知的名稱、驗證過的 id、索引與數字，
-// 因此不需跳脫即可安全顯示（僅限開發者模式）。
-
+// 診斷只含主機已知的名稱、驗證過的 id、索引與數字，所以不需跳脫即可顯示（僅限開發者模式）。
 export class PanelThemeValidationError extends Error {
   readonly diagnostic: string
 
@@ -205,7 +188,6 @@ function ratioText(value: number): string {
   return (Math.floor(value * 100) / 100).toFixed(2)
 }
 
-// ── 小型解析器 ────────────────────────────────────────────────────────
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -216,7 +198,6 @@ function assertKeys(value: Record<string, unknown>, allowed: readonly string[], 
   }
 }
 
-/** 顯示用的純文字：NFKC、移除控制字元與角括號、合併空白；長度不符時為 null。 */
 export function normalizePanelThemePlainText(value: unknown, maxLength: number): string | null {
   if (typeof value !== 'string') return null
   const text = value
@@ -240,7 +221,6 @@ function parseLocalized(value: unknown, maxLength: number, path: string): Plugin
   return { 'zh-TW': zhTW, 'en-US': enUS }
 }
 
-/** 與 plugin-manifest.ts 的 normalizeRelativePath 規則相同。 */
 export function normalizePanelThemeAssetPath(value: unknown, extensions: readonly string[]): string | null {
   if (typeof value !== 'string' || value.length === 0 || value.length > 512) return null
   const normalized = value.normalize('NFC')
@@ -291,7 +271,6 @@ function opaqueColorAt(value: unknown, path: string): PanelThemeRgba {
   return color
 }
 
-// ── 解析後模型 ───────────────────────────────────────────────────────
 export type PanelThemeFamilyEntry =
   | { kind: 'font'; id: string }
   | { kind: 'local'; name: string }
@@ -333,7 +312,6 @@ export interface PanelThemeParseResult {
   themes: ResolvedPanelTheme[]
 }
 
-// ── 字體排印／字型／形狀 ───────────────────────────────────────────
 function parseFonts(value: unknown, path: string): PluginPanelThemeFontFace[] {
   if (value === undefined) return []
   if (!Array.isArray(value) || value.length > PANEL_THEME_MAX_FACES_PER_THEME) {
@@ -416,7 +394,6 @@ function parseShape(value: unknown, path: string): { radiusSm: number; radiusMd:
   return shape
 }
 
-// ── 顏色、推導與對比 ─────────────────────────────────────
 function builtinColor(token: ColorToken, mode: PanelThemeMode): PanelThemeRgba {
   const parsed = parsePanelThemeColor(mode === 'light' ? token.light : token.dark)
   if (!parsed.ok) throw new TypeError(`built-in ${token.key} is not a valid colour`)
@@ -427,7 +404,6 @@ function round3(value: number): number {
   return Math.round(value * 1000) / 1000
 }
 
-/** 推導 "D" token（spec §3.5），並以該模式的內建值填入 "B" token。 */
 export function derivePanelThemeColors(
   declared: Partial<Record<PluginPanelThemeColorKey, PanelThemeRgba>>,
   mode: PanelThemeMode,
@@ -453,12 +429,7 @@ export function derivePanelThemeColors(
   return colors
 }
 
-/**
- * accentHover = mix(accent, text, t)，t 取 0.20, 0.25, ... 0.60 中第一個
- * 能讓 onAccent 在其上維持 >= 4.5:1 的值；都不符合時取 0.20（此時主題會
- * 因 onAccent/accentHover 這組而被拒絕）。結果是確定性的，且朝文字色
- * 移動，所以在淺色模式變深、在深色模式變亮。
- */
+// 都不符合時取 0.20（主題會因 onAccent/accentHover 這組被拒絕）；結果是確定性的。
 export function deriveAccentHover(accent: PanelThemeRgba, text: PanelThemeRgba, onAccent: PanelThemeRgba): PanelThemeRgba {
   for (let step = 20; step <= 60; step += 5) {
     const candidate = mixColor(accent, text, step / 100)
@@ -477,16 +448,13 @@ interface ContrastFailure {
   background: string
   ratio: number
   minimum: number
-  /** 診斷要指向的 manifest 鍵；前景是主機固定色（info）時改指向失敗的表面。 */
+  /** 前景是主機固定色時，改指向失敗的表面。 */
   blame?: string
 }
 
 export type PanelThemeIssueKind = 'alpha' | 'direction' | 'luminance' | 'chroma' | 'hue' | 'distance' | 'contrast' | 'overlay'
 
-/**
- * 一個語意問題。`path` 相對於模式（`colors.textMuted`、`petStatus.text`、`background.overlay.opacity`、
- * `userImage.overlay.opacity`）；`problem` 與 manifest 診斷的文字相同。只含主機已知的名稱與數字。
- */
+// `path` 相對於模式（`colors.textMuted`、`background.overlay.opacity`）。只含主機已知的名稱與數字。
 export interface PanelThemeIssue {
   path: string
   kind: PanelThemeIssueKind
@@ -506,7 +474,6 @@ function* backdropFailures(colors: ColorSet, backdrops: readonly Backdrop[]): Ge
   }
 }
 
-/** 產生器的第一個值；驗證器只需要第一個違規，編輯器的診斷則會走完全部。 */
 function firstOf<T>(values: Iterable<T>): T | null {
   for (const value of values) return value
   return null
@@ -516,25 +483,19 @@ function firstBackdropFailure(colors: ColorSet, backdrops: readonly Backdrop[]):
   return firstOf(backdropFailures(colors, backdrops))
 }
 
-// 狀態色必須維持語意：危險是紅、成功是綠、警告是琥珀、資訊是藍（OKLCH 色相區間與最低色度），
-// 彼此之間以及與強調色之間要有最小 OKLab 色差，避免主題把「危險」畫得像「成功」或像一般按鈕。
+// 狀態色必須維持語意（紅、綠、琥珀、藍），且彼此與強調色之間要有最小色差，避免把「危險」畫得像「成功」或一般按鈕。
 type HueRange = readonly [number, number]
 export const PANEL_THEME_STATE_HUES: Readonly<Record<'dangerText' | 'successText' | 'warnText' | 'infoText', readonly HueRange[]>> = Object.freeze({
   dangerText: [[0, 50], [340, 360]],
   successText: [[105, 170]],
   warnText: [[55, 105]],
-  // 資訊色是藍（青藍到藍紫）；內建淺色與深色都在 252° 左右。
   infoText: [[200, 290]],
 })
 export const PANEL_THEME_STATE_MIN_CHROMA = 0.05
 export const PANEL_THEME_STATE_MIN_DISTANCE = 0.08
-/**
- * 與強調色（按鈕填色 `accent`）的距離。以填色而非 `accentText` 比較：內建淺色的警告字
- * 與強調文字只差 0.046，但它們從不並列成「按鈕對徽章」；會被誤認的是強調按鈕與風險徽章。
- */
+// 以填色 `accent` 而非 `accentText` 比較：會被誤認的是強調按鈕與風險徽章。
 export const PANEL_THEME_STATE_ACCENT_MIN_DISTANCE = 0.06
 
-/** 狀態色彼此之間、以及與強調色之間的最小色差（依此順序檢查）。 */
 const STATE_DISTANCE_PAIRS: ReadonlyArray<readonly [PluginPanelThemeColorKey, PluginPanelThemeColorKey, number]> = [
   ['dangerText', 'successText', PANEL_THEME_STATE_MIN_DISTANCE],
   ['dangerText', 'warnText', PANEL_THEME_STATE_MIN_DISTANCE],
@@ -548,38 +509,27 @@ const STATE_DISTANCE_PAIRS: ReadonlyArray<readonly [PluginPanelThemeColorKey, Pl
   ['infoText', 'accent', PANEL_THEME_STATE_ACCENT_MIN_DISTANCE],
 ]
 
-// ── 主機強制的不變量（spec R14）──────────────────────────────────────
-// 主題會套到每個介面（包含權限與風險 UI），所以不再有「保護區域」；改由主機在
-// 接受主題前證明：每個文字/圖示 token 在它可能出現的每個表面上都夠清楚、焦點環在
-// 每個表面上 >= 3:1、狀態色保有語意（上方的色相與色差規則）。版面、文字標籤與
-// 「按住才允許」由主機程式碼決定，主題無法改變。
+// 主題會套到每個介面（包含權限與風險 UI），所以由主機在接受前證明每個文字/圖示 token 在每個表面上都夠清楚。
+// 版面、文字標籤與「按住才允許」由主機程式碼決定，主題無法改變。
 
-/** 寵物泡泡與狀態膠囊的表面＝ surface 以此 alpha 疊在桌面上（與 tokens.css 的 color-mix 比例相同）。 */
+// 以下 alpha 與 tokens.css 的 color-mix 比例相同。
 export const PET_BUBBLE_SURFACE_ALPHA = 0.93
 export const PET_PILL_SURFACE_ALPHA = 0.92
-/** 寵物視窗的選單與對話框（tokens.css `.desktop-pet --surface-overlay`）＝ surface 以此 alpha 疊在桌面上。 */
 export const PET_OVERLAY_SURFACE_ALPHA = 0.98
-/** 膠囊額度軌道＝ text 的 alpha（tokens.css --organic-status-track）。 */
+// tokens.css --organic-status-track
 export const PET_PILL_TRACK_ALPHA = 0.14
-/** 主要按鈕懸停＝ accentHover 往 text 混合的比例（Button.vue、InlinePermissionCard.vue）。 */
+// Button.vue、InlinePermissionCard.vue 的主要按鈕懸停混合比例。
 export const PANEL_THEME_PRESSED_MIX = 0.12
-/** 陰影色必須夠暗、高光色必須夠亮（相對亮度），才不會變成一層有色的霧蓋住文字。 */
+// 陰影色必須夠暗、高光色必須夠亮，才不會變成一層有色的霧蓋住文字。
 export const PANEL_THEME_SHADOW_MAX_LUMINANCE = 0.05
 export const PANEL_THEME_HIGHLIGHT_MIN_LUMINANCE = 0.7
 
-/** 主機在半透明狀態色底上放同色文字（Chip、Badge 的 tone-success/warn/danger、危險按鈕懸停）時的底色比例。 */
 export const PANEL_THEME_STATE_TINT_ALPHA = 0.12
 
-/** 文字類 token（>= 4.5:1）；焦點環用 accentText（>= 3:1）。 */
 const TEXT_KEYS = ['text', 'textSecondary', 'textMuted', 'accentText', 'dangerText', 'successText', 'warnText', 'infoText'] as const
 type ColorKey = PluginPanelThemeColorKey
 
-/**
- * 每個表面會出現哪些文字（依元件實際用法）。一般表面與寵物泡泡、膠囊承載所有文字、
- * 狀態與資訊色；強調淺底（surfaceWarm：分頁、晶片、徽章、精靈與 Project MCP 的待處理列）
- * 只放主要文字與強調文字；鼠尾草底（成就、成長卡、精靈與 Project MCP 的就緒列）放主要文字與
- * sageDeep／sageDark。bg 排在最後：同時失敗時先指出卡片表面。`reads` 是表面色用到的色鍵。
- */
+// 依元件實際用法決定每個表面會出現哪些文字。bg 排在最後：同時失敗時先指出卡片表面。
 interface SurfaceSpec {
   name: string
   reads: readonly ColorKey[]
@@ -590,7 +540,7 @@ interface SurfaceSpec {
   text: readonly ColorKey[]
 }
 
-/** 鼠尾草文字（通過的測試結果、統計數字、額度重設時間、就緒列）。只出現在面板，不在寵物介面。 */
+// 鼠尾草文字只出現在面板，不在寵物介面。
 const PANEL_TEXT_KEYS: readonly ColorKey[] = [...TEXT_KEYS, 'sageDeep', 'sageDark']
 const OPAQUE_SURFACES: ReadonlyArray<readonly [ColorKey, readonly ColorKey[]]> = [
   ['surface', PANEL_TEXT_KEYS],
@@ -600,11 +550,7 @@ const OPAQUE_SURFACES: ReadonlyArray<readonly [ColorKey, readonly ColorKey[]]> =
   ['surfaceSageSoft', ['text', 'sageDark']],
   ['bg', PANEL_TEXT_KEYS],
 ]
-/**
- * 懸停底（accentOnHover）：精靈與 Project MCP 的懸停按鈕與來源晶片，文字繼承自所在列，
- * 所以依列的實際組合檢查（錯誤列＝ surface2 上的次要文字、待處理列＝ surfaceWarm 上的強調文字、
- * 就緒與已連線列＝ surfaceSage 上的 sageDark）。失敗時指向 accentOnHover。
- */
+// 懸停底的文字繼承自所在列，所以依列的實際組合檢查；失敗時指向 accentOnHover。
 const HOVER_WASH_SURFACES: ReadonlyArray<readonly [ColorKey, readonly ColorKey[]]> = [
   ['surface', TEXT_KEYS],
   ['surface2', ['text', 'textSecondary']],
@@ -615,13 +561,12 @@ const STATE_TINT_KEYS = ['dangerText', 'successText', 'warnText'] as const
 const STATE_TINT_BASES: readonly ColorKey[] = ['surface', 'surface2', 'bg']
 const DESKTOPS = [['black', PANEL_THEME_BLACK], ['white', PANEL_THEME_WHITE]] as const
 
-/** 文字可能出現的每個表面：不透明的面板表面、懸停底，以及疊在黑/白桌面上的寵物泡泡與狀態膠囊。 */
 function surfaceSpecs(): SurfaceSpec[] {
   const surfaces: SurfaceSpec[] = OPAQUE_SURFACES.map(([key, text]) => ({ name: key, reads: [key], color: colors => colors[key], pill: false, focus: true, text }))
   for (const [base, text] of HOVER_WASH_SURFACES) {
     surfaces.push({ name: `accentOnHover over ${base}`, reads: ['accentOnHover', base], color: colors => compositeColor(colors.accentOnHover, colors[base]), blame: 'accentOnHover', pill: false, focus: true, text })
   }
-  // 狀態色晶片：同色文字放在 12% 的同色底上；底愈濃對比愈低，所以以上限檢查。
+  // 同色文字放在 12% 的同色底上；底愈濃對比愈低，所以以上限檢查。
   for (const key of STATE_TINT_KEYS) {
     for (const base of STATE_TINT_BASES) {
       surfaces.push({
@@ -644,8 +589,7 @@ function surfaceSpecs(): SurfaceSpec[] {
       surfaces.push({ name: `${label} over a ${desktop} desktop`, reads: ['surface'], color: colors => compositeColor(withAlphaUnrounded(colors.surface, alpha), base), pill, focus: true, text: TEXT_KEYS })
     }
   }
-  // 危險按鈕懸停：危險色文字放在 12% 的危險色底上（Button.vue）。面板的對話框表面就是 surface，
-  // 已在上面的狀態晶片檢查過；寵物視窗的對話框是半透明的 surface，另外檢查。
+  // 危險按鈕懸停（Button.vue）：面板對話框已由上面的狀態晶片檢查，寵物視窗的對話框是半透明的，另外檢查。
   for (const [desktop, base] of DESKTOPS) {
     surfaces.push({
       name: `dangerText at ${PANEL_THEME_STATE_TINT_ALPHA} over the pet overlay over a ${desktop} desktop (danger button hover)`,
@@ -659,10 +603,7 @@ function surfaceSpecs(): SurfaceSpec[] {
   return surfaces
 }
 
-/**
- * 一個不變量配對：最多一個失敗。`reads` 是它用到的所有色鍵（前景與表面）；主題編輯器的
- * 建議值搜尋只換一個鍵，所以只重跑讀到該鍵的配對。
- */
+// `reads` 讓主題編輯器的建議值搜尋只重跑讀到被換鍵的配對。
 interface InvariantCheck { reads: readonly ColorKey[]; failure(colors: ColorSet): ContrastFailure | null }
 
 function invariantChecks(): InvariantCheck[] {
@@ -683,14 +624,11 @@ function invariantChecks(): InvariantCheck[] {
     })
   }
   for (const surface of surfaceSpecs()) {
-    // 懸停底是半透明的：失敗時指向 accentOnHover（文字色本身在底下的不透明表面上已通過）。
     const blame = surface.blame ? { blame: surface.blame } : {}
     for (const key of surface.text) pair(key, surface.reads, surface.color, 4.5, { foreground: key, background: surface.name, ...blame })
     // 焦點環不會畫在狀態晶片上（晶片不可聚焦）。
     if (surface.focus) pair('accentText', surface.reads, surface.color, 3, { foreground: 'accentText', background: `${surface.name} (focus ring)`, ...blame })
     if (!surface.pill) continue
-    // 膠囊的額度條：一般（sageDeep）、Claude（accentText）、低額度（warnText）、危急（dangerText），
-    // 在膠囊上與疊在額度軌道上都要 >= 3:1。
     const track = (colors: ColorSet) => compositeColor(withAlphaUnrounded(colors.text, PET_PILL_TRACK_ALPHA), surface.color(colors))
     for (const key of ['sageDeep', 'accentText', 'warnText', 'dangerText'] as const) {
       pair(key, surface.reads, surface.color, 3, { foreground: key, background: `${surface.name} (quota fill)` })
@@ -698,15 +636,12 @@ function invariantChecks(): InvariantCheck[] {
     }
   }
   const pairs: ReadonlyArray<readonly [ColorKey, readonly ColorKey[], (colors: ColorSet) => PanelThemeRgba, number, string]> = [
-    // textFaint 只用於裝飾（狀態點、分隔）：>= 3:1。
     ['textFaint', ['surface'], colors => colors.surface, 3, 'surface'],
     ['textFaint', ['bg'], colors => colors.bg, 3, 'bg'],
-    // 強調填色當圖形使用（外框、核取方塊、進度條）：>= 3:1。
     ['accent', ['surface'], colors => colors.surface, 3, 'surface'],
     ['onAccent', ['accent'], colors => colors.accent, 3, 'accent'],
     ['onAccent', ['accentHover'], colors => colors.accentHover, 4.5, 'accentHover'],
     ['onAccent', ['accentHover', 'text'], colors => mixColor(colors.accentHover, colors.text, PANEL_THEME_PRESSED_MIX), 4.5, 'accentHover mixed 12% toward text (hovered primary button)'],
-    // 狀態徽章的標籤（未讀/錯誤/成功徽章）：bg 色字在實心狀態色上。
     ['bg', ['dangerText'], colors => colors.dangerText, 4.5, 'dangerText (badge fill)'],
     ['bg', ['successText'], colors => colors.successText, 4.5, 'successText (badge fill)'],
     ['bg', ['warnText'], colors => colors.warnText, 4.5, 'warnText (badge fill)'],
@@ -717,12 +652,11 @@ function invariantChecks(): InvariantCheck[] {
 
 const INVARIANT_CHECKS: readonly InvariantCheck[] = invariantChecks()
 
-/** 依固定順序找出第一個不符合的配對；同一組輸入一定得到同一個診斷。 */
 export function panelThemeInvariantFailure(colors: ColorSet): ContrastFailure | null {
   return firstOf(panelThemeInvariantFailures(colors))
 }
 
-/** 依固定順序列出所有不符合的配對（第一個就是 panelThemeInvariantFailure 的結果）。 */
+// 固定順序：同一組輸入一定得到同一個診斷。
 export function* panelThemeInvariantFailures(colors: ColorSet): Generator<ContrastFailure> {
   for (const check of INVARIANT_CHECKS) {
     const failure = check.failure(colors)
@@ -744,12 +678,7 @@ function withAlphaUnrounded(color: PanelThemeRgba, alpha: number): PanelThemeRgb
   return { r: color.r, g: color.g, b: color.b, a: alpha }
 }
 
-/**
- * 在 [0.50, 0.95] 間以 0.01 為格點、最小的覆蓋層不透明度，從該值起每個
- * 更大的級距也都能讓所有背景配對保持可讀（以最差情況的黑色與白色圖片
- * 像素計算）。不存在時為 null。採後綴封閉，所以使用者之後選擇任何
- * 大於等於最小值的 dim 都保證通過。
- */
+// 採後綴封閉：使用者之後選擇任何大於等於最小值的 dim 都保證通過（以最差情況的黑/白圖片像素計算）。
 export function minimumPanelThemeOverlay(colors: ColorSet, overlay: PanelThemeRgba, imageOpacity: number): number | null {
   let minimum: number | null = null
   for (let step = 95; step >= 50; step -= 1) {
@@ -760,7 +689,6 @@ export function minimumPanelThemeOverlay(colors: ColorSet, overlay: PanelThemeRg
   return minimum
 }
 
-/** 覆蓋層的問題（沒有任何不透明度能通過，或宣告值低於最小值）；通過時為 null。 */
 function overlayIssue(colors: ColorSet, overlay: { color: PanelThemeRgba; opacity: number }, imageOpacity: number, path: string, label: string): PanelThemeIssue | null {
   const minimum = minimumPanelThemeOverlay(colors, overlay.color, imageOpacity)
   const probe = minimum === null ? PANEL_THEME_OVERLAY_CEILING : overlay.opacity
@@ -852,7 +780,6 @@ function contrastIssue(failure: ContrastFailure): PanelThemeIssue {
   }
 }
 
-/** 一個模式在文法檢查之後要判斷的內容（全部是已解析、已推導的值）。 */
 export interface PanelThemeModeCheckInput {
   mode: PanelThemeMode
   colors: ColorSet
@@ -861,17 +788,12 @@ export interface PanelThemeModeCheckInput {
   petStatus?: Record<PetStatusColorKey, PanelThemeRgba>
 }
 
-/**
- * 一個語意檢查：最多產生一個問題。`reads` 列出它用到的所有可調整色鍵（與問題的 `path` 同名：
- * `colors.<key>`、`petStatus.<key>`），而它產生的問題的 `path` 一定在 `reads` 裡。主題編輯器替一個
- * 鍵找建議值時只換那個鍵，所以只重跑讀到它的檢查（spec R21）；其他檢查的結果不可能改變。
- */
+// 問題的 `path` 一定在 `reads` 裡：編輯器替一個鍵找建議值時只重跑讀到它的檢查，其他檢查的結果不可能改變。
 interface ModeCheck {
   reads: readonly string[]
   run(input: PanelThemeModeCheckInput): PanelThemeIssue | null
 }
 
-/** 一個模式的檢查表，以及依色鍵建立的索引（同一個順序）。 */
 interface ModeCheckPlan {
   checks: readonly ModeCheck[]
   byRead: ReadonlyMap<string, readonly ModeCheck[]>
@@ -890,7 +812,6 @@ function contrastCheck(check: InvariantCheck): ModeCheck {
   }
 }
 
-/** 單一背景色上的 BACKDROP_PAIRS（背景色以 `color` 取得、名稱固定）。 */
 function backdropChecks(name: string, reads: readonly ColorKey[], color: (input: PanelThemeModeCheckInput) => PanelThemeRgba): ModeCheck[] {
   return BACKDROP_PAIRS.map(([key, minimum]) => ({
     reads: [...new Set([key, ...reads])].map(colorRead),
@@ -901,7 +822,6 @@ function backdropChecks(name: string, reads: readonly ColorKey[], color: (input:
   }))
 }
 
-/** 與輸入形狀無關的檢查（alpha、明暗方向、陰影／高光、狀態色語意、不變量、bg 上的文字）。 */
 function staticModeChecks(): ModeCheck[] {
   const checks: ModeCheck[] = PANEL_THEME_COLOR_TOKENS.map(token => {
     const [min, max] = ALPHA_RANGES[token.alpha]
@@ -979,14 +899,13 @@ function staticModeChecks(): ModeCheck[] {
 }
 
 const STATIC_MODE_CHECKS: readonly ModeCheck[] = staticModeChecks()
-/** 覆蓋層的最小值與文字可讀性讀到的色鍵（imageBackdrops 以 bg 為底）；問題的 path（`…overlay.opacity`）另外加入，維持「path 一定在 reads 裡」。 */
+// imageBackdrops 以 bg 為底；問題的 path（`…overlay.opacity`）另外加入，維持「path 一定在 reads 裡」。
 const OVERLAY_READS: readonly string[] = [...BACKDROP_PAIRS.map(([key]) => key), 'bg'].map(key => colorRead(key as ColorKey))
 
 function gradientStopColor(input: PanelThemeModeCheckInput, index: number): PanelThemeRgba {
   return input.background.type === 'gradient' ? input.background.stops[index]!.color : PANEL_THEME_BLACK
 }
 
-/** 寵物膠囊的 alpha 與對比（疊在黑色與白色桌面上）。 */
 function petStatusChecks(): ModeCheck[] {
   const checks: ModeCheck[] = PET_STATUS_TOKENS.map(token => {
     const [min, max] = token.alpha
@@ -1026,7 +945,6 @@ function petStatusChecks(): ModeCheck[] {
 
 const PET_STATUS_CHECKS: readonly ModeCheck[] = petStatusChecks()
 
-/** 依輸入的形狀（背景種類與色標數、覆蓋層、膠囊）組出完整的檢查表；檢查本身只讀輸入的值。 */
 function buildModeCheckPlan(input: PanelThemeModeCheckInput): ModeCheckPlan {
   const checks: ModeCheck[] = [...STATIC_MODE_CHECKS]
   const { background } = input
@@ -1041,7 +959,6 @@ function buildModeCheckPlan(input: PanelThemeModeCheckInput): ModeCheckPlan {
       }
     }
   }
-  // 圖片背景：以最小覆蓋層檢查，讓診斷訊息可據以修正。
   if (background.type === 'image') {
     checks.push({
       reads: [...OVERLAY_READS, 'background.overlay.opacity'],
@@ -1068,7 +985,6 @@ function buildModeCheckPlan(input: PanelThemeModeCheckInput): ModeCheckPlan {
   return { checks, byRead }
 }
 
-/** 形狀的組合有限（背景 3 種 × 色標數 × 覆蓋層 × 膠囊），所以快取每個形狀的檢查表。 */
 const MODE_CHECK_PLANS = new Map<string, ModeCheckPlan>()
 
 function modeCheckPlan(input: PanelThemeModeCheckInput): ModeCheckPlan {
@@ -1089,19 +1005,11 @@ function* runChecks(checks: readonly ModeCheck[], input: PanelThemeModeCheckInpu
   }
 }
 
-/**
- * 依驗證器的固定順序列出一個模式的所有語意問題（alpha、明暗方向、陰影／高光、狀態色語意、
- * 不變量、背景、覆蓋層、寵物膠囊）。驗證器取第一個；主題編輯器的診斷走完全部，
- * 所以兩者對「哪裡錯」的判斷永遠一致。
- */
+// 驗證器取第一個，編輯器診斷走完全部，所以兩者對「哪裡錯」的判斷永遠一致。
 export function panelThemeModeIssues(input: PanelThemeModeCheckInput): Generator<PanelThemeIssue> {
   return runChecks(modeCheckPlan(input).checks, input)
 }
 
-/**
- * 只跑讀到 `read`（例如 `colors.text`）的檢查，順序與 panelThemeModeIssues 相同。只換了這個鍵的
- * 輸入，其餘檢查的結果與原輸入相同，所以建議值搜尋用這個代替完整的檢查。
- */
 export function panelThemeModeIssuesReading(input: PanelThemeModeCheckInput, read: string): Generator<PanelThemeIssue> {
   return runChecks(modeCheckPlan(input).byRead.get(read) ?? [], input)
 }
@@ -1113,7 +1021,6 @@ interface ParsedModeGrammar {
   petStatusContribution?: Partial<Record<PetStatusColorKey, string>>
 }
 
-/** 一個模式的文法與結構（不含任何對比或語意檢查）；違規時拋出 PanelThemeValidationError。 */
 function parseModeGrammar(value: unknown, mode: PanelThemeMode, path: string): ParsedModeGrammar {
   if (!isRecord(value)) fail(path, 'must be an object')
   assertKeys(value, ['colors', 'background', 'userImage', 'petStatus'], path)
@@ -1122,7 +1029,6 @@ function parseModeGrammar(value: unknown, mode: PanelThemeMode, path: string): P
   for (const [key, raw] of Object.entries(value.colors)) {
     const deprecated = Object.hasOwn(PANEL_THEME_DEPRECATED_COLOR_KEYS, key) ? PANEL_THEME_DEPRECATED_COLOR_KEYS[key]! : null
     if (deprecated) {
-      // 停用的鍵只檢查、不保留（見 PANEL_THEME_DEPRECATED_COLOR_KEYS）。
       const [min, max] = ALPHA_RANGES[deprecated]
       const alpha = colorAt(raw, `${path}.colors.${key}`).a
       if (alpha < min || alpha > max) fail(`${path}.colors.${key}`, `alpha must be ${min}-${max}`)
@@ -1165,7 +1071,6 @@ function parseModeGrammar(value: unknown, mode: PanelThemeMode, path: string): P
   }
 }
 
-/** 只解析文法，回傳語意檢查需要的輸入（主題編輯器的診斷用）；文法錯誤時拋出。 */
 export function panelThemeModeCheckInput(value: unknown, mode: PanelThemeMode): PanelThemeModeCheckInput {
   return parseModeGrammar(value, mode, mode).input
 }
@@ -1197,10 +1102,6 @@ function parseMode(value: unknown, mode: PanelThemeMode, path: string): { contri
   }
 }
 
-/**
- * 從必填的背景與文字推導省略的膠囊 token，再檢查膠囊合成在
- * 最差情況的黑色與白色桌面像素上的對比（膠囊浮在任意內容之上）。
- */
 export function derivePetStatusColors(
   declared: Partial<Record<PetStatusColorKey, PanelThemeRgba>> & { background: PanelThemeRgba; text: PanelThemeRgba },
   modeColors: Pick<ColorSet, 'accent'>,
@@ -1219,11 +1120,7 @@ export function derivePetStatusColors(
   }
 }
 
-/**
- * 省略 quotaWarn 時：以內建的低額度琥珀色為起點，以 0.10 為級距（0.00 … 0.60）
- * 朝膠囊文字色移動，直到在膠囊與額度軌道上、且分別疊在黑色與白色桌面上
- * 都達到 3:1；都不符合時取最後一級（此時主題會被拒絕）。
- */
+// 都不符合時取最後一級（此時主題會被拒絕）。
 function deriveQuotaWarn(amber: PanelThemeRgba, declared: { background: PanelThemeRgba; text: PanelThemeRgba }, track: PanelThemeRgba): PanelThemeRgba {
   const pill = petStatusBackdrops(declared.background)
   const backdrops = [...pill, ...pill.map(backdrop => ({ name: backdrop.name, color: compositeColor(track, backdrop.color) }))]
@@ -1314,10 +1211,6 @@ function parseTheme(value: unknown, index: number): { contribution: PluginPanelT
   }
 }
 
-/**
- * 驗證 `contributes.panelThemes`。遇到第一個違規時，拋出帶有經清理診斷訊息
- * （<= 200 字元）的 PanelThemeValidationError。
- */
 export function parsePanelThemes(value: unknown): PanelThemeParseResult {
   if (!Array.isArray(value) || value.length < 1 || value.length > PANEL_THEME_MAX_THEMES) {
     fail('panelThemes', `must be an array of 1-${PANEL_THEME_MAX_THEMES} themes`)
@@ -1343,7 +1236,6 @@ export function parsePanelThemes(value: unknown): PanelThemeParseResult {
   return { contributions, themes }
 }
 
-/** 給只需要解析後主題之呼叫端的不拋例外包裝。 */
 export function resolvePanelThemes(value: unknown): ResolvedPanelTheme[] | null {
   try {
     return parsePanelThemes(value).themes
@@ -1352,7 +1244,6 @@ export function resolvePanelThemes(value: unknown): ResolvedPanelTheme[] | null 
   }
 }
 
-// ── 套件資產規則（spec §5.1）──────────────────────────────────────
 export interface PanelThemeAssetPaths {
   images: Set<string>
   fonts: Set<string>
@@ -1404,7 +1295,7 @@ const USER_IMAGE_RULES: ImageRules = {
   requireUpright: false,
 }
 
-/** 只檢查檔頭；不做任何解碼。 */
+// 只檢查檔頭；不做任何解碼。
 function checkImage(bytes: Uint8Array, rules: ImageRules): PanelThemeImageCheck {
   if (bytes.byteLength > rules.maxBytes) return { ok: false, error: 'image_too_large' }
   const type = rasterImageTypeIn(bytes, rules.types)
@@ -1428,22 +1319,18 @@ export function checkPanelThemeUserImage(bytes: Uint8Array): PanelThemeImageChec
   return checkImage(bytes, USER_IMAGE_RULES)
 }
 
-// ── 目錄建構器（spec §7.1）──────────────────────────────────────────
 export interface PanelThemeSourcePlugin {
   pluginId: string
   version: string
   pluginName: PluginLocalizedText
-  /** 已安裝、已啟用，且全域插件開關開啟。 */
   available: boolean
   unavailableReason?: Exclude<PanelThemeUnavailableReason, 'theme_removed'>
   themes: readonly ResolvedPanelTheme[]
 }
 
 export interface PanelThemeAssetResolver {
-  /** 回傳套件內圖片或字型的協定 URL（並記錄其 token）。 */
   packagedUrl(kind: 'image' | 'font', pluginId: string, version: string, relativePath: string): string
   fontAlias(pluginId: string, version: string, themeId: string, fontId: string): string
-  /** 回傳已儲存使用者圖片的協定 URL；無法提供時為 null。 */
   userImageUrl(pluginId: string, file: string): string | null
 }
 
@@ -1564,14 +1451,12 @@ function slotState(ref: PanelThemeRef | null, mode: PanelThemeMode, sources: Rea
   return { ref: { ...ref }, status: 'active' }
 }
 
-/** 某模式完整的內建色盤（解析後的顏色，供插件主題 API 使用）。 */
 export function builtinPanelThemeColors(mode: PanelThemeMode): Record<PluginPanelThemeColorKey, PanelThemeRgba> {
   const colors = {} as Record<PluginPanelThemeColorKey, PanelThemeRgba>
   for (const token of PANEL_THEME_COLOR_TOKENS) colors[token.key] = builtinColor(token, mode)
   return colors
 }
 
-/** 某模式完整的內建色盤，以標準屬性表示。 */
 export function builtinPanelThemeProperties(mode: PanelThemeMode): Record<PanelThemeColorProperty, string> {
   const properties = {} as Record<PanelThemeColorProperty, string>
   for (const token of PANEL_THEME_COLOR_TOKENS) properties[token.property] = formatPanelThemeColor(builtinColor(token, mode))
@@ -1580,7 +1465,6 @@ export function builtinPanelThemeProperties(mode: PanelThemeMode): Record<PanelT
 
 const BUILTIN_PROPERTIES = { light: builtinPanelThemeProperties('light'), dark: builtinPanelThemeProperties('dark') }
 
-/** 建構渲染端狀態：插槽狀態加上每個可用插件的主題。 */
 export function buildPanelThemeState(
   sources: readonly PanelThemeSourcePlugin[],
   store: PanelThemeStoreData,
@@ -1610,13 +1494,11 @@ export function emptyPanelThemeState(): PanelThemeState {
   }
 }
 
-/** (plugin, theme, mode) 存在於來源中且允許使用者圖片時為 true。 */
 export function panelThemeAllowsUserImage(sources: readonly PanelThemeSourcePlugin[], ref: PanelThemeRef, mode: PanelThemeMode): boolean {
   const theme = sources.find(source => source.pluginId === ref.pluginId)?.themes.find(candidate => candidate.id === ref.themeId)
   return Boolean(theme?.modes[mode]?.userImage)
 }
 
-/** (plugin, theme, mode) 的使用者 dim 最小值；該處不允許使用者圖片時為 null。 */
 export function panelThemeUserImageMinimum(sources: readonly PanelThemeSourcePlugin[], ref: PanelThemeRef, mode: PanelThemeMode): number | null {
   const theme = sources.find(source => source.pluginId === ref.pluginId)?.themes.find(candidate => candidate.id === ref.themeId)
   return theme?.modes[mode]?.userImage?.minDim ?? null

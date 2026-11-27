@@ -1,7 +1,3 @@
-/**
- * Capabilities are projected by the main process so the renderer can explain
- * platform limits instead of presenting an action that cannot work.
- */
 export type CaptureExclusionMode = 'system' | 'limited' | 'unsupported'
 export type FullscreenAutoHideMode = 'macos-native' | 'windows-native' | 'unsupported'
 

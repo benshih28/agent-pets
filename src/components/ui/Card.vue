@@ -1,15 +1,4 @@
 <script setup lang="ts">
-// Replaces five card treatments (.settings-card, .settings-hero-card,
-// .history-card, .usage-provider, .progression-card) that each defined their
-// own padding, radius, border and gradient — so moving between Usage and
-// History showed two different materials for the same kind of container.
-//
-// `tone` is deliberately restrained: most cards stay `neutral` (the flat
-// content-layer look Liquid Glass asks for — see references/liquid-glass.md).
-// Reach for a tone only when the card has a real semantic identity shared
-// with other UI using the same colour (session activity is green everywhere,
-// token/growth numbers are accent purple everywhere, Claude's own quota card
-// keeps Claude's hue) — colouring every card would just be noise again.
 withDefaults(defineProps<{
   tone?: 'neutral' | 'accent' | 'success' | 'claude' | 'warn'
   title?: string

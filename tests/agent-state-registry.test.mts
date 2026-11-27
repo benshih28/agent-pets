@@ -7,7 +7,7 @@ import { classifyNotification } from '../electron/notification-policy.ts'
 import { nextFinalState } from '../electron/history-sessions.ts'
 import { makeAgentStatusEvent } from './support/agent-status-event.mts'
 
-// 特性測試：數值是重構成 registry 前各處散落常數與 switch 的實際輸出，任何一格變了都算外部契約改變。
+// 任何一格變了都算外部契約改變。
 
 const STATES = [
   'offline', 'idle', 'thinking', 'tool-running',
@@ -54,7 +54,6 @@ test('desktop notifications per state are unchanged', () => {
     'waiting-input': { key: 'codex:s1:waiting-input', kind: 'waiting-input', title: 'Codex 正在等待輸入', body: 'p', terminal: false, session },
     success: { key: 'codex:s1:success', kind: 'success', title: 'Codex 工作已完成', body: 'p', terminal: true },
     error: { key: 'codex:s1:error', kind: 'error', title: 'Codex 工作失敗', body: 'p', terminal: true },
-    // 事件字串不在 AgentState 內（含原型鏈上的名稱）一律不通知。
     bogus: null,
     constructor: null,
     toString: null,
@@ -83,7 +82,6 @@ test('history final-state classification per state is unchanged', () => {
     'waiting-input': ['open', 'open', 'open', 'open', 'open'],
     success: ['success', 'success', 'success', 'success', 'success'],
     error: ['error', 'error', 'error', 'error', 'error'],
-    // 不認得的狀態沿用上一輪結果，跟 idle 相同。
     bogus: ['open', 'success', 'error', 'cancelled', 'open'],
     constructor: ['open', 'success', 'error', 'cancelled', 'open'],
   }
@@ -100,7 +98,6 @@ test('sound cues keep their per-cue switches and master gates', () => {
   const closed: SoundGate = { ...open, soundOnPermission: false, soundOnError: false, soundOnSuccess: false }
   for (const cue of ['success', 'error', 'waiting-permission', 'waiting-input'] as const) {
     assert.equal(shouldPlayCue(cue, open), true, cue)
-    // waiting-input 沒有自己的開關，只跟總開關。
     assert.equal(shouldPlayCue(cue, closed), cue === 'waiting-input', cue)
     assert.equal(shouldPlayCue(cue, { ...open, soundEnabled: false }), false, cue)
     assert.equal(shouldPlayCue(cue, { ...open, dndEnabled: true }), false, cue)
@@ -131,7 +128,6 @@ test('aria keys, mini badges and sound cues match the switches they replaced', (
     offline: null, idle: null, thinking: null, 'tool-running': null,
     'waiting-permission': 'waiting-permission', 'waiting-input': 'waiting-input', success: 'success', error: 'error',
   })
-  // 不認得的狀態（含原型鏈上的名稱）一律當 idle 呈現，跟原本各處的 default 分支相同。
   for (const state of ['bogus', 'constructor', 'toString', '__proto__']) {
     assert.equal(statePresentation(state), AGENT_STATE_PRESENTATION.idle, state)
     assert.equal(isAgentState(state), false, state)
@@ -145,7 +141,6 @@ test('both registries cover every AgentState and nothing else', () => {
   assert.deepEqual(Object.keys(AGENT_STATE_PRESENTATION).sort(), states)
   assert.deepEqual(Object.keys(STATE_PRIORITY).sort(), states)
   for (const state of STATES) assert.equal(isAgentState(state), true, state)
-  // 表是全程式共用的單一來源：整張表、每一列與列裡的巢狀物件都凍結，誤改會直接丟錯。
   for (const table of [AGENT_STATE_POLICY, AGENT_STATE_PRESENTATION, STATE_PRIORITY, AGENT_STATES]) {
     assert.equal(Object.isFrozen(table), true)
   }

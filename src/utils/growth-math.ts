@@ -20,7 +20,6 @@ export function streakAtRisk(lastActiveLocalDate: string | undefined, today: str
   return currentStreak > 0 && lastActiveLocalDate === previousLocalDate(today)
 }
 
-/** Whole days until `targetLevel` at the recent average pace, or null without a pace. */
 export function etaDaysToLevel(totalXp: number, targetLevel: number, averageDailyXp: number | null): number | null {
   if (averageDailyXp === null || averageDailyXp <= 0) return null
   const needed = Math.max(0, totalXpForLevel(targetLevel) - totalXp)

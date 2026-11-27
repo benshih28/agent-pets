@@ -45,7 +45,6 @@ test('desktop IPC uses injected stores and keeps mode and preference contracts',
   const broadcasts: unknown[] = []
   const updates: unknown[] = []
   const panelWindow = fakeBrowserWindow()
-  // store 與 tray 的完整實作會牽動檔案系統與 Electron Tray；受測的 IPC 層只呼叫下面這兩個方法。
   const preferencesStore = { initializeLegacySound: (enabled: boolean): DesktopPreferences => { legacyFlags.push(enabled); return { ...basePreferences, soundEnabled: enabled } } } satisfies Pick<DesktopPreferencesStore, 'initializeLegacySound'>
   const tray = { rebuild: () => undefined } satisfies Pick<DesktopTrayController, 'rebuild'>
   const updatedPreferences: DesktopPreferences = { ...basePreferences, soundEnabled: false }

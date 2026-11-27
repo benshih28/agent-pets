@@ -1,5 +1,4 @@
 .mcp-overlay {
-  /* 顏色、字型與形狀都來自 tokens.css 的語意層，不在這裡重新宣告別名。 */
   position: fixed;
   z-index: var(--z-system);
   inset: 0;
@@ -19,7 +18,6 @@
   flex-direction: column;
   gap: var(--dialog-shell-gap);
   padding: var(--dialog-shell-padding);
-  /* 檔案與預覽列對齊勾選框右側的文字。 */
   --mcp-detail-indent: 26px;
   overflow: hidden;
   border-radius: var(--organic-radius-lg);

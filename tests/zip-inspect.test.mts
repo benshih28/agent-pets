@@ -16,7 +16,6 @@ function zip(files: Zippable): Uint8Array {
   return zipSync(files, { level: 0 })
 }
 
-/** Offsets of every central-directory record in an archive. */
 function centralRecords(bytes: Uint8Array): number[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const offsets: number[] = []
@@ -68,7 +67,6 @@ test('rejects symlink, reparse-point and encrypted entries', () => {
 
 test('rejects zip-slip names, non-UTF-8 names and case-insensitive duplicates', () => {
   for (const name of ['../pet.json', '/abs/pet.json', 'C:/pet.json', 'a/../../pet.json']) {
-    // fflate writes the name as given, so the archive itself carries the hostile path.
     assert.deepEqual(inspectZipArchive(zip({ [name]: text('{}') }), LIMITS), { ok: false, error: 'unsafe_path' }, name)
   }
   const nonUtf8 = patch(zip({ 'pet.json': text('{}'), 'abcd.png': text('x') }), (view, records) => {
@@ -111,7 +109,6 @@ test('enforces entry count, total size and compression-ratio limits before infla
 
 test('rejects entries whose data ranges overlap (overlapping-file zip bomb)', () => {
   const archive = patch(zip({ 'a.png': text('aaaa'), 'b.png': text('bbbb') }), (view, records) => {
-    // Stretch a.png's data over b.png's local header and data.
     const eocd = view.byteLength - 22
     const centralOffset = view.getUint32(eocd + 16, true)
     const localA = view.getUint32(records[0] + 42, true)
@@ -122,7 +119,6 @@ test('rejects entries whose data ranges overlap (overlapping-file zip bomb)', ()
   assert.deepEqual(inspectZipArchive(archive, LIMITS), { ok: false, error: 'overlapping_entries' })
 })
 
-/** Repro from the security review: a fake EOCD hidden in the real EOCD's comment. */
 function hiddenEocdArchive(): Uint8Array {
   const hidden = zip({ 'evil.json': text('{"hidden":true}') })
   const visible = zip({ 'pet.json': text('{"id":"ok"}') })
@@ -163,7 +159,6 @@ test('rejects a ZIP64 locator, a gap before the EOCD, and trailing EOCD signatur
   locator.set(base.subarray(0, eocd), 0)
   new DataView(locator.buffer).setUint32(eocd, 0x07064b50, true)
   locator.set(base.subarray(eocd), eocd + 20)
-  // The central directory now ends 20 bytes before the EOCD and a locator sits at eocd-20.
   assert.deepEqual(inspectZipArchive(locator, LIMITS), { ok: false, error: 'unsupported_archive' })
 
   const gap = new Uint8Array(base.length + 4)
@@ -175,10 +170,10 @@ test('rejects a ZIP64 locator, a gap before the EOCD, and trailing EOCD signatur
 test('rejects local headers that disagree with the central directory', () => {
   const base = zip({ 'pet.json': text('{}') })
   const mismatches: Array<(view: DataView, local: number) => void> = [
-    (view, local) => view.setUint8(local + 30, 0x50), // name byte
-    (view, local) => view.setUint16(local + 8, 8, true), // method
-    (view, local) => view.setUint32(local + 14, 1, true), // crc
-    (view, local) => view.setUint32(local + 22, 99, true), // uncompressed size
+    (view, local) => view.setUint8(local + 30, 0x50),
+    (view, local) => view.setUint16(local + 8, 8, true),
+    (view, local) => view.setUint32(local + 14, 1, true),
+    (view, local) => view.setUint32(local + 22, 99, true),
   ]
   for (const mutate of mismatches) {
     const archive = patch(base, (view, records) => mutate(view, view.getUint32(records[0] + 42, true)))
@@ -197,7 +192,6 @@ test('extracts only inspected entries and verifies length and CRC-32', () => {
     assert.equal(extracted.ok && new TextDecoder().decode(extracted.data), new TextDecoder().decode(payload))
     assert.equal(crc32(payload), inspected.entries[0].crc32)
     assert.deepEqual(extractZipEntry(archive, { ...inspected.entries[0], crc32: inspected.entries[0].crc32 ^ 1 }), { ok: false, error: 'checksum_mismatch' })
-    // A stream that inflates past its declared size is refused instead of truncated.
     assert.deepEqual(extractZipEntry(archive, { ...inspected.entries[0], uncompressedSize: payload.length - 1 }), { ok: false, error: 'invalid_archive' })
   }
   assert.equal(crc32(text('123456789')), 0xcbf43926)

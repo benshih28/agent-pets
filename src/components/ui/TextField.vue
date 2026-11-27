@@ -2,9 +2,6 @@
 import { ref, useId } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 
-// The one text input. Replaces the bare <input> styles (.pet-rename-input and
-// the settings search box). Supports a leading search icon, a clear button, an
-// optional error line, and a character counter when maxlength is set.
 const props = withDefaults(defineProps<{
   label?: string
   ariaLabel?: string
@@ -14,9 +11,8 @@ const props = withDefaults(defineProps<{
   error?: string
   clearLabel?: string
   size?: 'sm' | 'md'
-  /** Shows a leading magnifier icon. */
   search?: boolean
-  /** Escape is handled by the parent: stop it from reaching panel-level Esc handling. */
+  /** Stops Esc from reaching the panel-level Esc handler. */
   consumeEscape?: boolean
 }>(), {
   type: 'text',

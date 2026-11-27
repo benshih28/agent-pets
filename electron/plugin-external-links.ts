@@ -21,7 +21,6 @@ export type PluginExternalLinkResult =
   | { ok: true; value: { opened: true } }
   | { ok: false; error: PluginErrorCode }
 
-/** Opens a manifest-approved HTTPS URL in the system browser after a trusted panel gesture. */
 export class PluginExternalLinkController {
   private readonly options: PluginExternalLinkControllerOptions
   private readonly limiters = new Map<string, SlidingWindowLimiter>()

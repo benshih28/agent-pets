@@ -1,10 +1,4 @@
-// App 新版檢查：主程序是唯一的真相（開關、上次檢查、最新已知版本都存在主程序），renderer 只保存快照。
-//
-// - 事件輸入：設定頁的進階分頁掛載時 `refresh()`；開關 `setEnabled()`、按鈕 `checkNow()`、`openRelease()`。
-//   沒有主程序廣播：自動檢查的結果在下次開啟設定頁時讀到，新版提示另走通知中心。
-// - 計時器：無。
-// - storage：無（不在 renderer 保存任何東西，release 網址也不會進 renderer）。
-// - 跨視窗同步：只有設定面板會用，不同步。
+// 主程序是唯一的真相；renderer 不保存任何東西，release 網址也不會進 renderer。
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { AppUpdateOutcomeView, AppUpdateState } from '@/types/app-update'
@@ -12,7 +6,6 @@ import type { AppUpdateOutcomeView, AppUpdateState } from '@/types/app-update'
 export const useAppUpdateStore = defineStore('appUpdate', () => {
   const state = ref<AppUpdateState | null>(null)
   const checking = ref(false)
-  /** 最近一次手動操作的結果（頻率限制／開啟失敗）；refresh 與下一次檢查會清掉。 */
   const notice = ref<AppUpdateOutcomeView | null>(null)
 
   const updateAvailable = computed(() => !!state.value?.latestVersion)

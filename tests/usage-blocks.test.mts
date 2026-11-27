@@ -41,7 +41,6 @@ test('usage past the block end opens a new block even without a five-hour gap', 
 })
 
 test('a gap of five hours or more closes the block; the next one re-floors to its own hour', () => {
-  // ccusage rule: gap measured from the last activity, not the block start.
   const blocks = latestUsageBlocks([
     entry('claude-code', BASE),
     entry('claude-code', BASE + 5 * HOUR + 40 * MINUTE),
@@ -77,7 +76,6 @@ test('usageBlockView reports elapsed, remaining and burn rate at a fixed clock',
   assert.equal(view.tokens, 1200)
   assert.equal(view.elapsedMs, 90 * MINUTE)
   assert.equal(view.remainingMs, USAGE_BLOCK_MS - 90 * MINUTE)
-  // 1200 tokens over the 60 minutes since the first activity.
   assert.equal(view.burnRatePerMinute, 20)
 })
 
@@ -98,7 +96,6 @@ test('non-finite timestamps are ignored and an empty input yields no blocks', ()
 })
 
 test('blocks floor to the local hour in half- and quarter-hour time zones', () => {
-  // 2026-11-07 03:50 UTC is 09:20 in India (+5:30), 09:35 in Nepal (+5:45), 13:20 in Adelaide (+9:30).
   const at = Date.UTC(2026, 10, 7, 3, 50, 0)
   for (const [offset, localStartUtc] of [
     [330, Date.UTC(2026, 10, 7, 3, 30, 0)],
@@ -110,7 +107,6 @@ test('blocks floor to the local hour in half- and quarter-hour time zones', () =
     assert.equal(floorToHour(at, offset), localStartUtc, `offset ${offset}`)
     const [block] = latestUsageBlocks([entry('claude-code', at)], () => offset)
     assert.equal(block!.startAt, localStartUtc, `block offset ${offset}`)
-    // The local wall-clock minute of the start is always :00.
     assert.equal(new Date(block!.startAt + offset * 60_000).getUTCMinutes(), 0)
   }
 })

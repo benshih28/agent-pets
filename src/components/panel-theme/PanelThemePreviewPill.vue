@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { t } from '@/i18n'
 
-// 預覽裡的寵物狀態膠囊（寵物視窗唯一會被 petStatus 覆寫的介面）。讀取所在 .panel-theme-preview
-// 元素上的 --pet-status-*（沒有時退回由色盤衍生的膠囊色）；設定頁預覽與主題編輯器共用。
 defineProps<{ themed: boolean }>()
 </script>
 

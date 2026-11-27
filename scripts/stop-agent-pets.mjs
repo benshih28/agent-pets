@@ -27,11 +27,7 @@ function dirname(value) {
   return separator < 0 ? '' : normalized.slice(0, separator)
 }
 
-/**
- * Returns a reason when a process is an Agent Pets process owned by this
- * workspace. Returning null is intentionally fail-closed: an unrelated
- * Electron process must never be stopped by the build preflight.
- */
+// Returning null is intentionally fail-closed: an unrelated Electron process must never be stopped.
 export function isProjectAgentPetsProcess(processInfo, workspaceRoot) {
   const root = normalize(workspaceRoot)
   const executablePath = normalize(processInfo?.ExecutablePath)
@@ -52,16 +48,12 @@ export function isProjectAgentPetsProcess(processInfo, workspaceRoot) {
     return 'release portable AgentPets executable'
   }
 
-  // The unpackaged development app uses the Electron binary from this repo.
-  // Require the workspace path in the command line as a second boundary so
-  // that the same Electron binary cannot be stopped while running another app.
+  // The workspace path in the command line is a second boundary: the same Electron binary running another app must not be stopped.
   if (executablePath === localElectron && commandLine.includes(root)) {
     return 'workspace Electron process'
   }
 
-  // electron-builder's macOS unpacked output lands under release/<arch>/ (mac,
-  // mac-arm64, mac-universal, ...); match the bundle suffix instead of a
-  // fixed directory name.
+  // macOS unpacked output lands under release/<arch>/ (mac, mac-arm64, ...), so match the bundle suffix.
   if (executablePath.startsWith(`${root}/release/`) && executablePath.endsWith(macAppSuffix)) {
     return 'release macOS Agent Pets.app'
   }
@@ -70,8 +62,7 @@ export function isProjectAgentPetsProcess(processInfo, workspaceRoot) {
     return 'workspace Electron process (macOS)'
   }
 
-  // WMI can omit ExecutablePath for protected processes. Only accept the
-  // strongest project-specific command-line signatures in that case.
+  // WMI can omit ExecutablePath for protected processes; only accept the strongest command-line signatures.
   if (!executablePath && commandLine.includes(root)) {
     if (commandLine.includes('release/win-unpacked/agent pets.exe')) {
       return 'release/win-unpacked/Agent Pets.exe (command line)'
@@ -84,8 +75,6 @@ export function isProjectAgentPetsProcess(processInfo, workspaceRoot) {
     }
   }
 
-  // macOS `ps` output rarely separates a clean ExecutablePath field; fall
-  // back to the same command-line signatures used above.
   if (!executablePath && commandLine.includes(root)) {
     if (commandLine.includes('/release/') && commandLine.includes(macAppSuffix)) {
       return 'release macOS Agent Pets.app (command line)'
@@ -120,9 +109,7 @@ function listWindowsProcesses() {
       ),
     )
   } catch {
-    // Some managed/sandboxed Windows sessions deny Win32_Process access.
-    // Fall back to the narrower Get-Process API and verify paths when it is
-    // available; never fall back to a name-only kill.
+    // Some managed Windows sessions deny Win32_Process access; never fall back to a name-only kill.
     const fallbackQuery =
       "$ErrorActionPreference = 'Stop'; " +
       "$names = @('Agent Pets','electron'); " +
@@ -145,11 +132,8 @@ function listWindowsProcesses() {
 }
 
 function listMacProcesses() {
-  // `ps` prints the full command line last (args often contain spaces, e.g.
-  // ".app/Contents/MacOS/Agent Pets"), so it cannot be split into separate
-  // executable-path/command-line fields the way WMI's structured output can.
-  // Leave ExecutablePath unset and let isProjectAgentPetsProcess fall back to
-  // its command-line-only matching branch.
+  // The command line may contain spaces (".app/Contents/MacOS/Agent Pets"), so it cannot be split from the
+  // executable path; leave ExecutablePath unset for the command-line-only matching branch.
   const result = spawnSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8', timeout: 10_000 })
   if (result.status !== 0) {
     throw new Error('無法讀取 macOS 程序清單；為避免誤觸其他 Electron，停止建置。')
@@ -198,8 +182,7 @@ function stopProcess(processInfo) {
       windowsHide: true,
     })
     if (result.status !== 0) {
-      // A parent process may have already terminated this PID as part of /T.
-      // Treat that race as success only after tasklist confirms the PID is gone.
+      // /T may have already terminated this PID; treat that race as success only after tasklist confirms it is gone.
       const stillRunning = spawnSync('tasklist.exe', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
         encoding: 'utf8',
         windowsHide: true,
@@ -213,8 +196,7 @@ function stopProcess(processInfo) {
     return
   }
 
-  // macOS: SIGKILL directly, since the build must not proceed while the app
-  // still holds the .app bundle open.
+  // macOS: SIGKILL directly, since the build must not proceed while the app still holds the .app bundle open.
   const result = spawnSync('kill', ['-9', String(pid)], { encoding: 'utf8' })
   if (result.status !== 0) {
     const stillRunning = spawnSync('ps', ['-p', String(pid)], { encoding: 'utf8' })

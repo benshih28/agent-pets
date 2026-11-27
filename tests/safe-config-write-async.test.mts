@@ -21,8 +21,6 @@ import {
 import { POSIX_FILE_MODES, SKIP_WITHOUT_FILE_SYMLINKS } from './support/fs-capabilities.mts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// 非同步版與同步版必須遵守同一組規則（備份、symlink、大小上限、不覆寫壞檔、unchanged）。
-
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-safe-config-async-'))
 }
@@ -105,7 +103,6 @@ test('async atomic write cleans its temporary file when the rename fails and kee
   try {
     const target = path.join(dir, 'x.json')
     fs.writeFileSync(target, 'old')
-    // 目標是目錄：rename 檔案蓋過目錄一定失敗。
     const blocked = path.join(dir, 'blocked')
     fs.mkdirSync(blocked)
     await assert.rejects(() => writeFileAtomic(blocked, 'new', { temporaryPath: path.join(dir, '.blocked.tmp') }))

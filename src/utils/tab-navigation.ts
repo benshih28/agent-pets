@@ -1,4 +1,3 @@
-// Pure keyboard navigation for the Tabs primitive (WAI-ARIA tabs pattern).
 export type TabOrientation = 'horizontal' | 'vertical'
 
 export interface TabNavItem {
@@ -6,10 +5,6 @@ export interface TabNavItem {
   disabled?: boolean
 }
 
-/**
- * The tab that should receive focus after `key`, or `null` when the key is
- * not a navigation key for this orientation. Wraps around; skips disabled.
- */
 export function nextTabId(
   items: readonly TabNavItem[],
   currentId: string,

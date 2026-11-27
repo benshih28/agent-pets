@@ -32,9 +32,6 @@ import {
 } from '../types/panel-theme-user.ts'
 import type { PluginPanelThemeColorKey } from '../types/plugin.ts'
 
-// 主題編輯器的純邏輯（spec R24）：起點、草稿與復原、未儲存判斷、存檔閘門、建議值套用、
-// 顏色輸入解析與 OKLCH 微調，以及把草稿畫成預覽用的目錄項目。元件只負責呈現與事件。
-
 export const EDITOR_UNDO_LIMIT = 50
 export const DEFAULT_SHAPE = { radiusSm: 8, radiusMd: 16, radiusLg: 28 } as const
 
@@ -48,8 +45,6 @@ const PET_PROPERTY_TO_KEY: Record<string, UserPanelThemePetStatusKey> = {
   '--pet-status-quota-track': 'quotaTrack',
   '--pet-status-quota-warn': 'quotaWarn',
 }
-
-// ── 起點 ─────────────────────────────────────────────────────────────
 
 function colorsFromProperties(properties: Record<PanelThemeColorProperty, string>): Record<PluginPanelThemeColorKey, string> {
   const colors = {} as Record<PluginPanelThemeColorKey, string>
@@ -75,16 +70,12 @@ function modeFrom(mode: PanelThemeModeState | undefined, builtin: Record<PanelTh
   }
 }
 
-/** 主機輸出的 `Npx` 半徑轉回整數；不符時用預設值。 */
 function radius(value: string | undefined, fallback: number): number {
   const match = value ? /^(\d{1,2})px$/.exec(value) : null
   return match ? Number(match[1]) : fallback
 }
 
-/**
- * 從內建色盤（`entry` 為 null）或任何一個目錄主題（插件主題或我的主題）建立可編輯的定義。
- * 單一模式的主題，另一個模式取內建；字型一律回到內建（插件的字型檔不能帶進使用者主題）。
- */
+/** 字型一律回到內建（插件的字型檔不能帶進使用者主題）。 */
 export function definitionFromCatalog(state: Pick<PanelThemeState, 'builtin'>, entry: PanelThemeCatalogEntry | null): UserPanelThemeDefinition {
   const shared = entry?.shared.properties ?? {}
   const shape = {
@@ -102,9 +93,6 @@ export function definitionFromCatalog(state: Pick<PanelThemeState, 'builtin'>, e
   }
 }
 
-// ── 草稿、復原與閘門 ─────────────────────────────────────────────────
-
-/** 鍵排序的 JSON：用來判斷「有沒有改過」，不受屬性順序影響。 */
 export function definitionKey(definition: UserPanelThemeDefinition): string {
   const canonical = (value: unknown): string => {
     if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
@@ -118,11 +106,10 @@ export function definitionKey(definition: UserPanelThemeDefinition): string {
 }
 
 export interface EditorDraft {
-  /** 正在編輯的「我的主題」id；新主題為 null。 */
+  /** 新主題為 null。 */
   id: string | null
   name: string
   definition: UserPanelThemeDefinition
-  /** 上次存檔（或起點）的內容，用來判斷未儲存的變更與「重設」。 */
   baseline: { name: string; definition: UserPanelThemeDefinition }
   undo: UserPanelThemeDefinition[]
 }
@@ -131,7 +118,6 @@ export function createDraft(id: string | null, name: string, definition: UserPan
   return { id, name, definition: structuredClone(definition), baseline: { name, definition: structuredClone(definition) }, undo: [] }
 }
 
-/** 套用一次變更；內容沒變時不記錄。復原堆疊有上限。 */
 export function commitChange(draft: EditorDraft, next: UserPanelThemeDefinition): EditorDraft {
   if (definitionKey(next) === definitionKey(draft.definition)) return draft
   const undo = [...draft.undo, draft.definition].slice(-EDITOR_UNDO_LIMIT)
@@ -144,7 +130,6 @@ export function undoChange(draft: EditorDraft): EditorDraft {
   return { ...draft, definition: previous, undo: draft.undo.slice(0, -1) }
 }
 
-/** 回到起點（或上次存檔）；這一步本身也可以復原。 */
 export function resetDraft(draft: EditorDraft): EditorDraft {
   return commitChange(draft, structuredClone(draft.baseline.definition))
 }
@@ -158,20 +143,13 @@ export function isDirty(draft: EditorDraft): boolean {
   return draft.id === null || nameChanged(draft) || definitionKey(draft.definition) !== definitionKey(draft.baseline.definition)
 }
 
-/**
- * 關閉時要不要提醒：已存在的主題有任何未存變更；新主題只有在使用者動過之後才算
- * （剛開啟就關掉不需要確認）。
- */
+/** 新主題只有在使用者動過之後才算（剛開啟就關掉不需要確認）。 */
 export function hasUnsavedChanges(draft: EditorDraft): boolean {
   if (draft.id !== null) return isDirty(draft)
   return nameChanged(draft) || definitionKey(draft.definition) !== definitionKey(draft.baseline.definition)
 }
 
-/**
- * 存檔完成後：基準換成「送出去的那一份」（`saved`），目前的內容與名稱維持原樣。存檔要等 IPC
- * 往返，期間使用者可能又改了顏色或名稱；那些變更沒有存到，所以必須保留並繼續算未儲存。
- * 保留復原堆疊，讓使用者仍可退回。
- */
+/** 存檔要等 IPC 往返，期間使用者可能又改了；基準只換成送出去的那一份，之後的變更繼續算未儲存。 */
 export function markSaved(draft: EditorDraft, id: string, saved: { name: string; definition: UserPanelThemeDefinition }): EditorDraft {
   return { ...draft, id, baseline: { name: saved.name, definition: structuredClone(saved.definition) } }
 }
@@ -184,14 +162,10 @@ export interface SaveGate {
   nameValid: boolean
 }
 
-/** 存檔／套用只在「目前草稿已驗證且完全通過」時可用。 */
 export function canSave(gate: SaveGate): boolean {
   return gate.validationCurrent && !gate.busy && gate.nameValid && gate.validation?.valid === true
 }
 
-// ── 問題與建議值 ─────────────────────────────────────────────────────
-
-/** 一個模式中，每個欄位路徑的問題（依驗證器順序）。 */
 export function issuesByPath(validation: PanelThemeValidation | null, mode: PanelThemeMode): Map<string, PanelThemeDiagnostic[]> {
   const result = new Map<string, PanelThemeDiagnostic[]>()
   for (const issue of validation?.issues ?? []) {
@@ -203,10 +177,7 @@ export function issuesByPath(validation: PanelThemeValidation | null, mode: Pane
   return result
 }
 
-/**
- * 一個問題可用的修正：自己的建議值優先；沒有時（例如懸停底被歸咎、其實是前景文字不夠深）
- * 改用前景鍵的建議值。回傳要改的路徑與值。
- */
+/** 自己的建議值優先；沒有時（例如懸停底被歸咎、其實是前景文字不夠深）改用前景鍵的建議值。 */
 export function fixFor(issue: PanelThemeDiagnostic, validation: PanelThemeValidation | null): { path: string; value: string | number } | null {
   if (issue.suggested !== undefined) return { path: issue.path, value: issue.suggested }
   if (!issue.foreground) return null
@@ -216,7 +187,6 @@ export function fixFor(issue: PanelThemeDiagnostic, validation: PanelThemeValida
   return other ? { path, value: other.suggested! } : null
 }
 
-/** 把一個修正寫進定義（回傳新物件）；路徑不認得時原樣回傳。 */
 export function applyFix(definition: UserPanelThemeDefinition, mode: PanelThemeMode, path: string, value: string | number): UserPanelThemeDefinition {
   const next = structuredClone(definition)
   const target = next.modes[mode]
@@ -233,9 +203,6 @@ export function applyFix(definition: UserPanelThemeDefinition, mode: PanelThemeM
   return next
 }
 
-// ── 顏色輸入 ─────────────────────────────────────────────────────────
-
-/** 文字欄位：接受 manifest 的所有顏色文法（#hex、rgb()、hsl()、oklch()），回傳主機標準格式。 */
 export function parseColorInput(text: string): string | null {
   const parsed = parsePanelThemeColor(text.trim())
   return parsed.ok ? formatPanelThemeColor(parsed.color) : null
@@ -270,12 +237,10 @@ export function colorToOklch(canonical: string): OklchValue {
   return { l: Math.round(l * 10000) / 10000, c: Math.round(c * 10000) / 10000, h: c < 0.002 ? 0 : Math.round(h * 10) / 10 }
 }
 
-/** OKLCH 微調：超出 sRGB 時降低色度（確定性），alpha 沿用原值。 */
+/** 超出 sRGB 時降低色度（確定性）。 */
 export function colorFromOklch(value: OklchValue, alphaFrom: string): string {
   return formatPanelThemeColor(oklchToRgb(value.l, value.c, value.h, rgbaOf(alphaFrom).a))
 }
-
-// ── 預覽 ─────────────────────────────────────────────────────────────
 
 function familyEntries(id: UserPanelThemeFontStackId) {
   const stack = USER_PANEL_THEME_FONT_STACKS[id]
@@ -288,10 +253,7 @@ function petStatusPreview(status: Record<UserPanelThemePetStatusKey, string> | n
   return petStatusProperties(colors)
 }
 
-/**
- * 把草稿畫成預覽用的目錄項目（與面板相同的屬性對應，所以 PanelThemePreview 與編輯器的
- * 預覽元件可以直接套用）。背景圖沿用已存檔主題目前的圖片，遮罩用草稿的值。
- */
+/** 背景圖沿用已存檔主題目前的圖片，遮罩用草稿的值。 */
 export function previewEntry(definition: UserPanelThemeDefinition, name: string, saved: PanelThemeCatalogEntry | null): PanelThemeCatalogEntry {
   const theme = {
     typography: { body: familyEntries(definition.typography.body), heading: familyEntries(definition.typography.heading), scale: definition.typography.scale },

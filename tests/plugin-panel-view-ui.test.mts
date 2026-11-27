@@ -72,6 +72,5 @@ test('maximizing enlarges the panel window to the plugin page limit without shri
   // 以既有的面板尺寸 API 加大與還原視窗（不在測試中寫出 API 名稱，避免 IPC 清冊把本檔當成該頻道的測試）。
   assert.match(controller, /window\.electronAPI\?\.\w+\(target\.height, target\.width\)/)
   assert.match(controller, /if \(restoreWindowSize && previousSize\) window\.electronAPI\?\.\w+\(\{ release: true \}\)/)
-  // 還原按鈕、Esc、關閉與切換插件都要釋放放大用的暫時最小尺寸，主行程才不會把放大後的視窗記成使用者尺寸。
   assert.equal(controller.match(/restorePluginPanelViewMaximized\(true\)/g)?.length, 4)
 })

@@ -8,7 +8,6 @@ export interface PluginPetBadgeSummary {
   hiddenCount: number
 }
 
-/** Selects at most two badges for one visible pet and reports the remaining count. */
 export function summarizePluginBadgesForPet(
   badges: readonly PluginBadgeView[],
   petId: string,

@@ -1,11 +1,8 @@
 <script setup lang="ts">
-// Loading placeholder. Static (no shimmer) under prefers-reduced-motion.
-// Decorative: the surrounding region should carry aria-busy="true".
 withDefaults(defineProps<{
   variant?: 'line' | 'block' | 'circle'
   width?: string
   height?: string
-  /** Render N stacked lines (variant "line" only). */
   lines?: number
 }>(), {
   variant: 'line',

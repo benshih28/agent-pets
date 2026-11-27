@@ -13,10 +13,7 @@ export interface UsageBlockEntry {
   tokenCacheWrite: number
 }
 
-/**
- * 向下取整到「本地」整點。offsetMinutes 是該時刻的 UTC 偏移（台北 +480、印度 +330、
- * 尼泊爾 +345、阿德雷德 +570），由呼叫端明確傳入以維持純函式；0 即 ccusage 的 UTC 整點。
- */
+/** offsetMinutes 是該時刻的 UTC 偏移（含 +330、+345 這類非整點時區），由呼叫端傳入；0 即 ccusage 的 UTC 整點。 */
 export function floorToHour(timestamp: number, offsetMinutes = 0): number {
   const offsetMs = offsetMinutes * 60 * 1000
   return Math.floor((timestamp + offsetMs) / HOUR_MS) * HOUR_MS - offsetMs
@@ -24,11 +21,8 @@ export function floorToHour(timestamp: number, offsetMinutes = 0): number {
 
 /**
  * 依 ccusage `blocks` 的規則切出每個 agent 的最後一個 5 小時區塊：
- * - 依時間排序；第一筆用量開啟一個區塊，起點為該筆時間「向下取整到本地整點」。
- * - 下一筆若距區塊起點已滿 5 小時，或距上一筆用量已滿 5 小時，就結束目前區塊，
- *   並以該筆（同樣取整點）開新區塊。
- * 只回傳每個 agent 最後一個區塊；是否「進行中」交給 usageBlockView 依當下時間判斷。
- * O(n log n) 排序一次 + O(n) 單趟掃描；呼叫端若已依時間排序，排序近乎線性。
+ * - 第一筆用量開啟一個區塊，起點為該筆時間「向下取整到本地整點」。
+ * - 下一筆若距區塊起點或距上一筆用量已滿 5 小時，就結束目前區塊，並以該筆（同樣取整點）開新區塊。
  */
 export function latestUsageBlocks(
   entries: readonly UsageBlockEntry[],
@@ -82,7 +76,6 @@ export interface UsageBlockView {
   burnRatePerMinute: number
 }
 
-/** 區塊在 `now` 時的狀態。進行中＝尚未到區塊終點，且距最後一筆用量未滿 5 小時。 */
 export function usageBlockView(block: HistoryUsageBlock, now: number): UsageBlockView {
   const tokens = block.tokenInput + block.tokenOutput
   const active = now < block.endAt && now - block.lastActivityAt < USAGE_BLOCK_MS

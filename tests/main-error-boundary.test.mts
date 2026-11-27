@@ -77,7 +77,6 @@ test('crash escalation policy: 5 distinct errors or 20 repeats inside 2 minutes'
   const distinct = ['a', 'b', 'c', 'd'].map((s, i) => at(s, i * 1000))
   assert.equal(shouldEscalateCrashes(distinct, 10_000), false)
   assert.equal(shouldEscalateCrashes([...distinct, at('e', 5000)], 10_000), true)
-  // Old occurrences fall out of the window.
   assert.equal(shouldEscalateCrashes([...distinct, at('e', 130_000)], 131_000), false)
   const repeats = Array.from({ length: 20 }, (_, i) => at('same', i * 100))
   assert.equal(shouldEscalateCrashes(repeats.slice(1), 5000), false)

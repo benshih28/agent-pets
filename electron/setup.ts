@@ -62,15 +62,13 @@ function appDataDir(): string {
   return setupEnvironment().userData()
 }
 
-// Node resolution lives in node-resolver.ts (async, validated cache, no bare-"node" fallback).
 const nodeResolver = createNodeResolver()
 
-/** Legacy synchronous lookup for non-install callers (e.g. project MCP); may return a bare "node". */
+// May return a bare "node": only for non-install callers (e.g. project MCP).
 export function resolveNodeBin(): string {
   return nodeResolver.peek()?.path ?? nodeResolver.resolveSync()?.path ?? 'node'
 }
 
-/** Resolve (async) and validate Node.js before an install that writes a hook command. */
 export async function prepareNodeForInstall(): Promise<NodeInfo> {
   const fixed = setupEnvironment().nodePath?.()
   if (fixed) return { path: fixed, version: null, supported: true }
@@ -80,7 +78,7 @@ export async function prepareNodeForInstall(): Promise<NodeInfo> {
   return info
 }
 
-/** Synchronous accessor for installers; prepareNodeForInstall() must have succeeded first. */
+// prepareNodeForInstall() must have succeeded first.
 function requireNodeBin(): string {
   const fixed = setupEnvironment().nodePath?.()
   if (fixed) return fixed
@@ -89,12 +87,7 @@ function requireNodeBin(): string {
   return info.path
 }
 
-// --- OpenCode CLI plugin ---
-// OpenCode scans "plugin" (singular) — not "plugins" — and only picks up
-// .js files there, not .mjs. Both confirmed live: a console.error marker
-// injected into the pre-existing superpowers.js fired; the same marker in
-// our desktop-pet.mjs never did, until renamed to .js.
-// The folder follows XDG_CONFIG_HOME (also on Windows); see agent-config-dirs.ts.
+// OpenCode scans "plugin" (singular), not "plugins", and only picks up .js files there, not .mjs.
 function openCodeCliPluginPathIn(configDir: string): string {
   return path.join(configDir, 'plugin', 'desktop-pet.js')
 }
@@ -103,7 +96,6 @@ function openCodeCliPluginPath(): string {
   return openCodeCliPluginPathIn(currentAgentConfigDirs().opencode.path)
 }
 
-// --- OpenCode Desktop plugin ---
 function openCodeDesktopPluginPath(): string {
   if (IS_MAC) {
     return path.join(homeDir(), 'Library', 'Application Support', 'opencode', 'plugin', 'desktop-pet.js')
@@ -111,11 +103,8 @@ function openCodeDesktopPluginPath(): string {
   return path.join(setupEnvironment().appData(), 'opencode', 'plugin', 'desktop-pet.js')
 }
 
-// --- Codex hooks.json ---
-// Codex CLI and Codex Desktop currently share CODEX_HOME (~/.codex), but Desktop does not
-// expose a separate integration API. Installing this file therefore only
-// guarantees CLI support; Desktop support depends on whether that build runs
-// the same hook pipeline.
+// Codex Desktop shares CODEX_HOME with the CLI but exposes no separate integration API, so this file only
+// guarantees CLI support; Desktop depends on whether that build runs the same hook pipeline.
 function codexHooksPathIn(codexHome: string): string {
   return path.join(codexHome, 'hooks.json')
 }
@@ -132,7 +121,6 @@ function codexConfigPath(): string {
   return codexConfigPathIn(currentAgentConfigDirs().codex.path)
 }
 
-// --- Claude Desktop config ---
 function claudeDesktopConfigPath(): string {
   if (IS_MAC) {
     return path.join(homeDir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
@@ -140,7 +128,6 @@ function claudeDesktopConfigPath(): string {
   return path.join(setupEnvironment().appData(), 'Claude', 'claude_desktop_config.json')
 }
 
-// --- Claude Code settings.json (shared by CLI & Desktop; follows CLAUDE_CONFIG_DIR) ---
 function claudeCodeSettingsPathIn(configDir: string): string {
   return path.join(configDir, 'settings.json')
 }
@@ -149,10 +136,7 @@ function claudeCodeSettingsPath(): string {
   return claudeCodeSettingsPathIn(currentAgentConfigDirs().claude.path)
 }
 
-/**
- * Every location an install may have used: the resolved folder first, then the default one when
- * a variable moved it (the user may have set the variable after installing).
- */
+// The user may have set the variable after installing, so the default folder can hold an older install.
 function configDirLocations(dir: ResolvedConfigDir): [resolved: string, ...stale: string[]] {
   return samePath(dir.path, dir.defaultPath) ? [dir.path] : [dir.path, dir.defaultPath]
 }
@@ -162,7 +146,6 @@ function samePath(left: string, right: string): boolean {
   return normalize(left) === normalize(right)
 }
 
-// --- Pet window position (persisted across restarts) ---
 function windowStatePath(): string {
   return path.join(appDataDir(), 'window-state.json')
 }
@@ -245,18 +228,14 @@ function readWindowState(): PetWindowState | null {
   return null
 }
 
-// Merges rather than overwrites: position is saved when a drag ends and size
-// when the renderer resizes the pet, so each writer must leave the other's
-// field alone. Position and size are only coherent together — the pet window
-// is bottom-anchored, so a y saved at one size means a different visible spot
-// at another.
+// Merges rather than overwrites: position and size are saved by different writers and must stay coherent
+// (the window is bottom-anchored, so a y saved at one size is a different visible spot at another).
 function writeWindowState(state: Partial<PetWindowState>): void {
   const merged = { ...(readWindowState() ?? {}), ...state }
   if (typeof merged.x !== 'number' || typeof merged.y !== 'number') return
   writeFileEnsured(windowStatePath(), JSON.stringify(merged))
 }
 
-// --- Hook script path ---
 function hookScriptPath(): string {
   return path.join(hookScriptDeployPath(), DEPLOY_FILES.hookScript)
 }
@@ -281,14 +260,11 @@ function presentationTokenPath(): string {
   return path.join(hookScriptDeployPath(), DEPLOY_FILES.presentationToken)
 }
 
-// Opt-in marker read by agent-hook.mjs. Present only while the user has turned on
-// answering Claude Code permissions from the pet; the main process still checks
-// its own persisted preference before accepting any request.
+// Opt-in marker read by agent-hook.mjs; the main process still checks its own persisted preference before accepting any request.
 function claudePermissionRespondPath(): string {
   return path.join(hookScriptDeployPath(), DEPLOY_FILES.claudePermissionRespond)
 }
 
-/** Writes (enabled) or removes (null) the hook's opt-in file. */
 function syncClaudePermissionRespondOptIn(waitSeconds: number | null): void {
   const filePath = claudePermissionRespondPath()
   if (waitSeconds === null) {
@@ -304,8 +280,7 @@ function syncClaudePermissionRespondOptIn(waitSeconds: number | null): void {
   }
 }
 
-// Tokens created or read by this process are remembered so that a full cleanup followed by a
-// reinstall in the same session re-uses the value the running event/permission servers already hold.
+// A full cleanup followed by a reinstall in the same session must re-use the value the running servers already hold.
 const tokenCache = new Map<string, string>()
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/i
@@ -316,16 +291,15 @@ function assertRegularTokenFile(stat: fs.Stats, label: string): void {
   }
 }
 
-// 隨機後綴：同一毫秒內兩次寫入（同步＋非同步、或兩個 label）也不會撞到 `wx` 的 EEXIST。
+// 隨機後綴：同一毫秒內兩次寫入也不會撞到 `wx` 的 EEXIST。
 function tokenTemporaryPath(tokenPath: string): string {
   return path.join(path.dirname(tokenPath), `.${path.basename(tokenPath)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`)
 }
 
-// token 一律走「暫存檔 + rename」：直接以 'w' 開啟會先截斷成空檔，hook 恰好在這時讀到空 token
-// 就會靜默略過事件；rename 也一併取代了 lstat → open 之間的 symlink 空窗（取代的是連結本身）。
+// 暫存檔 + rename：直接以 'w' 開啟會先截斷成空檔，hook 恰好讀到空 token 就會靜默略過事件；rename 也取代了 symlink 空窗。
 const TOKEN_WRITE_OPTIONS = { mode: 0o600, enforceMode: true, fsync: true } as const
 
-// 啟動時要同步拿到 token（事件 server 立刻要用），所以同步版留著；面板安裝走 ensureTokenAsync。
+// 啟動時事件 server 立刻要用 token，所以同步版留著。
 function ensureToken(tokenPath: string, label: string): string {
   const dir = hookScriptDeployPath()
   ensureDir(dir)
@@ -400,10 +374,6 @@ function ensurePresentationToken(): string {
   return ensureToken(presentationTokenPath(), 'presentation')
 }
 
-// --- Bundled integrations/ source (agent-hook.mjs, agent-hook.cmd) ---
-// electron-builder copies integrations/ to Resources/integrations via
-// extraResources; in dev __dirname is <project>/dist-electron so '..' lands
-// back on the project root, matching getPetsJsonPath's dev/prod split.
 function integrationsDir(): string {
   const env = setupEnvironment()
   if (env.isPackaged()) {
@@ -429,7 +399,6 @@ function presentationMcpScriptPath(): string {
   return path.join(hookScriptDeployPath(), DEPLOY_FILES.presentationMcpScript)
 }
 
-// --- Write helpers ---
 function ensureDir(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true })
@@ -440,8 +409,7 @@ function writeFileEnsured(filePath: string, content: string): void {
   writeTextAtomic(filePath, content)
 }
 
-// Files Agent Pets fully owns (hook script, plugins): rewritten only when the content differs, so
-// the install outcome can report "unchanged" honestly. No backup is needed for our own files.
+// Files Agent Pets fully owns need no backup; rewritten only when the content differs so the outcome can report "unchanged".
 async function writeManagedAsync(filePath: string, content: string): Promise<ConfigWriteResult> {
   if ((await readFileAsync(filePath)) === content) return { status: 'unchanged', path: filePath, backupPath: null }
   await writeTextAtomicAsync(filePath, content)
@@ -494,8 +462,7 @@ async function removeFile(filePath: string): Promise<void> {
   await fsp.rm(filePath, { force: true })
 }
 
-// Marker recording that Agent Pets (not the user) added `hooks = true`, so uninstall only
-// reverts what we changed.
+// Records that Agent Pets (not the user) added `hooks = true`, so uninstall only reverts what we changed.
 function codexFeatureMarkerPath(): string {
   return path.join(hookScriptDeployPath(), 'codex-hooks-feature-added')
 }
@@ -512,7 +479,6 @@ async function enableCodexHooksFeature(filePath: string): Promise<ConfigWriteRes
   return result
 }
 
-// --- Hook script content (bundled via extraResources) ---
 async function hookScriptContentAsync(): Promise<string> {
   return fsp.readFile(path.join(integrationsDir(), 'agent-hook.mjs'), 'utf-8')
 }
@@ -535,18 +501,13 @@ async function installHookScript(): Promise<ConfigWriteResult[]> {
   return results
 }
 
-// --- OpenCode plugin content ---
-// plugin 一直送 X-Agent-Pets-Token 這種大小寫；HTTP header 不分大小寫，但維持既有送出的寫法。
+// HTTP header 不分大小寫，但維持既有送出的 X-Agent-Pets-Token 寫法。
 function headerCase(name: string): string {
   return name.replace(/(^|-)([a-z])/g, (_match, dash: string, letter: string) => dash + letter.toUpperCase())
 }
 
-// OpenCode's real plugin shape: an (async) function that receives a context
-// object and returns a hooks object. Tool lifecycle hooks are direct keys;
-// session lifecycle notifications arrive through the generic `event` hook.
-// There's no direct "user prompt submitted" hook exposed, so the pet won't
-// show "thinking" until the first tool call — a known gap, not a bug.
-// 連線用的值都從 src/types/local-wire.ts 插值；plugin 跑在 OpenCode 裡、一律連預設埠（與改用契約前相同）。
+// OpenCode exposes no "user prompt submitted" hook, so the pet won't show "thinking" until the first tool call: a known gap, not a bug.
+// plugin 跑在 OpenCode 裡、一律連預設埠。
 function openCodePluginContent(source: 'opencode-desktop' | 'opencode-cli'): string {
   return `import http from 'http';
 import fs from 'fs';
@@ -841,7 +802,6 @@ async function uninstallOpenCode(): Promise<void> {
   for (const dir of configDirLocations(currentAgentConfigDirs().opencode)) await removeFile(openCodeCliPluginPathIn(dir))
 }
 
-// --- Codex hooks ---
 const CODEX_HOOK_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
@@ -855,7 +815,7 @@ type CodexHookEvent = (typeof CODEX_HOOK_EVENTS)[number]
 
 const CODEX_HOOKS_DESCRIPTION = 'Agent Pets lifecycle hooks for Codex CLI.'
 
-// 型別不管鍵順序；codexHooksJson 回傳的物件要把 description 寫在 hooks 前面，新安裝的 hooks.json 依此寫出。
+// 型別不管鍵順序；codexHooksJson 要把 description 寫在 hooks 前面，新安裝的 hooks.json 依此寫出。
 type CodexHooksFile = { description: string } & AgentHooksFile<CodexHookEvent>
 
 function codexHooksJson(): CodexHooksFile {
@@ -876,7 +836,6 @@ async function installCodex(): Promise<ConfigWriteResult[]> {
   const codexHome = writableAgentConfigDir(currentAgentConfigDirs().codex)
   const results: ConfigWriteResult[] = await installHookScript()
 
-  // Throws ConfigRefusedError (and writes nothing) if hooks.json exists but is not valid JSON.
   const { hooks, ...defaults } = codexHooksJson()
   results.push(await mergeAgentPetsHooksFile(codexHooksPathIn(codexHome), hooks, defaults))
 
@@ -899,7 +858,6 @@ async function claudeDesktopPointsAtHookScript(): Promise<boolean> {
 
 async function isHookScriptReferenced(): Promise<boolean> {
   const dirs = currentAgentConfigDirs()
-  // 三處檢查互不相依，一起讀；任何一處命中就代表腳本還在用。
   const checks = [
     ...configDirLocations(dirs.codex).map(dir => fileHasAgentPetsHooksAsync(codexHooksPathIn(dir))),
     ...configDirLocations(dirs.claude).map(dir => fileHasAgentPetsHooksAsync(claudeCodeSettingsPathIn(dir))),
@@ -916,7 +874,6 @@ async function releaseSharedHookScript(): Promise<void> {
 
 async function uninstallCodex(): Promise<void> {
   const [codexHome, ...staleHomes] = configDirLocations(currentAgentConfigDirs().codex)
-  // Throws ConfigRefusedError for an unparseable file, leaving it untouched.
   await removeAgentPetsHooksFile(codexHooksPathIn(codexHome), CODEX_HOOKS_OWNED_TOP_LEVEL)
   // The old location keeps its config.toml: the marker cannot tell which folder we enabled
   // `hooks = true` in, and a leftover feature flag without our hooks changes nothing.
@@ -937,7 +894,6 @@ async function uninstallCodex(): Promise<void> {
   await releaseSharedHookScript()
 }
 
-// --- Claude Desktop ---
 async function installClaude(): Promise<ConfigWriteResult[]> {
   const scripts = await installHookScript()
   return [...scripts, await setJsonKeyFile(claudeDesktopConfigPath(), 'agent', hookScriptPath())]
@@ -951,7 +907,6 @@ async function uninstallClaude(): Promise<void> {
   await releaseSharedHookScript()
 }
 
-// --- Claude Code (CLI & Desktop share settings.json) ---
 const CLAUDE_CODE_HOOK_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
@@ -979,8 +934,7 @@ const CLAUDE_CODE_ORIGINAL_EVENTS: ReadonlySet<ClaudeCodeHookEvent> = new Set<Cl
   'SessionEnd',
 ])
 const CLAUDE_CODE_TOOL_EVENTS: ReadonlySet<ClaudeCodeHookEvent> = new Set<ClaudeCodeHookEvent>(['PreToolUse', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure'])
-// Only the PermissionRequest handler may wait (for a pet answer); every other
-// event keeps Claude Code's default timeout.
+// Only PermissionRequest may wait (for a pet answer); every other event keeps Claude Code's default timeout.
 const CLAUDE_CODE_HOOK_TIMEOUTS: Readonly<Partial<Record<ClaudeCodeHookEvent, number>>> = { PermissionRequest: CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS }
 
 function claudeCodeHooksJson(): AgentHooksFile<ClaudeCodeHookEvent> {
@@ -1001,19 +955,13 @@ function claudeCodeHooksJson(): AgentHooksFile<ClaudeCodeHookEvent> {
 async function installClaudeCode(): Promise<ConfigWriteResult[]> {
   const configDir = writableAgentConfigDir(currentAgentConfigDirs().claude)
   const scripts = await installHookScript()
-  // Throws ConfigRefusedError (and writes nothing) if settings.json is not valid JSON.
   return [...scripts, await mergeAgentPetsHooksFile(claudeCodeSettingsPathIn(configDir), claudeCodeHooksJson().hooks)]
 }
 
 // 從安裝清單推導而非另外手寫：新增事件時不可能漏掉升級（StopFailure 曾因此從未補給舊安裝）。
 const CLAUDE_CODE_UPGRADE_EVENTS: readonly ClaudeCodeHookEvent[] = CLAUDE_CODE_HOOK_EVENTS.filter(event => !CLAUDE_CODE_ORIGINAL_EVENTS.has(event))
 
-/**
- * Brings an install made by an older version up to date (adds the handlers for events added
- * after the first release and the PermissionRequest timeout). Touches only Agent Pets'
- * own handlers and keeps a backup; a missing, unparseable or not-installed settings.json is
- * left alone, and handlers for the original events are never re-added.
- */
+// Handlers for the original events are never re-added: the user may have removed them on purpose.
 async function upgradeClaudeCodeHooksUnlocked(): Promise<ConfigWriteResult | null> {
   return ensureAgentPetsHookEntries(claudeCodeSettingsPath(), CLAUDE_CODE_UPGRADE_EVENTS.map(event => ({
     event,
@@ -1026,11 +974,7 @@ function claudeHooksUpgradeMarkerPath(): string {
   return path.join(hookScriptDeployPath(), 'claude-hooks-upgraded')
 }
 
-/**
- * Runs the upgrade at most once per app version, so an Agent Pets entry the user removed on
- * purpose is not added back on every launch. Settings without any Agent Pets hook are never
- * changed (ensureAgentPetsHookEntries returns null for them).
- */
+// At most once per app version, so an entry the user removed on purpose is not added back on every launch.
 async function upgradeClaudeCodeHooksOnceUnlocked(appVersion: string): Promise<ConfigWriteResult | null> {
   const marker = claudeHooksUpgradeMarkerPath()
   if (((await readFileAsync(marker)) ?? '').trim() === appVersion) return null
@@ -1044,22 +988,18 @@ async function uninstallClaudeCode(): Promise<void> {
   const present = await Promise.all(candidates.map(fileExistsAsync))
   const settingsFiles = candidates.filter((_file, index) => present[index])
   if (settingsFiles.length === 0) return
-  // Throws ConfigRefusedError for an unparseable settings.json, leaving it untouched.
   for (const settingsFile of settingsFiles) await removeAgentPetsHooksFile(settingsFile)
   await releaseSharedHookScript()
 }
 
-// Repair hooks written by older Windows builds. Those builds used Electron's
-// process.execPath as the hook runtime, so their hooks point back to
-// Agent Pets.exe and recursively launch the desktop app on every event.
+// Older Windows builds used Electron's process.execPath as the hook runtime, so their hooks recursively launch the app on every event.
 async function rewriteInstalledAgentPetsHooks(filePath: string, target: 'codex' | 'claude'): Promise<boolean> {
   const hookPath = hookScriptPath()
   const codexCommand = codexHookCommand({ isWindows: true, nodeBin: '', hookScript: hookPath, wrapper: hookWrapperPath() })
   const nodeBin = target === 'claude' ? ((nodeResolver.peek() ?? await nodeResolver.resolve())?.path ?? '') : ''
   if (target === 'claude' && !nodeBin) return false // cannot repair without a real Node path
   return rewriteAgentPetsHookCommands(filePath, (hook) => {
-    // Never rewrite user config just because the Node path changed: only repair the known-bad
-    // state where the hook runs through the Electron executable.
+    // Never rewrite user config just because the Node path changed: only repair hooks that run through the Electron executable.
     if (!isLegacyElectronHook(hook)) return false
     let changed = false
     if (target === 'codex') {
@@ -1092,10 +1032,7 @@ async function repairWindowsInstalledHooksUnlocked(): Promise<void> {
   if (codexChanged || claudeChanged) await installHookScript()
 }
 
-/**
- * Token 要在啟動當下同步拿到（事件／權限 server 立刻要用），其餘檔案改寫丟到安裝佇列背景執行，
- * 不阻塞啟動。需要等它完成的呼叫端（測試）用 refreshInstalledIntegrationScriptsAsync。
- */
+// Token 要在啟動當下同步拿到（事件／權限 server 立刻要用），其餘檔案改寫丟到背景，不阻塞啟動。
 function refreshInstalledIntegrationScripts(appVersion?: string, options: { deferAgentConfig?: boolean } = {}): string {
   const token = ensureEventToken()
   ensurePermissionToken()
@@ -1106,9 +1043,7 @@ function refreshInstalledIntegrationScripts(appVersion?: string, options: { defe
 
 function refreshInstalledIntegrationFiles(appVersion?: string, options: { deferAgentConfig?: boolean } = {}): Promise<void> {
   return serializeInstaller(async () => {
-    // A read-only home directory should not prevent the desktop pet from
-    // starting. The presentation bridge can be repaired from Setup later; the
-    // event receiver, permissions, and core UI remain available meanwhile.
+    // A read-only home directory must not prevent the pet from starting; the bridge can be repaired from Setup later.
     try {
       await ensurePresentationMcpScriptAsync()
     } catch (error) {
@@ -1126,12 +1061,8 @@ function refreshInstalledIntegrationFiles(appVersion?: string, options: { deferA
   })
 }
 
-/**
- * The startup refresh of files inside the agents' own config folders. Those folders can come from
- * a login-shell lookup, so the app runs this after agentConfigEnvReady() instead of writing to the
- * default location first. Only the resolved location is touched: leftovers in the default one are
- * reported by agentConfigDirStatus() and never rewritten unasked.
- */
+// Runs after agentConfigEnvReady() (the folders can come from a login-shell lookup); leftovers in the
+// default location are reported by agentConfigDirStatus() and never rewritten unasked.
 async function refreshAgentConfigIntegrationsUnlocked(appVersion?: string): Promise<void> {
   try {
     if (await fileExistsAsync(openCodeCliPluginPath())) {
@@ -1148,9 +1079,7 @@ async function refreshAgentConfigIntegrationsUnlocked(appVersion?: string): Prom
   }
 }
 
-// --- Health helpers used by the adapter diagnostics ---
-// 面板每次開啟都會跑這些檢查，全部用非同步 I/O，不在主程序同步讀檔。
-/** The bundled hook script matches what is deployed (a stale copy keeps old behaviour). */
+// 面板每次開啟都會跑這些健康檢查，全部用非同步 I/O，不在主程序同步讀檔。
 async function hookScriptIsCurrent(): Promise<boolean> {
   try {
     const [deployed, bundled] = await Promise.all([readFileAsync(hookScriptPath()), hookScriptContentAsync()])
@@ -1167,7 +1096,6 @@ async function openCodePluginIsCurrent(kind: 'cli' | 'desktop'): Promise<boolean
     && deployed === openCodePluginContent(kind === 'cli' ? 'opencode-cli' : 'opencode-desktop')
 }
 
-/** Whether each agent's own config directory exists (the tool has been used on this machine). */
 async function agentPresence(): Promise<{ codex: boolean, claude: boolean, opencode: boolean }> {
   const dirs = currentAgentConfigDirs()
   const [codex, claude, opencodeCli, opencodeDesktop] = await Promise.all([
@@ -1179,14 +1107,12 @@ async function agentPresence(): Promise<{ codex: boolean, claude: boolean, openc
   return { codex, claude, opencode: opencodeCli || opencodeDesktop }
 }
 
-// The file in a config folder that shows an Agent Pets install was made there.
 const AGENT_PETS_INSTALL_FILE = {
   claude: { in: claudeCodeSettingsPathIn, installed: fileHasAgentPetsHooksAsync },
   codex: { in: codexHooksPathIn, installed: fileHasAgentPetsHooksAsync },
   opencode: { in: openCodeCliPluginPathIn, installed: fileExistsAsync },
 } as const satisfies Record<AgentConfigDirKind, { in(dir: string): string, installed(file: string): Promise<boolean> }>
 
-/** Where the agent's config folder is, why, and whether the default folder still holds our files. */
 async function agentConfigDirStatus(kind: AgentConfigDirKind): Promise<AdapterConfigDirStatus> {
   const dir = currentAgentConfigDirs()[kind]
   const [, staleDir] = configDirLocations(dir)
@@ -1210,8 +1136,7 @@ async function installIntegrationUnlocked(target?: IntegrationTarget): Promise<C
     case 'claude': return installClaude()
     case 'claudeCode': return installClaudeCode()
     default:
-      // Claude Desktop's `agent` key is not a documented setting, so it is no longer written by default
-      // (it is still removed on uninstall for older installs). Claude Code covers CLI and Desktop.
+      // Claude Desktop's `agent` key is not a documented setting: not written by default (still removed on uninstall).
       return [...await installOpenCode(), ...await installCodex(), ...await installClaudeCode()]
   }
 }
@@ -1231,11 +1156,7 @@ async function cleanupDeployDirectory(): Promise<void> {
   try { await fsp.rmdir(hookScriptDeployPath()) } catch { /* not empty: user files stay */ }
 }
 
-/**
- * Removes Agent Pets' own entries. With no target every integration is removed; with 'all' the
- * tokens and bridge scripts under the deploy directory are removed too. Every step runs even if an
- * earlier one is refused; failures are reported together afterwards.
- */
+// Every step runs even if an earlier one is refused; failures are reported together afterwards.
 async function uninstallIntegrationUnlocked(target?: IntegrationTarget | 'all'): Promise<void> {
   switch (target) {
     case 'opencode': return uninstallOpenCode()
@@ -1261,8 +1182,7 @@ async function uninstallIntegrationUnlocked(target?: IntegrationTarget | 'all'):
   }
 }
 
-// 面板的安裝／移除／修復都會改同幾個設定檔；非同步之後兩個請求可能交錯（讀 → 讀 → 寫 → 寫會互相蓋掉），
-// 所以全部排進同一條佇列，一次只跑一個。前一個失敗不影響下一個。
+// 安裝／移除／修復都會改同幾個設定檔，兩個請求交錯（讀 → 讀 → 寫 → 寫）會互相蓋掉，所以一次只跑一個。
 let installerQueue: Promise<unknown> = Promise.resolve()
 
 function serializeInstaller<T>(task: () => Promise<T>): Promise<T> {

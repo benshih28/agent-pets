@@ -1,9 +1,3 @@
-// 重構階段 7 改前錄下的呼叫點輸出：相對時間、時長、日期與數字格式。
-// 期望值是改前實作的輸出，重構後不得變動；日期類（與時區有關）以改前的
-// `toLocale*String()` 運算式當作對照。改前的呼叫點對應：通知收件匣
-// `formatRelativeTime()` → `formatRelative(..., FEED_RELATIVE_TIME)`；權限倒數
-// `permission-view` 的 `formatDuration()` → `formatClockDuration()`；歷史時長
-// `token-format` 的 `durationParts()` → `durationParts(ms, HISTORY_DURATION)`。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -187,14 +181,12 @@ test('durations: compact, permission countdown and history parts keep their pre-
     assert.equal(formatClockDuration(ms), clock, `clock ${ms}`)
     assert.deepEqual(historyParts(ms), { days, hours, minutes }, `parts ${ms}`)
   }
-  // 非有限值：倒數與歷史一律當 0。
   for (const ms of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
     assert.equal(formatClockDuration(ms), '0:00')
     assert.deepEqual(historyParts(ms), { days: 0, hours: 0, minutes: 0 })
   }
 })
 
-// 各呼叫點實際傳入的 Intl 選項。
 const CALL_SITE_PARTS: ReadonlyArray<Intl.DateTimeFormatOptions> = [
   { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }, // DesktopPet 額度重設
   { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }, // useQuotaFormat 一週內

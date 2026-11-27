@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// 主程序 entry 的 crash guard 檢查：ESLint 不好表達「main.ts 必須安裝 handler」這類跨檔契約，所以留在這裡。
-// 未處理的 Promise（RL-01 的 loadURL）已改由 eslint.config.mjs 的 `@typescript-eslint/no-floating-promises` 檢查；
-// `pnpm lint` 先跑 ESLint 再跑這支。
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

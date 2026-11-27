@@ -2,7 +2,7 @@ import { isPluginErrorCode, type PluginErrorCode } from '../src/types/plugin.ts'
 import { clonePluginThemeSnapshot, isPluginThemeSnapshot, type PluginThemeSnapshot } from '../src/types/plugin-theme.ts'
 import { isRecord } from './value-guards.ts'
 
-// 面板頁可呼叫的方法白名單；preload 與主程序的 PluginPanelViewController 共用同一份。
+// preload 與主程序的 PluginPanelViewController 共用同一份白名單。
 export const PLUGIN_PANEL_API_METHODS = Object.freeze([
   'feed.notify', 'pet.status', 'storage.get', 'storage.set', 'storage.remove',
   'settings.get', 'log.info', 'log.warn', 'log.error', 'net.fetch', 'ui.postMessage',
@@ -15,7 +15,7 @@ export type PluginPanelApiErrorCode = PluginErrorCode
 export interface PluginPanelApiTransport {
   invoke: (method: PluginPanelApiMethod, args: unknown[]) => Promise<unknown>
   onMessage: (listener: (data: unknown) => void) => () => void
-  /** 主程序推送的主題快照（未驗證，橋接層負責檢查）。 */
+  /** 未驗證，橋接層負責檢查。 */
   onThemeChange?: (listener: (snapshot: unknown) => void) => () => void
   consumeUserActivation?: () => boolean
 }

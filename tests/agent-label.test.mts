@@ -4,7 +4,6 @@ import { agentDisplayName } from '../src/utils/agent-label.ts'
 import { getLocale, setLocale, t } from '../src/i18n.ts'
 import { AGENT_ADAPTER_REGISTRY } from '../src/types/agent-adapter.ts'
 
-// History 會出現的 adapter id：registry 的四個，加上 history.ts 對空值的 'unknown'。
 const HISTORY_IDS = {
   codex: 'Codex',
   'claude-code': 'Claude Code',

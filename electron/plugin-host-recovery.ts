@@ -1,10 +1,8 @@
 export const PLUGIN_HOST_MAX_CONSECUTIVE_FAILURES = 3
 export const PLUGIN_HOST_RESTART_BACKOFF_MS = [250, 1_000, 5_000] as const
 export const PLUGIN_HOST_HEALTHY_RUNTIME_MS = 60_000
-/** Failures older than this no longer count towards giving up on a plugin. */
 export const PLUGIN_HOST_FAILURE_DECAY_MS = 10 * 60_000
 
-/** Small deterministic policy surface shared by Host startup retries and worker watchdogs. */
 export class PluginHostFailureTracker {
   private readonly failures = new Map<string, number[]>()
   private readonly now: () => number

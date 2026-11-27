@@ -22,7 +22,6 @@ const START = 1_000_000
 interface Harness {
   now: number
   sessions: SessionSnapshotEntry[]
-  /** 每個檔案目前的內容版本與判讀結果。 */
   files: Map<string, { version: number, turnEnd: TranscriptTurnEnd | null }>
   located: string[]
   reads: string[]
@@ -127,7 +126,6 @@ test('an end record from an earlier turn never ends the current one', async () =
   h.now = START + TURN_END_QUIET_MS
   assert.equal(await h.watcher.check(), 0)
 
-  // hook 送達可能比 agent 寫檔晚一點：容許範圍內的仍然算這一回合。
   h.files.set('/config/codex/sess-0001.jsonl', { version: 2, turnEnd: { endedAt: START - TURN_END_CLOCK_SKEW_MS, reason: 'completed' } })
   assert.equal(await h.watcher.check(), 1)
 })
@@ -140,7 +138,6 @@ test('a long quiet turn costs one read, and the end is picked up when the file c
     h.now = START + TURN_END_QUIET_MS + tick * 5_000
     assert.equal(await h.watcher.check(), 0)
   }
-  // 十分鐘的 build 期間只讀一次、只找一次檔案。
   assert.equal(h.reads.length, 1)
   assert.equal(h.located.length, 1)
 
@@ -228,7 +225,6 @@ test('overlapping checks do not run twice, and stop() ends the timer', async () 
 })
 
 test('the settled event lands in the same history session as the hook events', async (t) => {
-  // 實測抓到的問題：補送的事件少了 adapterId，歷史把它記成備用 adapter 底下的另一筆 session。
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-turn-end-history-'))
   const history = new HistoryStore(path.join(directory, 'history.sqlite'), { now: () => START + 60_000 })
   t.after(() => { history.close(); removeTempTree(directory) })
@@ -259,7 +255,6 @@ test('the settled event lands in the same history session as the hook events', a
   const sessions = history.listSessions().items
   assert.equal(sessions.length, 2)
   assert.deepEqual(sessions.map(item => item.adapterId).sort(), ['claude-code', 'codex'])
-  // 修正前這裡會是 4 筆：每個 session 多一筆 generic-http 的紀錄。
 })
 
 test('SessionSnapshotStore keeps stateChangedAt across same-state events and moves it on a transition', () => {
@@ -291,7 +286,6 @@ test('SessionSnapshotStore.get returns one isolated copy and uses the same expir
   assert.equal(snapshot.get('claude-desktop', 'sess-0001')?.host?.app, 'claude-desktop')
   assert.equal(snapshot.get('claude', 'sess-0001'), undefined)
 
-  // 剛好在過期線上兩邊都還看得到，超過一毫秒兩邊都看不到。
   now = START + SESSION_REMOVE_MS
   assert.ok(snapshot.get('claude-desktop', 'sess-0001'))
   assert.equal(snapshot.list().length, 1)

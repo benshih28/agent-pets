@@ -12,7 +12,6 @@ import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 function fixture() {
   const { ipcMain, handlers } = createFakeIpcMain()
-  // 以物件身分辨識 panel 來源，取代原本的字串哨兵。
   const panelEvent = fakeIpcMainInvokeEvent()
   const calls: string[] = []
   const pluginVersion: PluginCatalogVersion = {
@@ -32,7 +31,6 @@ function fixture() {
     catalogUrl: 'https://raw.githubusercontent.com/Ponpon55837/agent-pets-plugins/main/index.json',
     dailyUpdateCheck: false,
   }
-  // PluginRegistry 會碰檔案系統與簽章驗證，catalog IPC 只呼叫 list/planInstall，且只讀回斷言用到的欄位。
   const registry = {
     list: () => [{ id: 'sample-plugin', currentVersion: '1.0.0' }],
     planInstall: () => ({ ok: true, value: {

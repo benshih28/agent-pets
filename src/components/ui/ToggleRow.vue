@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// The settings pages carried 22 copies of the same ten-line block: a <label>
-// wrapping a title, a help line, and a three-element switch. This collapses
-// each of them to a single tag.
 import { useId } from 'vue'
 
 const props = withDefaults(defineProps<{
@@ -117,7 +114,7 @@ const helpId = `toggle-${useId()}-help`
   background: var(--accent-bright);
 }
 
-/* 原生 input 是 opacity: 0 的隱形輸入：全域 :focus-visible 畫在它身上也看不到，所以由可見的兄弟元素畫焦點環。 */
+/* 原生 input 是 opacity: 0，焦點環要畫在可見的兄弟元素上。 */
 .switch input:focus-visible + .track {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);

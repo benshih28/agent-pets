@@ -36,7 +36,6 @@ test('slots and user images persist across instances with a restrictive file mod
     assert.deepEqual(reopened.get().slots.light, REF)
     assert.equal(reopened.getUserImage(REF, 'light')?.file, image().file)
     if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(directory, PANEL_THEME_STORE_FILENAME)).mode & 0o777, 0o600)
-    // 取代圖片時會回傳先前的檔案，讓呼叫端可以刪除它。
     assert.equal(reopened.setUserImage(REF, 'light', image(`${'b'.repeat(64)}.jpg`)), image().file)
     assert.equal(reopened.updateUserImageOptions(REF, 'light', { fit: 'tile', position: 'top-left', dim: 0.95, blur: 16 }), true)
     assert.equal(new PanelThemeStore(directory).getUserImage(REF, 'light')?.blur, 16)
@@ -103,7 +102,6 @@ test('removePlugin clears slots and entries; prune keeps disabled/unknown plugin
       modeExists: (id, themeId, mode) => id === 'other-pack' || (themeId === 'aurora' && mode === 'light'),
       allowsUserImage: id => id === 'other-pack',
     })
-    // theme-pack 的淺色模式不再允許使用者圖片：項目被丟棄，插槽保留。
     assert.deepEqual(removed, [`theme-pack/${image().file}`])
     assert.deepEqual(store.get().slots.light, REF)
     assert.equal(store.removePlugin('other-pack'), true)
@@ -120,7 +118,6 @@ test('at most 64 user image entries are stored', () => {
       store.setUserImage({ pluginId: 'theme-pack', themeId: `t${index}` }, 'light', image(`${index.toString(16).padStart(64, '0')}.png`))
     }
     assert.throws(() => store.setUserImage({ pluginId: 'theme-pack', themeId: 'overflow' }, 'light', image()), RangeError)
-    // 已達上限時，取代既有項目仍然可行。
     assert.doesNotThrow(() => store.setUserImage({ pluginId: 'theme-pack', themeId: 't0' }, 'light', image()))
   })
 })

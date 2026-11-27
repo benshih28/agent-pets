@@ -51,7 +51,6 @@ test('a theme snapshot maps the validated palette and never exposes host font al
   assert.ok(isPluginThemeSnapshot(snapshot))
   assert.equal(snapshot.tokens['--ap-bg'], 'rgb(238 246 246 / 1)')
   assert.equal(snapshot.tokens['--ap-on-accent'], 'rgb(255 255 255 / 1)')
-  // 主題沒有宣告 infoText／shadow／highlight 時取該模式的內建值（tokens.css 的 --builtin-organic-*）。
   assert.equal(snapshot.tokens['--ap-info'], 'rgb(46 91 140 / 1)')
   assert.equal(snapshot.tokens['--ap-shadow'], 'rgb(46 43 37 / 1)')
   assert.equal(snapshot.tokens['--ap-highlight'], 'rgb(255 255 255 / 1)')
@@ -64,7 +63,6 @@ test('a theme snapshot maps the validated palette and never exposes host font al
   assert.deepEqual([snapshot.tokens['--ap-radius-sm'], snapshot.tokens['--ap-radius-md'], snapshot.tokens['--ap-radius-lg']], ['6px', '12px', '20px'])
   const serialized = JSON.stringify(snapshot)
   for (const secret of ['apt-', 'aurora', 'theme-pack', 'agent-pets://', 'body.woff2']) assert.ok(!serialized.includes(secret), secret)
-  // 主題未宣告的模式會退回內建色盤。
   const [lightOnly] = resolvePanelThemes([theme({ modes: { light: { colors: LIGHT_COLORS } } })])!
   assert.deepEqual(buildPluginThemeSnapshot(lightOnly!, 'dark'), buildPluginThemeSnapshot(null, 'dark'))
 })
@@ -137,18 +135,15 @@ test('the runtime follows the active slot and the panel mode, coalescing and de-
     assert.equal(context.sent[0]!.tokens['--ap-bg'], 'rgb(13 27 34 / 1)')
     assert.deepEqual(context.runtime.getPluginTheme(), context.sent[0])
 
-    // 在同一個時間窗內 dark → light → dark 不會送出任何新事件。
     context.runtime.setPanelAppearance({ mode: 'light', forcedColors: false })
     context.runtime.setPanelAppearance({ mode: 'dark', forcedColors: false })
     context.flush()
     assert.equal(context.sent.length, 1)
 
-    // forced-colors 會讓面板暫停插件主題，所以插件拿到的也是內建值。
     context.runtime.setPanelAppearance({ mode: 'dark', forcedColors: true })
     context.flush()
     assert.deepEqual(context.sent.at(-1), buildPluginThemeSnapshot(null, 'dark'))
 
-    // 停用主題插件後會退回內建。
     context.runtime.setPanelAppearance({ mode: 'dark', forcedColors: false })
     context.flush()
     assert.equal(context.sent.at(-1)!.tokens['--ap-bg'], 'rgb(13 27 34 / 1)')

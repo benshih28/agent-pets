@@ -56,12 +56,10 @@ test('unclassified and high-risk requests are never hotkey eligible', () => {
 
 test('Claude Code tools map to the Claude risk table; anything unlisted is unknown', () => {
   const expected: Record<string, string> = {
-    // File edits start high; classifyClaudeFileEdit lowers ordinary in-project edits to medium.
     Bash: 'high', Write: 'high', Edit: 'high', MultiEdit: 'high', NotebookEdit: 'high',
     WebFetch: 'high', WebSearch: 'high',
   }
   for (const [tool, risk] of Object.entries(expected)) assert.equal(classifyClaudeToolRisk(tool), risk, tool)
-  // Case and prefixes matter: a renamed or MCP-wrapped tool never inherits a softer level.
   for (const tool of ['bash', 'write', 'mcp__fs__Write', 'mcp__github__create_issue', 'Task', 'Read', '', 'constructor', '__proto__', 'toString']) {
     assert.equal(classifyClaudeToolRisk(tool), 'unknown', tool)
   }
@@ -88,12 +86,10 @@ test('Claude file edits are medium only for ordinary files inside the project (P
   for (const [file, dir] of [[undefined, cwd], ['a.ts', undefined], ['a.ts', 'relative/cwd'], ['a\0.ts', cwd], [42, cwd]]) {
     assert.equal(classifyClaudeFileEdit(file, dir, p).risk, 'high', String(file))
   }
-  // A symlink that leaves the project (resolved via realpath) is high even if the lexical path is inside.
   const realpath = (value: string) => (value.startsWith('/Users/alice/work/app/linked') ? value.replace('/Users/alice/work/app/linked', '/tmp/elsewhere') : value)
   assert.equal(classifyClaudeFileEdit('/Users/alice/work/app/linked/x.ts', cwd, p, realpath).risk, 'high')
   const intoGit = (value: string) => value.replace('/Users/alice/work/app/hooks-link', '/Users/alice/work/app/.git/hooks')
   assert.equal(classifyClaudeFileEdit('/Users/alice/work/app/hooks-link/pre-commit', cwd, p, intoGit).risk, 'high')
-  // Missing files resolve through their nearest existing parent.
   const parentOnly = (value: string) => (value.endsWith('new.ts') ? null : value)
   assert.equal(classifyClaudeFileEdit('/Users/alice/work/app/src/new.ts', cwd, p, parentOnly).risk, 'medium')
   assert.equal(classifyClaudeFileEdit('/Users/alice/work/app/src/a.ts', cwd, p, () => null).risk, 'high')

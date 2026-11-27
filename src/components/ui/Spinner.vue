@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// A small inline activity ring. It is decorative (aria-hidden); the owner of
-// the busy region should set aria-busy. Reduced motion falls back to a static
-// partial ring so the state stays visible without spinning.
 withDefaults(defineProps<{ size?: number }>(), { size: 14 })
 </script>
 

@@ -22,8 +22,6 @@ const RULE_KEYS: Record<string, TranslationKey> = {
   'v1.daily-streak': 'growth.ruleDailyStreak',
 }
 
-// Evolution, mood and XP-rule wording shared by Growth, History and the pet
-// celebration, so the three views can never describe the same state differently.
 export function useProgressionLabels() {
   const store = useAgentStore()
 
@@ -38,7 +36,6 @@ export function useProgressionLabels() {
     return t('moodResting')
   })
 
-  // Internal ledger ids (v1.session-completed) never reach the screen.
   function ruleLabel(ruleId: string): string {
     return t(RULE_KEYS[ruleId] ?? 'growth.ruleUnknown')
   }

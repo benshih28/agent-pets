@@ -32,7 +32,6 @@ test('local server keeps retrying a busy port and binds once it is released', as
   assert.equal(server.listening, false)
   assert.deepEqual(messages, [`Test port ${port} is already in use; retrying until it is free.`])
 
-  // 第一次重試時埠仍被佔用：不重複記錄，退避時間往下一階走。
   t.mock.timers.tick(LOCAL_SERVER_RETRY_DELAYS_MS[0])
   await new Promise(resolve => server.once('error', resolve))
   assert.equal(messages.length, 1)

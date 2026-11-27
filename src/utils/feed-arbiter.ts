@@ -29,7 +29,6 @@ export interface BubbleCandidates {
   activity?: boolean
 }
 
-/** Selects one visible bubble from already-gated Agent and plugin candidates. */
 export function selectBubble(candidates: BubbleCandidates): BubbleKind | null {
   if (candidates.permissionRequest) return 'permission-request'
   if (candidates.permissionNotice) return 'permission-notice'

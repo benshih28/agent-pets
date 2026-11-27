@@ -71,7 +71,7 @@ type DatabaseSyncConstructor = new (filePath: string) => SqliteDatabase
 export interface HistoryStoreOptions {
   now?: () => number
   localDate?: (timestamp: number) => string
-  /** Local UTC offset in minutes at a time (+330 for India); 5-hour blocks floor to the local hour. */
+  /** Local UTC offset in minutes (+330 for India). */
   timezoneOffsetMinutes?: (timestamp: number) => number
   retentionDays?: number
 }
@@ -94,16 +94,14 @@ const COMPLETED_SESSION_PAGE_ROWS = 5000
 const LOCAL_USAGE_CUTOFF_KEY = 'local_usage_cutoff_at'
 const HISTORY_RANGES: readonly number[] = [7, 30, 90]
 const ACTIVE_STATES = new Set<AgentState>(['thinking', 'tool-running'])
-// 模型 id 只允許常見識別字元，最多一個 `provider/model` 斜線段；`<synthetic>` 之類的佔位值、
-// 含空白、`..`、磁碟代號或看起來像本機路徑（Users/、home/…）的字串一律視為未知，避免路徑外洩到 UI 或匯出。
+// 佔位值、含空白、`..`、磁碟代號或像本機路徑的字串一律視為未知，避免路徑外洩到 UI 或匯出。
 const MODEL_SEGMENT = '[A-Za-z0-9][A-Za-z0-9._:@+-]{0,63}'
 const MODEL_ID = new RegExp(`^${MODEL_SEGMENT}(?:/${MODEL_SEGMENT})?$`)
 const MAX_MODEL_ID_LENGTH = 96
 const PATH_ROOT_SEGMENTS = new Set([
   'users', 'home', 'root', 'var', 'tmp', 'private', 'mnt', 'media', 'opt', 'usr', 'etc', 'volumes', 'library', 'srv',
 ])
-// 5 小時區塊要往回找到「≥5 小時空檔」才能定出起點；只回看 24 小時，
-// 連續 24 小時沒有空檔的極端情況下，區塊起點會從回看窗口內第一筆重新對齊。
+// 只回看 24 小時；連續 24 小時沒有空檔時，區塊起點會從窗口內第一筆重新對齊。
 const USAGE_BLOCK_LOOKBACK_MS = 24 * 60 * 60 * 1000
 const MAX_EXPORT_SESSIONS = 1000
 const MAX_SEARCH_MATCHES = 2000
@@ -236,7 +234,7 @@ interface SessionRow {
   tokenOutput: number
   tokenQuality: HistoryTokenQuality
   lastState: AgentState
-  /** last_state as stored (lastState folds waiting states into idle for the active-time rules). */
+  /** As stored; `lastState` folds waiting states into idle for the active-time rules. */
   rawLastState: AgentState
   lastSeenAt: number
   rowid: number
@@ -319,7 +317,6 @@ interface SessionUsageBatchEntry {
 
 interface HistoryQueuedEvent { event: AgentStatusEvent, petId: string, receivedAt: number, onRecorded?: () => void }
 
-/** A pure "still active" heartbeat: no token usage and no adapter-supplied identity. */
 function isQueuedHeartbeat(item: HistoryQueuedEvent): boolean {
   const { event } = item
   return isActiveState(event.state)
@@ -328,7 +325,6 @@ function isQueuedHeartbeat(item: HistoryQueuedEvent): boolean {
     && !event.sourceEventId
 }
 
-/** Bounds a queue to `limit`, shedding oldest heartbeats first, then oldest others as a last resort. */
 export function trimQueuedEvents(items: HistoryQueuedEvent[], limit: number): HistoryQueuedEvent[] {
   let excess = items.length - limit
   if (excess <= 0) return items
@@ -338,7 +334,6 @@ export function trimQueuedEvents(items: HistoryQueuedEvent[], limit: number): Hi
   }
   eventPipelineStats.historyDroppedHeartbeats += drop.size
   if (excess > 0) {
-    // Only reachable when more than `limit` terminal/token events are pending.
     for (let i = 0; i < items.length && excess > 0; i += 1) {
       if (!drop.has(i)) { drop.add(i); excess -= 1; eventPipelineStats.historyDroppedEvents += 1 }
     }
@@ -363,7 +358,6 @@ export class HistoryStore {
   private retryHandle: ReturnType<typeof setTimeout> | null = null
   private flushFailures = 0
   private closed = false
-  /** FTS5 trigram index for session search; false when the SQLite build lacks FTS5. */
   private sessionSearchIndexed = false
 
   constructor(filePath: string, options: HistoryStoreOptions = {}) {
@@ -412,9 +406,7 @@ export class HistoryStore {
     const projectId = isProjectId(event.projectId)
       ? event.projectId
       : event.project ? digest(event.project) : ''
-    // A CLI may reuse a session ID in different workspaces. Keep their
-    // active-time and completion aggregates isolated once project routing is
-    // enabled, while the empty project ID preserves the legacy key shape.
+    // A CLI may reuse a session ID in different workspaces; the project ID keeps their aggregates isolated (empty ID preserves the legacy key).
     const sessionIdHash = historySessionHash(adapterId, agentId, externalId, projectId)
     const sessionPk = `${adapterId}:${agentId}:${sessionIdHash}`
     const occurredAt = Number.isFinite(event.timestamp) ? Math.min(event.timestamp, receivedAt) : receivedAt
@@ -437,9 +429,7 @@ export class HistoryStore {
         WHERE agent_id = ? AND session_id = ? AND project_id = ? AND pet_id = ? AND state = 'success'
         LIMIT 1
       `).get(agentId, externalId, projectId, safePet))
-      // A later success is the durable outcome for a session that previously
-      // emitted an error. Once successful, later terminal noise cannot demote
-      // or recount the session.
+      // A later success is the durable outcome; later terminal noise cannot demote or recount the session.
       const sessionTerminalTransition = completionKind === 'success'
         ? previous?.terminalState === 'success' ? null : 'success'
         : completionKind === 'error' && !previous?.terminalState ? 'error' : null
@@ -449,21 +439,14 @@ export class HistoryStore {
       const activeDeltaMs = previous && isActiveState(previous.lastState) && occurredAt > previous.lastSeenAt
         ? Math.min(occurredAt - previous.lastSeenAt, MAX_ACTIVE_GAP_MS)
         : 0
-      // Heartbeats (thinking / tool-running with no token usage and no
-      // adapter-supplied identity) carry no fact beyond "the session is still
-      // active". Only their accumulated active time is durable: it is folded into
-      // one rollup row per session-day instead of one events row per heartbeat.
-      // Nothing reads individual heartbeat rows: successAlreadyRecorded and the
-      // achievement backfill only look at state = 'success', and the daily_stats
-      // rebuild only sums active_delta_ms, which the rollup row preserves.
+      // Heartbeats carry no fact beyond "still active": only their active time is kept, as one rollup row per session-day.
+      // Nothing reads individual heartbeat rows (success lookups use state = 'success'; the rebuild sums active_delta_ms).
       const isHeartbeat = isActiveState(state)
         && usage.quality === 'none'
         && !isOpaqueId256(event.eventId)
         && sourceEventId === null
       let inserted: number
       if (isHeartbeat) {
-        // The old per-row dedupe ignored replays; a heartbeat that is not newer
-        // than the session's last activity can add neither time nor state.
         if (previous && occurredAt <= previous.lastSeenAt) return false
         if (activeDeltaMs > 0) {
           this.statement(`
@@ -525,8 +508,6 @@ export class HistoryStore {
       const nextInput = (previous?.tokenInput ?? 0) + (usage.input ?? 0)
       const nextOutput = (previous?.tokenOutput ?? 0) + (usage.output ?? 0)
       const nextQuality = mergeTokenQuality(previous?.tokenQuality ?? 'none', usage.quality)
-      // Timeline: one row per state change (or per tool change while running a
-      // tool), so heartbeats that repeat the current state cost nothing extra.
       const toolName = state === 'tool-running' ? sanitizeToolName(event.toolName) : ''
       const transition = !previous
         || previous.rawLastState !== state
@@ -615,7 +596,6 @@ export class HistoryStore {
           nextTimelineCount,
           sessionPk,
         )
-        // The label almost never changes: only then rewrite it and its search entry.
         if (projectLabel !== previous.projectLabel) {
           this.statement('UPDATE sessions SET project_label = ? WHERE session_pk = ?').run(projectLabel, sessionPk)
           this.indexSessionSearch(previous.rowid, sessionPk, projectLabel, agentId, adapterId, true)
@@ -654,19 +634,11 @@ export class HistoryStore {
   }
 
   recordTokenUsage(record: HistoryTokenUsageRecord, petId = DEFAULT_PET_ID, receivedAt = this.now()): boolean {
-    // Local logs describe the machine/account, not the currently selected pet.
-    // Keep them in a global bucket so switching pets cannot make token totals
-    // appear to drop to zero. The parameter remains for API compatibility.
+    // Local logs describe the account, not the selected pet: a global bucket keeps token totals from dropping to zero on pet switch.
     void petId
     return this.applyTokenUsage(record, receivedAt)
   }
 
-  /**
-   * Imports many local-log records in one transaction. Event rows keep their
-   * per-record dedupe, but the daily_stats deltas are summed in memory and
-   * written once per (date, pet, project, adapter) key at the end, so N records
-   * cost O(N) event statements plus O(keys) aggregate statements.
-   */
   recordTokenUsageBatch(records: readonly HistoryTokenUsageRecord[], receivedAt = this.now()): number {
     if (records.length === 0) return 0
     return this.transaction(() => {
@@ -721,7 +693,6 @@ export class HistoryStore {
     }
   }
 
-  /** Additive per-model aggregate; batched in memory during recordTokenUsageBatch. */
   private updateModelStat(
     localDate: string,
     projectId: string,
@@ -814,9 +785,7 @@ export class HistoryStore {
           && previousProjectId === projectId
           && previousOccurredAt === occurredAt
           && previousQuality === record.quality
-          // A rescan that learned the real session id re-attributes the row.
           && (existing.session_id ?? null) === sessionId
-          // A rescan of a row imported before model tracking backfills its model.
           && (previousModel === model || model === '')
         ) return false
         // Never erase a known model with an unknown one from a partial re-read.
@@ -929,8 +898,7 @@ export class HistoryStore {
   recordQuotaSnapshot(value: unknown): boolean {
     const snapshot = normalizeQuotaSnapshot(value)
     if (!snapshot) return false
-    // Identity is the readings alone: polling every two minutes must not write
-    // (or broadcast historyUpdated) when nothing about the quota changed.
+    // Identity is the readings alone: polling must not write or broadcast when the quota is unchanged.
     const providersJson = JSON.stringify(snapshot.providers)
     const latest = parseQuotaSnapshot(this.statement(
       'SELECT payload_json FROM quota_snapshots ORDER BY updated_at DESC LIMIT 1',
@@ -960,14 +928,8 @@ export class HistoryStore {
     const today = this.localDate(this.now())
     const dates = Array.from({ length: span }, (_, index) => dateOffset(today, index - (span - 1)))
     const previousDates = Array.from({ length: span }, (_, index) => dateOffset(today, index - (2 * span - 1)))
-    // Local token-usage rows are always recorded under the shared
-    // LOCAL_USAGE_PET_ID bucket (see recordTokenUsage), never under the
-    // routed pet, so a project filter must still include that bucket -
-    // scoped to the same project - or token totals would silently read
-    // zero every time a project is selected.
+    // Local token rows live in the shared LOCAL_USAGE_PET_ID bucket, so a project filter must still include it or totals read zero.
     const projectClause = safeProject ? 'AND project_id = ?' : ''
-    // One range scan over the previous + current window; the covering index
-    // (pet_id, local_date, ...) serves it, and everything else is folded in JS.
     const rows = this.statement(`
       SELECT local_date, adapter_id, sessions_completed, sessions_failed, active_ms,
              token_input, token_output, token_cache_read, token_cache_write, token_quality
@@ -978,9 +940,7 @@ export class HistoryStore {
       previousDates[0],
       today,
     )
-    // A day can have multiple aggregate rows (one per project and adapter).
-    // Fold them before building the projection; keeping only the last row
-    // would silently drop sessions and token usage from the HUD.
+    // A day has one aggregate row per project and adapter; fold them or sessions and tokens drop from the HUD.
     const currentDates = new Set(dates)
     const previousSet = new Set(previousDates)
     const byDate = new Map<string, HistoryDailyStat>()
@@ -1026,8 +986,7 @@ export class HistoryStore {
       models,
       usageBlocks: this.getUsageBlocks(),
       tokenQuality: totals.tokenQuality,
-      // Mirrors the cutoff LocalUsageReader.scanNow() actually applies, so
-      // this always describes the window the numbers above really cover.
+      // Mirrors the cutoff LocalUsageReader.scanNow() applies.
       tokenTrackingSince: Math.max(
         this.getLocalUsageCutoff(),
         this.now() - this.retentionDays * 24 * 60 * 60 * 1000,
@@ -1036,7 +995,6 @@ export class HistoryStore {
     }
   }
 
-  /** PK range scan on (local_date, ...), folded per (adapter, model). */
   private modelStats(fromDate: string, toDate: string, projectId: string | null): HistoryModelStat[] {
     const rows = this.statement(`
       SELECT adapter_id, model,
@@ -1062,11 +1020,7 @@ export class HistoryStore {
         || a.model.localeCompare(b.model))
   }
 
-  /**
-   * Latest 5-hour block per agent from local-log rows of the last 24 hours.
-   * Served by the partial index on token-usage occurred_at, so heartbeat rows
-   * are never visited. Account-level: ignores pet and project filters.
-   */
+  // Account-level: ignores pet and project filters.
   getUsageBlocks(): HistoryUsageBlock[] {
     const now = this.now()
     const rows = this.statement(`
@@ -1085,16 +1039,10 @@ export class HistoryStore {
       tokenCacheWrite: Math.max(0, asInteger(row.token_cache_write)),
     }))
     // Newest-first so the row cap drops the oldest rows; latestUsageBlocks re-sorts.
-    // Only blocks that can still be current are useful to the Usage panel.
     return latestUsageBlocks(entries, this.timezoneOffsetMinutes).filter(block => now - block.lastActivityAt < USAGE_BLOCK_MS)
   }
 
-  /**
-   * One keyset page of past sessions for a pet, newest activity first. The
-   * query is validated here as well as in IPC, so a direct caller cannot pass
-   * an unbounded limit or a raw fragment. Token totals for the page come from
-   * one IN (...) lookup on session_model_usage (no per-row query).
-   */
+  // Validated here as well as in IPC so a direct caller cannot pass an unbounded limit or a raw fragment.
   listSessions(petId = DEFAULT_PET_ID, input: unknown = {}): HistorySessionPage {
     this.flushQueued()
     const now = this.now()
@@ -1102,8 +1050,7 @@ export class HistoryStore {
     const matchedIds = this.searchSessionIds(query.search)
     if (matchedIds && matchedIds.length === 0) return { items: [], nextCursor: null }
     const { sql, params } = buildSessionListQuery(safePetId(petId), query, now, query.limit + 1, matchedIds ?? undefined)
-    // The SQL text comes from a finite set of clause combinations, so the
-    // statement cache stays bounded.
+    // The SQL text comes from a finite set of clause combinations, so the statement cache stays bounded.
     const rows = this.statement(sql).all(...params)
     const hasMore = rows.length > query.limit
     const pageRows = hasMore ? rows.slice(0, query.limit) : rows
@@ -1115,12 +1062,7 @@ export class HistoryStore {
     }
   }
 
-  /**
-   * Sessions whose label / agent contain `search`, from the trigram index.
-   * null means "filter with the ordered LIKE scan instead": no FTS5, a term
-   * shorter than one trigram, or so many matches that walking the time index
-   * finds a page sooner than sorting every match.
-   */
+  // null means filter with the ordered LIKE scan instead: no FTS5, a term shorter than one trigram, or too many matches.
   private searchSessionIds(search: string | undefined): string[] | null {
     if (!search || !this.sessionSearchIndexed || [...search].length < 3) return null
     const rows = this.statement('SELECT session_pk FROM session_search WHERE session_search MATCH ? LIMIT ?')
@@ -1128,23 +1070,18 @@ export class HistoryStore {
     return rows.length > MAX_SEARCH_MATCHES ? null : rows.map(row => String(row.session_pk))
   }
 
-  /** One session's metadata plus its latest timeline entries (oldest first). */
   getSessionDetail(petId: string, sessionId: unknown): HistorySessionDetail | null {
     if (!isHistorySessionId(sessionId)) return null
     this.flushQueued()
-    // Scoped like the list: a session of another pet is "not found".
     const row = this.statement(`SELECT ${SESSION_LIST_COLUMNS} FROM sessions WHERE session_pk = ? AND pet_id = ?`)
       .get(sessionId, safePetId(petId))
     if (!row) return null
     const [session] = this.mapSessionRows([row], this.now())
-    // Newest-first on the (session_pk, seq) primary key, then reversed, so the
-    // cap keeps the latest entries.
     const rows = this.statement(`
       SELECT seq, occurred_at, state, tool_name FROM session_timeline
       WHERE session_pk = ? ORDER BY seq DESC LIMIT ?
     `).all(sessionId, HISTORY_SESSION_TIMELINE_MAX)
-    // seq starts at 0, so an oldest returned row past 0 means older entries
-    // were trimmed (by the stored cap) or are beyond the read cap.
+    // seq starts at 0, so an oldest returned row past 0 means older entries were trimmed.
     const truncated = rows.length > 0 && asInteger(rows[rows.length - 1]!.seq) > 0
     const timeline: HistorySessionTimelineEntry[] = rows
       .reverse()
@@ -1163,7 +1100,6 @@ export class HistoryStore {
   private mapSessionRows(rows: readonly SqliteRow[], now: number): HistorySessionListItem[] {
     const keys = [...new Set(rows.map(row => safeText(row.usage_key)).filter(Boolean))]
     const usage = keys.length > 0
-      // One statement for any page size: the keys travel as one JSON parameter.
       ? foldSessionUsage(this.statement(`
           SELECT usage_key, model, token_input, token_output, token_cache_read, token_cache_write
           FROM session_model_usage WHERE usage_key IN (SELECT value FROM json_each(?))
@@ -1177,15 +1113,12 @@ export class HistoryStore {
       INSERT OR REPLACE INTO session_timeline(session_pk, seq, occurred_at, state, tool_name)
       VALUES (?, ?, ?, ?, ?)
     `).run(sessionPk, seq, occurredAt, state, toolName)
-    // Keep at most SESSION_TIMELINE_STORED_MAX rows per session: each append
-    // past the cap drops exactly the oldest one, a primary-key point delete.
     if (seq >= SESSION_TIMELINE_STORED_MAX) {
       this.statement('DELETE FROM session_timeline WHERE session_pk = ? AND seq <= ?')
         .run(sessionPk, seq - SESSION_TIMELINE_STORED_MAX)
     }
   }
 
-  /** Per-session (local-log usage key) model totals; batched like daily_model_stats. */
   private updateSessionUsage(
     usageKey: string | null,
     model: string,
@@ -1259,11 +1192,7 @@ export class HistoryStore {
     }
   }
 
-  /**
-   * Bounded keyset walk for the JSON export: at most MAX_EXPORT_SESSIONS rows.
-   * The export never carried project names (only fingerprints), so the
-   * workspace label is blanked here to keep that contract for shared files.
-   */
+  // The export never carried project names (only fingerprints), so the workspace label is blanked to keep that contract.
   private exportSessions(petId: string, projectId: string | undefined, from: number): { items: HistorySessionListItem[]; truncated: boolean } {
     const items: HistorySessionListItem[] = []
     let cursor: HistorySessionQuery['cursor']
@@ -1276,7 +1205,6 @@ export class HistoryStore {
     }
   }
 
-  /** When achievements were last reconciled from history (0 = never). */
   getAchievementReconciledAt(): number {
     const value = Number(this.statement('SELECT value FROM history_metadata WHERE key = ?').get(ACHIEVEMENT_RECONCILED_KEY)?.value)
     return Number.isFinite(value) && value > 0 ? value : 0
@@ -1289,12 +1217,7 @@ export class HistoryStore {
     `).run(ACHIEVEMENT_RECONCILED_KEY, String(Math.max(0, Math.floor(timestamp))))
   }
 
-  /**
-   * Completed-session facts, optionally only those at/after `sinceMs`. A later
-   * reconcile passes the previous marker so start-up no longer re-reads and
-   * re-hashes the whole history; the achievement store de-duplicates by
-   * session key, so overlap with already-recorded sessions is harmless.
-   */
+  // Overlap with already-recorded sessions is harmless: the achievement store de-duplicates by session key.
   getAchievementCompletedSessions(sinceMs = 0): AchievementCompletedSessionFact[] {
     this.flushQueued()
     const completed: AchievementCompletedSessionFact[] = []
@@ -1302,11 +1225,6 @@ export class HistoryStore {
     return completed
   }
 
-  /**
-   * Streams first-success facts per session identity using keyset pages over the
-   * partial (occurred_at, event_id) success index: bounded memory per page and no
-   * silent truncation for very large histories.
-   */
   private forEachCompletedSession(sinceMs: number, visit: (fact: AchievementCompletedSessionFact) => void): void {
     const seen = new Set<string>()
     const since = Math.max(0, Math.floor(sinceMs))
@@ -1372,7 +1290,6 @@ export class HistoryStore {
     return this.pruneEvents()
   }
 
-  /** 使用者觸發的資料庫整理（optimize + VACUUM）；排隊事件先寫入，交易進行中會丟 SqliteBusyError。 */
   compact(): void {
     if (this.transactionDepth === 0) this.flushQueued()
     optimizeAndVacuum(this.database, this.transactionDepth > 0)
@@ -1387,7 +1304,6 @@ export class HistoryStore {
     })
   }
 
-  /** Lightweight SQLite structural check; false means the file is damaged. */
   quickCheck(): boolean {
     const row = this.database.prepare('PRAGMA quick_check(1)').get() as Record<string, unknown> | undefined
     return !row || Object.values(row)[0] === 'ok'
@@ -1401,10 +1317,6 @@ export class HistoryStore {
     this.database.close()
   }
 
-  /**
-   * One bounded retention step: deletes at most `limit` expired rows from each of
-   * events and sessions. `more` tells the caller to schedule another step.
-   */
   pruneBatch(limit = PRUNE_BATCH_ROWS): { events: number, sessions: number, more: boolean } {
     this.flushQueued()
     const bounded = Math.max(1, Math.floor(limit))
@@ -1415,9 +1327,7 @@ export class HistoryStore {
           SELECT rowid FROM events WHERE occurred_at < ? LIMIT ?
         )
       `).run(cutoff, bounded))
-      // Pick the exact expired set once (per pet, through the pet/last-seen
-      // index), then delete the sessions, their timelines and search entries by
-      // that set, so no batch boundary can leave orphan rows behind.
+      // Pick the expired set once, then delete sessions, timelines and search entries by it so no batch boundary leaves orphan rows.
       const expired = this.expiredSessions(cutoff, bounded)
       let sessions = 0
       if (expired.length > 0) {
@@ -1438,11 +1348,7 @@ export class HistoryStore {
     })
   }
 
-  /**
-   * Up to `limit` sessions last seen before `cutoff`, oldest first per pet.
-   * Pets are walked with MIN(pet_id) > ? seeks on the (pet_id, last_seen_at)
-   * index, so retention needs no separate last_seen_at index on the hot table.
-   */
+  // Pets are walked with MIN(pet_id) > ? seeks on the (pet_id, last_seen_at) index, so no separate last_seen_at index is needed on the hot table.
   private expiredSessions(cutoff: number, limit: number): Array<{ pk: string, rowid: number }> {
     const expired: Array<{ pk: string, rowid: number }> = []
     let pet = this.statement('SELECT MIN(pet_id) AS pet FROM sessions').get()?.pet
@@ -1457,7 +1363,6 @@ export class HistoryStore {
     return expired
   }
 
-  /** Keeps the FTS5 search row of one session in step with its label. */
   private indexSessionSearch(rowid: number, sessionPk: string, label: string, agentId: string, adapterId: string, replace: boolean): void {
     if (!this.sessionSearchIndexed || rowid <= 0) return
     if (replace) this.statement('DELETE FROM session_search WHERE rowid = ?').run(rowid)
@@ -1465,7 +1370,6 @@ export class HistoryStore {
       .run(rowid, sessionPk, sessionSearchText(label, agentId, adapterId))
   }
 
-  /** Runtime retention: bounded batches with the event loop yielded in between. */
   async pruneInBatches(
     limit = PRUNE_BATCH_ROWS,
     yieldToEventLoop: () => Promise<void> = () => new Promise(resolve => { setImmediate(resolve) }),
@@ -1503,7 +1407,6 @@ export class HistoryStore {
   ): void {
     const completed = completionKind === 'success' ? 1 : 0
     const failed = completionKind === 'error' ? 1 : 0
-    // A heartbeat that adds nothing must not rewrite the row (and its indexes).
     if (
       completed === 0 && failed === 0 && activeMs === 0 && tokenInput === 0 && tokenOutput === 0
       && tokenCacheRead === 0 && tokenCacheWrite === 0 && tokenQuality === 'none'
@@ -1523,9 +1426,7 @@ export class HistoryStore {
       this.dailyBatch.set(key, entry)
       return
     }
-    // One additive upsert instead of SELECT + UPSERT. The insert branch clamps
-    // negative corrections to 0 and the update branch applies the raw delta
-    // with the same MAX(0, ...) floor the read-modify-write version used.
+    // The insert branch clamps negative corrections to 0; the update branch applies the raw delta with a MAX(0, ...) floor.
     this.statement(`
       INSERT INTO daily_stats(
         local_date, pet_id, project_id, adapter_id, sessions_completed, sessions_failed,
@@ -1645,8 +1546,7 @@ export class HistoryStore {
         VALUES (1, 'history-v1', ?, 'history-v1')
       `).run(this.now())
     })
-    // v3/v4 rebuild aggregates through the current writer, which already knows
-    // the v6 cache columns, so make sure they exist before any later step.
+    // v3/v4 rebuild through the current writer, which uses the v6 cache columns, so they must exist before any later step.
     this.ensureCacheColumns()
     const hasV2 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 2').get())
     if (!hasV2) this.transaction(() => {
@@ -1667,9 +1567,6 @@ export class HistoryStore {
     })
     const hasV3 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 3').get())
     if (!hasV3) this.transaction(() => {
-      // v2 stored local log rows under the selected/default pet. Move only
-      // local-usage events and rebuild aggregates so existing totals remain
-      // visible after users switch pets.
       this.database.exec(`
         UPDATE events SET pet_id = '${LOCAL_USAGE_PET_ID}' WHERE type = 'agent.token_usage';
         DELETE FROM daily_stats;
@@ -1714,10 +1611,6 @@ export class HistoryStore {
     })
     const hasV6 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 6').get())
     if (!hasV6) this.transaction(() => {
-      // Split prompt-cache tokens out of fresh input. Rows imported earlier
-      // folded cache reads into input, so they are downgraded from exact to
-      // estimated; the next local-log scan re-imports them with the split and
-      // restores exact quality (recordTokenUsage updates in place).
       this.ensureCacheColumns()
       this.database.exec(`
         UPDATE events SET token_quality = 'estimated'
@@ -1736,10 +1629,6 @@ export class HistoryStore {
     })
     const hasV7 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 7').get())
     if (!hasV7) this.transaction(() => {
-      // Write-amplification fix: success lookups use partial indexes, so the
-      // thousands of heartbeat rows per session never maintain them, and the
-      // daily_stats covering index (rewritten on every active_ms change) is
-      // replaced by a narrow (pet_id, local_date) index.
       this.database.exec(`
         DROP INDEX IF EXISTS idx_history_events_completion_identity;
         CREATE INDEX IF NOT EXISTS idx_history_events_success_identity
@@ -1755,16 +1644,13 @@ export class HistoryStore {
         VALUES (7, 'history-partial-success-indexes', ?, 'history-partial-success-indexes')
       `).run(this.now())
     })
-    // ensureModelSchema is idempotent on its own (column/table/index checks), so
-    // a database whose v8 marker was lost, or a half-applied copy, still heals.
+    // ensureModelSchema is idempotent, so a database whose v8 marker was lost or half-applied still heals.
     const modelTableExisted = Boolean(this.database.prepare(
       "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'daily_model_stats'",
     ).get())
     this.ensureModelSchema()
     const hasV8 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 8').get())
-    // The v8 marker alone does not prove the aggregate is populated: a table
-    // that was missing (just recreated) or is empty while local-usage rows
-    // exist is rebuilt here. Both probes are LIMIT 1 index lookups.
+    // The v8 marker alone does not prove the aggregate is populated: a missing or empty table is rebuilt here.
     if (hasV8 && (
       !modelTableExisted
       || (
@@ -1776,9 +1662,6 @@ export class HistoryStore {
       this.rebuildModelStats()
     })
     if (!hasV8) this.transaction(() => {
-      // Additive: per-model token totals for local-log usage. Existing rows
-      // keep an empty model ("unknown") until the next scan re-reads their log
-      // line, at which point applyTokenUsage backfills the model in place.
       this.database.exec('DELETE FROM daily_model_stats')
       this.rebuildModelStats()
       this.statement(`
@@ -1789,10 +1672,7 @@ export class HistoryStore {
     this.ensureSessionTimelineSchema()
     const hasV9 = Boolean(this.statement('SELECT version FROM schema_migrations WHERE version = 9').get())
     if (!hasV9) this.transaction(() => {
-      // Additive session browser: outcome, local-log join key and per-session
-      // model totals for sessions recorded before v9. Their tool / permission
-      // counters and timelines cannot be reconstructed (heartbeats were rolled
-      // up), so they keep timeline_tracked = 0 and the UI shows them as unknown.
+      // Pre-v9 sessions cannot get tool / permission counters or timelines back, so they keep timeline_tracked = 0.
       this.database.exec(`
         UPDATE sessions SET final_state = CASE
           WHEN last_state IN ('thinking', 'tool-running', 'waiting-permission', 'waiting-input') THEN 'open'
@@ -1823,7 +1703,6 @@ export class HistoryStore {
     })
   }
 
-  /** Idempotent: columns, tables and indexes for the session list and timelines. */
   private ensureSessionTimelineSchema(): void {
     const columns = new Set(
       this.database.prepare('PRAGMA table_info(sessions)').all().map(row => String(row.name)),
@@ -1873,11 +1752,7 @@ export class HistoryStore {
     this.ensureSessionSearchIndex()
   }
 
-  /**
-   * FTS5 trigram index over "label, agent, adapter" so substring search reads
-   * only matching sessions. Rowids mirror sessions.rowid. Built from sessions
-   * whenever the table is (re)created; optional when FTS5 is missing.
-   */
+  // Rowids mirror sessions.rowid; optional when FTS5 is missing.
   private ensureSessionSearchIndex(): void {
     const existed = Boolean(this.database.prepare(
       "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_search'",
@@ -1901,11 +1776,6 @@ export class HistoryStore {
     }
   }
 
-  /**
-   * Sessions store only a hash of the external id, but their event rows keep
-   * it, so one pass over the distinct hook identities derives each session's
-   * local-log join key. Runs once (v9); new sessions get the key on insert.
-   */
   private backfillSessionUsageKeys(): void {
     const update = this.statement("UPDATE sessions SET usage_key = ? WHERE session_pk = ? AND usage_key = ''")
     const rows = this.statement(`
@@ -1945,7 +1815,6 @@ export class HistoryStore {
     `)
   }
 
-  /** Set-based rebuild of daily_model_stats from local-usage event rows. */
   private rebuildModelStats(): void {
     this.statement(`
       INSERT INTO daily_model_stats(
@@ -1980,13 +1849,7 @@ export class HistoryStore {
     }
   }
 
-  /**
-   * Rebuilds the event-derived daily_stats columns with one set-based statement:
-   * SQLite folds the events (O(E) scan, no per-row JS round trip, no E-sized
-   * array in memory) and only the aggregated rows are written. Sums commute, so
-   * no ORDER BY is needed. ON CONFLICT keeps it additive if two raw keys
-   * normalise to the same dimension tuple.
-   */
+  // ON CONFLICT keeps it additive if two raw keys normalise to the same dimension tuple.
   private rebuildEventDailyStats(): void {
     this.statement(`
       INSERT INTO daily_stats(
@@ -2050,7 +1913,6 @@ export class HistoryStore {
   }
 
   private rebuildSessionCompletions(): void {
-    // Count first, write once per (date, pet, project, adapter) key.
     const counts = new Map<string, { localDate: string, petId: string, projectId: string, adapterId: string, completed: number, failed: number }>()
     const add = (localDate: string, petId: string, projectId: string, adapterId: string, kind: 'success' | 'error'): void => {
       const key = `${localDate}\u0000${petId}\u0000${projectId}\u0000${adapterId}`
@@ -2093,16 +1955,11 @@ export class HistoryStore {
     }
   }
 
-  // 將多筆寫入合併成單一交易（例如本機 usage 掃描一次匯入上千筆），避免每筆
-  // 紀錄各自 BEGIN/COMMIT 造成的 WAL fsync 開銷。
   batch<T>(work: () => T): T {
     return this.transaction(work)
   }
 
-  /**
-   * Runs `work` inside a SAVEPOINT so one failing item cannot poison the rest of
-   * an enclosing batch transaction. Outside a transaction it behaves like one.
-   */
+  // SAVEPOINT so one failing item cannot poison the rest of an enclosing batch transaction.
   private isolated<T>(work: () => T): T {
     if (this.transactionDepth === 0) return this.transaction(work)
     const name = `sp_${this.transactionDepth}`
@@ -2120,11 +1977,6 @@ export class HistoryStore {
     }
   }
 
-  /**
-   * Micro-batched write path for the hook-event hot path: events that arrive in
-   * the same turn of the event loop share one transaction (one commit) instead
-   * of one commit each. `onRecorded` runs once per flush if anything was new.
-   */
   queueEvent(event: AgentStatusEvent, petId = DEFAULT_PET_ID, onRecorded?: () => void): void {
     if (this.closed) return
     this.queuedEvents.push({ event, petId, receivedAt: this.now(), onRecorded })
@@ -2133,7 +1985,6 @@ export class HistoryStore {
     this.flushHandle = setImmediate(() => { this.flushHandle = null; this.flushQueued() })
   }
 
-  /** Writes every queued event in one transaction. Returns how many were new. */
   flushQueued(): number {
     if (this.flushHandle) { clearImmediate(this.flushHandle); this.flushHandle = null }
     if (this.retryHandle) { clearTimeout(this.retryHandle); this.retryHandle = null }
@@ -2167,12 +2018,7 @@ export class HistoryStore {
     return recorded
   }
 
-  /**
-   * A failed batch commit (busy / locked / disk full) rolled everything back, so
-   * the swapped-out events go back to the FRONT of the queue and a backoff retry
-   * is scheduled. The queue stays bounded: oldest heartbeats are shed first and
-   * terminal / token / identified events are only dropped if nothing else is left.
-   */
+  // A failed commit rolled everything back: events return to the FRONT of the queue and a backoff retry is scheduled.
   private requeueFailedBatch(failed: HistoryQueuedEvent[]): void {
     eventPipelineStats.historyFlushFailures += 1
     eventPipelineStats.historyRequeuedEvents += failed.length

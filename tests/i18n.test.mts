@@ -74,7 +74,6 @@ test('every permission-domain key is referenced by the app', async () => {
   walk(join(root, 'electron'))
   const source = files.map((file) => readFileSync(file, 'utf8')).join('\n')
   const keys = Object.keys(JSON.parse(readFileSync(join(root, 'src/locales/permission/zh-TW.json'), 'utf8')) as object)
-  // Keys picked through lookup tables are listed literally in those tables.
   // tPlural 以基底 key 取用 `.one`／`.other`，所以複數 key 以基底名稱比對。
   for (const key of keys) assert.ok(source.includes(`'${key.replace(/\.(?:one|other)$/, '')}'`), `unused locale key ${key}`)
 })

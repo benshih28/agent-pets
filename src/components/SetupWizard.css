@@ -1,5 +1,4 @@
 .setup-overlay {
-  /* 顏色、字型與形狀都來自 tokens.css 的語意層，不在這裡重新宣告別名。 */
   position: fixed;
   z-index: var(--z-system);
   inset: 0;
@@ -19,7 +18,6 @@
   flex-direction: column;
   gap: var(--dialog-shell-gap);
   padding: var(--dialog-shell-padding);
-  /* 說明列與工具名稱對齊：狀態點加上它右邊的間距。 */
   --wizard-detail-indent: 18px;
   overflow: hidden;
   border-radius: var(--organic-radius-lg);

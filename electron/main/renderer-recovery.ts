@@ -6,16 +6,12 @@ export interface RecoverableWebContents extends Pick<EventEmitter, 'on' | 'off'>
 
 export interface RendererRecoveryOptions {
   label: string
-  /** Reload the page in place. Should be a no-op when the contents are gone. */
   reload: () => void
   log: (level: 'error' | 'warn', message: string) => void
-  /** Called once the reload budget is exhausted; the renderer stays down until manual recovery. */
   onGaveUp?: (label: string) => void
-  /** Called after every successful load that follows a failure/crash, to re-push main-owned state. */
   onRecovered?: (label: string) => void
   maxReloads?: number
   windowMs?: number
-  /** Exponential-ish backoff between attempts; the last value repeats. */
   delaysMs?: readonly number[]
   unresponsiveGraceMs?: number
   now?: () => number
@@ -24,7 +20,6 @@ export interface RendererRecoveryOptions {
 }
 
 export interface RendererRecovery {
-  /** Resets the budget and reloads immediately (tray rescue / error boundary). */
   manualReload(): void
   dispose(): void
   state(): { reloads: number; gaveUp: boolean }

@@ -36,7 +36,6 @@
 .plot {
   position: relative;
   height: 96px;
-  /* Room for the top grid label, which sits above the plot's first line. */
   margin-top: var(--space-3);
 }
 
@@ -105,8 +104,6 @@
   background: var(--accent-bright);
 }
 
-/* A day with no activity keeps a dashed base so it reads as "nothing
-   happened", distinct from a tiny non-zero bar. */
 .bar.idle::after {
   position: absolute;
   right: 15%;
@@ -135,8 +132,7 @@
   white-space: nowrap;
 }
 
-/* The 7-day view labels every column, so a label may not spill into its
-   neighbour; the 30/90-day views label every few columns and may. */
+/* The 7-day view labels every column, so a label may not spill into its neighbour. */
 .axis-label:has(.axis-weekday) {
   overflow: hidden;
 }

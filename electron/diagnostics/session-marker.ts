@@ -7,7 +7,6 @@ export interface RunMarker {
   clear(): void
 }
 
-/** Writes `running.lock` at startup; a normal quit removes it. */
 export function acquireRunMarker(directory: string, now: () => number = Date.now): RunMarker {
   const file = path.join(directory, 'running.lock')
   let previousRunUnclean = false

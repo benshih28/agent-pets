@@ -14,13 +14,6 @@ import {
 import { QUOTA_TOOLTIP_HEADROOM_H } from '../../src/utils/pet-window-size.ts'
 import type { MainState } from './state.ts'
 
-// 面板視窗的尺寸與定位：一份使用者自己的尺寸套用到所有頁面（儀表板、設定、plugin 分頁），
-// 精靈／MCP 頁只能暫時提高最小值且不寫檔。
-//
-// 狀態仍放在 `mainState`（面板視窗、尺寸記錄、結算計時器都跨模組共用）；螢幕、尺寸檔工廠與
-// 時鐘以參數傳入，測試可換成假螢幕與假儲存。plugin panel view 的 bounds 驗證與視窗建立
-// 事件不在這裡，仍由 runtime.ts 處理。
-
 const PANEL_SETTLE_DELAY_MS = 250
 
 export type PanelGeometryState = Pick<MainState,
@@ -36,7 +29,6 @@ export interface PanelGeometryScreen {
 export interface PanelGeometryDeps {
   state: PanelGeometryState
   screen: PanelGeometryScreen
-  /** 第一次使用時才建立尺寸檔，並由呼叫端決定路徑與結束時的 flush。 */
   createSizeStore(): PanelSizeStore
   now?: () => number
 }
@@ -78,9 +70,7 @@ export function createPanelGeometry(deps: PanelGeometryDeps): PanelGeometry {
       return { x: workArea.x, y: workArea.y, ...clampPanelSize({ width, height }, workArea) }
     }
     const petBounds = state.petWindow.getBounds()
-    // 視窗水平中心與可見精靈一致（留白只加在上方）。優先採 renderer 量到的內容高度：它同時
-    // 取決於寵物尺寸與狀態列數量，固定留白常數表達不出來；常數只是後備。面板必須錨定可見的
-    // 寵物而不是視窗外框，否則小尺寸時面板上方會懸著一大段空隙。
+    // 優先採 renderer 量到的內容高度（同時取決於寵物尺寸與狀態列數量，常數只是後備）；面板必須錨定可見的寵物而不是視窗外框，否則小尺寸時上方會懸著空隙。
     return computePanelPlacement({
       petBounds,
       petContentHeight: state.petContentHeight,
@@ -102,7 +92,6 @@ export function createPanelGeometry(deps: PanelGeometryDeps): PanelGeometry {
     return screen.getPrimaryDisplay().workArea
   }
 
-  // 最小／最大值跟著面板所在的螢幕：使用者最多拖到工作區減去間距，最小不低於可讀尺寸。
   function applyPanelWindowLimits(workArea = panelWorkArea()): void {
     const panel = state.panelWindow
     if (!liveWindow(panel)) return
@@ -125,7 +114,6 @@ export function createPanelGeometry(deps: PanelGeometryDeps): PanelGeometry {
     setPluginPanelWindowBounds(computePanelBounds(height, width))
   }
 
-  // 使用者拖曳：記住尺寸（磁碟端去抖）、丟掉精靈頁的最小值，拖曳停下後把視窗滑回工作區內。
   function recordUserPanelSize(size: PanelSize): void {
     const panel = state.panelWindow
     if (!liveWindow(panel)) return
@@ -146,7 +134,7 @@ export function createPanelGeometry(deps: PanelGeometryDeps): PanelGeometry {
     }, PANEL_SETTLE_DELAY_MS)
   }
 
-  // 精靈／MCP 頁請求最小尺寸（null 釋放），不會改動也不會持久化使用者自己的尺寸。
+  // 精靈／MCP 頁只能暫時提高最小值（null 釋放），不改動也不持久化使用者自己的尺寸。
   function requestPanelMinimum(size: PanelSize | null): void {
     sizeStore()
     state.panelMinimumSize = size && size.height > 0 ? { width: size.width, height: size.height } : null

@@ -14,9 +14,6 @@ import { useElementVisible } from '@/composables/useElementVisible'
 import { openPanelThemeEditor, refreshUserPanelThemes, userPanelThemes, useUserThemeActions } from '@/composables/useMyPanelThemes'
 import { USER_PANEL_THEME_MAX_COUNT, USER_PANEL_THEME_NAME_MAX, USER_PANEL_THEME_OWNER, type UserPanelThemeRecord } from '@/types/panel-theme-user'
 
-// 「我的主題」清單（spec R22）：主題插件分頁的第二個區塊，也出現在 通用 → 外觀。
-// 套用沿用插件主題的插槽；編輯、新增與匯入開啟同一個全面板編輯器。
-
 const themeActions = usePanelThemeActions()
 const userActions = useUserThemeActions()
 const busy = computed(() => themeActions.busy.value || userActions.busy.value)
@@ -64,7 +61,6 @@ const MENU_ACTIONS = {
   delete: record => { deleting.value = record },
 } satisfies Record<MenuId, (record: UserPanelThemeRecord) => void>
 
-/** 「<名稱> 副本」，超過長度上限時截短名稱本身。 */
 function copyName(name: string): string {
   const full = t('design.themeEditor.copyName', { name })
   if (full.length <= USER_PANEL_THEME_NAME_MAX) return full
@@ -121,7 +117,7 @@ onMounted(() => {
           </ActionMenu>
         </template>
       </PanelThemeCard>
-      <!-- 記錄在磁碟上但沒通過目前的檢查（例如規則在新版本變嚴）：不能套用，但可以編輯修正或刪除。 -->
+      <!-- 磁碟上的記錄沒通過目前的檢查（例如規則變嚴）：不能套用，但可編輯或刪除。 -->
       <article v-else class="my-theme-invalid" :data-testid="`my-theme-invalid-${row.record.id}`">
         <strong class="my-theme-invalid-name">{{ row.record.name }}</strong>
         <span class="my-themes-note">{{ t('design.themeEditor.error.invalid') }}</span>

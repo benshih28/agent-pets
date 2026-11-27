@@ -55,7 +55,6 @@ test('create, update, rename, duplicate and delete persist one private file per 
     assert.equal(reopened.delete(created.id), false)
     assert.equal(fs.existsSync(file), false)
     assert.deepEqual(storeIn(directory).list().map(theme => theme.id), [copy.id])
-    // 沒有暫存檔留下。
     assert.deepEqual(fs.readdirSync(path.dirname(file)).filter(name => name.endsWith('.tmp')), [])
   })
 })
@@ -107,7 +106,6 @@ test('corrupt, oversized and mismatched files are backed up and skipped; other t
     assert.ok(names.some(name => name.startsWith('u-dddddddddddd.json.corrupt-')))
     assert.ok(!names.some(name => name.endsWith('.tmp')))
     assert.ok(names.includes('notes.txt'))
-    // 備份檔不會在下次啟動被當成主題讀回來。
     assert.deepEqual(storeIn(directory).list().map(theme => theme.id), [kept.id])
   })
 })
@@ -135,7 +133,6 @@ test('a symlinked store directory or theme file is refused', { skip: SKIP_WITHOU
     fs.rmSync(path.join(folder, `${created.id}.json`))
     fs.symlinkSync(target, path.join(folder, `${created.id}.json`))
     assert.deepEqual(storeIn(directory).list(), [])
-    // 寫入也不會跟著 symlink 寫到外面。
     assert.equal(codeOf(() => store.rename(created.id, 'Renamed')), 'unsafe_directory')
     assert.equal(JSON.parse(fs.readFileSync(target, 'utf8')).name, 'Mine')
   })

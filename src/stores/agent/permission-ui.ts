@@ -1,13 +1,4 @@
-// 權限泡泡的畫面狀態。Permission Broker 在主程序：它決定有哪些請求、何時到期、決定是否送達；
-// 這裡只顯示 broker 廣播的佇列、把使用者按的選項原樣轉給主程序，並在請求離開佇列時短暫顯示結果。
-// renderer 不自己核准、拒絕或延長任何請求。
-//
-// - 事件輸入：`setPermissionRequests()`（broker 廣播的完整佇列，先在這裡重新驗證形狀）、
-//   `decidePermission()`（使用者按下的選項）、`dismissPermissionOutcome()`。
-// - 對外依賴：`settleWaitingPermission(agentId, sessionId)`，由主 store 把被擋住的 session 改回 idle（只影響畫面）。
-// - 計時器：結果卡片一個，換新結果或關掉時清掉，store 的 effect scope 結束時也會清掉。
-// - storage：無。
-// - 跨視窗同步：無；主程序把同一份佇列廣播給寵物與面板兩個視窗。
+// renderer 不自己核准、拒絕或延長任何請求；決定權全在主程序的 Permission Broker。
 import { computed, onScopeDispose, shallowRef } from 'vue'
 import type {
   PermissionDecideResult,
@@ -34,17 +25,12 @@ function isActiveRequestView(request: unknown, now: number): request is Permissi
 }
 
 export function usePermissionUi(settleWaitingPermission: (agentId: string, sessionId: string) => void) {
-  // shallowRef: always replaced wholesale by setPermissionRequests, never mutated in place.
   const permissionRequests = shallowRef<PermissionRequestView[]>([])
   const permissionRequest = computed(() => permissionRequests.value[0] ?? null)
 
-  // Result of the most recent request that left the broker's active queue
-  // (expired, handled elsewhere, delivery failed). Shown briefly so a bubble
-  // never just vanishes silently.
   const permissionOutcome = shallowRef<PermissionOutcome | null>(null)
   let permissionOutcomeTimer: ReturnType<typeof setTimeout> | null = null
-  // Requests with a decide() call in flight: the broker's broadcast can land
-  // before the IPC result does, and that result decides what the UI says.
+  // The broker's broadcast can land before the decide() IPC result, and that result decides what the UI says.
   const decidingRequestIds = new Set<string>()
 
   function clearOutcomeTimer() {
@@ -77,19 +63,14 @@ export function usePermissionUi(settleWaitingPermission: (agentId: string, sessi
     }
     const now = Date.now()
     const next = value.filter((request): request is PermissionRequestView => isActiveRequestView(request, now))
-    // A request that drops out of the pending/deciding set — decided,
-    // expired, or cancelled — is done blocking its session even if we were
-    // never told the outcome explicitly (e.g. TTL expiry has no decidePermission
-    // caller at all).
+    // A request that drops out of the set is done blocking its session even without an explicit outcome (TTL expiry has no decidePermission caller).
     const stillPending = new Set(next.map(request => request.requestId))
     for (const request of permissionRequests.value) {
       if (stillPending.has(request.requestId)) continue
-      // decidePermission() reports and settles these itself once the IPC returns.
       if (decidingRequestIds.has(request.requestId)) continue
       settleWaitingPermission(request.agentId, request.sessionId)
       showPermissionOutcome(request, inferVanishedOutcome(request, now))
     }
-    // A new request supersedes any result card for an older one.
     if (next.length > 0 && permissionOutcome.value?.kind !== 'error') dismissPermissionOutcome()
     permissionRequests.value = next
   }
@@ -106,7 +87,6 @@ export function usePermissionUi(settleWaitingPermission: (agentId: string, sessi
     requestId: string,
     decision: PermissionDecisionValue,
   ): Promise<PermissionDecideResult> {
-    // The broker queue is a handful of entries at most; a linear find is cheaper than keeping an index in sync.
     const request = permissionRequests.value.find(candidate => candidate.requestId === requestId)
     if (!request) return { ok: false, kind: 'cancelled' }
     decidingRequestIds.add(requestId)
@@ -119,9 +99,7 @@ export function usePermissionUi(settleWaitingPermission: (agentId: string, sessi
     } finally {
       decidingRequestIds.delete(requestId)
     }
-    // Only a delivered decision means the agent is no longer waiting. For a
-    // failed delivery or IPC error the pet must keep showing the wait — the
-    // agent really is still blocked.
+    // A failed delivery or IPC error must keep the wait showing: the agent is still blocked.
     if (result.ok || result.kind === 'cancelled' || result.kind === 'expired') {
       settleWaitingPermission(request.agentId, request.sessionId)
     }

@@ -48,15 +48,6 @@ import type { PluginPanelRect } from '../plugin-panel-window.ts'
 import type { UserDataPaths } from './user-data-paths.ts'
 import { recordOrEmpty } from '../value-guards.ts'
 
-// Plugin runtime：建立並接線 plugin 服務（registry、偏好、機密、broker、feed、host 視窗、
-// 面板 view 與所有 plugin／面板主題 IPC registrar），並以 `dispose()` 依固定順序釋放。
-//
-// 各 controller 的實例仍放在 `mainState`：IPC、事件伺服器、托盤與面板視窗的主程序程式碼
-// 都會讀。這裡不持有額外狀態；依賴 Electron 的值（session、safeStorage、WebContentsView、
-// dialog、shell、plugin host 視窗類別）與 `runtime.ts` 內的 helper 都由 deps 傳入，
-// 不 import `runtime.ts` 或 Electron 值，因此能在 Node 測試直接執行。
-// Permission Control Plane 與 Presentation MCP 的狀態不在此處理（只讀 presentationController 提交 reaction）。
-
 export type PluginRuntimeState = Pick<MainState,
   | 'developerSourceFolders' | 'dialogOpen' | 'nextPluginEnableOrder' | 'panelThemeRuntime' | 'panelWindow'
   | 'pendingDeveloperFolders' | 'pendingPluginPlanIds' | 'pendingPluginSkinFallbacks' | 'petWindow'
@@ -73,7 +64,6 @@ type SenderGuard = (event: IpcMainEvent | IpcMainInvokeEvent, requiredWindow?: B
 
 export interface PluginRuntimeDeps {
   state: PluginRuntimeState
-  /** 啟動時只解析一次的 userData 路徑表（只用到 root 與 pluginVersionRoot）。 */
   userDataPaths(): Pick<UserDataPaths, 'root' | 'pluginVersionRoot'>
   pluginUiPreloadPath: string
   tokensCss: string
@@ -86,15 +76,12 @@ export interface PluginRuntimeDeps {
     shell: Pick<Shell, 'openExternal'>
     app: Pick<App, 'getVersion'>
   }
-  /** `new WebContentsView(options)`；Electron 值不進這個模組。 */
   createWebContentsView(options: ConstructorParameters<typeof WebContentsView>[0]): WebContentsView
-  /** `new PluginHostWindowController(options)`。 */
   createPluginHostWindow(options: ConstructorParameters<typeof PluginHostWindowController>[0]): PluginHostWindowController
   translate(key: TranslationKey, params?: TranslationParams): string
   locale: { readonly value: AppLocale }
   logMain(level: LogLevel, channel: string, message: string, detail?: unknown): void
   createMainPluginCatalogGateway: Parameters<typeof registerPluginCatalogIpc>[0]['createCatalogGateway']
-  // 以下是 runtime.ts 仍擁有、也被視窗與托盤程式碼共用的 helper。
   refreshPluginRuntimeContexts(): Promise<void>
   syncPluginHost(): Promise<void>
   syncPanelThemes(): void
@@ -121,9 +108,7 @@ export interface PluginRuntimeDeps {
 }
 
 export interface PluginRuntime {
-  /** 建立所有 plugin 服務；已建立時直接返回（重入防護）。 */
   start(): Promise<void>
-  /** 依固定順序釋放 plugin 服務；可重複呼叫。 */
   dispose(): void
 }
 
@@ -146,7 +131,6 @@ export function createPluginRuntime(deps: PluginRuntimeDeps): PluginRuntime {
     const userDataDirectory = appUserDataPaths().root
     mainState.pluginRegistry = new PluginRegistry(userDataDirectory)
     mainState.pluginDeveloperModeWatcher = new PluginDeveloperModeWatcher(500, pluginId => {
-      // Surfaces in the plugin's diagnostics in the manager instead of vanishing.
       mainState.pluginBroker?.recordSystemDiagnostic(pluginId, 'invalid_request', 'developer.reload')
     })
     mainState.pluginPreferences = new PluginPreferencesStore(userDataDirectory)

@@ -5,7 +5,6 @@ type TimerKey =
   | 'edgeDwellHandle' | 'panelBlurHideHandle' | 'panelSettleTimer'
   | 'localUsageScanTimer' | 'achievementStoreRetryTimer' | 'pluginCatalogAutoCheckTimer'
 
-/** Every timer handle that lives in mainState; `disposeMainTimers` must leave all of them null. */
 export const MAIN_STATE_TIMER_KEYS: readonly TimerKey[] = [
   'resizeAnimHandle', 'dragPollHandle', 'shimejiPersistHandle', 'persistBoundsHandle',
   'edgeDwellHandle', 'panelBlurHideHandle', 'panelSettleTimer',

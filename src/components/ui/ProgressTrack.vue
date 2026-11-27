@@ -1,13 +1,8 @@
 <script setup lang="ts">
-// One progress bar. Replaces .quota-track, .mood-bar, .progression-bar,
-// .history-progress-track, .history-day-track and .history-agent-track —
-// six implementations of "rounded track plus percentage fill", each with its
-// own height and gradient.
 const props = withDefaults(defineProps<{
   value: number
   tone?: 'accent' | 'success' | 'warn' | 'error' | 'claude'
   ariaLabel?: string
-  /** Human text announced instead of the bare number, e.g. "72%, resets in 2h". */
   valueText?: string
   decorative?: boolean
   size?: 'sm' | 'md'

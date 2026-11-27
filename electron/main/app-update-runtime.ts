@@ -10,12 +10,9 @@ import type { AppUpdateCheckResponse, AppUpdateResult, AppUpdateState } from '..
 import type { TranslationKey, TranslationParams } from '../../src/i18n'
 import type { MainState } from './state.ts'
 
-// App 新版檢查服務：只「檢查並提示」，不下載也不安裝（未簽章建置無法安全自動更新）。
-//
-// 網路走 plugin 的 `pluginNetworkClient`（主機白名單、逾時、大小上限、每分鐘頻率限制、DNS 與 redirect 檢查），
-// 不另寫一套 fetch；每日排程用共用的 `DailyCheckSchedule`。網址是 app-update.ts 的常數，renderer 無法指定。
+// 只檢查並提示，不下載也不安裝（未簽章建置無法安全自動更新）。
+// 網路走 plugin 的 `pluginNetworkClient`（主機白名單、逾時、大小上限、頻率限制），網址是常數，renderer 無法指定。
 // e2e 模式（globalThis.__agentPetsE2E 存在）只讀 `appUpdateFixture`，絕不連網。
-// 不 import `runtime.ts` 或 Electron 值，因此能在 Node 測試直接執行。
 
 export type AppUpdateRuntimeState = Pick<MainState, 'pluginNetworkClient' | 'pluginFeedController'>
 
@@ -26,16 +23,14 @@ export interface AppUpdateRuntimeDeps {
   translate(key: TranslationKey, params?: TranslationParams): string
   openExternal(url: string): Promise<void>
   now?(): number
-  /** 測試可注入；預設每小時喚醒一次排程。 */
   wakeIntervalMs?: number
 }
 
 export interface AppUpdateRuntime {
   getState(): AppUpdateState
   setEnabled(enabled: boolean): AppUpdateState
-  /** 使用者手動檢查；不受「自動檢查」開關限制，但有頻率限制。 */
+  /** 不受「自動檢查」開關限制，但有頻率限制。 */
   checkNow(): Promise<AppUpdateCheckResponse>
-  /** 以主程序存的已驗證網址開啟 release 頁；沒有新版或網址不合格時回 false。 */
   openRelease(): Promise<boolean>
   initializeAutoCheck(): void
   dispose(): void
@@ -66,14 +61,10 @@ export function createAppUpdateRuntime(deps: AppUpdateRuntimeDeps): AppUpdateRun
   }
 
   function persist(patch: Partial<AppUpdateStored>): void {
-    // 持久化失敗不影響本次顯示；下次檢查再試。
     try { readStore().update(patch) } catch { /* silent */ }
   }
 
-  /**
-   * 「已知可用更新」與最近一次檢查結果分開：檢查失敗不會抹掉先前確認過的新版；
-   * 但每次讀取都重新驗證，使用者已升級到該版（或更新版）後就不再顯示。
-   */
+  // 已知可用更新與最近一次檢查結果分開：檢查失敗不會抹掉先前確認過的新版；每次讀取都重新驗證。
   function knownUpdate(value: AppUpdateStored): { version: string; url: string } | null {
     if (!isValidAppVersion(value.latestVersion) || !isAppReleaseUrl(value.latestUrl)) return null
     if (!isNewerAppVersion(deps.appVersion(), value.latestVersion)) return null
@@ -122,7 +113,6 @@ export function createAppUpdateRuntime(deps: AppUpdateRuntimeDeps): AppUpdateRun
       : { result: 'up_to_date' }
   }
 
-  /** 同一時間只跑一次；手動與自動同時觸發時共用同一個 promise。 */
   function runCheck(): Promise<AppUpdateResult> {
     if (inFlight) return inFlight
     inFlight = (async () => {

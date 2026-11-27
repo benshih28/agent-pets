@@ -18,7 +18,6 @@ import { formatDateTime, formatTimeFull } from '@/utils/intl-format'
 import { buildTimelineRows, type TimelineOrder } from '@/utils/history-timeline'
 import { stateAriaLabel } from '@/utils/state-aria'
 
-// 單一工作階段的時間軸對話框：狀態轉換（工具只顯示名稱）與每段持續時間。
 const props = defineProps<{ session: HistorySessionListItem | null; projectName: string }>()
 const emit = defineEmits<{ close: [] }>()
 const { tokens, duration } = useHistoryFormat()
@@ -38,7 +37,6 @@ let requestSeq = 0
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 const REFRESH_DEBOUNCE_MS = 500
 
-// silent：背景刷新沿用畫面上的資料，不閃骨架；失敗時保留上一份結果。
 async function load(id: string, silent = false): Promise<void> {
   const seq = ++requestSeq
   if (!silent) {
@@ -79,7 +77,6 @@ watch(() => props.session?.id, id => {
   loading.value = false
 }, { immediate: true })
 
-// 彈窗開著時跟著歷史更新即時刷新，不必關掉重開。
 let cleanupHistoryUpdated: (() => void) | null = null
 onMounted(() => {
   cleanupHistoryUpdated = window.electronAPI?.onHistoryUpdated(() => {
@@ -98,7 +95,6 @@ onUnmounted(() => {
   requestSeq += 1
 })
 
-// 優先用剛讀到的資料列；載入中先用清單上的那一列。
 const current = computed(() => detail.value?.session ?? props.session)
 
 const description = computed(() => {
@@ -108,7 +104,6 @@ const description = computed(() => {
   return `${agentDisplayName(session.adapterId)} · ${range}`
 })
 
-// 預設最新在前，不用捲動就能看到最近的進度；選擇在切換不同工作階段時保留。
 const timelineOrder = ref<TimelineOrder>('desc')
 const orderOptions = computed<SegmentedOption[]>(() => [
   { value: 'desc', label: t('growth.sessionTimelineNewestFirst') },
@@ -116,7 +111,6 @@ const orderOptions = computed<SegmentedOption[]>(() => [
 ])
 const timeline = computed(() => buildTimelineRows(detail.value?.timeline ?? [], current.value?.lastSeenAt ?? 0, timelineOrder.value))
 
-// 念成一句話：已翻譯的狀態、工具、時間與持續時間。
 function entryAriaLabel(entry: { occurredAt: number; state: string; toolName?: string; spanMs: number | null }): string {
   return [
     stateAriaLabel(entry.state),
@@ -286,7 +280,6 @@ function unknownOr(tracked: boolean, value: string): string {
   white-space: nowrap;
 }
 
-/* The marker shape plus the state text carry the meaning; colour only adds to it. */
 .detail-marker {
   width: var(--space-2);
   height: var(--space-2);

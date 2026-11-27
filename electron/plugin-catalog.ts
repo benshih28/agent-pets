@@ -225,17 +225,12 @@ export function comparePluginSemver(left: unknown, right: unknown): number | nul
   return Math.sign(a.prerelease.length - b.prerelease.length)
 }
 
-/** `minAppVersion` 不存在或不比執行中的 app 新時為 true。 */
 export function isCatalogVersionAppCompatible(version: Pick<PluginCatalogVersion, 'minAppVersion'>, appVersion: string | undefined): boolean {
   if (version.minAppVersion === undefined || appVersion === undefined) return true
   const comparison = comparePluginSemver(version.minAppVersion, appVersion)
   return comparison !== null && comparison <= 0
 }
 
-/**
- * 此主機 API 的最新版本。帶入 `appVersion` 時，會略過
- * `minAppVersion` 比執行中 app 還新的版本（1.12.0+）。
- */
 export function selectLatestCompatiblePluginVersion(
   plugin: PluginCatalogPlugin,
   apiVersion: string,

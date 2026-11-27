@@ -4,10 +4,6 @@ import { readBoundedJson, writeJsonAtomic } from './desktop-preferences.ts'
 import { isRecord } from './value-guards.ts'
 import type { AppUpdateResult } from '../src/types/app-update.ts'
 
-// App 新版檢查的持久化（userData/app-update.json）。
-// 與 plugin 目錄偏好一樣預設關閉（不主動連網）。獨立成檔而不放進 desktop preferences：
-// 那份偏好會廣播給 Tray 與所有視窗，而這些欄位（上次檢查、已提示版本、release 網址）只有主程序與設定頁用。
-
 export interface AppUpdateStored {
   enabled: boolean
   lastCheckedAt: number | null
@@ -41,7 +37,6 @@ export function sanitizeAppUpdateStored(value: unknown): AppUpdateStored {
     result.lastCheckedDay = value.lastCheckedDay
   }
   if (typeof value.lastResult === 'string' && RESULTS.has(value.lastResult)) result.lastResult = value.lastResult as AppUpdateResult
-  // 檔案可能被手改：版本與網址都重新驗證，不合格就當作沒有新版。
   if (isValidAppVersion(value.latestVersion) && isAppReleaseUrl(value.latestUrl)) {
     result.latestVersion = value.latestVersion
     result.latestUrl = value.latestUrl

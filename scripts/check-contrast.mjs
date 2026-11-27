@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-// WCAG 對比檢查：依 tokens.css 的層疊（選擇器特異度與檔案順序）解析每個情境下的
-// token，跟著 var() 別名、color-mix(in srgb, …) 與 rgb()/hex 算出實際顏色，
-// 再檢查 PAIRS 列出的每一組。半透明的背景（寵物泡泡、膠囊、玻璃層）會分別疊在
-// 最差情況的黑色與白色桌面上，取兩者中較低的比值；半透明的前景再疊到該背景上。
-// 任何一組低於門檻或無法解析就失敗（exit 1）。
 // 插件主題由執行期驗證器（electron/plugin-panel-themes.ts）以同樣的規則檢查。
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -13,7 +8,6 @@ import { cssDeclarations } from './check-design-tokens.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 export const tokensPath = join(here, '..', 'src', 'styles', 'tokens.css')
 
-// 每個情境＝套用到該視窗根元素的選擇器（不含 @media 區塊）。
 export const CONTEXTS = {
   light: [':root', ":root[data-window='panel']", ":root[data-theme='light']"],
   dark: [':root', ":root[data-window='panel']", ":root[data-theme='dark']"],
@@ -21,7 +15,6 @@ export const CONTEXTS = {
   'pet-light': [':root', ":root[data-window='pet']", ":root[data-theme='light']", '.desktop-pet'],
 }
 
-// [前景 token, 背景 token, 最低比值, 說明]；4.5 = 內文，3 = 大字／圖形／焦點環。
 export const PAIRS = [
   ['--organic-text', '--organic-bg', 4.5, 'body text'],
   ['--organic-text', '--organic-surface', 4.5, 'body text on card'],
@@ -48,7 +41,6 @@ export const PAIRS = [
   ['--accent-on', '--accent-hover', 4.5, 'primary button label'],
   ['--text-primary', '--surface-overlay', 4.5, 'dialog, menu, tooltip and toast text'],
   ['--text-muted', '--surface-overlay', 4.5, 'dialog helper text'],
-  // 危險按鈕（Button variant="danger"）：對話框、卡片與面板底上的標籤，以及懸停時 12% 危險色的底。
   ['--text-danger', '--surface-overlay', 4.5, 'danger button label in a dialog'],
   ['--text-danger', 'color-mix(in srgb, var(--text-danger) 12%, var(--surface-overlay))', 4.5, 'hovered danger button in a dialog'],
   ['--text-danger', '--surface-raised', 4.5, 'danger button label on a card'],
@@ -59,7 +51,6 @@ export const PAIRS = [
   ['--state-offline', '--surface-raised', 3, 'offline state graphic'],
 ]
 
-// 寵物視窗：泡泡、玻璃層與狀態膠囊浮在桌面上，半透明表面以黑、白桌面的較差者計算。
 export const PET_PAIRS = [
   ['--pet-bubble-text', '--pet-bubble-surface', 4.5, 'bubble text'],
   ['--pet-bubble-success-text', '--pet-bubble-surface', 4.5, 'bubble success text'],
@@ -96,7 +87,6 @@ function specificity(selector) {
   return (selector.match(/\[[^\]]*\]|\.[a-z][a-z0-9-]*|:(?!:)[a-z-]+/gi) ?? []).length
 }
 
-/** 在 `context` 情境下每個自訂屬性的宣告值（依特異度、再依檔案順序覆寫）。 */
 export function tokenMap(context = 'light', css = readFileSync(tokensPath, 'utf8')) {
   const applies = new Set(CONTEXTS[context])
   if (applies.size === 0) throw new TypeError(`unknown context ${context}`)
@@ -132,7 +122,7 @@ function channel(value, scale) {
   return value.endsWith('%') ? (Number.parseFloat(value) / 100) * scale : Number.parseFloat(value)
 }
 
-/** color-mix(in srgb)：以預乘 alpha 內插，與 Chromium 相同。 */
+// 以預乘 alpha 內插，與 Chromium 相同。
 function mixColors(first, p, second) {
   const a = first.a * p + second.a * (1 - p)
   if (a === 0) return { r: 0, g: 0, b: 0, a: 0 }
@@ -140,7 +130,6 @@ function mixColors(first, p, second) {
   return { r: mix('r'), g: mix('g'), b: mix('b'), a }
 }
 
-/** 把 token 名稱或 CSS 顏色值解析成 { r, g, b, a }（0–255、0–1）；無法解析時回傳 null。 */
 export function resolveColor(map, value, depth = 0) {
   if (depth > 16 || typeof value !== 'string') return null
   const text = value.trim()
@@ -201,7 +190,6 @@ export function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/** 前景對背景的最差比值：半透明背景分別疊在黑、白桌面上，半透明前景再疊上去。 */
 export function worstContrast(foreground, background) {
   const bases = background.a >= 1 ? [background] : [BLACK, WHITE].map(desktop => composite(background, desktop))
   return Math.min(...bases.map(base => contrast(foreground.a >= 1 ? foreground : composite(foreground, base), base)))

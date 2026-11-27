@@ -5,9 +5,6 @@ import NumberField from '@/components/ui/NumberField.vue'
 import Select from '@/components/ui/Select.vue'
 import { USER_PANEL_THEME_FONT_STACK_IDS, type UserPanelThemeDefinition, type UserPanelThemeFontStackId } from '@/types/panel-theme-user'
 
-// 主題編輯器的「字體」與「圓角」區塊（兩個模式共用，與插件主題相同：切換淺色／深色只換顏色）。
-// 字型只能從系統字型組合中選，使用者主題不帶字型檔。
-
 const props = defineProps<{ definition: UserPanelThemeDefinition }>()
 const emit = defineEmits<{ change: [next: Pick<UserPanelThemeDefinition, 'typography' | 'shape'>] }>()
 

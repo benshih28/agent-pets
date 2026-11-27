@@ -45,7 +45,6 @@ const results = computed(() => searchSettings(query.value, key => t(key)).map(hi
   groupLabel: t(SETTINGS_GROUP_BY_ID.get(groupOfSection(hit.entry.section))!.labelKey),
 })))
 const scroller = ref<HTMLElement | null>(null)
-// 區塊閃爍的 CSS 動畫長度由這個常數經 --settings-flash-duration 帶進去，計時器與動畫只有一個來源。
 const SECTION_FLASH_MS = 1400
 const sectionFlashStyle = { '--settings-flash-duration': `${SECTION_FLASH_MS}ms` }
 const flashSection = ref<SettingsSectionId | null>(null)
@@ -89,8 +88,6 @@ async function openResult(section: SettingsSectionId): Promise<void> {
   scrollToSection(section)
 }
 
-// 有可用的主題插件時，"Panel theme" 會跳到所屬插件的 Panel themes 區塊，
-// 否則跳到 Appearance 狀態卡片。
 function openHit(entry: SettingsEntry): void {
   if (entry.id === 'panelThemeStyle') {
     const pluginId = panelThemeSettingsTarget(panelThemeState.value)
@@ -107,7 +104,6 @@ watch(settingsSectionRequest, request => {
   if (request) void openResult(request.section)
 })
 
-// Section heights change as async sections load; keep the scroll hints honest.
 let resizeObserver: ResizeObserver | null = null
 function observeContent(): void {
   resizeObserver?.disconnect()
@@ -119,7 +115,6 @@ function observeContent(): void {
   updateScrollHints()
 }
 
-// "/" or Cmd/Ctrl+F jumps to the search box unless the user is already typing.
 function onSearchShortcut(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
   const typing = !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
@@ -141,7 +136,6 @@ onUnmounted(() => {
 })
 watch([searching], () => { void nextTick(observeContent) })
 
-// Per-group scroll memory: leaving a group remembers where you were.
 watch(group, (_next, previous) => {
   if (previous && scroller.value) scrollMemory.set(previous, scroller.value.scrollTop)
   void nextTick(() => {

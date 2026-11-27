@@ -2,22 +2,15 @@ import { clamp } from '../src/utils/number.ts'
 import { QUOTA_TOOLTIP_HEADROOM_H } from '../src/utils/pet-window-size.ts'
 import type { WindowBounds, WorkArea } from './pet-window-mode.ts'
 
-/** Transparent headroom the pet window reserves above the sprite. */
 export const PET_WINDOW_HEADROOM_PX = QUOTA_TOOLTIP_HEADROOM_H
-/** How much of the sprite must stay inside the display while dragging. */
 export const MIN_VISIBLE_SPRITE_FRACTION = 0.6
 
-/** The part of the window that actually paints the pet (the lower body). */
 export function spriteRect(bounds: WindowBounds, headroom: number = PET_WINDOW_HEADROOM_PX): WindowBounds {
   const top = Math.min(headroom, Math.max(0, bounds.height - 1))
   return { x: bounds.x, y: bounds.y + top, width: bounds.width, height: Math.max(1, bounds.height - top) }
 }
 
-/**
- * Keeps a dragged pet reachable: at least 60% of the sprite stays inside the
- * display, and the sprite cannot slide up under the menu bar. The transparent
- * headroom is free to hang off the top of the screen.
- */
+// The sprite cannot slide up under the menu bar; only the transparent headroom may hang off the top.
 export function clampDraggedBounds(
   bounds: WindowBounds,
   workArea: WorkArea,

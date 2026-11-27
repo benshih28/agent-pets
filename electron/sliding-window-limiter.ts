@@ -8,7 +8,6 @@ export interface SlidingWindowCheck {
   retryAfterMs: number
 }
 
-/** Fixed-capacity circular timestamp queue for exact sliding-window limits. */
 export class SlidingWindowLimiter {
   readonly windowMs: number
   private entries: Array<RateSample | undefined>

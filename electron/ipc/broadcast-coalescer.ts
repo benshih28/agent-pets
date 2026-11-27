@@ -2,7 +2,6 @@ type Schedule = (callback: () => void) => void
 
 const scheduleInNextTurn: Schedule = callback => { setImmediate(callback) }
 
-/** Coalesces projections where only the most recent value is observable. */
 export function createLatestValueCoalescer<T>(flush: (value: T) => void, schedule: Schedule = scheduleInNextTurn): (value: T) => void {
   let scheduled = false
   let hasValue = false
@@ -23,22 +22,15 @@ export function createLatestValueCoalescer<T>(flush: (value: T) => void, schedul
   }
 }
 
-/** Batches events while preserving every item and its insertion order. */
 export interface OrderedBatchLimits<T> {
-  /** Upper bound on queued items between flushes. */
   maxPending: number
-  /** Items that must survive overflow (terminal events); others are dropped first, oldest first. */
+  /** Survive overflow (terminal events); others are dropped first, oldest first. */
   isPriority?: (value: T) => boolean
   onDrop?: (value: T) => void
 }
 
 interface QueueEntry<T> { value: T, dropped: boolean }
 
-/**
- * Overflow is O(1) amortised: entries keep their global insertion order in one
- * list, while per-class cursors (normal / priority) find the oldest victim
- * without scanning. Dropped entries are tombstoned and compacted lazily.
- */
 export function createOrderedBatchCoalescer<T>(
   flush: (values: readonly T[]) => void,
   schedule: Schedule = scheduleInNextTurn,

@@ -10,8 +10,6 @@ import {
 } from '../electron/windows-window-activator.ts'
 import { HOST_APPS, windowsExecutablesFor } from '../src/types/host-app.ts'
 
-// 原生層全部是假的：這些測試絕不呼叫 Win32，也不載入 koffi。
-
 interface FakeWindow {
   id: number
   pid: number
@@ -165,7 +163,6 @@ test('the same window returned as number, bigint or a wrapper still compares equ
   const mixed: WindowsWindowApi = {
     ...api,
     setForeground: () => { log.push('foreground'); return true },
-    // 每次都換一種型別回傳同一個 HWND。
     foregroundWindow: () => shapes[call++ % shapes.length] as bigint,
     attachThreadInput: () => { log.push('attach'); return true },
   }

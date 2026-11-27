@@ -3,10 +3,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 import { IPC_CHANNELS } from '../electron/ipc/channels.ts'
 
-// The Pinia store needs Vue, vue-i18n, the `@/` alias and a renderer
-// `window`, so it cannot be loaded under node --test. These source checks
-// guard the contract instead: project-pet IPC stays panel-only in main, and
-// the pet window's startup path never calls it.
+// The Pinia store cannot be loaded under node --test (needs a renderer `window`), so these source checks guard the contract.
 
 function read(relativePath: string): string {
   return fs.readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8')

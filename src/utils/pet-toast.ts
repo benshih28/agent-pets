@@ -1,7 +1,3 @@
-// Pure helpers behind the pet's result bubble: how long it stays, how an
-// elapsed time is spelled, and how a raw tool identifier becomes something a
-// person can read.
-
 export const TOAST_SUCCESS_MS = 4_500
 export const TOAST_ERROR_MS = 7_500
 
@@ -19,7 +15,6 @@ export function toastDurationFor(tone: ToastTone): number {
   return TOAST_SUCCESS_MS
 }
 
-/** "45s", "2m 14s", "1h 05m". Returns null when there is nothing worth showing. */
 export function formatElapsedShort(ms: number | undefined): string | null {
   if (ms === undefined || !Number.isFinite(ms) || ms < 5_000) return null
   const totalSeconds = Math.floor(ms / 1000)
@@ -32,7 +27,6 @@ export function formatElapsedShort(ms: number | undefined): string | null {
 }
 
 export interface ToolDescription {
-  /** Locale key under the `pet.tool.*` namespace. */
   key: 'pet.tool.run' | 'pet.tool.edit' | 'pet.tool.read' | 'pet.tool.search'
     | 'pet.tool.web' | 'pet.tool.agent' | 'pet.tool.plan' | 'pet.tool.mcp' | 'pet.tool.generic'
   params: Record<string, string>

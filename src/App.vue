@@ -16,8 +16,6 @@ import { EDGE_HOVER_EXPAND_MS } from '@/utils/pet-edge'
 import { HIT_DILATE_PX, decidePassthrough, hasOpaquePixel } from '@/utils/pet-hit-test'
 import { PET_CELL_WIDTH } from '@/types/pet-atlas'
 
-// Panel-only surfaces load on demand so the pet window, which shares this
-// bundle, starts without them.
 const StatusPanel = defineAsyncComponent(() => import('@/components/StatusPanel.vue'))
 const SetupWizard = defineAsyncComponent(() => import('@/components/SetupWizard.vue'))
 const ProjectMcpPanel = defineAsyncComponent(() => import('@/components/ProjectMcpPanel.vue'))
@@ -25,8 +23,6 @@ const ProjectMcpPanel = defineAsyncComponent(() => import('@/components/ProjectM
 const store = useAgentStore()
 const isPanelWindow = window.location.hash === '#panel'
 
-// First launch: the pet window opens the panel once; the panel then shows the intro wizard.
-// Existing installs that already have a connected tool are marked complete without any prompt.
 const onboardingFirstRun = ref(false)
 
 function closeWizard() {
@@ -112,9 +108,7 @@ function onDocumentVisibilityChange(): void {
   syncRecurringTimers()
 }
 
-// getImageData is a synchronous GPU->CPU readback. A cursor resting on (or
-// creeping across) the pet asks the same backing-store pixel repeatedly, and the
-// sprite only changes a few times per second, so remember the verdict briefly.
+// getImageData is a synchronous GPU->CPU readback; cache the verdict briefly while the cursor rests.
 const HIT_CACHE_TTL_MS = 100
 let hitCache: { canvas: HTMLCanvasElement, x: number, y: number, at: number, hit: boolean } | null = null
 
@@ -137,9 +131,7 @@ function isOpaqueCanvasPoint(canvas: HTMLCanvasElement, clientX: number, clientY
 
 function sampleOpaqueNeighbourhood(canvas: HTMLCanvasElement, rect: DOMRect, x: number, y: number): boolean {
   try {
-    // Sample a small neighbourhood rather than one pixel so gaps between legs
-    // and arms do not make the pet impossible to grab.
-    // The backing store is denser than CSS pixels; keep the tolerance in CSS px.
+    // Sample a neighbourhood, not one pixel, so gaps between legs and arms do not make the pet ungrabbable.
     const radius = Math.max(1, Math.round(HIT_DILATE_PX * canvas.width / rect.width))
     const left = Math.max(0, x - radius)
     const top = Math.max(0, y - radius)
@@ -148,8 +140,7 @@ function sampleOpaqueNeighbourhood(canvas: HTMLCanvasElement, rect: DOMRect, x: 
     const block = canvas.getContext('2d')?.getImageData(left, top, right - left, bottom - top).data
     return block ? hasOpaquePixel(block) : false
   } catch {
-    // A custom file URL can make a canvas unreadable on some platforms.
-    // Keep that canvas usable rather than making the whole pet click-through.
+    // A custom file URL can make a canvas unreadable on some platforms; stay clickable.
     return true
   }
 }
@@ -163,8 +154,6 @@ function isPetHitTarget(clientX: number, clientY: number): boolean {
   return canvas instanceof HTMLCanvasElement && isOpaqueCanvasPoint(canvas, clientX, clientY)
 }
 
-// The last cursor position inside the window, so the decision can be redone
-// when something moves under a motionless cursor (bubble appears, pet walks).
 let lastPointer: { x: number; y: number } | null = null
 let lastPointerAt = 0
 let passthroughSentAt = 0
@@ -193,8 +182,6 @@ function evaluatePointer(clientX: number, clientY: number): void {
 function handlePetMouseMove(event: MouseEvent) {
   lastPointer = { x: event.clientX, y: event.clientY }
   lastPointerAt = performance.now()
-  // At most one hit-test per frame: mousemove can fire at 60-125 Hz, but only
-  // the newest position matters.
   if (pointerFrame !== null) return
   pointerFrame = requestAnimationFrame(() => {
     pointerFrame = null
@@ -202,8 +189,7 @@ function handlePetMouseMove(event: MouseEvent) {
   })
 }
 
-// Edge handle: expand only when the cursor lingers, so sweeping past on the way
-// elsewhere does not pop the pet out.
+// Expand only when the cursor lingers, so sweeping past does not pop the pet out.
 let edgeHoverTimer: ReturnType<typeof setTimeout> | null = null
 
 function cancelEdgeHover(): void {
@@ -229,8 +215,7 @@ function scheduleReevaluate(): void {
   })
 }
 
-// Mode changes re-apply native window bounds in main, which also resets mouse
-// handling to "interactive"; forget what we think we sent.
+// Mode changes make main reset mouse handling to "interactive".
 watch(() => store.petWindowMode.mode, () => {
   petMousePassthrough = false
   passthroughSentAt = 0
@@ -257,14 +242,7 @@ function stopLayoutWatch(): void {
   pointerFrame = null
 }
 
-// Pet and panel are separate windows/renderer processes, each with its own
-// Pinia store instance. selectedPet/petScale are user choices made in the
-// panel's Settings view but need to reach the pet window — both windows
-// share one localStorage (same origin), so a plain `storage` event (fired
-// in every OTHER same-origin window when one of them writes to it) is all
-// that's needed to keep them in sync, no custom IPC round-trip required.
-// 值由 registry 解析；寵物、大小、心情與語言照舊只在新值非空時才更新（key 被移除時不動）。
-// 外觀（theme／pet-theme）由 useTheme.ts 自己同步。
+// 寵物、大小、心情與語言只在新值非空時才更新（key 被移除時不動）。
 function listenPreferenceSync(): () => void {
   return listenStorageSync([
     syncOn(STORAGE_KEYS.petScale, (scale, raw) => { if (raw) store.petScale = scale }),
@@ -301,8 +279,7 @@ function soundGate() {
 
 watch(() => store.soundVolume, setSoundVolume, { immediate: true })
 
-// A broker request can arrive without a status event (relay timing), so the
-// permission cue also follows new requests; playCue throttles the overlap.
+// A broker request can arrive without a status event, so the permission cue also follows new requests.
 watch(() => store.permissionRequests.map(request => request.requestId).join(','), (ids, previous) => {
   if (isPanelWindow || !store.desktopPreferencesReady || !ids) return
   const known = new Set((previous ?? '').split(','))
@@ -311,8 +288,7 @@ watch(() => store.permissionRequests.map(request => request.requestId).join(',')
   }
 })
 
-// Both windows' stores process every event identically, so only the pet
-// window actually plays audio — otherwise it'd sound twice.
+// Both windows process every event; only the pet window plays audio or it would sound twice.
 function playCueIfAllowed(cue: SoundCue): void {
   if (!isPanelWindow && store.desktopPreferencesReady && shouldPlayCue(cue, soundGate())) {
     playCue(cue)
@@ -323,7 +299,6 @@ onMounted(() => {
   store.setCueSink(playCueIfAllowed)
   document.documentElement.style.setProperty('--pet-scale', String(store.petScale))
   document.documentElement.style.setProperty('--pet-w', store.scaledW + 'px')
-  // CSS 裡的 sprite 格寬也從 types/pet-atlas.ts 來，不另外寫死。
   document.documentElement.style.setProperty('--pet-cell-w', `${PET_CELL_WIDTH}px`)
 
   const electronAPI = window.electronAPI
@@ -368,7 +343,6 @@ onMounted(() => {
         onboardingFirstRun.value = true
         store.openSetupWizard()
       } else {
-        // Give the pet a moment to appear, then open the panel (which shows the wizard).
         window.setTimeout(() => window.electronAPI?.togglePanel(), 1500)
       }
     })
@@ -445,12 +419,8 @@ watch(() => store.petScale, (v) => {
   document.documentElement.style.setProperty('--pet-scale', String(v))
 })
 
-// The main process keeps the MCP status projection sanitized and authoritative
-// for DND/enabled state. Only the pet renderer publishes it; the panel never
-// becomes a second source of truth.
-// The getter builds a fresh object per heartbeat, so compare a compact content
-// signature (<= 16 pets) and only cross the IPC boundary when it really changed.
-// The panel window never publishes, so it does not even track the getter.
+// Only the pet renderer publishes (the panel must not become a second source of truth);
+// the getter returns a fresh object per heartbeat, so compare a content signature before IPC.
 if (!isPanelWindow) {
   let lastPresentationKey = ''
   watch(
@@ -467,9 +437,6 @@ if (!isPanelWindow) {
   )
 }
 
-// The compact meter only needs quota while a Codex/Claude family is active.
-// The main-process cache coalesces requests from the pet and panel renderer,
-// and every result — polled or manual — is broadcast back to both windows.
 watch(() => store.hasQuotaCapableSessions, (active) => {
   if (quotaTimer) {
     clearInterval(quotaTimer)
@@ -480,10 +447,7 @@ watch(() => store.hasQuotaCapableSessions, (active) => {
   syncRecurringTimers()
 }, { immediate: true })
 
-// A finished session is the moment quota actually moved, so refresh off that
-// instead of waiting out the poll interval. Forced, because the whole point
-// is to bypass the renderer throttle — the main process' own force cooldown
-// still collapses a burst of sessions finishing together into one request.
+// Forced to bypass the renderer throttle; main's force cooldown still collapses a burst into one request.
 watch(() => store.quotaStaleSignal, () => {
   if (isPanelWindow || document.hidden || quotaSettleTimer) return
   const sinceLast = Date.now() - lastSettleRefreshAt
@@ -503,8 +467,6 @@ watch(() => store.scaledW, (w) => {
   document.documentElement.style.setProperty('--pet-w', w + 'px')
 })
 
-// Only tick the success->idle timeout while something is actually counting
-// down, instead of waking up every second for the app's whole lifetime.
 watch(() => store.hasSuccessSessions, (active) => {
   if (!active && successTimer) {
     clearInterval(successTimer)
@@ -568,10 +530,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-/* One unobtrusive overlay-style scrollbar across the whole app. Keeping this
-   global also covers modal surfaces such as Setup Wizard and future scrollers.
-   Avoid standard scrollbar properties because Chromium on Windows otherwise
-   falls back to the native track and arrow buttons. */
+/* Avoid standard scrollbar properties: Chromium on Windows then falls back to the native track and arrow buttons. */
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;

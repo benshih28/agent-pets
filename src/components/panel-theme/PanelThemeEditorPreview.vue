@@ -9,14 +9,6 @@ import PanelThemeBackdrop from '@/components/PanelThemeBackdrop.vue'
 import PanelThemePreviewPill from '@/components/panel-theme/PanelThemePreviewPill.vue'
 import PermissionRiskBadge from '@/components/permission/PermissionRiskBadge.vue'
 
-// 主題編輯器的即時預覽：與設定頁預覽相同的做法（同一組已驗證屬性 inline 套在
-// .panel-theme-preview 上，語意層在該元素重新解析），內容涵蓋面板卡片、按鈕的各種狀態、
-// 選單、通知、對話框、內嵌權限卡與高風險徽章，以及寵物狀態列。內容是靜態的（inert）。
-//
-// 版面是固定寬度（STAGE_WIDTH）的縮圖，以 CSS zoom 整體縮放到欄寬與高度上限內，所以內容永遠
-// 完整顯示、沒有內層捲動。高度上限由父層以 max-height 給在 .ep-slot 上（none = 不限高度，
-// 只依欄寬縮放）；zoom 會影響版面，外框自然跟著縮放後的大小。
-
 const props = defineProps<{
   entry: PanelThemeCatalogEntry
   mode: PanelThemeMode
@@ -24,7 +16,6 @@ const props = defineProps<{
   forcedColors: boolean
 }>()
 
-/** 縮圖的設計寬度（px）：兩欄排版，約為面板寬度。 */
 const STAGE_WIDTH = 340
 /** 小於這個差距不更新，避免 ResizeObserver 因四捨五入反覆觸發。 */
 const SCALE_EPSILON = 0.005

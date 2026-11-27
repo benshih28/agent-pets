@@ -1,8 +1,5 @@
 import type { PanelThemeDiagnostic } from '../types/panel-theme-user.ts'
 
-// 把驗證器的診斷（英文的技術名稱，例如 `accentOnHover over surface (focus ring)`）轉成
-// 使用者看得懂的句子。純函式：翻譯函式由呼叫端傳入（編輯器傳 te），測試可以直接檢查結構。
-
 export type IssueTranslate = (key: string, params?: Record<string, string | number>) => string
 
 const STATE_KEYS = new Set(['dangerText', 'successText', 'warnText', 'infoText'])
@@ -31,10 +28,7 @@ const SURFACE_RULES: readonly SurfaceRule[] = [
   { pattern: /^accentHover mixed 12% toward text \(hovered primary button\)$/, render: (_m, _label, tr) => tr('themeEditor.surface.pressed') },
 ]
 
-/**
- * 驗證器的表面名稱轉成介面文字。規則表涵蓋驗證器會產生的每一種名稱（測試逐一列舉）；
- * 萬一出現新的名稱，顯示中性的「另一個表面」而不是把英文的內部名稱顯示給使用者。
- */
+/** 規則表涵蓋驗證器會產生的每一種名稱（測試逐一列舉）；新名稱顯示中性的「另一個表面」，不顯示英文內部名稱。 */
 export function surfaceLabel(name: string, keyLabel: (key: string) => string | null, translate: IssueTranslate): string {
   const label = (inner: string): string => surfaceLabel(inner, keyLabel, translate)
   for (const rule of SURFACE_RULES) {
@@ -48,7 +42,6 @@ function ratio(value: number | undefined): string {
   return value === undefined ? '' : (Math.floor(value * 100) / 100).toFixed(2)
 }
 
-/** 一個診斷的說明句子（不含建議值；建議值由按鈕呈現）。 */
 export function describeIssue(issue: PanelThemeDiagnostic, keyLabel: (key: string) => string | null, translate: IssueTranslate): string {
   const ownKey = issue.path.split('.')[1] ?? ''
   const surface = (name: string | undefined) => surfaceLabel(name ?? '', keyLabel, translate)

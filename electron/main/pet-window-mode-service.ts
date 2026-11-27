@@ -15,13 +15,6 @@ import type { PetEdge, PetWindowMode, PetWindowModeState } from '../../src/types
 import { clampPetWindowDimension } from '../../src/utils/pet-window-size.ts'
 import type { MainState } from './state.ts'
 
-// 寵物視窗模式（normal／mini／edge）：各模式的 bounds、貼邊停留與重新貼邊的計時器、
-// 持久化的視窗狀態，以及模式廣播。
-//
-// 模式欄位仍放在 `mainState`，因為 pet-motion、window-control 的 IPC registrar 與建立視窗時
-// 都要讀；除了建立視窗與拖曳處理，只有這個服務會寫入它們。其他依賴（螢幕、偏好、
-// Permission Broker、面板、托盤）都以明確參數傳入，測試可以換成假螢幕。
-
 const SHIMEJI_PERSIST_DELAY_MS = 2_000
 const EDGE_REDOCK_POLL_MS = 400
 
@@ -42,20 +35,15 @@ export interface PetWindowModeDeps {
   screen: PetWindowModeScreen
   writeWindowState: typeof writeWindowState
   edgeModeEnabled(): boolean
-  /** 有待處理的權限泡泡時寵物維持完整尺寸；判定仍以 Broker 為準。 */
   hasActivePermissionRequests(): boolean
   repositionPanel(): void
-  /** 每次廣播模式前執行（plugin feed 的可見性取決於模式）。 */
   onVisibilityChanged(): void
-  /** 明確切換模式後執行（托盤選單文字取決於模式）。 */
   onModeApplied(): void
   now?: () => number
 }
 
 export interface PetWindowRestoreOptions {
-  /** 沒有存檔尺寸時的冷啟動預設尺寸（`initialPetWindowSize(scale)`）。 */
   fallbackSize: { width: number; height: number }
-  /** 沒有存檔時預設放在主螢幕工作區右下角。 */
   primaryWorkArea: Rectangle
 }
 
@@ -64,10 +52,6 @@ export interface PetWindowModeService {
   broadcastMode(): void
   displayForBounds(bounds: WindowBounds): Display
   displayForSavedState(saved: ReturnType<typeof readWindowState>): Display
-  /**
-   * 建立視窗前還原上次的模式：寫入 normalPetBounds、petWindowMode、petWindowEdge、
-   * edgeRestoreBounds，並回傳視窗的初始 bounds。
-   */
   restore(saved: ReturnType<typeof readWindowState>, options: PetWindowRestoreOptions): WindowBounds
   persistCurrentState(): void
   scheduleShimejiPositionPersist(): void
@@ -81,7 +65,6 @@ export interface PetWindowModeService {
   scheduleEdgeRedock(): void
   scheduleEdgeDwell(): void
   rehomeForDisplayChange(): void
-  /** 停止服務自己的重新貼邊輪詢與停留計時器；可重複呼叫。 */
   dispose(): void
 }
 
@@ -131,8 +114,7 @@ export function createPetWindowModeService(deps: PetWindowModeDeps): PetWindowMo
   }
 
   function restore(saved: ReturnType<typeof readWindowState>, options: PetWindowRestoreOptions): WindowBounds {
-    // 寵物尺寸存在 renderer 的 localStorage，主行程讀不到，所以沿用上次 renderer 要求並隨位置
-    // 一起存檔的尺寸；否則視窗一律以 1x（L）誕生，面板會對著 L 尺寸的 bounds 開啟。
+    // 寵物尺寸存在 renderer 的 localStorage，主行程讀不到，所以沿用隨位置一起存檔的尺寸；否則視窗一律以 1x（L）誕生，面板會對著 L 尺寸的 bounds 開啟。
     const { fallbackSize, primaryWorkArea } = options
     const w = saved?.width !== undefined ? clampPetWindowDimension(saved.width) : fallbackSize.width
     const h = saved?.height !== undefined ? clampPetWindowDimension(saved.height) : fallbackSize.height
@@ -148,7 +130,7 @@ export function createPetWindowModeService(deps: PetWindowModeDeps): PetWindowMo
             height: h,
           }
     )
-    // 重新夾進目前工作區，避免存檔時的螢幕已經拔掉。
+    // 存檔時的螢幕可能已經拔掉，所以重新夾進目前工作區。
     state.normalPetBounds = clampWindowBounds(savedNormal, savedDisplay.workArea)
     const attachedEdge = nearestEdge(state.normalPetBounds, savedDisplay.workArea, EDGE_TRIGGER_DISTANCE_PX)
     const canRestoreEdge = saved?.mode === 'edge'
@@ -191,7 +173,6 @@ export function createPetWindowModeService(deps: PetWindowModeDeps): PetWindowMo
     }, SHIMEJI_PERSIST_DELAY_MS)
   }
 
-  // 每次明確切換模式共同的收尾步驟（順序與改前相同）。
   function settleModeChange(window: BrowserWindow, bounds: WindowBounds): void {
     window.setIgnoreMouseEvents(false)
     window.setBounds(bounds)
@@ -240,9 +221,7 @@ export function createPetWindowModeService(deps: PetWindowModeDeps): PetWindowMo
     }
     clearEdgeDwell()
     const current = window.getBounds()
-    // Edge can only be entered from a full-size normal window. Capture the
-    // actual bounds at this moment so expansion returns to the user's exact
-    // pre-edge position, even if a previous persisted snapshot is stale.
+    // Capture the actual bounds now so expansion returns to the user's exact pre-edge position, even if a persisted snapshot is stale.
     const normalSource = state.petWindowMode === 'normal'
       ? current
       : state.edgeRestoreBounds ?? state.normalPetBounds ?? current
@@ -252,17 +231,13 @@ export function createPetWindowModeService(deps: PetWindowModeDeps): PetWindowMo
     state.edgeRestoreBounds = { ...normal }
     state.petWindowMode = 'edge'
     state.petWindowEdge = edge
-    // Edge is an explicit, opaque handle-sized window. Keep it interactive so
-    // a click or drag can expand it; click-through remains owned by Normal's
-    // transparent-region hit testing.
+    // Keep the edge handle interactive so a click or drag can expand it; click-through stays owned by Normal's hit testing.
     settleModeChange(window, edgeWindowBounds(normal, display.workArea, edge))
   }
 
   function setMode(mode: PetWindowMode): void {
     if (!liveWindow(state.petWindow)) return
-    // A permission bubble must remain fully usable. The Broker remains the
-    // authority, so a compact/partially hidden window is never allowed while a
-    // request is pending.
+    // A pending permission request must keep the window fully usable; the Broker is the authority.
     if (mode !== 'normal' && deps.hasActivePermissionRequests()) {
       applyNormalBounds()
       return
@@ -288,8 +263,6 @@ export function createPetWindowModeService(deps: PetWindowModeDeps): PetWindowMo
     state.edgeDwellCandidate = null
   }
 
-  // After a hover-expand from the edge, tuck the pet back once the cursor has
-  // stayed away and the pet is still resting against that edge.
   function scheduleEdgeRedock(): void {
     cancelEdgeRedock()
     if (!deps.edgeModeEnabled()) return

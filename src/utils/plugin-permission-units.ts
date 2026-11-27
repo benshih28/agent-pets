@@ -1,7 +1,4 @@
-// 插件權限單位的唯一產生器。主行程用 grantedPermissionUnits() 決定安裝要授權什麼、寫進
-// registry.json 的 grantedPermissions.units，以及更新時是否要重新同意；安裝畫面用
-// permissionUnitsInDisplayOrder() 列出同一批單位。兩邊共用同一份規則，新增 contribution 時
-// CONTRIBUTION_PERMISSION_UNITS 少一格就編譯失敗，不會只改到其中一邊。
+// 主行程授權與安裝畫面共用同一份規則，不會只改到其中一邊。
 // 主行程與 Node 測試都直接載入這個檔，所以執行期 import 只能用相對路徑。
 import type { PluginContributionId, PluginContributions, PluginContributionValueMap, PluginManifest } from '../types/plugin.ts'
 
@@ -32,7 +29,6 @@ const CONTRIBUTION_PERMISSION_UNITS: ContributionUnitTable = Object.freeze({
   ],
 })
 
-// ContributionUnitTable 是窮舉的映射型別，所以 Object.keys 正好是全部的 contribution id。
 const CONTRIBUTION_IDS = Object.keys(CONTRIBUTION_PERMISSION_UNITS) as PluginContributionId[]
 
 const PERMISSION_DISPLAY_ORDER: ReadonlyMap<string, number> = new Map(
@@ -61,7 +57,7 @@ function contributionUnits<K extends PluginContributionId>(contributes: PluginCo
   return value ? CONTRIBUTION_PERMISSION_UNITS[id](value) : []
 }
 
-/** 安裝畫面的順序：網路、連結、儲存、Agent 狀態、排程、密鑰，再依 contribution 順序；不去重。 */
+/** 不去重。 */
 export function permissionUnitsInDisplayOrder(source: PermissionUnitSource): string[] {
   const permissions = Object.entries(source.permissions ?? {})
     .map(([key, value], index) => ({ key, value, rank: PERMISSION_DISPLAY_ORDER.get(key) ?? PERMISSION_DISPLAY_ORDER.size + index }))
@@ -73,7 +69,7 @@ export function permissionUnitsInDisplayOrder(source: PermissionUnitSource): str
   ]
 }
 
-/** 主行程的授權單位：去重並排序，是 grantedPermissions.units 與更新差異的比較基準。 */
+/** 去重並排序，是 grantedPermissions.units 與更新差異的比較基準。 */
 export function grantedPermissionUnits(source: PermissionUnitSource): string[] {
   return [...new Set(permissionUnitsInDisplayOrder(source))].sort()
 }

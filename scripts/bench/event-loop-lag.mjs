@@ -1,7 +1,3 @@
-// Measures main-thread event loop lag while a history store ingests a
-// realistic burst of hook events (500 events over 10 seconds, the event
-// server's per-window ceiling). Run with `pnpm bench:lag`.
-// `pnpm bench:lag:check`（--check）會再與 event-loop-lag.baseline.json 的門檻比對，超過即 exit 1。
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'

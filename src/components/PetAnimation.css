@@ -53,8 +53,6 @@
   transform-origin: 50% 100%;
 }
 
-/* Last frame of the previous state, faded out over the new one so row
-   changes cross-dissolve instead of hard-cutting. Never hit-tested. */
 .pet-ghost-canvas {
   position: absolute;
   inset: 0;
@@ -65,7 +63,7 @@
   pointer-events: none;
 }
 
-/* 只出現一次的裝飾動畫保留字面時長；--transition-* 自帶 easing，放進 animation 簡寫會讓整條宣告失效。 */
+/* --transition-* 自帶 easing，放進 animation 簡寫會讓整條宣告失效，故用字面時長。 */
 .pet-ghost-canvas.fading {
   animation: pet-ghost-fade 150ms ease-out forwards;
 }
@@ -83,9 +81,6 @@
   animation: none !important;
 }
 
-/* Ambient behavior is deliberately subtle and only enabled with the
-   reactions setting. The spritesheet remains responsible for the main pose;
-   these small loops keep long-running states from feeling frozen. */
 .pet-canvas.pet-idle-ambient {
   animation: pet-breathe var(--duration-breathe) ease-in-out infinite;
 }
@@ -133,7 +128,6 @@
   animation: pet-bounce 0.26s ease;
 }
 
-/* Distinct motions for the five Presentation MCP reactions. */
 .pet-canvas.pet-react-happy { animation: pet-react-happy 0.56s ease-out; }
 .pet-canvas.pet-react-curious { animation: pet-react-curious 0.76s ease-in-out; }
 .pet-canvas.pet-react-thinking { animation: pet-react-thinking 0.9s ease-in-out; }
@@ -169,7 +163,6 @@
   75% { transform: rotate(-5deg) translateY(-4px); }
 }
 
-/* The icon mark floats up; it is shown even when motion effects are off. */
 .pet-reaction-mark {
   position: absolute;
   top: 6%;
@@ -272,7 +265,6 @@
     animation: pet-mark-fade var(--pet-mark-duration) ease-out forwards;
   }
 
-  /* No shake, bounce, sway or glow: the sprite row itself carries the state. */
   .pet-canvas {
     animation: none !important;
   }

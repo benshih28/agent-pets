@@ -20,10 +20,6 @@ function formatArgs(args: unknown[]): { message: string; detail?: unknown } {
   return { message, detail: Array.isArray(detail) && detail.length === 0 ? undefined : detail }
 }
 
-/**
- * Mirrors console.error/warn into the rotating log so existing call sites
- * are captured in packaged builds without touching each of them.
- */
 export function teeConsoleToLog(): void {
   if (teed) return
   teed = true

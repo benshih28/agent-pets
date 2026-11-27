@@ -24,9 +24,7 @@ import { useUnreadAlerts } from '@/stores/agent/unread-alerts'
 
 export type { PetEntry } from '@/stores/agent/pets'
 
-// 這個檔只負責組裝：每個領域的事件輸入、計時器、storage 與跨視窗同步寫在 src/stores/agent/ 各模組的檔頭，
-// 計時器都在 store 的 effect scope 結束時清掉。模組之間的依賴以參數注入，晚建立的以函式延後解析（只在呼叫時才讀）。
-// 對元件的成員名稱與型別由 tests/agent-store-characterization.test.mts 固定。
+// 模組之間的依賴以參數注入，晚建立的以函式延後解析（只在呼叫時才讀）。
 export const useAgentStore = defineStore('agent', () => {
   // 不能是 shallowRef／不能換成別的結構：sessions 模組與 computed 都直接讀寫這個 reactive Map。
   const sessionsByKey = reactive(new Map<string, AgentSession>())
@@ -88,8 +86,6 @@ export const useAgentStore = defineStore('agent', () => {
   })
   const permissionUi = usePermissionUi(sessionModule.settleWaitingPermission)
 
-  // --- 寵物視窗模式與拖曳 -------------------------------------------------------
-
   const isDragging = ref(false)
   const petWindowMode = ref<PetWindowModeState>({ mode: 'normal' })
 
@@ -136,7 +132,6 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   return {
-    // 全部成員都對外的領域模組
     ...displayPreferences,
     ...panelNavigation,
     ...pluginFeed,
@@ -145,7 +140,6 @@ export const useAgentStore = defineStore('agent', () => {
     ...progressionModule,
     ...projectPetModule,
     ...quota,
-    // 只有部分成員對外的領域模組（其餘是給 handleEvent 等內部流程用的）
     toast: toastQueue.toast,
     toastRemainingMs: toastQueue.toastRemainingMs,
     toastPaused: toastQueue.toastPaused,
@@ -204,7 +198,6 @@ export const useAgentStore = defineStore('agent', () => {
     clearOfflineSessions: sessionModule.clearOfflineSessions,
     sessionByKey: sessionModule.sessionByKey,
     runSessionJump: sessionModule.runSessionJump,
-    // 仍在本檔
     isDragging,
     petWindowMode,
     setPetWindowModeState,

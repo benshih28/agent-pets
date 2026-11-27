@@ -1,10 +1,4 @@
-// 桌面偏好設定：主程序是唯一的真相（Tray 與兩個視窗才會一致），renderer 保存鏡像並在改動時送 patch。
-//
-// - 事件輸入：App.vue 啟動時 `initializeDesktopPreferences()`，主程序的廣播進 `applyDesktopPreferences()`；
-//   設定面板與 Tray 的選項經各個 `setXxx()` 先樂觀更新再送 `updateDesktopPreferences(patch)`，失敗就重新初始化。
-// - 計時器：無。
-// - storage：`STORAGE_KEYS.sound` 只當主程序偏好送達前的聲音開關快取（啟動時當初值傳給主程序，之後以主程序為準）。
-// - 跨視窗同步：主程序廣播的偏好設定由每個視窗各自 `applyDesktopPreferences()`；不走 storage 事件。
+// 主程序是桌面偏好的唯一真相（Tray 與兩個視窗才會一致）；renderer 只保存鏡像。
 import { computed, ref, type Ref } from 'vue'
 import { setLocale as applyLocale } from '@/i18n'
 import type { AgentSession } from '@/types/agent'
@@ -18,7 +12,6 @@ import { readStored, writeStored } from '@/utils/local-storage'
 import { STORAGE_KEYS } from '@/utils/storage-keys'
 
 export interface DesktopPreferencesDeps {
-  /** 寵物顯示偏好（localStorage）；與 DND／就緒狀態合成實際生效的 `xxxActive`。 */
   reactionsEnabled: Ref<boolean>
   bubbleEnabled: Ref<boolean>
   ambientEnabled: Ref<boolean>
@@ -32,16 +25,13 @@ export interface DesktopPreferencesDeps {
 export function useDesktopPreferences(deps: DesktopPreferencesDeps) {
   const { reactionsEnabled, bubbleEnabled, ambientEnabled, activityBubbleEnabled } = deps
 
-  // 主程序的偏好設定送到之前先用 localStorage 快取；只有 '1' 算開，沒有快取時跟 SOUND_DEFAULTS.soundEnabled 一樣是關。
+  // 主程序的偏好送達前先用 localStorage 快取。
   const soundEnabled = ref(readStored(STORAGE_KEYS.sound))
   const soundVolume = ref(SOUND_DEFAULTS.soundVolume)
   const soundOnPermission = ref(SOUND_DEFAULTS.soundOnPermission)
   const soundOnError = ref(SOUND_DEFAULTS.soundOnError)
   const soundOnSuccess = ref(SOUND_DEFAULTS.soundOnSuccess)
 
-  // Desktop-wide preferences are owned by the Electron main process so the
-  // Tray and both renderer windows always agree. Sound is initialized from
-  // the legacy localStorage value once, preserving existing user choice.
   const dndEnabled = ref(false)
   const notificationsEnabled = ref(true)
   const permissionBubbleEnabled = ref(true)
@@ -95,8 +85,6 @@ export function useDesktopPreferences(deps: DesktopPreferencesDeps) {
   function setSoundOption(patch: Pick<DesktopPreferencesPatch, 'soundVolume' | 'soundOnPermission' | 'soundOnError' | 'soundOnSuccess'>) {
     updateDesktopPreferences(patch)
   }
-
-  // --- 桌面偏好設定（同步自 Electron 主行程） -------------------------------
 
   function applyDesktopPreferences(preferences: DesktopPreferences) {
     applyLocale(preferences.locale)
@@ -234,8 +222,6 @@ export function useDesktopPreferences(deps: DesktopPreferencesDeps) {
     updateDesktopPreferences({ sessionJumpSwitchAppEnabled: enabled })
   }
 
-  // "Switch to app" is offered only when main said this session's app can be activated
-  // (macOS, allowlisted app, not an explicit generic-http event) and the user has it turned on.
   function canSwitchToSessionApp(session: Pick<AgentSession, 'host'> | undefined): boolean {
     return Boolean(sessionJumpEnabled.value && sessionJumpSwitchAppEnabled.value && session?.host?.switchable)
   }

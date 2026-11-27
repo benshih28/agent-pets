@@ -1,12 +1,7 @@
 <script setup lang="ts">
-// One badge for plugin / DEV / status / quota chips. State is carried by the
-// label (and the optional dot shape) as well as colour, so it never relies on
-// colour alone.
 withDefaults(defineProps<{
   tone?: 'neutral' | 'accent' | 'success' | 'warn' | 'danger'
-  /** Leading dot, for status badges. */
   dot?: boolean
-  /** Compact count pill (e.g. unread). Content should be a short number. */
   count?: boolean
 }>(), {
   tone: 'neutral',

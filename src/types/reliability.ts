@@ -8,9 +8,7 @@ export interface LocalServerHealth {
   state: LocalServerState
   /** Number of failed bind attempts since the last successful listen. */
   attempt: number
-  /** Node error code of the last failure (for example EADDRINUSE, EACCES). */
   code?: string
-  /** Best-effort identity of whatever holds the port. */
   occupant?: 'agent-pets' | 'other' | 'unknown'
 }
 

@@ -5,7 +5,6 @@ import test from 'node:test'
 const dir = new URL('../src/components/plugin-panel/', import.meta.url)
 const files = readdirSync(dir).filter(name => name.endsWith('.vue'))
 const srcRoot = new URL('../src/', import.meta.url)
-// 抽成獨立檔的 <style scoped src="@/…"> 一起讀進來，樣式檢查才看得到。
 const read = (name: string) => {
   const source = readFileSync(new URL(name, dir), 'utf8')
   const external = [...source.matchAll(/<style\b[^>]*\bsrc="@\/([^"]+)"/g)].map(match => readFileSync(new URL(match[1], srcRoot), 'utf8'))

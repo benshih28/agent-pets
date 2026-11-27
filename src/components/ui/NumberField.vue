@@ -2,10 +2,6 @@
 import { computed, ref, useId, watch } from 'vue'
 import { t } from '@/i18n'
 
-// Numeric input that only reports a value once it is valid. The draft is a
-// string, so clearing the box never turns into 0; leaving the field (or
-// pressing Enter) validates it, and a rejected value shows an inline error and
-// snaps back to the last valid number. Esc reverts without an error.
 const props = withDefaults(defineProps<{
   label: string
   min?: number

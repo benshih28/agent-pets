@@ -54,7 +54,6 @@ function onInstallMenu(id: string): void {
   else void selectArchive()
 }
 
-// 進入詳情頁前記住設定頁的捲動位置，返回時還原，並把捲動軸歸零顯示詳情頁頂端。
 const shell = ref<HTMLElement | null>(null)
 let savedScrollTop = 0
 watch(() => detailPlugin.value?.id ?? '', async (id, previousId) => {

@@ -1,4 +1,4 @@
-// App 新版檢查的 renderer／main 共用型別。renderer 只拿到這份快照；release 頁網址只存在主程序。
+// renderer 只拿到這份快照；release 頁網址只存在主程序。
 export type AppUpdateResult = 'up_to_date' | 'update_available' | 'failed'
 
 export interface AppUpdateState {
@@ -18,5 +18,4 @@ export interface AppUpdateCheckResponse {
   outcome: AppUpdateCheckOutcome
 }
 
-/** renderer 端額外顯示的一次性提示。 */
 export type AppUpdateOutcomeView = 'rate_limited' | 'open_failed'

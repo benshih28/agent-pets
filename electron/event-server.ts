@@ -34,10 +34,7 @@ export function createEventServer(
   listenHooks: Pick<LocalServerListenOptions, 'onStatus' | 'onPersistentFailure'> & {
     onHandle?: (handle: LocalServerListenHandle) => void
     port?: number
-    /**
-     * 給主程序自己產生的事件用（例如從對話紀錄檔補上的回合結束）：拿到一個把事件送進
-     * 跟 hook 事件相同流程的函式。事件必須已經是正規化過的；不經過 HTTP、token 與流量限制。
-     */
+    // 事件必須已是正規化過的；不經過 HTTP、token 與流量限制。
     onDispatcher?: (dispatch: (event: AgentStatusEvent) => void) => void
   } = {},
 ) {
@@ -78,8 +75,7 @@ export function createEventServer(
     }
   }
 
-  // Side effects (notifications, XP, history). setImmediate keeps arrival order, and a failure
-  // here is our bug, not the caller's, so it is logged rather than surfaced.
+  // setImmediate keeps arrival order; a failure here is our bug, not the caller's, so it is logged rather than surfaced.
   function runSideEffects(event: AgentStatusEvent): void {
     setImmediate(() => {
       try {
@@ -158,8 +154,6 @@ export function createEventServer(
       return
     }
 
-    // Budgets are per source session, with a separate one for terminal
-    // events, so one runaway hook cannot starve other agents' completions.
     if (!limiter.allowEvent(`${event.source}:${event.sessionId}`, TERMINAL_STATES.has(event.state))) {
       eventPipelineStats.rateLimited += 1
       sendJson(response, 429, { error: 'too many events' }, { 'retry-after': '10' })
@@ -172,7 +166,6 @@ export function createEventServer(
     response.writeHead(204)
     response.end()
 
-    // Runs right after the response is flushed.
     runSideEffects(event)
   })
 

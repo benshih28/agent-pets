@@ -2,8 +2,6 @@
 import { computed, useId } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 
-// Plain checkbox with an optional help line. Use ToggleRow for on/off
-// settings; use Checkbox for selections inside forms and dialogs.
 const props = withDefaults(defineProps<{
   label: string
   help?: string
@@ -90,7 +88,7 @@ const describedBy = computed(() => (props.help ? helpId : undefined))
   color: var(--accent-bright);
 }
 
-/* 原生 input 是 opacity: 0 的隱形輸入：全域 :focus-visible 畫在它身上也看不到，所以由可見的兄弟元素畫焦點環。 */
+/* 原生 input 是 opacity: 0，焦點環要畫在可見的兄弟元素上。 */
 .box-wrap input:focus-visible + .box {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);

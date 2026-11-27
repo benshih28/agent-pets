@@ -1,17 +1,9 @@
-// 插件送到寵物旁的單則短訊（plugin feed）。佇列、速率與保存期限都在主程序；
-// renderer 只重新驗證形狀、顯示目前這一則，到期或被點掉時回報主程序。
-//
-// - 事件輸入：`handlePluginFeedItem()`（主程序推來的新項目）、`setPluginFeedUnreadCount()`、
-//   使用者點開連結（`openPluginFeedLink`）或關掉（`completePluginFeed`）。
-// - 計時器：一個，指向目前項目的 `expiresAt`；換新項目或完成時清掉，store 的 effect scope 結束時也會清掉。
-// - storage：無。
-// - 跨視窗同步：無；只有寵物視窗顯示 feed。
+// 佇列、速率與保存期限都在主程序；renderer 只重新驗證形狀。
 import { onScopeDispose, ref, shallowRef } from 'vue'
 import type { PluginFeedItem } from '@/types/plugin'
 import { isPluginId, isSafeItemId } from '@/types/id-patterns'
 import { isValidPetId } from '@/utils/pet-id'
 
-/** 主程序給的到期時間最多比現在晚這麼久；更遠的一律當成不合法。 */
 const MAX_FEED_LIFETIME_MS = 15_000
 const MAX_UNREAD_COUNT = 1_000_000
 

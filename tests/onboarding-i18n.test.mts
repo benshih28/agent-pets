@@ -14,7 +14,6 @@ function unionMembers(source: string, typeName: string): string[] {
   return [...match![1]!.matchAll(/'([\w-]+)'/g)].map(entry => entry[1]!)
 }
 
-// 精靈的文字對照表在 setup-wizard/，元件只引用。
 const readWizard = () => ['src/components/SetupWizard.vue', 'src/components/setup-wizard/SetupWizardToolCard.vue', 'src/components/setup-wizard/setup-wizard-text.ts']
   .map(read).join('\n')
 

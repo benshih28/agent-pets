@@ -7,9 +7,7 @@ import NumberField from '@/components/ui/NumberField.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import { colorAlpha, colorFromHex, colorFromOklch, colorToHex, colorToOklch, parseColorInput, type OklchValue } from '@/utils/panel-theme-editor'
 
-// 主題編輯器的一個顏色鍵：原生取色器、可輸入 #hex／rgb()／hsl()／oklch() 的文字欄位、
-// 說明這個鍵用在哪裡的提示，以及可展開的 OKLCH 明度／彩度／色相微調。驗證問題由父層傳入，
-// 每個問題可一鍵「使用建議值」。值一律是主機標準的 rgb() 字串。
+// 值一律是主機標準的 rgb() 字串。
 
 export interface ColorFieldIssue {
   text: string
@@ -40,9 +38,7 @@ watch(() => props.value, value => {
 })
 
 const hex = computed(() => colorToHex(props.value))
-/** 背景色同時是表面也是背景，同一句話會出現兩次：只列一次。 */
 const issueTexts = computed(() => [...new Set(props.issues.map(issue => issue.text))])
-/** 同一個鍵的多個問題通常共用同一個建議值：每個不同的修正只顯示一個按鈕。 */
 const fixes = computed(() => {
   const seen = new Map<string, NonNullable<ColorFieldIssue['fix']>>()
   for (const issue of props.issues) if (issue.fix) seen.set(`${issue.fix.path}\u0000${issue.fix.value}`, issue.fix)
@@ -260,7 +256,6 @@ function commitOklch(): void {
   gap: var(--space-2);
 }
 
-/* 數值和輸入框一樣用內文字體的一般字重，與按鈕標籤的「使用建議值」區分。 */
 .color-fix-value {
   color: var(--text-secondary);
   font-family: var(--font-body);
@@ -268,8 +263,7 @@ function commitOklch(): void {
   font-weight: var(--weight-normal);
 }
 
-/* 區塊寬度放不下「名稱 + 完整的 rgb(255 255 255 / 0.18)」時（預設 460 px 與 360 px 寬的面板都是）：
-   顏色文字欄位換到自己的一行並佔滿寬度，值才讀得完整；OKLCH 微調改為一欄。 */
+/* 區塊寬度放不下「名稱 + 完整的 rgb(255 255 255 / 0.18)」時（460 px 與 360 px 面板都是），文字欄位換行佔滿寬度。 */
 @container (width < 26rem) {
   .color-row {
     flex-wrap: wrap;

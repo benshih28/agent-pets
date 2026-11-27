@@ -3,11 +3,6 @@ import { resolvedPetTheme } from '@/composables/useTheme'
 import type { PetThemeState } from '@/types/panel-theme'
 import { diffPanelThemeProperties, petThemeTargetProperties } from '@/utils/panel-theme-css'
 
-// 寵物視窗：套用插件主題（spec §3.7、§16）。主程序只送寵物用得到的色盤子集
-// （PET_THEME_COLOR_PROPERTIES）與選填的狀態膠囊顏色；這裡重新驗證後，在同一個
-// frame 內把差異寫到 <html>，tokens.css 在 :root 由色盤衍生泡泡、膠囊與玻璃層，
-// 所以每次切換只有一次樣式重算。模式跟隨寵物外觀（dark、light 或 follow 面板）。
-
 export function usePetTheme() {
   const state = shallowRef<PetThemeState | null>(null)
   const flags = shallowRef({ forcedColors: false, highContrast: false })

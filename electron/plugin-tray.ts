@@ -12,7 +12,6 @@ export interface PluginTrayCommandItem {
 export interface PluginTrayMenuBuildResult {
   menu: MenuItemConstructorOptions | null
   omittedPluginIds: string[]
-  /** Number of commands dropped by the cap, so the Tray can say so. */
   omittedCount: number
 }
 
@@ -25,7 +24,6 @@ function truncateLabel(value: string): string {
   return `${characters.slice(0, MAX_TRAY_LABEL_CHARACTERS - 1).join('')}…`
 }
 
-/** Builds a bounded text-only submenu; callbacks remain owned by the host. */
 export function buildPluginTrayMenu(
   items: readonly PluginTrayCommandItem[],
   locale: AppLocale,
@@ -47,8 +45,7 @@ export function buildPluginTrayMenu(
   if (grouped.size === 0) return { menu: null, omittedPluginIds, omittedCount }
 
   const submenu = [...grouped.entries()].map(([pluginId, plugin]) => {
-    // Truncation can make two different commands read the same; name the
-    // plugin on the later ones so they stay distinguishable.
+    // Truncation can make two different commands read the same; the later ones get their id appended.
     const seen = new Set<string>()
     return {
       label: truncateLabel(plugin.name),

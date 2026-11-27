@@ -20,7 +20,6 @@ export function fakeIpcMainInvokeEvent(members: Partial<IpcMainInvokeEvent> = {}
   return { ...members } as unknown as IpcMainInvokeEvent
 }
 
-/** 受測程式只讀 id、bounds、workArea；其餘欄位補中性值，讓物件完整符合 `Display`（純資料型別，不需要轉型）。 */
 export function fakeDisplay(id: number, bounds: Rectangle, workArea: Rectangle = bounds): Display {
   return {
     id, bounds, workArea, label: `display-${id}`, internal: false, detected: true, monochrome: false,

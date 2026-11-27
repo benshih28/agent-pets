@@ -1,7 +1,5 @@
 import { reactive } from 'vue'
 
-// Shared toast queue for the Toast primitive. Rendering lives in
-// components/ui/ToastHost.vue; callers only push.
 export type ToastTone = 'neutral' | 'accent' | 'success' | 'warn' | 'danger'
 
 export interface ToastOptions {
@@ -10,7 +8,7 @@ export interface ToastOptions {
   message?: string
   actionLabel?: string
   onAction?: () => void
-  /** ms before auto-dismiss; 0 keeps it until dismissed. Default 5000 (danger: 8000). */
+  /** 0 keeps it until dismissed. */
   duration?: number
 }
 
@@ -22,7 +20,6 @@ export interface ToastItem extends Required<Pick<ToastOptions, 'tone' | 'duratio
   onAction?: () => void
 }
 
-/** At most this many toasts are visible; the oldest is dropped first. */
 export const MAX_TOASTS = 3
 
 const state = reactive<{ items: ToastItem[] }>({ items: [] })

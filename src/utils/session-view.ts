@@ -1,8 +1,5 @@
 import type { AgentSession, AgentSource, AgentState } from '../types/agent.ts'
 
-// Pure view helpers for the Sessions list: grouping by urgency, filtering,
-// project-name disambiguation and compact elapsed formatting.
-
 export type SessionBucket = 'attention' | 'running' | 'other'
 export type SessionFilter = 'all' | 'attention' | 'running'
 export type SessionSort = 'priority' | 'recent'
@@ -25,7 +22,7 @@ export interface SessionGroups {
 
 export interface SessionViewOptions {
   filter: SessionFilter
-  /** Restrict to these sources (a tool family); null = every source. */
+  /** null = every source. */
   sources: readonly AgentSource[] | null
   sort: SessionSort
 }
@@ -58,8 +55,6 @@ function pathSegments(project: string): string[] {
   return project.split(/[/\\]/).filter(Boolean)
 }
 
-// Last path segment; when two different projects share it, prefix the parent
-// directory so "app" and "app" read as "work/app" and "play/app".
 export function projectLabels(projects: readonly (string | undefined)[]): Map<string, string> {
   const labels = new Map<string, string>()
   const byBase = new Map<string, Set<string>>()
@@ -79,7 +74,7 @@ export function projectLabels(projects: readonly (string | undefined)[]): Map<st
   return labels
 }
 
-// 12s, 1:05, 1:02:03 — whole seconds, since the list repaints once a second.
+// Whole seconds, since the list repaints once a second.
 export function formatElapsed(milliseconds: number): string {
   const total = Math.max(0, Math.floor(milliseconds / 1000))
   if (total < 60) return `${total}s`

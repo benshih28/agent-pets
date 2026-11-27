@@ -1,14 +1,5 @@
-// Custom pet (theme) import: parse an untrusted sprite-kit zip, stage it in a
-// private directory, let the user preview it and resolve id conflicts, then
-// install it with atomic directory renames.
-//
-// Layout under the trusted root (~/.desktop-pet):
-//   custom/<id>/                    installed pets (read by loadPets / agent-pets://custom)
-//   .pet-import-staging/stage-<hex> a validated, fsynced pet waiting for commit
-//   .pet-import-staging/backup-<hex>-<id>  the previous pet while it is replaced
-// Staging lives beside custom/ on the same filesystem so every install step is
-// a single rename(2). A crash at any point leaves either the old pet, the new
-// pet, or a backup that recoverStale() restores on the next start.
+// Staging lives beside custom/ on the same filesystem so every install step is a single rename.
+// A crash leaves the old pet, the new pet, or a backup that recoverStale() restores on the next start.
 
 import { constants } from 'node:fs'
 import type { BigIntStats, Dirent } from 'node:fs'
@@ -48,7 +39,7 @@ const SPRITE_FILE = 'spritesheet.webp'
 const PET_JSON_FILE = 'pet.json'
 const FORBIDDEN_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g
-/** A sprite kit only needs pet.json and one image; a 100x ratio above 1 MiB is a bomb, not a PNG. */
+// A 100x ratio above 1 MiB is a zip bomb, not a sprite kit.
 export const PET_ZIP_MAX_COMPRESSION_RATIO = 100
 export const PET_ZIP_RATIO_CHECK_MIN_BYTES = 1024 * 1024
 
@@ -66,7 +57,6 @@ export interface ParsedPetKit {
   description: string
   kind: 'person' | 'animal'
   behaviorManifest?: SanitizedPetBehaviorManifest
-  /** Behaviours filled from the atlas contract rather than declared by the kit. */
   autoBehaviors: Array<'walk'>
   atlas: SpriteAtlasInfo
   warnings: PetImportWarning[]
@@ -98,7 +88,6 @@ function cleanText(value: unknown, maxLength: number): string {
 
 const utf8 = new TextDecoder('utf-8', { fatal: true })
 
-/** JSON.parse with prototype-pollution keys dropped at every depth. */
 export function parseUntrustedJson(bytes: Uint8Array): unknown {
   return JSON.parse(utf8.decode(bytes), (key, value) => (FORBIDDEN_JSON_KEYS.has(key) ? undefined : value))
 }
@@ -128,11 +117,7 @@ export interface ParsePetZipOptions {
   now?: () => number
 }
 
-/**
- * Validates a sprite kit without touching the filesystem. Only pet.json and
- * the one selected image are inflated (by zip-inspect, from the same parse
- * that was validated); every other entry is counted but never decompressed.
- */
+// Only pet.json and the one selected image are inflated; every other entry is counted but never decompressed.
 export function parsePetZip(zipBytes: Uint8Array, options: ParsePetZipOptions): ParsePetZipResult {
   const { limits } = options
   if (zipBytes.byteLength > limits.maxZipBytes) return { ok: false, error: 'Zip must be no larger than 10 MB' }
@@ -151,8 +136,7 @@ export function parsePetZip(zipBytes: Uint8Array, options: ParsePetZipOptions): 
   const petJsonEntry = petJsonEntries[0]
   if (petJsonEntry.uncompressedSize > limits.maxJsonBytes) return { ok: false, error: 'pet.json exceeds the 256 KB safety limit' }
 
-  // Same parser for inspection and extraction: only bytes the pre-scan
-  // validated are ever inflated, with exact length and CRC-32 checks.
+  // Same parser for inspection and extraction: only bytes the pre-scan validated are inflated.
   const jsonResult = extractZipEntry(zipBytes, petJsonEntry)
   if (!jsonResult.ok) return { ok: false, code: 'E_ZIP', error: ZIP_ERROR_MESSAGES[jsonResult.error] }
   const petJsonBytes = jsonResult.data
@@ -188,7 +172,7 @@ export function parsePetZip(zipBytes: Uint8Array, options: ParsePetZipOptions): 
   if (!options.isSupportedRasterImage(sprite)) {
     return { ok: false, error: 'Spritesheet content is not a valid PNG, JPEG, or WebP image' }
   }
-  // Header-only check: dimensions and pixel count are capped before anything decodes the image.
+  // Header-only: dimensions are capped before anything decodes the image.
   const sheetCheck = validateSpriteSheet(sprite)
   if (!sheetCheck.ok) return { ok: false, code: sheetCheck.code, error: SPRITE_ERROR_MESSAGES[sheetCheck.code] }
 
@@ -206,7 +190,7 @@ export function parsePetZip(zipBytes: Uint8Array, options: ParsePetZipOptions): 
     behaviorManifest[name] = definition
   }
   const autoBehaviors: Array<'walk'> = []
-  // v2 素材沒宣告 manifest 也會用 running-right 列走路；v1 維持原本行為（走路回退成閒置）。
+  // v1 不補：走路回退成閒置。
   if (atlas.version === 2 && !behaviorManifest.walk) {
     behaviorManifest.walk = { row: PET_ATLAS_WALK_ROW }
     autoBehaviors.push('walk')
@@ -246,7 +230,6 @@ interface PendingImport {
   token: string
   directory: string
   pet: Omit<ParsedPetKit, 'sprite'>
-  /** Fingerprint of custom/<id> (or "absent") when the preview was produced. */
   targetFingerprint: string
   conflict: PetImportConflict | null
   expectedState: string
@@ -254,13 +237,11 @@ interface PendingImport {
 }
 
 export interface PetImportStagingOptions {
-  /** Trusted root that holds custom/ (the hook deploy directory). */
   root: string
   sanitizePetId(value: string): string | null
   builtinPetIds(): Promise<Iterable<string>>
   ttlMs?: number
   previewUrl?(token: string): string
-  /** Test seams for the directory renames that install, replace and roll back a pet. */
   renameDirectory?(from: string, to: string): Promise<void>
   restoreDirectory?(from: string, to: string): Promise<void>
 }
@@ -279,7 +260,7 @@ async function lstatOrNull(path: string): Promise<BigIntStats | null> {
 }
 
 async function fsyncDirectory(path: string): Promise<void> {
-  // Durable rename on POSIX; Windows cannot open a directory for sync, which is fine there.
+  // Windows cannot open a directory for sync, which is fine there.
   let handle: Awaited<ReturnType<typeof open>> | null = null
   try {
     handle = await open(path, constants.O_RDONLY)
@@ -294,7 +275,6 @@ const NO_FOLLOW = (constants as typeof constants & { O_NOFOLLOW?: number }).O_NO
 async function writeNewFileDurably(path: string, contents: string | Uint8Array): Promise<void> {
   const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW, 0o600)
   try {
-    // Uint8Array is written as-is: no extra Buffer copy of a large sprite.
     await handle.writeFile(contents)
     await handle.sync()
   } finally {
@@ -328,7 +308,6 @@ export class PetImportStaging {
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS
   }
 
-  /** Serializes stage/commit/cancel/recovery so two imports never interleave renames. */
   private exclusive<T>(task: () => Promise<T>): Promise<T> {
     const run = this.queue.then(task, task)
     this.queue = run.catch(() => undefined)
@@ -339,7 +318,6 @@ export class PetImportStaging {
     return this.options.previewUrl?.(token) ?? `agent-pets://import-preview/${token}/spritesheet`
   }
 
-  /** Staging directory for a live preview token, used only by the agent-pets:// protocol. */
   previewDirectory(token: string): string | null {
     if (typeof token !== 'string' || !PET_IMPORT_TOKEN_PATTERN.test(token)) return null
     return this.pending.get(token)?.directory ?? null
@@ -419,10 +397,8 @@ export class PetImportStaging {
     }
   }
 
-  /** Writes a validated kit into a fresh private staging directory and returns its preview. */
   stage(parsed: ParsedPetKit): Promise<PetImportPreview> {
     return this.exclusive(async () => {
-      // One import at a time: a new pick discards any preview the user walked away from.
       for (const token of [...this.pending.keys()]) await this.discard(token)
       await ensureDirectoryWithin(this.root, this.stagingRoot)
       const token = randomBytes(16).toString('hex')
@@ -459,12 +435,7 @@ export class PetImportStaging {
     return true
   }
 
-  /**
-   * Installs a staged kit. The renderer passes back the expectedState it was
-   * shown; the main process re-reads the destination and refuses (with a
-   * refreshed preview) if anything changed since, so a stale dialog can never
-   * overwrite a pet the user did not see.
-   */
+  // expectedState is re-checked against the destination so a stale dialog can never overwrite a pet the user did not see.
   commit(token: unknown, decision: unknown, expectedState: unknown): Promise<PetImportCommitResult> {
     return this.exclusive(async () => {
       const pending = typeof token === 'string' ? this.pending.get(token) : undefined
@@ -491,8 +462,7 @@ export class PetImportStaging {
         const keepBoth = decision === 'keep-both' && pending.conflict
         const id = keepBoth ? pending.conflict!.suggestedId : pending.pet.id
         const displayName = keepBoth ? pending.conflict!.suggestedDisplayName : pending.pet.displayName
-        // pet.json is rewritten for every decision so an earlier keep-both
-        // attempt that hit a changed state can never leak its suffixed id.
+        // Rewritten for every decision so an earlier keep-both attempt can never leak its suffixed id.
         const temporary = join(pending.directory, `${PET_JSON_FILE}.tmp`)
         await rm(temporary, { force: true })
         await writeNewFileDurably(temporary, petJsonFor(pending.pet, id, displayName))
@@ -515,8 +485,7 @@ export class PetImportStaging {
           await this.discard(pending.token)
           return { ok: false, code: 'E_IMPORT_FAILED', error: 'Could not install the imported pet' }
         }
-        // A destination that appeared or changed underneath us is a state
-        // change the user must review; anything else is a real failure.
+        // A destination that changed underneath us needs user review; anything else is a real failure.
         const refreshed = await this.describe(pending).catch(() => null)
         if (refreshed && refreshed.expectedState !== pending.expectedState && this.pending.has(pending.token)) {
           Object.assign(pending, refreshed)
@@ -539,12 +508,10 @@ export class PetImportStaging {
     try {
       await renameDirectory(pending.directory, target)
     } catch (error) {
-      // Put the previous pet back exactly where it was before reporting failure.
       try {
         await (this.options.restoreDirectory ?? rename)(backup, existing)
       } catch {
-        // The old pet now exists only as the backup. Never re-preview (the
-        // destination looks free) and leave the backup for recoverStale().
+        // The old pet now exists only as the backup: never re-preview (the destination looks free).
         throw Object.assign(new Error('Could not restore the previous pet'), { code: RESTORE_FAILED })
       }
       throw error
@@ -556,12 +523,6 @@ export class PetImportStaging {
     await rm(backup, { recursive: true, force: true }).catch(() => undefined)
   }
 
-  /**
-   * Startup cleanup after a crash: removes our own stage-* directories,
-   * deletes backup-* directories marked as replaced, and restores (when the
-   * pet folder is free) or keeps every other backup. Bounded, prefix-matched,
-   * and never follows a symlink.
-   */
   recoverStale(): Promise<{ removed: number; restored: number; kept: number }> {
     return this.exclusive(async () => {
       const result = { removed: 0, restored: 0, kept: 0 }
@@ -572,7 +533,6 @@ export class PetImportStaging {
       const directory = await opendir(this.stagingRoot)
       const entries: Dirent[] = []
       try {
-        // Lazy iteration: a directory flooded with foreign entries costs at most MAX_RECOVERY_LISTED reads.
         for await (const entry of directory) {
           entries.push(entry)
           listed += 1
@@ -590,8 +550,7 @@ export class PetImportStaging {
         if (!stats || !stats.isDirectory() || stats.isSymbolicLink()) continue
         if ([...this.pending.values()].some(pending => pending.directory === path)) continue
         if (backupMatch && !(await lstatOrNull(join(path, REPLACED_MARKER)))) {
-          // An unverified backup is the only copy of a pet: restore it when
-          // its folder is free, otherwise keep it rather than delete it.
+          // An unverified backup is the only copy of a pet: restore it, or keep it rather than delete it.
           const id = this.options.sanitizePetId(backupMatch[1])
           const target = id === backupMatch[1] ? join(this.customRoot, id) : null
           if (target && !(await lstatOrNull(target))) {
@@ -611,7 +570,6 @@ export class PetImportStaging {
     })
   }
 
-  /** Drops every pending preview (app quit). */
   async dispose(): Promise<void> {
     await this.exclusive(async () => {
       for (const token of [...this.pending.keys()]) await this.discard(token)

@@ -28,8 +28,6 @@ const title = computed(() => `${permissionSourceName(props.request.agentId)} · 
 const waited = computed(() => formatClockDuration(now.value - props.request.receivedAt))
 const alsoAnswerKey = computed(() => alsoAnswerableKey(props.request.agentId))
 
-// A failed decision leaves the buttons usable again so the user can retry or
-// go back to the agent; the card says why instead of silently resetting.
 const decideError = computed(() => {
   const outcome = store.permissionOutcome
   if (!outcome || outcome.requestId !== props.request.requestId) return null
@@ -109,8 +107,7 @@ function decide(decision: PermissionDecisionValue): void {
   padding: var(--list-card-padding-y) var(--organic-space-4, var(--space-4));
   border: 2px solid var(--accent);
   border-radius: var(--organic-radius-md, var(--radius-md));
-  /* 以浮層表面承載內容、強調色只做外框：提示、倒數與風險徽章的文字都放在
-     驗證器保證 >= 4.5:1 的表面上（舊版放在強調色填色上，淺色只有 3.29:1 甚至更低）。 */
+  /* 強調色只做外框，文字放在驗證器保證 >= 4.5:1 的浮層表面上。 */
   background: var(--surface-overlay);
   color: var(--text-primary);
   box-shadow: var(--shadow-hero, var(--shadow-panel));
@@ -194,7 +191,6 @@ function decide(decision: PermissionDecisionValue): void {
   color: var(--accent-on);
 }
 
-/* 與 Button 的主要按鈕相同：往文字色混 12%，onAccent 對比只增不減。 */
 .permission-allow:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent-hover) 88%, var(--text-primary));
   background: color-mix(in srgb, var(--accent-hover) 88%, var(--text-primary));

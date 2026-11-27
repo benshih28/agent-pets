@@ -7,8 +7,6 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 
-// 兩個使用者觸發的資料維護：重設成長資料（破壞性，需確認）與資料庫整理（VACUUM，可能數秒）。
-// 結果由主程序決定；這裡只負責確認、忙碌狀態與結果文字。
 const confirmReset = ref(false)
 const resetting = ref(false)
 const resetMessage = ref('')
@@ -35,7 +33,7 @@ async function performReset(): Promise<void> {
   resetting.value = true
   resetMessage.value = ''
   try {
-    // 使用者在對話框按下確認之後才向主程序申請一次性 token，再立刻用它重設。
+    // 確認後才向主程序申請一次性 token。
     const armed = await window.electronAPI?.armGrowthReset()
     const result: GrowthResetResult | undefined = armed?.ok
       ? await window.electronAPI?.resetGrowth(armed.token)

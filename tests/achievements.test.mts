@@ -83,7 +83,6 @@ test('registry exposes the fourteen versioned, presentation-only rules', () => {
     currentStreak: 7,
     level: 20,
   })
-  // The ten originals plus the 10-session and 3-day-streak ladder steps.
   assert.equal(unlocked.length, 12)
   assert.equal(unlocked.find(item => item.id === 'one_million')?.tokenQuality, 'estimated')
 })
@@ -123,7 +122,6 @@ test('Night Owl uses the injected local hour boundary', () => {
 
 test('token achievement records quality and ignores replayed source events', () => {
   withStore((store) => {
-    // Event-reported usage only counts for agents without a local log reader.
     const exactEvent = event('thinking', BASE_TIME, 'token-session', {
       source: 'opencode-cli',
       adapterId: 'opencode',
@@ -195,7 +193,7 @@ test('adapter, busy-day, streak, and active-day rules use pet-scoped aggregates'
     }
     assert.equal(activeDayUnlocks.some(unlock => unlock.achievementId === 'old_friend'), true)
     assert.equal(store.getSnapshot('wolf').totalUnlocked >= 2, true)
-    assert.equal(store.getSnapshot('busy-pet').totalUnlocked, 3) // hello_world, sessions_10, busy_day
+    assert.equal(store.getSnapshot('busy-pet').totalUnlocked, 3)
   })
 })
 
@@ -261,7 +259,6 @@ test('pet counters stay equal to a full recompute and replays return early', () 
       assert.equal(counters.token_estimated, tokens.e)
       assert.equal(counters.token_total, tokens.t)
     }
-    // A duplicate success evaluates nothing and unlocks nothing.
     assert.deepEqual(store.recordEvent(event('success', BASE_TIME, 's1'), 'aang-airbender'), [])
   })
 })
@@ -302,17 +299,13 @@ test('local-log tokens count once across rescans and streaming growth, and unloc
     assert.equal(first.unlocks.length, 0)
     const progress = () => store.getSnapshot('wolf').achievements.find(item => item.id === 'one_million')
     assert.equal(progress()?.progress?.current, 960_000)
-    // A rescan presents the same ids: nothing changes, nothing unlocks.
     const rescan = store.syncLocalTokenUsage(records, { compactBefore, evaluatePetId: 'wolf' })
     assert.deepEqual(rescan, { changed: false, unlocks: [] })
     assert.equal(progress()?.progress?.current, 960_000)
-    // A streamed message whose usage grew adds only the difference.
     const grown = store.syncLocalTokenUsage([{ ...records[0]!, output: 80_000 }], { compactBefore, evaluatePetId: 'wolf' })
     assert.equal(grown.unlocks.find(unlock => unlock.achievementId === 'one_million')?.tokenQuality, 'exact')
     assert.equal(progress()?.progress?.current, 1_000_000)
-    // Account-level: another pet sees the same exact total.
     assert.equal(store.getSnapshot('aang-airbender').achievements.find(item => item.id === 'one_million')?.progress?.current, 1_000_000)
-    // Unknown adapters and records older than the compaction horizon are ignored.
     assert.equal(store.syncLocalTokenUsage([
       { adapterId: 'opencode', sourceEventId: 'x', occurredAt: BASE_TIME, input: 5 },
       { adapterId: 'codex', sourceEventId: 'old', occurredAt: compactBefore - 1, input: 5 },

@@ -8,7 +8,6 @@ import { createFakeIpcMain } from './support/fake-ipc.mts'
 
 type FakeIpcMainPort = WindowControlsIpcDependencies['ipcMain']
 
-/** 完整的 no-op 相依；各測試只覆寫自己關心的成員，避免用 partial 物件硬轉型。 */
 function createDeps(ipcMain: FakeIpcMainPort, overrides: Partial<WindowControlsIpcDependencies>): WindowControlsIpcDependencies {
   return {
     ipcMain,
@@ -105,7 +104,6 @@ test('window control IPC keeps sender scopes, bounds clamps, and hidden-pet pref
   })
   const send = (channel: string, ...args: unknown[]) => handlers.get(channel)?.(fakeIpcMainEvent(), ...args)
   assert.equal(handlers.size, 12)
-  // 不是一般物件的 payload（含帶了同名欄位的陣列）一律當成沒給欄位，什麼都不做。
   const arrayWithFields = Object.assign([], { ignore: true, release: true, pinned: true, modal: true, width: 300, height: 300 })
   for (const malformed of [null, undefined, 'x', 7, true, [], arrayWithFields]) {
     for (const channel of [

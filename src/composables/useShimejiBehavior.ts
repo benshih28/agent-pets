@@ -1,5 +1,3 @@
-// Shimeji 自主行為：排程 tick、走路碰牆折返、省電／電池／分頁可見性閘門。
-// 從 DesktopPet.vue 抽出；只吐出元件需要渲染的狀態（行為、面向、游標是否在寵物上）。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'
 import {
@@ -25,7 +23,6 @@ export function useShimejiBehavior() {
   const facing = ref<-1 | 1>(1)
   const pointerOverPet = ref(false)
   const scheduler = new ShimejiScheduler()
-  // shimejiGate 已經監看這個值，系統設定改變時會自動重排 Shimeji。
   const reducedMotion = useReducedMotion()
   const powerSave = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -46,7 +43,6 @@ export function useShimejiBehavior() {
     const petIds = multiPetActive
       ? store.familyLines.map(line => line.petId)
       : [store.activePetId]
-    // 一次建索引，不對每個 petId 掃一遍 pets。
     const petsById = new Map(store.pets.map(pet => [pet.id, pet]))
     const entries = petIds
       .map(id => petsById.get(id))
@@ -88,8 +84,6 @@ export function useShimejiBehavior() {
     timer = setTimeout(runTick, Math.max(1_500, delayMs))
   }
 
-  // Would the next step run into the edge of the current display? Then the pet
-  // turns around instead of marching on the spot against the wall.
   function walkDeltaAwayFromWall(deltaX: number): number {
     const margin = 4
     const left = (window.screen as Screen & { availLeft?: number }).availLeft ?? 0
@@ -101,7 +95,6 @@ export function useShimejiBehavior() {
 
   function runTick(): void {
     timer = null
-    // A pet under the cursor stays put rather than walking away from it.
     if (pointerOverPet.value) {
       schedule(SHIMEJI_IDLE_DELAY_MIN_MS)
       return
@@ -124,7 +117,6 @@ export function useShimejiBehavior() {
     schedule()
   }
 
-  // The cursor arriving wakes a sleeping pet and holds it in place.
   function onPointerEnter(): void {
     pointerOverPet.value = true
     if (scheduler.isSleeping) restart()
@@ -175,7 +167,7 @@ export function useShimejiBehavior() {
         battery.addEventListener('levelchange', updatePowerSave)
         updatePowerSave()
       } catch {
-        // Battery API 在 Electron 中可能不存在；仍保留 Reduced Motion 與 DND 閘門。
+        // Battery API 在 Electron 中可能不存在。
       }
     }
   }

@@ -1,5 +1,3 @@
-/* Bubble layer of the desktop pet: result toast, activity, say, plugin feed,
-   permission notice and coach mark. Colors come from the --pet-bubble-* tokens. */
 .pet-toast {
   position: absolute;
   bottom: calc(100% + 4px);
@@ -22,8 +20,7 @@
   padding: max(6px, calc(6px * var(--pet-scale, 1))) max(10px, calc(11px * var(--pet-scale, 1)));
   border-radius: max(var(--radius-md), calc(12px * var(--pet-scale, 1)));
   white-space: nowrap;
-  /* Visible so the tail below can poke out; long text is clipped by the inner
-     elements (.activity-text, .timed-toast-meta, .presentation-say-text). */
+  /* Visible so the ::after tail can poke out; inner elements clip long text. */
   overflow: visible;
 }
 
@@ -188,7 +185,6 @@
   color: var(--pet-bubble-info-accent);
 }
 
-/* A long message is clamped to four lines and opens up while hovered. */
 .presentation-say-text {
   display: -webkit-box;
   overflow: hidden;
@@ -440,7 +436,6 @@
     opacity: 1;
   }
 
-  /* Variants lose their translucent tint and gain a strong outline. */
   .pet-toast {
     background: var(--pet-bubble-surface-opaque);
     border-width: 2px;
@@ -453,7 +448,6 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  /* Every bubble variant becomes one opaque material. */
   .pet-toast {
     background: var(--pet-bubble-surface-opaque);
     backdrop-filter: none;
@@ -461,7 +455,7 @@
   }
 }
 
-/* Bubbles would be clipped by the small mini window; DesktopPet.css shows a ring + corner badge instead. */
+/* The small mini window would clip bubbles; DesktopPet.css shows a ring + badge instead. */
 .desktop-pet.mode-mini .pet-toast {
   display: none;
 }

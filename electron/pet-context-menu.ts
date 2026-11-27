@@ -21,7 +21,6 @@ export interface PetContextMenuLabels {
   quit: string
 }
 
-/** The pet's right-click menu; kept free of Electron runtime so it is testable. */
 export function buildPetContextMenuTemplate(
   actions: PetContextMenuActions,
   labels: PetContextMenuLabels,

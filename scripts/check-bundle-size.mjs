@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Renderer bundle budget: fails when any single JS chunk grows past the limit.
-// Run after `vite build`. Raise the limit deliberately, in the same PR as the growth.
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

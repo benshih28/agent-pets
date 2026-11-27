@@ -1,9 +1,3 @@
-// 詳情頁的診斷：broker 日誌、被拒絕的呼叫，以及給人看的文字。
-//
-// 契約：
-// - 讀：目前選取的插件 id 與資源上限（控制器擁有），不寫入它們；換插件時由控制器呼叫 refreshDiagnostics。
-// - 競態：每次載入都作廢先前的載入，較舊的回應不會覆蓋目前插件的診斷。
-// - 原始的 method／code 只放在 diagnosticTechnical，由畫面收在 title 與技術細節。
 import { ref, type Ref } from 'vue'
 import { locale, t, type TranslationKey } from '@/i18n'
 import type { PluginBrokerDiagnostic, PluginBrokerLogEntry } from '@/types/plugin'

@@ -4,13 +4,6 @@ import { isRecord } from '../value-guards.ts'
 import type { TranslationKey, TranslationParams } from '../../src/i18n'
 import type { MainState } from './state.ts'
 
-// Plugin catalog runtime：目錄閘道（抓 registry 與套件封包）與每日自動檢查更新的排程。
-//
-// 閘道與排程所需的 plugin 服務都留在 `mainState`（IPC registrar 與 plugin 面板會讀）；
-// 這裡只持有「每小時喚醒排程」的計時器控制，並由 `dispose()` 清除。計時器仍存在
-// `mainState.pluginCatalogAutoCheckTimer`，`disposeMainTimers` 與 teardown 都看得到它。
-// 不 import `runtime.ts` 或 Electron 值，因此能在 Node 測試直接執行。
-
 export type PluginCatalogRuntimeState = Pick<MainState,
   | 'pluginNetworkClient' | 'pluginRegistry' | 'pluginPreferences' | 'pluginFeedController'
   | 'pluginCatalogAutoCheckSchedule' | 'pluginCatalogAutoCheckTimer'>
@@ -24,9 +17,7 @@ export interface PluginCatalogRuntimeDeps {
 export interface PluginCatalogRuntime {
   gateway(): ReturnType<typeof createPluginCatalogGateway>
   checkUpdates(): Promise<number>
-  /** 建立每日檢查排程與每小時喚醒計時器；已建立時不重複建立。 */
   initializeAutoCheck(): void
-  /** 清除每小時喚醒計時器；可重複呼叫。 */
   dispose(): void
 }
 

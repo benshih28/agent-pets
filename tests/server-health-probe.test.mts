@@ -4,8 +4,6 @@ import type { AddressInfo } from 'node:net'
 import test from 'node:test'
 import { AGENT_PETS_SERVER_HEADER, probePortOccupant } from '../electron/main/server-health.ts'
 
-// 埠被佔用時用來分辨「另一個 Agent Pets」與「別的程式」；探測只送 GET，不帶任何 token。
-
 function listen(headers: Record<string, string>, seen?: Array<Record<string, unknown>>): Promise<Server> {
   const server = createServer((request, response) => {
     seen?.push({ method: request.method, headers: request.headers })

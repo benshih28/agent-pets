@@ -59,7 +59,7 @@ test('imports exact Codex and Claude local log usage and deduplicates Claude str
   })
   writeJsonl(path.join(fixture.home, '.codex', 'sessions', 'session.jsonl'), [
     codexUsageRecord(100, 20),
-    codexUsageRecord(100, 20), // rate-limit-only repeat; must not be counted again
+    codexUsageRecord(100, 20),
     codexUsageRecord(150, 35),
   ])
   writeJsonl(path.join(fixture.home, '.claude', 'projects', 'project', 'session.jsonl'), [
@@ -97,7 +97,6 @@ test('imports exact Codex and Claude local log usage and deduplicates Claude str
   assert.equal(scan.recordsImported, 3)
 
   const summary = store.getSummary()
-  // Fresh input excludes prompt-cache tokens, which are reported separately.
   assert.equal(summary.totals.tokenInput, 220)
   assert.equal(summary.totals.tokenCacheRead, 5)
   assert.equal(summary.totals.tokenCacheWrite, 2)
@@ -192,24 +191,18 @@ test('a Codex cumulative-counter reset rebases the baseline instead of overcount
     },
   })
   writeJsonl(path.join(fixture.home, '.codex', 'sessions', 'session.jsonl'), [
-    codexUsageRecord(0, 1_000, 200), // baseline
-    // Context compaction/resume rebases the cumulative counter down. The old
-    // behaviour would have counted this entire smaller total as fresh spend
-    // (an extra 300/60 on top of the 1000/200 already recorded) instead of
-    // rebasing to it with zero new tokens.
+    codexUsageRecord(0, 1_000, 200),
     codexUsageRecord(1_000, 300, 60),
-    // Once the (now lower) baseline is exceeded again, the delta must be
-    // computed against the rebased total, not the stale pre-reset one.
     codexUsageRecord(2_000, 350, 70),
   ])
 
   const reader = new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now })
   const scan = await reader.scan()
-  assert.equal(scan.recordsImported, 2) // the reset event itself imports nothing
+  assert.equal(scan.recordsImported, 2)
 
   const summary = store.getSummary()
-  assert.equal(summary.totals.tokenInput, 1_050) // 1000 + 0 (reset) + 50
-  assert.equal(summary.totals.tokenOutput, 210) // 200 + 0 (reset) + 10
+  assert.equal(summary.totals.tokenInput, 1_050)
+  assert.equal(summary.totals.tokenOutput, 210)
 })
 
 test('local usage scanning registers a project that has never sent a live event', async t => {
@@ -239,10 +232,6 @@ test('local usage scanning registers a project that has never sent a live event'
 
   const seenProjects: string[] = []
   const projectRouting = {
-    // A project the reader has never registered before must still get an
-    // entry back - this is what makes the History project filter able to
-    // show it at all, instead of the token total being correct but
-    // permanently unreachable.
     trackSeen: (value: unknown) => {
       if (value !== codexCwd) return null
       seenProjects.push(value)
@@ -418,8 +407,6 @@ test('incremental byte budgets charge only bytes read after the cached offset', 
     maxTotalBytes: 64 * 1024,
   })
   const initial = await reader.scan()
-  // The second file gets the rest of the budget instead of being skipped whole,
-  // and the scan reports that it still has work left.
   assert.equal(initial.filesScanned, 2)
   assert.equal(initial.filesSkipped, 0)
   assert.equal(initial.filesDeferred, 1)
@@ -548,7 +535,6 @@ test('large file is parsed in slices with the same totals, one project lookup pe
   const totals = store.getSummary('aang-airbender', undefined, 7).totals
   assert.equal(totals.tokenInput, inputTotal)
   assert.equal(totals.tokenOutput, outputTotal)
-  // A second scan finds nothing new.
   const second = await new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now }).scan()
   assert.equal(second.recordsImported, 0)
 })
@@ -567,7 +553,6 @@ test('recordTokenUsageBatch equals sequential recordTokenUsage for new, moved an
   const projectA = 'a'.repeat(32)
   const rounds = [
     [record('1', now - 5000, 10, 'estimated'), record('2', now - 4000, 20, 'exact', projectA), record('3', now, 5, 'exact')],
-    // repeat, change tokens, and move record 3 to the previous day
     [record('1', now - 5000, 10, 'estimated'), record('2', now - 4000, 25, 'exact', projectA), record('3', now - 9000, 5, 'exact')],
   ]
   for (const round of rounds) {
@@ -651,10 +636,8 @@ test('model ids are parsed from Claude messages and Codex turn_context lines and
   assert.equal(byKey.get('codex/gpt-5.1')?.tokenOutput, 20)
   assert.equal(byKey.get('claude-code/claude-sonnet-4-5-20250929')?.tokenInput, 40)
   assert.equal(byKey.get('claude-code/claude-opus-4-5')?.tokenInput, 7)
-  // Placeholder or path-like ids are stored as unknown, never verbatim.
   assert.equal(byKey.get('claude-code/')?.tokenInput, 5)
   assert.equal(models.some(stat => stat.model.includes('<') || stat.model.includes('..')), false)
-  // Per-model totals add up to the per-agent totals.
   const summary = store.getSummary()
   for (const agent of summary.agents) {
     const sum = models.filter(stat => stat.adapterId === agent.adapterId).reduce((total, stat) => total + stat.tokenInput, 0)
@@ -675,7 +658,6 @@ test('the Codex model survives a chunk boundary between turn_context and token_c
   assert.deepEqual(parseIncrementalLocalUsageChunk('codex', 'k', bytes.subarray(0, split), 0, 4_096, state), [])
   const [record] = parseIncrementalLocalUsageChunk('codex', 'k', bytes.subarray(split), split, 4_096, state)
   assert.equal(record?.model, 'gpt-5-codex')
-  // The undated token_count inherits the turn_context's timestamp.
   assert.equal(record?.occurredAt, Date.parse('2026-08-13T01:00:00.000Z'))
   assert.equal(parseUsageFile('codex', 'k', bytes.toString('utf8'), 4_096)[0]?.model, 'gpt-5-codex')
 })
@@ -690,7 +672,6 @@ test('a rescan backfills the model of a row imported before model tracking', asy
     message: { id: 'm1', model: 'claude-haiku-4-5', usage: { input_tokens: 9, output_tokens: 1 } },
   }])
   await new LocalUsageReader({ homeDir: fixture.home, history: store, now: () => now }).scan()
-  // Simulate a pre-v8 row: model unknown, aggregates rebuilt from events.
   const raw = (store as unknown as { database: { exec(sql: string): void } }).database
   raw.exec("UPDATE events SET token_model = ''")
   store.rebuildDailyStats()
@@ -699,7 +680,6 @@ test('a rescan backfills the model of a row imported before model tracking', asy
   assert.equal(rescan.recordsImported, 1)
   const models = store.getSummary().models
   assert.deepEqual(models.map(stat => [stat.model, stat.tokenInput]), [['claude-haiku-4-5', 9]])
-  // Token totals are unchanged by the backfill.
   assert.equal(store.getSummary().totals.tokenInput, 9)
 })
 
@@ -714,7 +694,6 @@ test('the scan time budget defers remaining files to the next scan without losin
       message: { id: `m${index}`, usage: { input_tokens: 10, output_tokens: 1 } },
     }])
   }
-  // Fake monotonic clock: every reading advances 40 ms against a 50 ms budget.
   let clockMs = 0
   const reader = new LocalUsageReader({
     homeDir: fixture.home, history: store, now: () => now, maxScanMs: 50, clock: () => (clockMs += 40),
@@ -758,8 +737,6 @@ test('every scan makes progress even when the clock is past the deadline before 
       message: { id: `m${index}`, usage: { input_tokens: 10, output_tokens: 1 } },
     }])
   }
-  // A clock that jumps far beyond the budget on every reading: the old code
-  // deferred every file forever; now each scan reads at least one slice.
   let clockMs = 0
   const reader = new LocalUsageReader({
     homeDir: fixture.home, history: store, now: () => now, maxScanMs: 50, clock: () => (clockMs += 1_000_000),
@@ -788,7 +765,6 @@ test('files are interleaved across roots so the Claude root is not starved by Co
     type: 'assistant', timestamp: new Date(now).toISOString(), session_id: 's',
     message: { id: 'm', usage: { input_tokens: 9, output_tokens: 1 } },
   }])
-  // Budget for roughly one Codex file plus the small Claude file.
   const reader = new LocalUsageReader({
     homeDir: fixture.home, history: store, now: () => now, maxFileBytes: 64 * 1024, maxTotalBytes: 80 * 1024,
   })
@@ -810,7 +786,6 @@ test('a file that ends before its walked size is not counted as deferred', async
   let truncated = false
   const reader = new LocalUsageReader({
     homeDir: fixture.home, history: store, now: () => now,
-    // After the walk recorded both sizes, shrink the file that has not been read yet.
     onRecordsImported: records => {
       if (truncated) return
       truncated = true
@@ -839,11 +814,8 @@ test('undated lines inherit the previous real timestamp, never the file mtime, s
   const seen: Array<{ sourceEventId: string, occurredAt: number }> = []
   const options = { homeDir: fixture.home, history: store, now: () => now, onRecordsImported: (records: readonly { sourceEventId: string, occurredAt: number }[]) => { seen.push(...records) } }
   await new LocalUsageReader(options).scan()
-  // The undated first line has no stable time and is dropped.
   assert.equal(store.getSummary().totals.tokenInput, 7)
   assert.deepEqual(seen.map(record => record.occurredAt), [dated, dated])
-  // Appending bumps the mtime; a fresh reader re-reads everything and must
-  // present the same dates, so History imports nothing new for old lines.
   fs.appendFileSync(file, `${JSON.stringify({ type: 'user', message: { content: 'later' } })}\n`)
   fs.utimesSync(file, new Date(now), new Date(now))
   seen.length = 0
@@ -864,7 +836,6 @@ test('scans the folders configDirs returns (CLAUDE_CONFIG_DIR／CODEX_HOME) inst
     session_id: `claude-${id}`,
     message: { id, usage: { input_tokens: input, output_tokens: 1 } },
   })
-  // 預設位置的舊紀錄不應被讀到：使用者搬目錄後，agent 不再寫那裡。
   writeJsonl(path.join(fixture.home, '.claude', 'projects', 'p', 'old.jsonl'), [claudeRecord('old', 1_000)])
   writeJsonl(path.join(moved.claude, 'projects', 'p', 'new.jsonl'), [claudeRecord('new', 40)])
   writeJsonl(path.join(moved.claude, 'transcripts', 't.jsonl'), [claudeRecord('transcript', 2)])

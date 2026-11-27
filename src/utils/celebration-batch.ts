@@ -3,7 +3,6 @@ import type { EvolutionStage } from '../types/progression.ts'
 export interface CelebrationLevel {
   from: number
   to: number
-  /** Set when any merged level-up crossed into a new stage. */
   evolvedTo?: EvolutionStage
 }
 
@@ -25,7 +24,6 @@ export function batchIsEmpty(batch: CelebrationBatch): boolean {
   return batch.level === null && batch.achievements.length === 0
 }
 
-/** Merges several level-ups into one "Lv a -> Lv z" entry. */
 export function addLevelUp(
   batch: CelebrationBatch,
   event: { fromLevel: number; toLevel: number; evolved: boolean; toStage: EvolutionStage },
@@ -37,7 +35,7 @@ export function addLevelUp(
   return { ...batch, level }
 }
 
-/** Collapses duplicates by id so a replayed unlock never doubles the count. */
+/** Dedupes by id so a replayed unlock never doubles the count. */
 export function addAchievement(batch: CelebrationBatch, item: CelebrationAchievement): CelebrationBatch {
   if (batch.achievements.some(existing => existing.id === item.id)) return batch
   return { ...batch, achievements: [...batch.achievements, item] }

@@ -12,8 +12,6 @@ import { configureSetupEnvironment, setupEnvironment } from '../electron/setup-e
 import { hookScriptDeployPath } from '../electron/setup.ts'
 import { removeTempTree } from './support/temp-dir.mts'
 
-// app 啟動標記：hook 連線被拒時只有看到它才重試（見 docs/dev/hook-delivery.md）。
-
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-pets-startup-marker-'))
 }
@@ -34,7 +32,6 @@ test('the marker is named after the event port and holds only the owner pid', ()
 
 const markerFile = (dir: string, port = 17373) => path.join(dir, hookStartupMarkerName(port))
 
-/** 保證已結束的 pid：啟動子程序等它結束。 */
 function deadPid(): number {
   const result = spawnSync(process.execPath, ['-e', ''])
   assert.ok(result.pid)
@@ -50,7 +47,6 @@ test('clear removes only a marker this process wrote', () => {
   const dir = tempDir()
   try {
     const first = writeHookStartupMarker(dir, 17373, { pid: process.pid })
-    // 新實例（例如 --relaunch）取得鎖、接手後，舊實例結束時不能刪掉新實例的標記。
     const second = writeHookStartupMarker(dir, 17373, { pid: process.pid + 1 })
     second.claim()
     first.clear()
@@ -66,7 +62,6 @@ test('a fresh marker owned by a live process is neither overwritten nor removed 
   const dir = tempDir()
   try {
     const first = writeHookStartupMarker(dir, 17373, { pid: process.pid })
-    // 第二個啟動的程序（拿不到鎖）：不能蓋掉第一個實例的標記，clear() 也不能移除它。
     const second = writeHookStartupMarker(dir, 17373, { pid: process.pid + 1 })
     assert.equal(fs.readFileSync(markerFile(dir), 'utf8'), `${process.pid}\n`)
     second.clear()
@@ -110,7 +105,6 @@ test('a garbled or oversized marker is replaced', () => {
 test('claim after the single-instance lock takes over a live owner, and only our clear removes it', () => {
   const dir = tempDir()
   try {
-    // 舊實例還在退出中、標記是它的：新實例啟動時不寫，取得鎖後 claim 接手。
     const old = writeHookStartupMarker(dir, 17373, { pid: process.pid })
     const next = writeHookStartupMarker(dir, 17373, { pid: process.pid + 1 })
     assert.equal(fs.readFileSync(markerFile(dir), 'utf8'), `${process.pid}\n`)
@@ -187,8 +181,7 @@ test('an unwritable directory never throws', () => {
   }
 })
 
-// electron/main/early-hook-startup-marker.ts 在 main.ts 其餘模組載入前就寫標記，所以不能呼叫 runtime.ts 的 localPorts()
-// 與 setup.ts 的 hookScriptDeployPath()；它改用 hookStartupLocation，這裡確認兩邊算出同一組值。
+// early-hook-startup-marker.ts 在其餘模組載入前就寫標記，不能呼叫 runtime.ts 與 setup.ts，所以改用 hookStartupLocation；這裡確認兩邊算出同一組值。
 test('the early marker location equals the event port and deploy folder main.ts used before', () => {
   const environments: Array<[Record<string, string | undefined>, boolean]> = [
     [{}, false],
@@ -202,7 +195,6 @@ test('the early marker location equals the event port and deploy folder main.ts 
     assert.equal(location.eventPort, resolveLocalPorts(env, isPackaged).event, JSON.stringify([env, isPackaged]))
     assert.equal(location.directory, hookScriptDeployPath())
   }
-  // 打包版忽略環境變數；開發版讀得到覆寫。
   assert.equal(hookStartupLocation({ [LOCAL_PORT_ENV.event]: '27373' }, true).eventPort, 17373)
   assert.equal(hookStartupLocation({ [LOCAL_PORT_ENV.event]: '27373' }, false).eventPort, 27373)
 })

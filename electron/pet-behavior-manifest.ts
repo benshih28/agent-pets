@@ -11,9 +11,6 @@ import {
   type PetMotionOverride,
 } from '../src/types/pet-atlas.ts'
 
-// pet.json 與插件外觀的 behaviorManifest 是不受信任的輸入：只認得 PET_MOTION_NAMES
-// 裡的動作，列號、格數、時長都有上下限；不合法的項目整筆丟掉，畫面端就回退內建動作。
-
 export type SanitizedPetBehaviorDefinition = PetMotionOverride
 export type SanitizedPetBehaviorManifest = PetMotionManifest
 
@@ -48,14 +45,10 @@ function parseDefinition(value: unknown): SanitizedPetBehaviorDefinition | undef
 
 export interface PetBehaviorManifestParseResult {
   manifest: SanitizedPetBehaviorManifest | undefined
-  /** 格式合法、但放不進這張圖集（列不存在或格數超過欄數）而被丟掉的動作。 */
   outOfRange: boolean
 }
 
-/**
- * 有 `grid`（已讀到圖集尺寸）時，另外丟掉放不進圖集的覆蓋值，並在 `outOfRange` 回報。
- * 沒有 `grid` 時只做格式與上下限檢查，畫面端載入圖後會再用實際尺寸篩一次。
- */
+// 沒有 `grid` 時只做格式與上下限檢查，畫面端載入圖後會再用實際尺寸篩一次。
 export function parsePetBehaviorManifestDetailed(value: unknown, grid?: PetAtlasGrid): PetBehaviorManifestParseResult {
   if (!isRecord(value)) return { manifest: undefined, outOfRange: false }
   const result: SanitizedPetBehaviorManifest = {}

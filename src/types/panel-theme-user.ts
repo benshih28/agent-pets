@@ -2,13 +2,11 @@ import type { PanelThemeFit, PanelThemeGradientStop, PanelThemeMode, PanelThemeP
 import type { PluginPanelThemeColorKey } from './plugin.ts'
 import { isPluginId } from './id-patterns.ts'
 
-// 使用者自己做的面板主題（「我的主題」，spec R20–R24）。主程序與渲染端共用的契約：
-// 主程序是唯一會寫入 `userData/panel-themes-user/` 的地方，並以和插件主題相同的驗證器
-// 檢查每一份定義；渲染端的主題編輯器只產生這裡描述的資料，不會產生 CSS。
+// 主程序是唯一會寫入 `userData/panel-themes-user/` 的地方，並以和插件主題相同的驗證器檢查每份定義；
+// 渲染端的主題編輯器只產生這裡描述的資料，不會產生 CSS。
 
-/** 使用者主題在 PanelThemeRef.pluginId 中的保留擁有者 id。插件 id 不能含底線，所以不會撞名。 */
+/** 插件 id 不能含底線，所以不會撞名。 */
 export const USER_PANEL_THEME_OWNER = '_user'
-/** 「我的主題」在目錄中的來源名稱（介面以「我的主題：<名稱>」顯示，不會寫成插件）。 */
 export const USER_PANEL_THEME_SOURCE_NAME = Object.freeze({ 'zh-TW': '我的主題', 'en-US': 'My themes' })
 export const USER_PANEL_THEME_SCHEMA_VERSION = 1
 export const USER_PANEL_THEME_MAX_COUNT = 50
@@ -18,7 +16,6 @@ export const USER_PANEL_THEME_ID_PATTERN = /^u-[0-9a-f]{12}$/
 export const USER_PANEL_THEME_NAME_MAX = 48
 export const USER_PANEL_THEME_EXPORT_FORMAT = 'agent-pets-panel-theme'
 
-/** 編輯器可設定的顏色鍵（manifest 的 31 個鍵，不含已停用的 borderOnAccent），依介面分組。 */
 export const USER_PANEL_THEME_COLOR_GROUPS = [
   { id: 'text', keys: ['text', 'textSecondary', 'textMuted', 'textFaint'] },
   { id: 'surfaces', keys: ['bg', 'surface', 'surface2', 'surfaceWarm', 'surfaceSage', 'surfaceSageSoft', 'surfaceOff'] },
@@ -31,14 +28,11 @@ export type UserPanelThemeColorGroupId = typeof USER_PANEL_THEME_COLOR_GROUPS[nu
 
 export const USER_PANEL_THEME_COLOR_KEYS: readonly PluginPanelThemeColorKey[] = USER_PANEL_THEME_COLOR_GROUPS.flatMap(group => group.keys)
 
-/** 寵物狀態膠囊的顏色（spec §3.7）；編輯器一律宣告完整的一組。 */
+/** 編輯器一律宣告完整的一組。 */
 export const USER_PANEL_THEME_PET_STATUS_KEYS = ['background', 'text', 'textMuted', 'border', 'quotaFill', 'quotaTrack', 'quotaWarn'] as const
 export type UserPanelThemePetStatusKey = typeof USER_PANEL_THEME_PET_STATUS_KEYS[number]
 
-/**
- * 只能從這些系統字型組合中選（使用者主題不帶字型檔）。`builtin` = 內建字族。每組都以通用字族結尾，
- * 名稱都符合 manifest 的本機字族文法（spec §3.4）。
- */
+/** 使用者主題不帶字型檔，只能從這些系統字型組合選；每組都以通用字族結尾。 */
 export const USER_PANEL_THEME_FONT_STACKS = {
   builtin: null,
   system: ['system-ui', 'sans-serif'],
@@ -55,7 +49,7 @@ export type UserPanelThemeBackground =
   | { type: 'gradient'; kind: 'linear'; angle: number; stops: PanelThemeGradientStop[] }
   | { type: 'gradient'; kind: 'radial'; position: PanelThemePosition; stops: PanelThemeGradientStop[] }
 
-/** 使用者背景圖：開啟後該模式允許匯入圖片；`dim` 是預設遮罩（≥ 計算出的最小值）。 */
+/** `dim` 是預設遮罩（≥ 計算出的最小值）。 */
 export interface UserPanelThemeImageSettings {
   fit: PanelThemeFit
   overlayColor: string
@@ -75,7 +69,6 @@ export interface UserPanelThemeDefinition {
   modes: Record<PanelThemeMode, UserPanelThemeModeDefinition>
 }
 
-/** `userData/panel-themes-user/<id>.json` 的內容。 */
 export interface UserPanelThemeRecord {
   schemaVersion: typeof USER_PANEL_THEME_SCHEMA_VERSION
   id: string
@@ -93,7 +86,7 @@ export interface UserPanelThemeExport {
   definition: UserPanelThemeDefinition
 }
 
-/** 驗證回傳的一筆問題（spec R21）。`path` 相對於模式；`suggested` 是可直接採用的修正值。 */
+/** `path` 相對於模式；`suggested` 是可直接採用的修正值。 */
 export interface PanelThemeDiagnostic {
   mode: PanelThemeMode
   path: string
@@ -127,7 +120,6 @@ export function isUserPanelThemeId(value: unknown): value is string {
   return typeof value === 'string' && USER_PANEL_THEME_ID_PATTERN.test(value)
 }
 
-/** 主題的擁有者：已安裝插件的 id，或「我的主題」的保留 id。 */
 export function isPanelThemeOwnerId(value: unknown): value is string {
   return value === USER_PANEL_THEME_OWNER || isPluginId(value)
 }

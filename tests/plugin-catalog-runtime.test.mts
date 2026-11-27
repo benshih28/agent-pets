@@ -12,9 +12,6 @@ import type { PluginPreferencesStore } from '../electron/plugin-preferences.ts'
 import type { PluginRegistry } from '../electron/plugin-registry.ts'
 import { fakeService } from './support/fake-service.mts'
 
-// 階段 11 後續：plugin catalog 閘道與每日自動檢查原本在 electron/main/runtime.ts，
-// 改由抽出的服務搭配假 state 與 node:test 假計時器驗證。
-
 const CATALOG_URL = 'https://raw.githubusercontent.com/example/agent-pets-catalog/main/registry.json'
 // 以片段組合：ipc-inventory 以子字串比對 preload API 名稱，完整字串會把這個測試誤列為 agentPets API 的測試。
 const E2E_KEY = ['__agent', 'PetsE2E'].join('')
@@ -27,7 +24,6 @@ interface FakeOptions {
 }
 
 function setup(t: TestContext, options: FakeOptions = {}) {
-  // 同一個測試可能呼叫多次 setup；計時器只啟用一次。
   try { t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] }) } catch {}
   const calls: string[] = []
   const state: PluginCatalogRuntimeState = {
@@ -57,7 +53,6 @@ function setup(t: TestContext, options: FakeOptions = {}) {
 }
 
 function withE2e(value: unknown, body: () => Promise<void>): Promise<void> {
-  // 用 Reflect 讀寫 globalThis 上的動態鍵，不需要把 globalThis 轉型成索引型別。
   const had = Reflect.has(globalThis, E2E_KEY)
   const previous: unknown = Reflect.get(globalThis, E2E_KEY)
   Reflect.set(globalThis, E2E_KEY, value)
@@ -91,7 +86,6 @@ test('auto-check does nothing until plugin preferences and registry exist', t =>
 test('the hourly timer wakes the schedule and dispose stops it', async t => {
   const { state, runtime, calls } = setup(t, { enabled: true, lastDay: '2000-01-01' })
   runtime.initializeAutoCheck()
-  // 啟動時立即檢查一次（今天尚未檢查過）。
   await Promise.resolve()
   assert.equal(calls.filter(call => call.startsWith('day:')).length, 1)
   const schedule = state.pluginCatalogAutoCheckSchedule!

@@ -1,4 +1,3 @@
-// 寵物視窗的插件徽章：訂閱主程序推送的徽章、依寵物分組摘要，並決定目前是否顯示。
 // revision 計數避免「初次 get 的回應」蓋掉較新的推送。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAgentStore } from '@/stores/agentStore'

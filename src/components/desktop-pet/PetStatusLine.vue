@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 寵物下方的單條狀態列：狀態點、名稱／狀態字、插件徽章、額度百分比、額度提示框與額度條。
-// 單寵物與多寵物（每個家族一個）共用同一個模板；差異只在外層 class（multi-pet-status-line）。
 // data-pet-hit-target 與 DOM 階層是點擊穿透命中測試的依據，不要改動。
 import { computed } from 'vue'
 import type { AgentState } from '@/types/agent'
@@ -13,7 +11,6 @@ const props = defineProps<{
   line: { label: string; state: AgentState }
   view: StatusLineView
   badgesVisible: boolean
-  /** 額度動畫（光澤、危急警示）；對應「動態效果」偏好。 */
   motion: boolean
   draining: boolean
   badgeTooltip: (badge: PluginBadgeView) => string

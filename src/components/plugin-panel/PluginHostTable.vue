@@ -9,13 +9,10 @@ import type { PluginPanelPlugin } from '@/types/plugin'
 const props = defineProps<{ plugin: PluginPanelPlugin }>()
 const { busy, revokeGrantedHost } = usePluginController()
 
-// One row per network host: what the plugin declares and whether the user has
-// allowed it yet. Hosts granted but no longer declared stay visible so they
-// can still be revoked.
+// Hosts granted but no longer declared stay visible so they can still be revoked.
 const rows = computed(() => {
   const declared = props.plugin.manifest?.permissions.network?.hosts ?? []
   const granted = props.plugin.preference.grantedHosts
-  // 用 Set 查成員：主機數多時避免每列都重掃兩個陣列。
   const declaredSet = new Set(declared)
   const grantedSet = new Set(granted)
   const hosts = [...new Set([...declared, ...granted])]

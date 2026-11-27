@@ -3,14 +3,8 @@ import { computed, ref, watch, type CSSProperties } from 'vue'
 import type { PanelThemeBackdropView } from '@/composables/usePanelTheme'
 import { isPanelThemeAssetUrl, panelThemePositionCss } from '@/utils/panel-theme-css'
 
-// 插件面板背景圖片 + 調暗覆蓋層（spec §4.1）。位於面板內容後方
-// （在 isolated 的 .status-panel 中為 z-index -1），不接收指標事件，
-// 也對輔助技術隱藏。純色 bg 仍畫在底下，
-// 圖片載入失敗時顯示的就是它。
-
 const props = defineProps<{ backdrop: PanelThemeBackdropView | null }>()
 
-// 實際顯示的 URL；只在下一張圖片解碼完成後才切換。
 const shownUrl = ref<string | null>(null)
 let request = 0
 
@@ -78,7 +72,6 @@ function onError(): void {
 <style scoped>
 .panel-theme-backdrop {
   position: absolute;
-  /* 在 isolated 面板內墊底；沿用 --z-base 當區域堆疊原點，不另開刻度。 */
   z-index: calc(var(--z-base) - 1);
   overflow: hidden;
   border-radius: inherit;

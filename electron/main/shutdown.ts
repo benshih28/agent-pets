@@ -1,9 +1,7 @@
 export interface ShutdownCoordinatorOptions {
-  /** Persist anything debounced (window bounds, shimeji position). Runs before any store is closed. */
+  /** Runs before any store is closed. */
   flush: () => void
-  /** In-flight work worth waiting for (for example a local usage scan); null when idle. */
   pendingWork: () => Promise<unknown> | null
-  /** Clears timers, closes servers/stores. Must be safe to call once. */
   teardown: () => void
   quit: () => void
   waitTimeoutMs?: number
@@ -13,9 +11,8 @@ export interface ShutdownCoordinatorOptions {
 }
 
 export interface ShutdownCoordinator {
-  /** Wire to `app.on('before-quit')`. */
   onBeforeQuit(event: { preventDefault(): void }): void
-  /** For paths that bypass before-quit (app.exit after relaunch): flush and tear down synchronously. */
+  /** For paths that bypass before-quit (app.exit after relaunch). */
   runNow(): void
   state(): 'idle' | 'waiting' | 'done'
 }
@@ -39,7 +36,6 @@ export function createShutdownCoordinator(options: ShutdownCoordinatorOptions): 
     onBeforeQuit(event) {
       if (state === 'done') return
       if (state === 'waiting') {
-        // A second quit request while we wait for work to settle.
         event.preventDefault()
         return
       }
