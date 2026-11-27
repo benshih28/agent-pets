@@ -1,8 +1,10 @@
 import type { AgentFamilyKey, AgentSession, AgentSource } from '@/types/agent'
-import { SOURCE_FAMILIES, STATE_PRIORITY } from '../types/agent.ts'
+import { AGENT_STATE_POLICY, AGENT_STATES, SOURCE_FAMILIES, STATE_PRIORITY } from '../types/agent.ts'
 
 // States that wait on the user; among these the most recent one is shown first.
-const ATTENTION_STATES: ReadonlySet<AgentSession['state']> = new Set(['waiting-permission', 'waiting-input', 'error'])
+const ATTENTION_STATES: ReadonlySet<AgentSession['state']> = new Set(
+  AGENT_STATES.filter(state => AGENT_STATE_POLICY[state].petFocus === 'attention'),
+)
 
 // "Who needs you" ordering: higher state priority first. Among waiting sessions the most recent
 // wins (it rarely changes: waiting sessions send few events). Among working sessions lastSeenAt
@@ -62,14 +64,28 @@ export function summarizeFamilies<T extends AgentSession>(sessions: Iterable<T>)
   return result
 }
 
-/** The single most urgent active session, O(n). */
+const PET_FOCUS_RANK = { attention: 2, recent: 1, background: 0 } as const
+
+// Pet focus, not status-line order: among working states the latest state change wins.
+// stateChangedAt, not lastSeenAt, so heartbeats from two busy sessions do not make the pet jump.
 export function mostUrgentSession<T extends AgentSession>(sessions: Iterable<T>): T | null {
   let best: T | null = null
   for (const session of sessions) {
     if (session.state === 'offline') continue
-    if (!best || compareAttention(session, best) < 0) best = session
+    if (!best || comparePetFocus(session, best) < 0) best = session
   }
   return best
+}
+
+function comparePetFocus(a: AgentSession, b: AgentSession): number {
+  const tierA = AGENT_STATE_POLICY[a.state].petFocus
+  const tierB = AGENT_STATE_POLICY[b.state].petFocus
+  if (tierA !== tierB) return PET_FOCUS_RANK[tierB] - PET_FOCUS_RANK[tierA]
+  if (tierA === 'recent') {
+    const changedDelta = (b.stateChangedAt ?? b.lastSeenAt) - (a.stateChangedAt ?? a.lastSeenAt)
+    if (changedDelta !== 0) return changedDelta
+  }
+  return compareAttention(a, b)
 }
 
 export interface StatusLineSource {

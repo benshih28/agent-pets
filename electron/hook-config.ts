@@ -104,20 +104,33 @@ export function isLegacyElectronHook(hook: unknown): boolean {
   return executables.some(name => !/^node\.exe$/i.test(name.trim()))
 }
 
-export function removeAgentPetsHooks(groups: unknown): unknown[] {
-  if (!Array.isArray(groups)) return []
-  const result: unknown[] = []
+interface StrippedHookGroups {
+  kept: unknown[]
+  /** 第一個含 Agent Pets handler 的 group 在 kept 裡該放回的位置；沒有則為 -1。 */
+  ownIndex: number
+}
+
+function stripAgentPetsHooks(groups: readonly unknown[]): StrippedHookGroups {
+  const kept: unknown[] = []
+  let ownIndex = -1
   for (const group of groups) {
     if (!isJsonObject(group) || !Array.isArray(group.hooks)) {
-      result.push(group)
+      kept.push(group)
       continue
     }
     const remaining = group.hooks.filter(hook => !isAgentPetsHook(hook))
+    const hadOwn = remaining.length !== group.hooks.length
     // Drop a group only when removing our handlers emptied it; keep user groups untouched.
-    if (remaining.length === 0 && group.hooks.length > 0) continue
-    result.push(remaining.length === group.hooks.length ? group : { ...group, hooks: remaining })
+    if (remaining.length > 0 || group.hooks.length === 0) {
+      kept.push(hadOwn ? { ...group, hooks: remaining } : group)
+    }
+    if (hadOwn && ownIndex < 0) ownIndex = kept.length
   }
-  return result
+  return { kept, ownIndex }
+}
+
+export function removeAgentPetsHooks(groups: unknown): unknown[] {
+  return Array.isArray(groups) ? stripAgentPetsHooks(groups).kept : []
 }
 
 function requireHooksObject(filePath: string, root: JsonObject): Record<string, unknown> {
@@ -139,6 +152,9 @@ function requireEventArray(filePath: string, event: string, value: unknown): unk
 /**
  * Adds (or refreshes) Agent Pets' hook handlers in a hooks-style JSON file while keeping every
  * other key and every user-defined hook. Missing files are created from `defaults`.
+ * An existing Agent Pets group is refreshed where it already sits; only a new one is appended.
+ * Codex keys hook trust by position (`event:group:handler`), so moving our group would shift
+ * every other tool's hooks too and make Codex skip them all until the user reviews them again.
  * Throws ConfigRefusedError when the file exists but is not a parseable JSON object.
  */
 export async function mergeAgentPetsHooksFile(
@@ -151,8 +167,9 @@ export async function mergeAgentPetsHooksFile(
     const base: JsonObject = exists ? root : { ...defaults }
     const hooks = requireHooksObject(filePath, base)
     for (const [event, handlers] of Object.entries(desired)) {
-      const kept = removeAgentPetsHooks(requireEventArray(filePath, event, hooks[event]))
-      hooks[event] = [...kept, handlers[0]]
+      const { kept, ownIndex } = stripAgentPetsHooks(requireEventArray(filePath, event, hooks[event]))
+      kept.splice(ownIndex < 0 ? kept.length : ownIndex, 0, handlers[0])
+      hooks[event] = kept
     }
     base.hooks = hooks
     return writeConfigSafelyAsync(filePath, serializeJson(base), raw)

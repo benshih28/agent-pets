@@ -42,6 +42,54 @@ test('two busy sessions keep a stable winner while their heartbeats alternate', 
   assert.equal(mostUrgentSession([waitingOld, waitingNew])?.key, 'claude:d')
 })
 
+test('the pet follows the working session whose state changed last, not the higher fixed priority', () => {
+  const claude = session('claude:a', { state: 'tool-running', stateChangedAt: 100, lastSeenAt: 900 })
+  const codex = session('codex:b', { state: 'thinking', stateChangedAt: 200, lastSeenAt: 200 })
+  assert.equal(mostUrgentSession([claude, codex])?.key, 'codex:b')
+  assert.equal(mostUrgentSession([codex, claude])?.key, 'codex:b')
+
+  claude.stateChangedAt = 300
+  assert.equal(mostUrgentSession([claude, codex])?.key, 'claude:a')
+  assert.deepEqual(summarizeFamilies([claude, codex]).map(family => family.top.key), ['codex:b', 'claude:a'])
+})
+
+test('stateChangedAt falls back to lastSeenAt and ties end on the attention order', () => {
+  const older = session('claude:a', { state: 'thinking', lastSeenAt: 50 })
+  const newer = session('codex:b', { state: 'tool-running', lastSeenAt: 60 })
+  assert.equal(mostUrgentSession([older, newer])?.key, 'codex:b')
+  const tied = session('codex:c', { state: 'thinking', stateChangedAt: 70, firstSeenAt: 1 })
+  const tiedHigher = session('claude:d', { state: 'tool-running', stateChangedAt: 70, firstSeenAt: 9 })
+  assert.equal(mostUrgentSession([tied, tiedHigher])?.key, 'claude:d')
+})
+
+test('states that need the user beat any more recently changed working session', () => {
+  const working = session('codex:w', { state: 'tool-running', stateChangedAt: 9_000 })
+  for (const state of ['waiting-permission', 'waiting-input', 'error'] as const) {
+    const waiting = session('claude:n', { state, stateChangedAt: 1, lastSeenAt: 1 })
+    assert.equal(mostUrgentSession([working, waiting])?.key, 'claude:n', state)
+    assert.equal(mostUrgentSession([waiting, working])?.key, 'claude:n', state)
+  }
+})
+
+test('idle never steals focus, and a fresh success briefly beats older working', () => {
+  const working = session('claude:w', { state: 'tool-running', stateChangedAt: 100 })
+  const idle = session('codex:i', { state: 'idle', stateChangedAt: 99_999, lastSeenAt: 99_999 })
+  assert.equal(mostUrgentSession([working, idle])?.key, 'claude:w')
+  assert.equal(mostUrgentSession([idle, working])?.key, 'claude:w')
+  const done = session('codex:s', { state: 'success', stateChangedAt: 500 })
+  assert.equal(mostUrgentSession([working, done])?.key, 'codex:s')
+  assert.equal(mostUrgentSession([idle])?.key, 'codex:i')
+})
+
+test('every state declares a pet focus tier', async () => {
+  const { AGENT_STATE_POLICY } = await import('../src/types/agent.ts')
+  const tiers = Object.fromEntries(Object.entries(AGENT_STATE_POLICY).map(([state, policy]) => [state, policy.petFocus]))
+  assert.deepEqual(tiers, {
+    offline: 'background', idle: 'background', thinking: 'recent', 'tool-running': 'recent',
+    'waiting-permission': 'attention', 'waiting-input': 'attention', success: 'recent', error: 'attention',
+  })
+})
+
 test('family summary names the session that needs you and counts the rest in one pass', () => {
   const summary = summarizeFamilies([
     session('codex:1', { state: 'tool-running' }),

@@ -67,6 +67,7 @@ export function useSessions(deps: SessionsDeps) {
     }
 
     if (existing) {
+      if (event.state !== prevState) existing.stateChangedAt = event.timestamp
       existing.state = event.state
       existing.lastSeenAt = event.timestamp
       existing.project = event.project
@@ -87,6 +88,7 @@ export function useSessions(deps: SessionsDeps) {
         state: event.state,
         lastSeenAt: event.timestamp,
         firstSeenAt: event.timestamp,
+        stateChangedAt: event.timestamp,
         toolName: event.toolName,
         permissionNotice: event.permissionNotice,
         ...(host ? { host } : {}),
@@ -185,6 +187,7 @@ export function useSessions(deps: SessionsDeps) {
         state: entry.state,
         lastSeenAt: entry.lastSeenAt,
         firstSeenAt: typeof entry.firstSeenAt === 'number' && Number.isFinite(entry.firstSeenAt) ? entry.firstSeenAt : entry.lastSeenAt,
+        stateChangedAt: typeof entry.stateChangedAt === 'number' && Number.isFinite(entry.stateChangedAt) ? entry.stateChangedAt : entry.lastSeenAt,
         toolName: typeof entry.toolName === 'string' ? entry.toolName : undefined,
         ...(restoredHost ? { host: restoredHost } : {}),
       }, MAX_SESSION_COUNT)

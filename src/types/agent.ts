@@ -59,6 +59,8 @@ export interface AgentSession {
   lastSeenAt: number
   /** 第一次看到這個 session 的時間；「誰在找你」排序時穩定的同分判斷。 */
   firstSeenAt?: number
+  /** 只在狀態真的改變時更新，心跳不動它，寵物才不會在 session 間來回跳。 */
+  stateChangedAt?: number
   toolName?: string
   permissionNotice?: PermissionNotice
   host?: AgentHost
@@ -87,9 +89,13 @@ export interface AgentStateQuietRule {
   readonly heldByPendingPermission?: true
 }
 
+/** 寵物本體跟隨哪個 session 的分層：attention 一定優先、recent 依最近狀態轉換、background 不搶焦點。 */
+export type AgentPetFocus = 'attention' | 'recent' | 'background'
+
 export interface AgentStatePolicy {
   /** 多個 session 同時存在時，誰代表寵物的整體狀態；數字越大越優先。 */
   readonly priority: number
+  readonly petFocus: AgentPetFocus
   readonly quiet: AgentStateQuietRule
   /**
    * 桌面通知；null 表示不通知。terminal 是結束類通知：會彙整成一則，點了也不切換 App；
@@ -104,20 +110,20 @@ const MINUTE_MS = 60_000
 const GONE_AFTER_MS = 15 * MINUTE_MS
 
 export const AGENT_STATE_POLICY = deepFreeze({
-  offline: { priority: 0, notification: null, historyOutcome: 'cancelled', quiet: { afterMs: 45 * MINUTE_MS, to: 'remove' } },
-  idle: { priority: 20, notification: null, historyOutcome: 'keep', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  offline: { priority: 0, petFocus: 'background', notification: null, historyOutcome: 'cancelled', quiet: { afterMs: 45 * MINUTE_MS, to: 'remove' } },
+  idle: { priority: 20, petFocus: 'background', notification: null, historyOutcome: 'keep', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
   // 兩次事件之間的思考時間 99.9% 短於 2.3 分鐘；超過 5 分鐘多半是回合結束了卻沒有收到結束事件。
-  thinking: { priority: 70, notification: null, historyOutcome: 'open', quiet: { afterMs: 5 * MINUTE_MS, to: 'idle' } },
+  thinking: { priority: 70, petFocus: 'recent', notification: null, historyOutcome: 'open', quiet: { afterMs: 5 * MINUTE_MS, to: 'idle' } },
   // 工具（build、測試）合法地跑很久，不能靠時間提早判斷；中斷由主程序讀對話紀錄檔處理。
-  'tool-running': { priority: 80, notification: null, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  'tool-running': { priority: 80, petFocus: 'recent', notification: null, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
   'waiting-permission': {
-    priority: 100, notification: { terminal: false }, historyOutcome: 'open',
+    priority: 100, petFocus: 'attention', notification: { terminal: false }, historyOutcome: 'open',
     quiet: { afterMs: GONE_AFTER_MS, to: 'offline', heldByPendingPermission: true },
   },
-  'waiting-input': { priority: 85, notification: { terminal: false }, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  'waiting-input': { priority: 85, petFocus: 'attention', notification: { terminal: false }, historyOutcome: 'open', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
   // 成功只顯示一下就回到閒置；慶祝動作的長度跟著這個值算（src/utils/pet-motion-plan.ts）。
-  success: { priority: 60, notification: { terminal: true }, historyOutcome: 'success', quiet: { afterMs: 4_000, to: 'idle' } },
-  error: { priority: 90, notification: { terminal: true }, historyOutcome: 'error', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
+  success: { priority: 60, petFocus: 'recent', notification: { terminal: true }, historyOutcome: 'success', quiet: { afterMs: 4_000, to: 'idle' } },
+  error: { priority: 90, petFocus: 'attention', notification: { terminal: true }, historyOutcome: 'error', quiet: { afterMs: GONE_AFTER_MS, to: 'offline' } },
 } as const satisfies Record<AgentState, AgentStatePolicy>)
 
 export const AGENT_STATES: readonly AgentState[] = Object.freeze(Object.keys(AGENT_STATE_POLICY) as AgentState[])

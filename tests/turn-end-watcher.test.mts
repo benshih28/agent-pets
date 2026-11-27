@@ -262,6 +262,19 @@ test('the settled event lands in the same history session as the hook events', a
   // 修正前這裡會是 4 筆：每個 session 多一筆 generic-http 的紀錄。
 })
 
+test('SessionSnapshotStore keeps stateChangedAt across same-state events and moves it on a transition', () => {
+  const snapshot = new SessionSnapshotStore(() => START)
+  const base = { source: 'codex', sessionId: 'sess-0002' } as const
+  snapshot.record({ ...base, state: 'thinking', timestamp: START })
+  snapshot.record({ ...base, state: 'thinking', timestamp: START + 1_000 })
+  assert.equal(snapshot.get('codex', 'sess-0002')?.stateChangedAt, START)
+  assert.equal(snapshot.get('codex', 'sess-0002')?.lastSeenAt, START + 1_000)
+  snapshot.record({ ...base, state: 'tool-running', timestamp: START + 2_000 })
+  assert.equal(snapshot.get('codex', 'sess-0002')?.stateChangedAt, START + 2_000)
+  snapshot.record({ ...base, state: 'tool-running', timestamp: START + 3_000 })
+  assert.equal(snapshot.get('codex', 'sess-0002')?.stateChangedAt, START + 2_000)
+})
+
 test('SessionSnapshotStore.get returns one isolated copy and uses the same expiry line as list()', () => {
   let now = START
   const snapshot = new SessionSnapshotStore(() => now)

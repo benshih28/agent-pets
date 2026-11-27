@@ -472,6 +472,49 @@ test('success turns idle after the display window, and a restored snapshot never
   assert.equal(peek(() => store.toast), null)
 })
 
+test('stateChangedAt moves only on a real state transition, never on repeats or quiet sweeps', () => {
+  const { store, tick } = open()
+  store.handleEvent(event('a', 'thinking', { timestamp: 1_000 }))
+  assert.equal(store.sessionByKey('claude:a')?.stateChangedAt, 1_000)
+  store.handleEvent(event('a', 'thinking', { timestamp: 2_000 }))
+  assert.equal(store.sessionByKey('claude:a')?.stateChangedAt, 1_000)
+  assert.equal(store.sessionByKey('claude:a')?.lastSeenAt, 2_000)
+  store.handleEvent(event('a', 'tool-running', { timestamp: 3_000, toolName: 'Bash' }))
+  store.handleEvent(event('a', 'tool-running', { timestamp: 4_000, toolName: 'Read' }))
+  assert.equal(store.sessionByKey('claude:a')?.stateChangedAt, 3_000)
+
+  const doneAt = Date.now()
+  store.handleEvent(event('b', 'success', { timestamp: doneAt }))
+  tick(4_001)
+  store.cleanupStale()
+  assert.equal(store.sessionByKey('claude:b')?.state, 'idle')
+  assert.equal(store.sessionByKey('claude:b')?.stateChangedAt, doneAt)
+})
+
+test('the pet follows the agent that changed state last across families, then hands focus back', () => {
+  const { store } = open()
+  store.handleEvent(event('c', 'tool-running', { timestamp: 1_000 }))
+  store.handleEvent(event('x', 'thinking', { source: 'codex', timestamp: 2_000 }))
+  assert.equal(store.highestPrioritySession?.key, 'codex:x')
+  store.handleEvent(event('c', 'thinking', { timestamp: 3_000 }))
+  assert.equal(store.highestPrioritySession?.key, 'claude:c')
+  store.handleEvent(event('x', 'thinking', { source: 'codex', timestamp: 4_000 }))
+  assert.equal(store.highestPrioritySession?.key, 'claude:c')
+})
+
+test('a restored snapshot keeps stateChangedAt, or falls back to lastSeenAt', () => {
+  const { store } = open()
+  const now = Date.now()
+  store.restoreSessionSnapshot([
+    { source: 'codex', sessionId: 'kept', state: 'thinking', lastSeenAt: now - 1_000, stateChangedAt: now - 5_000 },
+    { source: 'codex', sessionId: 'legacy', state: 'thinking', lastSeenAt: now - 2_000 },
+    { source: 'codex', sessionId: 'bad', state: 'thinking', lastSeenAt: now - 3_000, stateChangedAt: 'x' },
+  ])
+  assert.equal(store.sessionByKey('codex:kept')?.stateChangedAt, now - 5_000)
+  assert.equal(store.sessionByKey('codex:legacy')?.stateChangedAt, now - 2_000)
+  assert.equal(store.sessionByKey('codex:bad')?.stateChangedAt, now - 3_000)
+})
+
 test('handleEvent returns the sound cue for new terminal and permission states only', () => {
   const { store, tick } = open()
   assert.equal(store.handleEvent(event('a', 'waiting-permission')), 'waiting-permission')

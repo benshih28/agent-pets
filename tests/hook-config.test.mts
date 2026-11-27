@@ -92,6 +92,51 @@ test('merge keeps user keys and hooks, backs up, and is idempotent', async () =>
   } finally { removeTempTree(dir) }
 })
 
+test('merge refreshes an existing Agent Pets group in place so positional hook trust stays valid', async () => {
+  const dir = tempDir()
+  try {
+    const file = path.join(dir, 'hooks.json')
+    const other = { hooks: [{ type: 'command', command: 'other-tool remind' }] }
+    const stale = { hooks: [{ type: 'command', command: 'node', args: ['/old/.desktop-pet/agent-hook.mjs', 'claude'] }] }
+    // Agent Pets first in Stop, second in SessionStart: both positions must survive the refresh.
+    fs.writeFileSync(file, JSON.stringify({ hooks: { Stop: [stale, other], SessionStart: [other, stale] } }))
+
+    assert.equal((await mergeAgentPetsHooksFile(file, desired())).status, 'written')
+    const merged = JSON.parse(fs.readFileSync(file, 'utf8'))
+    assert.deepEqual(merged.hooks.Stop, [ours(), other])
+    assert.deepEqual(merged.hooks.SessionStart, [other, ours()])
+
+    assert.equal((await mergeAgentPetsHooksFile(file, desired())).status, 'unchanged')
+  } finally { removeTempTree(dir) }
+})
+
+test('merge leaves an up-to-date file byte-for-byte alone whatever the group order', async () => {
+  const dir = tempDir()
+  try {
+    const file = path.join(dir, 'hooks.json')
+    const other = { matcher: 'compact', hooks: [{ type: 'command', command: 'other-tool remind' }] }
+    const original = `${JSON.stringify({ hooks: { SessionStart: [ours(), other], Stop: [other, ours()] } }, null, 2)}\n`
+    fs.writeFileSync(file, original)
+    assert.equal((await mergeAgentPetsHooksFile(file, desired())).status, 'unchanged')
+    assert.equal(fs.readFileSync(file, 'utf8'), original)
+    assert.deepEqual(listBackups(file), [])
+  } finally { removeTempTree(dir) }
+})
+
+test('merge puts our group after a user group that also held an Agent Pets handler', async () => {
+  const dir = tempDir()
+  try {
+    const file = path.join(dir, 'hooks.json')
+    const user = { type: 'command', command: 'echo hi' }
+    const mixed = { hooks: [user, ...ours().hooks] }
+    const later = { hooks: [{ type: 'command', command: 'echo later' }] }
+    fs.writeFileSync(file, JSON.stringify({ hooks: { Stop: [mixed, later] } }))
+    await mergeAgentPetsHooksFile(file, desired())
+    const merged = JSON.parse(fs.readFileSync(file, 'utf8'))
+    assert.deepEqual(merged.hooks.Stop, [{ hooks: [user] }, ours(), later])
+  } finally { removeTempTree(dir) }
+})
+
 test('merge creates a missing file from defaults without a backup', async () => {
   const dir = tempDir()
   try {

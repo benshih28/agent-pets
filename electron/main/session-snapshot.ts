@@ -14,6 +14,7 @@ export interface SessionSnapshotEntry {
   state: AgentState
   lastSeenAt: number
   firstSeenAt?: number
+  stateChangedAt?: number
   toolName?: string
   host?: AgentHost
 }
@@ -67,6 +68,7 @@ export class SessionSnapshotStore {
       state: event.state,
       lastSeenAt: event.timestamp,
       firstSeenAt: previous?.firstSeenAt ?? event.timestamp,
+      stateChangedAt: previous && previous.state === event.state ? (previous.stateChangedAt ?? previous.lastSeenAt) : event.timestamp,
       toolName: event.toolName,
       ...(host ? { host: { ...host } } : {}),
     })
